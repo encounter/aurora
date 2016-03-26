@@ -3,7 +3,7 @@
 
 #include <string>
 #include <vector>
-#include <memory.h>
+#include <memory>
 
 #include "Util.hpp"
 
@@ -61,6 +61,8 @@ enum class EEncoding : uint16_t
 
 class File
 {
+    friend class Directory;
+    friend class Card;
 #pragma pack(push, 4)
     union
     {
@@ -72,9 +74,13 @@ class File
             uint8_t  m_bannerFlags;
             char     m_filename[0x20];
             uint32_t m_modifiedTime;
+            uint32_t m_imageOffset;
+            uint16_t m_iconFmt;
+            uint16_t m_animSpeed;
             uint8_t  m_permissions;
             int8_t   m_copyCounter;
             uint16_t m_firstBlock;
+            uint16_t m_blockCount;
             uint16_t m_reserved2;
             uint32_t m_commentAddr;
         };
@@ -113,8 +119,10 @@ public:
     BlockAllocationTable(uint8_t data[BlockSize]);
     ~BlockAllocationTable() {}
 
-    uint16_t getNextBlock() const;
-    uint16_t nextFreeBlock(uint16_t maxBlocks, uint16_t startingBlock = FSTBlocks);
+    uint16_t getNextBlock(uint16_t block) const;
+    uint16_t nextFreeBlock(uint16_t maxBlocks, uint16_t startingBlock = FSTBlocks) const;
+    bool clear(uint16_t first, uint16_t count);
+    uint16_t allocateBlocks(uint16_t count);
 };
 
 class Directory
@@ -134,11 +142,17 @@ class Directory
         uint8_t __raw[BlockSize];
     };
 #pragma pop()
+    void commitFiles(FILE* mc);
 public:
     Directory();
-
     Directory(uint8_t data[BlockSize]);
+    Directory(const Directory& other);
+    void operator=(const Directory& other);
     ~Directory() {}
+
+    File* getFirstFreeFile(char* game, char* maker, const char* filename);
+    File* getFile(char* game, char* maker, const char* filename);
+
 };
 
 class Card
@@ -180,7 +194,6 @@ class Card
         m_checksumInv = SBig(checksum ^ 0xFFFF);
     }
 
-    FILE* m_fileHandle;
 public:
     Card();
     Card(const SystemString& filepath, const char* game = nullptr, const char* maker=nullptr);
@@ -190,7 +203,14 @@ public:
      * @brief openFile
      * @param filename
      */
-    void openFile(const char* filename);
+    File* openFile(const char* filename);
+    /**
+     * @brief createFile
+     * @param filename
+     * @return
+     */
+    File* createFile(const char* filename, size_t size);
+    void write(File* f, void* buf, size_t size);
     /**
      * @brief Sets the current game, if not null any openFile requests will only return files that match this game
      * @param game The target game id, e.g "GM8E"
@@ -237,6 +257,8 @@ public:
      * @return
      */
     static uint32_t getSizeMbitFromFile(const SystemString& filename);
+
+    void commit();
 };
 
 /**
@@ -244,7 +266,7 @@ public:
  * @param data
  * @param len
  * @param checksum
- * @param checksum
+ * @param checksumInv
  */
 void calculateChecksum(uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv);
 }
