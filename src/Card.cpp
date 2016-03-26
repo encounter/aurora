@@ -2,6 +2,7 @@
 #include "SRAM.hpp"
 #include <stdio.h>
 #include <string.h>
+#include <algorithm>
 #include <memory>
 
 namespace kabufuda
@@ -20,14 +21,14 @@ Card::Card(const SystemString& filename, const char* game, const char* maker)
     if (maker && strlen(maker) == 2)
         memcpy(m_maker, maker, 2);
 
-    m_fileHandle = Fopen(m_filename.c_str(), _S("rb"));
-    if (m_fileHandle)
+    FILE* file = Fopen(m_filename.c_str(), _S("rb"));
+    if (file)
     {
-        fread(__raw, 1, BlockSize, m_fileHandle);
-        fread(m_dir.__raw, 1, BlockSize, m_fileHandle);
-        fread(m_dirBackup.__raw, 1, BlockSize, m_fileHandle);
-        fread(m_bat.__raw, 1, BlockSize, m_fileHandle);
-        fread(m_batBackup.__raw, 1, BlockSize, m_fileHandle);
+        fread(__raw, 1, BlockSize, file);
+        fread(m_dir.__raw, 1, BlockSize, file);
+        fread(m_dirBackup.__raw, 1, BlockSize, file);
+        fread(m_bat.__raw, 1, BlockSize, file);
+        fread(m_batBackup.__raw, 1, BlockSize, file);
         if (m_dir.m_updateCounter < m_dirBackup.m_updateCounter)
             m_dirInUse = &m_dirBackup;
         else
@@ -44,9 +45,32 @@ Card::~Card()
 {
 }
 
-void Card::openFile(const char* filename)
+File* Card::openFile(const char* filename)
 {
+    return m_dirInUse->getFile(m_game, m_maker, filename);
+}
 
+File* Card::createFile(const char* filename, size_t size)
+{
+    File* f = m_dirInUse->getFirstFreeFile(m_game, m_maker, filename);
+    uint16_t block = m_batInUse->allocateBlocks(size / BlockSize);
+    if (f && block != 0xFFFF)
+    {
+        f->m_firstBlock = SBig(block);
+        f->m_blockCount = SBig(uint16_t(size / BlockSize));
+        commit();
+        return f;
+    }
+    return nullptr;
+}
+
+void Card::write(File* f, void* buf, size_t size)
+{
+    FILE* mc = Fopen(m_filename.c_str(), _S("rb"));
+    if (mc)
+    {
+        fseek(mc, BlockSize * 5, SEEK_SET);
+    }
 }
 
 void Card::setGame(const char* game)
@@ -145,7 +169,7 @@ void Card::format(EDeviceId id, ECardSize size, EEncoding encoding)
         fwrite(m_bat.__raw, 1, BlockSize, f);
         fwrite(m_batBackup.__raw, 1, BlockSize, f);
         uint32_t dataLen = ((uint32_t(size) * MbitToBlocks) - 5) * BlockSize;
-        std::unique_ptr<char[]> data(new char[dataLen]);
+        std::unique_ptr<uint8_t[]> data(new uint8_t[dataLen]);
         memset(data.get(), 0xFF, dataLen);
         fwrite(data.get(), 1, dataLen, f);
         fclose(f);
@@ -157,6 +181,25 @@ uint32_t Card::getSizeMbitFromFile(const SystemString& filename)
     Sstat stat;
     Stat(filename.c_str(), &stat);
     return (stat.st_size / BlockSize) / MbitToBlocks;
+}
+
+void Card::commit()
+{
+    FILE* f = Fopen(m_filename.c_str(), _S("wb"));
+    if (f)
+    {
+        fwrite(__raw, 1, BlockSize, f);
+        fwrite(m_dir.__raw, 1, BlockSize, f);
+        fwrite(m_dirBackup.__raw, 1, BlockSize, f);
+        fwrite(m_bat.__raw, 1, BlockSize, f);
+        fwrite(m_batBackup.__raw, 1, BlockSize, f);
+        uint32_t dataLen = ((uint32_t(m_sizeMb) * MbitToBlocks) - 5) * BlockSize;
+        std::unique_ptr<uint8_t[]> data(new uint8_t[dataLen]);
+        memset(data.get(), 0xFF, dataLen);
+        fwrite(data.get(), 1, dataLen, f);
+        m_dirInUse->commitFiles(f);
+        fclose(f);
+    }
 }
 
 File::File(char data[])
@@ -178,6 +221,83 @@ BlockAllocationTable::BlockAllocationTable(uint32_t blockCount)
     calculateChecksum((uint16_t*)(__raw + 4), 0xFFE, &m_checksum, &m_checksumInv);
 }
 
+uint16_t BlockAllocationTable::getNextBlock(uint16_t block) const
+{
+    if ((block < FSTBlocks) || (block > 4091))
+        return 0;
+
+    return SBig(m_map[block - FSTBlocks]);
+}
+
+uint16_t BlockAllocationTable::nextFreeBlock(uint16_t maxBlock, uint16_t startingBlock) const
+{
+    if (m_freeBlocks > 0)
+    {
+        maxBlock = std::min(maxBlock, uint16_t(0xFFB));
+        for (uint16_t i = startingBlock ; i < maxBlock ; ++i)
+        {
+            if (m_map[i - FSTBlocks] == 0)
+                return i;
+        }
+
+        for (uint16_t i = FSTBlocks ; i < startingBlock ; ++i)
+        {
+            if (m_map[i - FSTBlocks] == 0)
+                return i;
+        }
+    }
+
+    return 0xFFFF;
+}
+
+bool BlockAllocationTable::clear(uint16_t first, uint16_t count)
+{
+    std::vector<uint16_t> blocks;
+    while (first != 0xFFFF && first != 0)
+    {
+        blocks.push_back(first);
+        first = getNextBlock(first);
+    }
+    if (first > 0)
+    {
+        size_t length = blocks.size();
+        if (length != count)
+            return false;
+
+        for (size_t i= 0 ; i < length ; ++i)
+            m_map[blocks.at(i) - FSTBlocks] = 0;
+        m_freeBlocks = SBig(uint16_t(m_freeBlocks) + count);
+        return true;
+    }
+    return false;
+}
+
+uint16_t BlockAllocationTable::allocateBlocks(uint16_t count)
+{
+    uint16_t freeBlock = nextFreeBlock(m_lastAllocated + count);
+    if (freeBlock != 0xFFFF)
+    {
+        while ((count--) > 0)
+            m_map[freeBlock + count] = 0xFFFF;
+    }
+    return freeBlock;
+}
+
+void Directory::commitFiles(FILE* mc)
+{
+    for (size_t i = 0 ; i < 127 ; i++)
+    {
+        if (m_files[i].m_id[0] == 0xFF && m_files[i].m_id[1] == 0xFF &&
+            m_files[i].m_id[2] == 0xFF && m_files[i].m_id[3] == 0xFF)
+            continue;
+        if (m_files[i].m_firstBlock == 0xFFFF)
+            continue;
+
+        fseek(mc, m_files[i].m_firstBlock * BlockSize, SEEK_SET);
+        //fwrite(m_files[i].m_data.get(), 1, m_files[i].m_blockCount * BlockSize, mc);
+    }
+}
+
 Directory::Directory()
 {
     memset(__raw, 0xFF, BlockSize);
@@ -190,6 +310,50 @@ Directory::Directory(uint8_t data[])
     memcpy((uint16_t*)__raw, data, BlockSize);
 }
 
+Directory::Directory(const Directory& other)
+{
+    memcpy(__raw, other.__raw, BlockSize);
+}
+
+void Directory::operator=(const Directory& other)
+{
+    memcpy(__raw, other.__raw, BlockSize);
+}
+
+File* Directory::getFirstFreeFile(char* game, char* maker, const char* filename)
+{
+    for (uint16_t i = 0 ; i < 127 ; i++)
+    {
+        if (m_files[i].m_id[0] == 0xFF)
+        {
+            File* ret = &m_files[i];
+            if (game && strlen(game) == 4)
+                memcpy(ret->m_id, game, 4);
+            if (maker && strlen(maker) == 2)
+                memcpy(ret->m_maker, maker, 2);
+            memset(ret->m_filename, 0, 32);
+            memcpy(ret->m_filename, filename, 32 - strlen(filename));
+            return &m_files[i];
+        }
+    }
+
+    return nullptr;
+}
+
+File* Directory::getFile(char* game, char* maker, const char* filename)
+{
+    for (uint16_t i = 0 ; i < 127 ; i++)
+    {
+        if (game && strlen(game) == 4 && memcmp(m_files[i].m_id, game, 4))
+            continue;
+        if (maker && strlen(maker) == 2 && memcmp(m_files[i].m_maker, maker, 2))
+            continue;
+        if (!strcmp(m_files[i].m_filename, filename))
+            return &m_files[i];
+    }
+
+    return nullptr;
+}
 
 void calculateChecksum(uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv)
 {
