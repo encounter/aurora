@@ -3,13 +3,16 @@
 
 #include <string>
 #include <vector>
-#include <stdint.h>
 #include <memory.h>
 
-namespace card
+#include "Util.hpp"
+
+namespace kabufuda
 {
-uint32_t constexpr BlockSize = 0x2000;
-uint32_t constexpr MaxFiles = 127;
+uint32_t constexpr BlockSize    = 0x2000;
+uint32_t constexpr MaxFiles     = 127;
+uint32_t constexpr FSTBlocks    = 5;
+uint32_t constexpr MbitToBlocks = 0x10;
 
 /**
  * @brief The EPermissions enum
@@ -52,12 +55,13 @@ enum class ECardSize : uint16_t
  */
 enum class EEncoding : uint16_t
 {
-    ASCII, /**< Standard ASCII Encoding */
-    SJIS   /**< SJIS Encoding for japanese */
+    ASCII,   /**< Standard ASCII Encoding */
+    SJIS     /**< SJIS Encoding for japanese */
 };
 
 class File
 {
+#pragma pack(push, 4)
     union
     {
         struct
@@ -76,42 +80,47 @@ class File
         };
         uint8_t __raw[0x40];
     };
+#pragma pop()
+
 public:
     File() {}
-    File(char data[0x40])
-    {
-        memcpy(__raw, data, 0x40);
-    }
-    File(const char* filename)
-    {
-        memset(m_filename, 0, 0x20);
-        memcpy(m_filename, filename, 0x20);
-    }
+    File(char data[0x40]);
+    File(const char* filename);
     ~File() {}
 };
 
 class BlockAllocationTable
 {
+    friend class Card;
+#pragma pack(push, 4)
     union
     {
         struct
         {
             uint16_t m_checksum;
             uint16_t m_checksumInv;
+            uint16_t m_updateCounter;
             uint16_t m_freeBlocks;
             uint16_t m_lastAllocated;
             uint16_t m_map[0xFFB];
         };
         uint8_t __raw[BlockSize];
     };
+#pragma pop()
+
 public:
-    BlockAllocationTable() {}
+    explicit BlockAllocationTable(uint32_t blockCount = (uint32_t(ECardSize::Card2043Mb) * MbitToBlocks));
     BlockAllocationTable(uint8_t data[BlockSize]);
     ~BlockAllocationTable() {}
+
+    uint16_t getNextBlock() const;
+    uint16_t nextFreeBlock(uint16_t maxBlocks, uint16_t startingBlock = FSTBlocks);
 };
 
 class Directory
 {
+    friend class Card;
+#pragma pack(push, 4)
     union
     {
         struct
@@ -124,17 +133,17 @@ class Directory
         };
         uint8_t __raw[BlockSize];
     };
+#pragma pop()
 public:
-    Directory() {}
-    Directory(uint8_t data[BlockSize])
-    {
-        memcpy(__raw, data, BlockSize);
-    }
+    Directory();
+
+    Directory(uint8_t data[BlockSize]);
     ~Directory() {}
 };
 
 class Card
 {
+#pragma pack(push, 4)
     union
     {
         struct
@@ -154,7 +163,8 @@ class Card
         };
         uint8_t __raw[BlockSize];
     };
-    std::string m_filename;
+#pragma pop()
+    SystemString m_filename;
     Directory  m_dir;
     Directory  m_dirBackup;
     Directory* m_dirInUse = nullptr;
@@ -166,13 +176,14 @@ class Card
     char m_maker[3] = {'\0'};
     void setChecksum(uint16_t checksum)
     {
-        m_checksum = (checksum);
-        m_checksumInv = ~checksum;
+        m_checksum = SBig(checksum);
+        m_checksumInv = SBig(checksum ^ 0xFFFF);
     }
 
+    FILE* m_fileHandle;
 public:
     Card();
-    Card(const std::string& filepath, const char* game = nullptr, const char* maker=nullptr);
+    Card(const SystemString& filepath, const char* game = nullptr, const char* maker=nullptr);
     ~Card();
 
     /**
@@ -216,21 +227,26 @@ public:
     void getChecksum(uint16_t* checksum, uint16_t* inverse);
     /**
      * @brief Formats the memory card and assigns a new serial
-     * @param size The desired size of the file
-     * @param size The desired encoding
-     * @sa ECardSize
-     * @sa EEncoding
+     * @param size The desired size of the file @sa ECardSize
+     * @param encoding The desired encoding @sa EEncoding
      */
-    void format(ECardSize size = ECardSize::Card59Mb, EEncoding encoding = EEncoding::ASCII);
+    void format(EDeviceId deviceId, ECardSize size = ECardSize::Card2043Mb, EEncoding encoding = EEncoding::ASCII);
+
+    /**
+     * @brief getSizeMbit
+     * @return
+     */
+    static uint32_t getSizeMbitFromFile(const SystemString& filename);
 };
 
 /**
  * @brief calculateChecksum
  * @param data
  * @param len
- * @return
+ * @param checksum
+ * @param checksum
  */
-uint16_t calculateChecksum(void* data, size_t len);
+void calculateChecksum(uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv);
 }
 
 #endif // __CARD_HPP__
