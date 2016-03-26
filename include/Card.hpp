@@ -11,11 +11,49 @@ namespace card
 uint32_t constexpr BlockSize = 0x2000;
 uint32_t constexpr MaxFiles = 127;
 
+/**
+ * @brief The EPermissions enum
+ */
 enum class EPermissions : uint8_t
 {
 };
+
+/**
+ * @brief The EBannerFlags enum
+ */
 enum class EBannerFlags : uint8_t
 {
+};
+
+/**
+ * @brief The EDeviceId enum
+ */
+enum class EDeviceId : uint16_t
+{
+    SlotA,
+    SlotB
+};
+
+/**
+ * @brief The ECardSize enum
+ */
+enum class ECardSize : uint16_t
+{
+    Card59Mb   = 0x04,
+    Card123Mb  = 0x08,
+    Card251Mb  = 0x10,
+    Card507Mb  = 0x20,
+    Card1019Mb = 0x40,
+    Card2043Mb = 0x80
+};
+
+/**
+ * @brief The EEncoding enum
+ */
+enum class EEncoding : uint16_t
+{
+    ASCII, /**< Standard ASCII Encoding */
+    SJIS   /**< SJIS Encoding for japanese */
 };
 
 class File
@@ -36,7 +74,7 @@ class File
             uint16_t m_reserved2;
             uint32_t m_commentAddr;
         };
-        uint8_t __raw[0x40] = {0xFF};
+        uint8_t __raw[0x40];
     };
 public:
     File() {}
@@ -64,7 +102,7 @@ class BlockAllocationTable
             uint16_t m_lastAllocated;
             uint16_t m_map[0xFFB];
         };
-        uint8_t __raw[BlockSize] = {0xFF};
+        uint8_t __raw[BlockSize];
     };
 public:
     BlockAllocationTable() {}
@@ -78,13 +116,13 @@ class Directory
     {
         struct
         {
-            File m_files[MaxFiles];
-            uint8_t __padding[0x3a];
+            File     m_files[MaxFiles];
+            uint8_t  __padding[0x3a];
             uint16_t m_updateCounter;
             uint16_t m_checksum;
             uint16_t m_checksumInv;
         };
-        uint8_t __raw[BlockSize] = {0xFF};
+        uint8_t __raw[BlockSize];
     };
 public:
     Directory() {}
@@ -101,7 +139,6 @@ class Card
     {
         struct
         {
-            std::string m_filepath;
             uint8_t  m_serial[12];
             uint64_t m_formatTime;
             int32_t  m_sramBias;
@@ -115,8 +152,9 @@ class Card
             uint16_t m_checksum;
             uint16_t m_checksumInv;
         };
-        uint8_t __raw[BlockSize] = {0xFF};
+        uint8_t __raw[BlockSize];
     };
+    std::string m_filename;
     Directory  m_dir;
     Directory  m_dirBackup;
     Directory* m_dirInUse = nullptr;
@@ -124,18 +162,75 @@ class Card
     BlockAllocationTable  m_batBackup;
     BlockAllocationTable* m_batInUse = nullptr;
 
-    char m_game[4];  /*!< The current selected game,  if null requests return the first matching filename */
-    char m_maker[2]; /*!< The current selected maker, if null requests return the first matching filename */
+    char m_game[5] = {'\0'};
+    char m_maker[3] = {'\0'};
+    void setChecksum(uint16_t checksum)
+    {
+        m_checksum = (checksum);
+        m_checksumInv = ~checksum;
+    }
+
 public:
     Card();
     Card(const std::string& filepath, const char* game = nullptr, const char* maker=nullptr);
-    ~Card() {}
+    ~Card();
 
-    void setGame(const char* id);
+    /**
+     * @brief openFile
+     * @param filename
+     */
+    void openFile(const char* filename);
+    /**
+     * @brief Sets the current game, if not null any openFile requests will only return files that match this game
+     * @param game The target game id, e.g "GM8E"
+     * @sa openFile
+     */
+    void setGame(const char* game);
+    /**
+     * @brief Returns the currently selected game
+     * @return The selected game, or nullptr
+     */
     const uint8_t* getGame() const;
+    /**
+     * @brief Sets the current maker, if not null any openFile requests will only return files that match this maker
+     * @param maker The target maker id, e.g "01"
+     * @sa openFile
+     */
     void setMaker(const char* maker);
+    /**
+     * @brief Returns the currently selected maker
+     * @return The selected maker, or nullptr
+     */
     const uint8_t* getMaker() const;
+    /**
+     * @brief Retrieves the format assigned serial in two 32bit parts
+     * @param s0
+     * @param s1
+     */
+    void getSerial(uint32_t* s0, uint32_t* s1);
+    /**
+     * @brief Retrieves
+     * @param checksum
+     * @param inverse
+     */
+    void getChecksum(uint16_t* checksum, uint16_t* inverse);
+    /**
+     * @brief Formats the memory card and assigns a new serial
+     * @param size The desired size of the file
+     * @param size The desired encoding
+     * @sa ECardSize
+     * @sa EEncoding
+     */
+    void format(ECardSize size = ECardSize::Card59Mb, EEncoding encoding = EEncoding::ASCII);
 };
+
+/**
+ * @brief calculateChecksum
+ * @param data
+ * @param len
+ * @return
+ */
+uint16_t calculateChecksum(void* data, size_t len);
 }
 
 #endif // __CARD_HPP__
