@@ -95,6 +95,13 @@ public:
     ~File() {}
 };
 
+struct FileHandle
+{
+    File* file = nullptr;
+    uint32_t offset =0;
+    operator bool() const { return file != nullptr; }
+};
+
 class BlockAllocationTable
 {
     friend class Card;
@@ -142,7 +149,7 @@ class Directory
         uint8_t __raw[BlockSize];
     };
 #pragma pop()
-    void commitFiles(FILE* mc);
+
 public:
     Directory();
     Directory(uint8_t data[BlockSize]);
@@ -178,6 +185,7 @@ class Card
         uint8_t __raw[BlockSize];
     };
 #pragma pop()
+
     SystemString m_filename;
     Directory  m_dir;
     Directory  m_dirBackup;
@@ -203,14 +211,14 @@ public:
      * @brief openFile
      * @param filename
      */
-    File* openFile(const char* filename);
+    FileHandle openFile(const char* filename);
     /**
      * @brief createFile
      * @param filename
      * @return
      */
-    File* createFile(const char* filename, size_t size);
-    void write(File* f, void* buf, size_t size);
+    FileHandle createFile(const char* filename, size_t size);
+    void write(FileHandle* f, const void* buf, size_t size);
     /**
      * @brief Sets the current game, if not null any openFile requests will only return files that match this game
      * @param game The target game id, e.g "GM8E"
