@@ -43,33 +43,42 @@ Card::Card(const SystemString& filename, const char* game, const char* maker)
 
 Card::~Card()
 {
+    commit();
 }
 
-File* Card::openFile(const char* filename)
+FileHandle Card::openFile(const char* filename)
 {
-    return m_dirInUse->getFile(m_game, m_maker, filename);
+    return {m_dirInUse->getFile(m_game, m_maker, filename)};
 }
 
-File* Card::createFile(const char* filename, size_t size)
+FileHandle Card::createFile(const char* filename, size_t size)
 {
     File* f = m_dirInUse->getFirstFreeFile(m_game, m_maker, filename);
     uint16_t block = m_batInUse->allocateBlocks(size / BlockSize);
     if (f && block != 0xFFFF)
     {
+        //f->m_modifiedTime = SBig(uint32_t(getGCTime()));
         f->m_firstBlock = SBig(block);
         f->m_blockCount = SBig(uint16_t(size / BlockSize));
         commit();
-        return f;
+        return {f};
     }
-    return nullptr;
+    return {};
 }
 
-void Card::write(File* f, void* buf, size_t size)
+void Card::write(FileHandle* f, const void* buf, size_t size)
 {
-    FILE* mc = Fopen(m_filename.c_str(), _S("rb"));
+    FILE* mc = Fopen(m_filename.c_str(), _S("r+"));
+    rewind(mc);
     if (mc)
     {
-        fseek(mc, BlockSize * 5, SEEK_SET);
+        f->file->m_modifiedTime = SBig(uint32_t(getGCTime()));
+        size_t blockOffset = (SBig(f->file->m_firstBlock) * BlockSize) + f->offset;
+        fseek(mc, blockOffset, SEEK_SET);
+        fwrite(buf, 1, size, mc);
+        fclose(mc);
+        f->offset += size;
+        commit();
     }
 }
 
@@ -185,7 +194,7 @@ uint32_t Card::getSizeMbitFromFile(const SystemString& filename)
 
 void Card::commit()
 {
-    FILE* f = Fopen(m_filename.c_str(), _S("wb"));
+    FILE* f = Fopen(m_filename.c_str(), _S("r+"));
     if (f)
     {
         fwrite(__raw, 1, BlockSize, f);
@@ -193,11 +202,6 @@ void Card::commit()
         fwrite(m_dirBackup.__raw, 1, BlockSize, f);
         fwrite(m_bat.__raw, 1, BlockSize, f);
         fwrite(m_batBackup.__raw, 1, BlockSize, f);
-        uint32_t dataLen = ((uint32_t(m_sizeMb) * MbitToBlocks) - 5) * BlockSize;
-        std::unique_ptr<uint8_t[]> data(new uint8_t[dataLen]);
-        memset(data.get(), 0xFF, dataLen);
-        fwrite(data.get(), 1, dataLen, f);
-        m_dirInUse->commitFiles(f);
         fclose(f);
     }
 }
@@ -210,7 +214,9 @@ File::File(char data[])
 File::File(const char* filename)
 {
     memset(m_filename, 0, 0x20);
-    memcpy(m_filename, filename, 32 - strlen(filename));
+    size_t len = strlen(filename);
+    len = std::min<size_t>(len, 32);
+    memcpy(m_filename, filename, len);
 }
 
 BlockAllocationTable::BlockAllocationTable(uint32_t blockCount)
@@ -283,21 +289,6 @@ uint16_t BlockAllocationTable::allocateBlocks(uint16_t count)
     return freeBlock;
 }
 
-void Directory::commitFiles(FILE* mc)
-{
-    for (size_t i = 0 ; i < 127 ; i++)
-    {
-        if (m_files[i].m_id[0] == 0xFF && m_files[i].m_id[1] == 0xFF &&
-            m_files[i].m_id[2] == 0xFF && m_files[i].m_id[3] == 0xFF)
-            continue;
-        if (m_files[i].m_firstBlock == 0xFFFF)
-            continue;
-
-        fseek(mc, m_files[i].m_firstBlock * BlockSize, SEEK_SET);
-        //fwrite(m_files[i].m_data.get(), 1, m_files[i].m_blockCount * BlockSize, mc);
-    }
-}
-
 Directory::Directory()
 {
     memset(__raw, 0xFF, BlockSize);
@@ -307,7 +298,7 @@ Directory::Directory()
 
 Directory::Directory(uint8_t data[])
 {
-    memcpy((uint16_t*)__raw, data, BlockSize);
+    memcpy(__raw, data, BlockSize);
 }
 
 Directory::Directory(const Directory& other)
@@ -327,12 +318,11 @@ File* Directory::getFirstFreeFile(char* game, char* maker, const char* filename)
         if (m_files[i].m_id[0] == 0xFF)
         {
             File* ret = &m_files[i];
+            *ret = File(filename);
             if (game && strlen(game) == 4)
                 memcpy(ret->m_id, game, 4);
             if (maker && strlen(maker) == 2)
                 memcpy(ret->m_maker, maker, 2);
-            memset(ret->m_filename, 0, 32);
-            memcpy(ret->m_filename, filename, 32 - strlen(filename));
             return &m_files[i];
         }
     }
