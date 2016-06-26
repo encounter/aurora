@@ -7,6 +7,23 @@
 
 namespace kabufuda
 {
+
+class FileHandle : public IFileHandle
+{
+    friend class Card;
+    const char* game;
+    const char* maker;
+    const char* filename;
+    uint32_t offset =0;
+public:
+    FileHandle() = default;
+    FileHandle(const char* game, const char* maker, const char* filename)
+        : game(game),
+          maker(maker),
+          filename(filename)
+    {}
+};
+
 void Card::swapEndian()
 {
     m_formatTime = SBig(m_formatTime);
@@ -35,16 +52,16 @@ Card::Card(const SystemString& filename, const char* game, const char* maker)
     if (maker && strlen(maker) == 2)
         memcpy(m_maker, maker, 2);
 
-    FILE* file = Fopen(m_filename.c_str(), _S("rb"));
-    if (file)
+    m_fileHandle = Fopen(m_filename.c_str(), _S("rb"));
+    if (m_fileHandle)
     {
-        fread(__raw, 1, BlockSize, file);
+        fread(__raw, 1, BlockSize, m_fileHandle);
         m_maxBlock = m_sizeMb * MbitToBlocks;
         swapEndian();
-        fread(m_dir.__raw, 1, BlockSize, file);
-        fread(m_dirBackup.__raw, 1, BlockSize, file);
-        fread(m_bat.__raw, 1, BlockSize, file);
-        fread(m_batBackup.__raw, 1, BlockSize, file);
+        fread(m_dir.__raw, 1, BlockSize, m_fileHandle);
+        fread(m_dirBackup.__raw, 1, BlockSize, m_fileHandle);
+        fread(m_bat.__raw, 1, BlockSize, m_fileHandle);
+        fread(m_batBackup.__raw, 1, BlockSize, m_fileHandle);
         if (m_dir.m_updateCounter > m_dirBackup.m_updateCounter)
         {
             m_currentDir = &m_dir;
@@ -70,19 +87,62 @@ Card::Card(const SystemString& filename, const char* game, const char* maker)
         m_previousDir->swapEndian();
         m_currentBat->swapEndian();
         m_previousBat->swapEndian();
+        /* Close and reopen in read/write mode */
+        fclose(m_fileHandle);
+        m_fileHandle = Fopen(m_filename.c_str(), _S("r+"));
     }
 }
 
 Card::~Card()
 {
+    commit();
+    if (m_fileHandle)
+        fclose(m_fileHandle);
+    m_fileHandle = nullptr;
 }
 
-FileHandle Card::openFile(const char* filename)
+std::unique_ptr<IFileHandle> Card::openFile(const char* filename)
 {
-    return {m_currentDir->getFile(m_game, m_maker, filename)};
+    File* f = m_currentDir->getFile(m_game, m_maker, filename);
+    if (f)
+        return std::unique_ptr<IFileHandle>(new FileHandle(m_game, m_maker, filename));
+    return nullptr;
 }
 
-FileHandle Card::createFile(const char* filename, size_t size)
+void Card::updateDirAndBat()
+{
+    Directory updateDir = *m_currentDir;
+    updateDir.m_updateCounter++;
+
+    *m_previousDir = updateDir;
+    if (m_previousDir == &m_dir)
+    {
+        m_currentDir = &m_dir;
+        m_previousDir = &m_dirBackup;
+    }
+    else
+    {
+        m_currentDir = &m_dirBackup;
+        m_previousDir = &m_dir;
+    }
+
+    BlockAllocationTable updateBat = *m_currentBat;
+    updateBat.m_updateCounter++;
+
+    *m_previousBat = updateBat;
+    if (m_previousBat == &m_bat)
+    {
+        m_currentBat = &m_bat;
+        m_previousBat = &m_batBackup;
+    }
+    else
+    {
+        m_currentBat = &m_batBackup;
+        m_previousBat = &m_bat;
+    }
+}
+
+std::unique_ptr<IFileHandle> Card::createFile(const char* filename, size_t size)
 {
     File* f = m_currentDir->getFirstFreeFile(m_game, m_maker, filename);
     uint16_t block = m_currentBat->allocateBlocks(size / BlockSize, m_maxBlock);
@@ -91,32 +151,144 @@ FileHandle Card::createFile(const char* filename, size_t size)
         f->m_modifiedTime = getGCTime();
         f->m_firstBlock = block;
         f->m_blockCount = size / BlockSize;
-        return {f};
+
+        updateDirAndBat();
+
+        return std::unique_ptr<FileHandle>(new FileHandle(m_game, m_maker, filename));
     }
-    return {};
+    return nullptr;
 }
 
-void Card::write(FileHandle* f, const void* buf, size_t size)
+void Card::deleteFile(const std::unique_ptr<IFileHandle> &fh)
 {
-    FILE* mc = Fopen(m_filename.c_str(), _S("r+"));
-    rewind(mc);
-    if (mc)
+    if (!fh)
+        return;
+    FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
+    uint16_t block = m_currentDir->getFile(f->game, f->maker, f->filename)->m_firstBlock;
+
+    while(block != 0xFFFF)
     {
-        f->file->m_modifiedTime = getGCTime();
-        if (f->blockOffset > BlockSize)
+        /* TODO: add a fragmentation check */
+        uint16_t nextBlock = m_currentBat->getNextBlock(block);
+        m_currentBat->clear(block, 1);
+        block = nextBlock;
+    }
+    *m_currentDir->getFile(f->game, f->maker, f->filename) = File();
+
+    updateDirAndBat();
+}
+
+void Card::write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t size)
+{
+    if (!fh)
+        return;
+
+    if (m_fileHandle)
+    {
+        FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
+        File* file = m_currentDir->getFile(f->game, f->maker, f->filename);
+        /* Block handling is a little different from cache handling,
+         * since each block can be in an arbitrary location we must
+         * first find our starting block.
+         */
+        const uint16_t blockId = (f->offset / BlockSize);
+        uint16_t block = file->m_firstBlock;
+        for (uint16_t i = 0; i < blockId; i++)
+            block = m_currentBat->getNextBlock(block);
+
+        const uint8_t* tmpBuf = reinterpret_cast<const uint8_t*>(buf);
+        uint16_t curBlock = block;
+        uint32_t blockOffset = f->offset % BlockSize;
+        uint32_t rem = size;
+        while (rem)
         {
-            f->curBlock = m_currentBat->m_map[f->curBlock - FSTBlocks];
-            f->blockOffset = 0;
-            /* TODO: Add error */
-            if (f->curBlock == 0xFFFF)
+            if (curBlock == 0xFFFF)
                 return;
+
+            uint32_t cacheSize = rem;
+            if (cacheSize + blockOffset > BlockSize)
+                cacheSize = BlockSize - blockOffset;
+            uint32_t offset = (curBlock * BlockSize) + blockOffset;
+            fseek(m_fileHandle, offset, SEEK_SET);
+            fwrite(tmpBuf, 1, cacheSize, m_fileHandle);
+            tmpBuf += cacheSize;
+            rem -= cacheSize;
+            blockOffset += cacheSize;
+            if (blockOffset >= BlockSize)
+            {
+                curBlock = m_currentBat->getNextBlock(curBlock);
+                blockOffset = 0;
+            }
         }
-        size_t blockOffset = (f->curBlock * BlockSize) + f->offset;
-        fseek(mc, blockOffset, SEEK_SET);
-        fwrite(buf, 1, size, mc);
-        fclose(mc);
         f->offset += size;
-        f->blockOffset += size;
+    }
+}
+
+void Card::read(const std::unique_ptr<IFileHandle> &fh, void *dst, size_t size)
+{
+    if (!fh)
+        return;
+
+    if (m_fileHandle)
+    {
+        FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
+        File* file = m_currentDir->getFile(f->game, f->maker, f->filename);
+        /* Block handling is a little different from cache handling,
+         * since each block can be in an arbitrary location we must
+         * first find our starting block.
+         */
+        const uint16_t blockId = (f->offset / BlockSize);
+        uint16_t block = file->m_firstBlock;
+        for (uint16_t i = 0; i < blockId; i++)
+            block = m_currentBat->getNextBlock(block);
+
+        uint8_t* tmpBuf = reinterpret_cast<uint8_t*>(dst);
+        uint16_t curBlock = block;
+        uint32_t blockOffset = f->offset % BlockSize;
+        uint32_t rem = size;
+        while (rem)
+        {
+            if (curBlock == 0xFFFF)
+                return;
+
+            uint32_t cacheSize = rem;
+            if (cacheSize + blockOffset > BlockSize)
+                cacheSize = BlockSize - blockOffset;
+            uint32_t offset = (curBlock * BlockSize) + blockOffset;
+            fseek(m_fileHandle, offset, SEEK_SET);
+            fread(tmpBuf, 1, cacheSize, m_fileHandle);
+            tmpBuf += cacheSize;
+            rem -= cacheSize;
+            blockOffset += cacheSize;
+            if (blockOffset >= BlockSize)
+            {
+                curBlock = m_currentBat->getNextBlock(curBlock);
+                blockOffset = 0;
+            }
+        }
+        f->offset += size;
+    }
+}
+
+void Card::seek(const std::unique_ptr<IFileHandle> &fh, uint32_t pos, SeekOrigin whence)
+{
+    if (!fh)
+        return;
+
+    FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
+    File* file = m_currentDir->getFile(f->game, f->maker, f->filename);
+    uint32_t oldOff = f->offset;
+    switch(whence)
+    {
+    case SeekOrigin::Begin:
+        f->offset = pos;
+        break;
+    case SeekOrigin::Current:
+        f->offset += pos;
+        break;
+    case SeekOrigin::End:
+        f->offset = (file->m_blockCount * BlockSize) - pos;
+        break;
     }
 }
 
@@ -204,29 +376,32 @@ void Card::format(EDeviceId id, ECardSize size, EEncoding encoding)
     m_bat         = BlockAllocationTable(uint32_t(size) * MbitToBlocks);
     m_batBackup   = m_bat;
 
-    FILE* f = Fopen(m_filename.c_str(), _S("wb"));
-    if (f)
+    if (!m_fileHandle)
+        m_fileHandle = Fopen(m_filename.c_str(), _S("wb"));
+
+    if (m_fileHandle)
     {
         swapEndian();
-        fwrite(__raw, 1, BlockSize, f);
+        fwrite(__raw, 1, BlockSize, m_fileHandle);
         swapEndian();
         Directory tmpDir = m_dir;
         tmpDir.swapEndian();
-        fwrite(tmpDir.__raw, 1, BlockSize, f);
+        fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
         tmpDir = m_dirBackup;
         tmpDir.swapEndian();
-        fwrite(tmpDir.__raw, 1, BlockSize, f);
+        fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
         BlockAllocationTable tmpBat = m_bat;
         tmpBat.swapEndian();
-        fwrite(tmpBat.__raw, 1, BlockSize, f);
+        fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
         tmpBat = m_batBackup;
         tmpBat.swapEndian();
-        fwrite(tmpBat.__raw, 1, BlockSize, f);
+        fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
         uint32_t dataLen = ((uint32_t(size) * MbitToBlocks) - 5) * BlockSize;
         std::unique_ptr<uint8_t[]> data(new uint8_t[dataLen]);
         memset(data.get(), 0xFF, dataLen);
-        fwrite(data.get(), 1, dataLen, f);
-        fclose(f);
+        fwrite(data.get(), 1, dataLen, m_fileHandle);
+        fclose(m_fileHandle);
+        m_fileHandle = Fopen(m_filename.c_str(), _S("r+"));
     }
 }
 
@@ -239,55 +414,25 @@ uint32_t Card::getSizeMbitFromFile(const SystemString& filename)
 
 void Card::commit()
 {
-    FILE* f = Fopen(m_filename.c_str(), _S("r+"));
-    if (f)
+    if (m_fileHandle)
     {
-        Directory updateDir = *m_currentDir;
-        updateDir.m_updateCounter++;
-
-        *m_previousDir = updateDir;
-        if (m_previousDir == &m_dir)
-        {
-            m_currentDir = &m_dir;
-            m_previousDir = &m_dirBackup;
-        }
-        else
-        {
-            m_currentDir = &m_dirBackup;
-            m_previousDir = &m_dir;
-        }
-
-        BlockAllocationTable updateBat = *m_currentBat;
-        updateBat.m_updateCounter++;
-
-        *m_previousBat = updateBat;
-        if (m_previousBat == &m_bat)
-        {
-            m_currentBat = &m_bat;
-            m_previousBat = &m_batBackup;
-        }
-        else
-        {
-            m_currentBat = &m_batBackup;
-            m_previousBat = &m_bat;
-        }
+        rewind(m_fileHandle);
 
         swapEndian();
-        fwrite(__raw, 1, BlockSize, f);
+        fwrite(__raw, 1, BlockSize, m_fileHandle);
         swapEndian();
         Directory tmpDir = *m_currentDir;
         tmpDir.swapEndian();
-        fwrite(tmpDir.__raw, 1, BlockSize, f);
+        fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
         tmpDir = *m_previousDir;
         tmpDir.swapEndian();
-        fwrite(tmpDir.__raw, 1, BlockSize, f);
+        fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
         BlockAllocationTable tmpBat = *m_currentBat;
         tmpBat.swapEndian();
-        fwrite(tmpBat.__raw, 1, BlockSize, f);
+        fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
         tmpBat = *m_previousBat;
         tmpBat.swapEndian();
-        fwrite(tmpBat.__raw, 1, BlockSize, f);
-        fclose(f);
+        fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
     }
 }
 
@@ -316,6 +461,10 @@ void File::swapEndian()
     m_commentAddr = SBig(m_commentAddr);
 }
 
+File::File()
+{
+    memset(__raw, 0xFF, 0x40);
+}
 
 void BlockAllocationTable::swapEndian()
 {
@@ -329,17 +478,22 @@ void BlockAllocationTable::swapEndian()
     });
 }
 
+void BlockAllocationTable::updateChecksum()
+{
+    calculateChecksum(reinterpret_cast<uint16_t*>(__raw + 4), 0xFFE, &m_checksum, &m_checksumInv);
+}
+
 BlockAllocationTable::BlockAllocationTable(uint32_t blockCount)
 {
     memset(__raw, 0, BlockSize);
     m_freeBlocks = blockCount - FSTBlocks;
     m_lastAllocated = 4;
-    calculateChecksum((uint16_t*)(__raw + 4), 0xFFE, &m_checksum, &m_checksumInv);
+    updateChecksum();
 }
 
 uint16_t BlockAllocationTable::getNextBlock(uint16_t block) const
 {
-    if ((block < FSTBlocks) || (block > 4091))
+    if ((block < FSTBlocks) || (block > (BATSize - FSTBlocks)))
         return 0;
 
     return m_map[block - FSTBlocks];
@@ -418,11 +572,16 @@ void Directory::swapEndian()
     m_checksumInv = SBig(m_checksumInv);
 }
 
+void Directory::updateChecksum()
+{
+    calculateChecksum(reinterpret_cast<uint16_t*>(__raw), 0xFFE, &m_checksum, &m_checksumInv);
+}
+
 Directory::Directory()
 {
     memset(__raw, 0xFF, BlockSize);
     m_updateCounter = 0;
-    calculateChecksum((uint16_t*)__raw, 0xFFE, &m_checksum, &m_checksumInv);
+    updateChecksum();
 }
 
 Directory::Directory(uint8_t data[])
@@ -440,14 +599,13 @@ void Directory::operator=(const Directory& other)
     memcpy(__raw, other.__raw, BlockSize);
 }
 
-File* Directory::getFirstFreeFile(char* game, char* maker, const char* filename)
+File* Directory::getFirstFreeFile(const char* game, const char* maker, const char* filename)
 {
     for (uint16_t i = 0 ; i < 127 ; i++)
     {
         if (m_files[i].m_id[0] == 0xFF)
         {
             File* ret = &m_files[i];
-            memset(ret->__raw, 0xFF, sizeof(File));
             *ret = File(filename);
             if (game && strlen(game) == 4)
                 memcpy(ret->m_id, game, 4);
@@ -460,7 +618,7 @@ File* Directory::getFirstFreeFile(char* game, char* maker, const char* filename)
     return nullptr;
 }
 
-File* Directory::getFile(char* game, char* maker, const char* filename)
+File* Directory::getFile(const char* game, const char* maker, const char* filename)
 {
     for (uint16_t i = 0 ; i < 127 ; i++)
     {
@@ -479,7 +637,7 @@ void calculateChecksum(uint16_t* data, size_t len, uint16_t* checksum, uint16_t*
 {
     *checksum = 0;
     *checksumInv = 0;
-    for (size_t i = 0; i < len; i++)
+    for (size_t i = 0; i < len; ++i)
     {
         *checksum += data[i];
         *checksumInv += data[i] ^ 0xFFFF;
