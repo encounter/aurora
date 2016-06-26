@@ -28,6 +28,13 @@ enum class EBannerFlags : uint8_t
 {
 };
 
+enum class SeekOrigin
+{
+    Begin,
+    Current,
+    End
+};
+
 /**
  * @brief The EDeviceId enum
  */
@@ -92,24 +99,16 @@ class File
     void swapEndian();
 
 public:
-    File() {}
+    File();
     File(char data[0x40]);
     File(const char* filename);
     ~File() {}
 };
 
-struct FileHandle
+class IFileHandle
 {
-    File* file = nullptr;
-    uint16_t curBlock = 0;
-    uint16_t blockOffset = 0;
-    uint32_t offset =0;
-    operator bool() const { return file != nullptr; }
-    FileHandle(File* file = nullptr)
-        : file(file),
-          curBlock(file ? file->m_firstBlock : 0)
-    {
-    }
+public:
+    virtual ~IFileHandle() {}
 };
 
 class BlockAllocationTable
@@ -132,6 +131,7 @@ class BlockAllocationTable
 #pragma pop()
 
     void swapEndian();
+    void updateChecksum();
 
 public:
     explicit BlockAllocationTable(uint32_t blockCount = (uint32_t(ECardSize::Card2043Mb) * MbitToBlocks));
@@ -163,6 +163,7 @@ class Directory
 #pragma pop()
 
     void swapEndian();
+    void updateChecksum();
 
 public:
     Directory();
@@ -171,9 +172,8 @@ public:
     void operator=(const Directory& other);
     ~Directory() {}
 
-    File* getFirstFreeFile(char* game, char* maker, const char* filename);
-    File* getFile(char* game, char* maker, const char* filename);
-
+    File* getFirstFreeFile(const char* game, const char* maker, const char* filename);
+    File* getFile(const char* game, const char* maker, const char* filename);
 };
 
 class Card
@@ -199,10 +199,10 @@ class Card
         uint8_t __raw[BlockSize];
     };
 
-    void swapEndian();
 #pragma pop()
 
     SystemString m_filename;
+    FILE*      m_fileHandle = nullptr;
     Directory  m_dir;
     Directory  m_dirBackup;
     Directory* m_currentDir;
@@ -215,6 +215,9 @@ class Card
     uint16_t m_maxBlock;
     char m_game[5] = {'\0'};
     char m_maker[3] = {'\0'};
+
+    void swapEndian();
+    void updateDirAndBat();
 public:
     Card();
     Card(const SystemString& filepath, const char* game = nullptr, const char* maker=nullptr);
@@ -224,14 +227,17 @@ public:
      * @brief openFile
      * @param filename
      */
-    FileHandle openFile(const char* filename);
+    std::unique_ptr<IFileHandle>  openFile(const char* filename);
     /**
      * @brief createFile
      * @param filename
      * @return
      */
-    FileHandle createFile(const char* filename, size_t size);
-    void write(FileHandle* f, const void* buf, size_t size);
+    std::unique_ptr<IFileHandle>  createFile(const char* filename, size_t size);
+    void deleteFile(const std::unique_ptr<IFileHandle>& fh);
+    void write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t size);
+    void read(const std::unique_ptr<IFileHandle>& fh, void* dst, size_t size);
+    void seek(const std::unique_ptr<IFileHandle>& fh, uint32_t pos, SeekOrigin whence);
     /**
      * @brief Sets the current game, if not null any openFile requests will only return files that match this game
      * @param game The target game id, e.g "GM8E"
@@ -280,6 +286,8 @@ public:
     static uint32_t getSizeMbitFromFile(const SystemString& filename);
 
     void commit();
+
+    operator bool() const { return m_fileHandle != nullptr; }
 };
 
 /**
