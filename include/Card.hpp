@@ -13,6 +13,7 @@ uint32_t constexpr BlockSize    = 0x2000;
 uint32_t constexpr MaxFiles     = 127;
 uint32_t constexpr FSTBlocks    = 5;
 uint32_t constexpr MbitToBlocks = 0x10;
+uint32_t constexpr BATSize      = 0xFFB;
 
 /**
  * @brief The EPermissions enum
@@ -61,6 +62,7 @@ enum class EEncoding : uint16_t
 
 class File
 {
+    friend class FileHandle;
     friend class Directory;
     friend class Card;
 #pragma pack(push, 4)
@@ -86,7 +88,9 @@ class File
         };
         uint8_t __raw[0x40];
     };
+
 #pragma pop()
+    void swapEndian();
 
 public:
     File() {}
@@ -98,8 +102,15 @@ public:
 struct FileHandle
 {
     File* file = nullptr;
+    uint16_t curBlock = 0;
+    uint16_t blockOffset = 0;
     uint32_t offset =0;
     operator bool() const { return file != nullptr; }
+    FileHandle(File* file = nullptr)
+        : file(file),
+          curBlock(file ? file->m_firstBlock : 0)
+    {
+    }
 };
 
 class BlockAllocationTable
@@ -121,15 +132,17 @@ class BlockAllocationTable
     };
 #pragma pop()
 
+    void swapEndian();
+
 public:
     explicit BlockAllocationTable(uint32_t blockCount = (uint32_t(ECardSize::Card2043Mb) * MbitToBlocks));
     BlockAllocationTable(uint8_t data[BlockSize]);
     ~BlockAllocationTable() {}
 
     uint16_t getNextBlock(uint16_t block) const;
-    uint16_t nextFreeBlock(uint16_t maxBlocks, uint16_t startingBlock = FSTBlocks) const;
+    uint16_t nextFreeBlock(uint16_t maxBlock, uint16_t startingBlock) const;
     bool clear(uint16_t first, uint16_t count);
-    uint16_t allocateBlocks(uint16_t count);
+    uint16_t allocateBlocks(uint16_t count, uint16_t maxBlocks);
 };
 
 class Directory
@@ -149,6 +162,8 @@ class Directory
         uint8_t __raw[BlockSize];
     };
 #pragma pop()
+
+    void swapEndian();
 
 public:
     Directory();
@@ -184,24 +199,23 @@ class Card
         };
         uint8_t __raw[BlockSize];
     };
+
+    void swapEndian();
 #pragma pop()
 
     SystemString m_filename;
     Directory  m_dir;
     Directory  m_dirBackup;
-    Directory* m_dirInUse = nullptr;
+    Directory* m_currentDir;
+    Directory* m_previousDir;
     BlockAllocationTable  m_bat;
     BlockAllocationTable  m_batBackup;
-    BlockAllocationTable* m_batInUse = nullptr;
+    BlockAllocationTable* m_currentBat;
+    BlockAllocationTable* m_previousBat;
 
+    uint16_t m_maxBlock;
     char m_game[5] = {'\0'};
     char m_maker[3] = {'\0'};
-    void setChecksum(uint16_t checksum)
-    {
-        m_checksum = SBig(checksum);
-        m_checksumInv = SBig(checksum ^ 0xFFFF);
-    }
-
 public:
     Card();
     Card(const SystemString& filepath, const char* game = nullptr, const char* maker=nullptr);
