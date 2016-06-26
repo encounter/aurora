@@ -248,13 +248,13 @@ void Card::commit()
         *m_previousDir = updateDir;
         if (m_previousDir == &m_dir)
         {
-          m_currentDir = &m_dir;
-          m_previousDir = &m_dirBackup;
+            m_currentDir = &m_dir;
+            m_previousDir = &m_dirBackup;
         }
         else
         {
-          m_currentDir = &m_dirBackup;
-          m_previousDir = &m_dir;
+            m_currentDir = &m_dirBackup;
+            m_previousDir = &m_dir;
         }
 
         BlockAllocationTable updateBat = *m_currentBat;
@@ -263,13 +263,13 @@ void Card::commit()
         *m_previousBat = updateBat;
         if (m_previousBat == &m_bat)
         {
-          m_currentBat = &m_bat;
-          m_previousBat = &m_batBackup;
+            m_currentBat = &m_bat;
+            m_previousBat = &m_batBackup;
         }
         else
         {
-          m_currentBat = &m_batBackup;
-          m_previousBat = &m_bat;
+            m_currentBat = &m_batBackup;
+            m_previousBat = &m_bat;
         }
 
         swapEndian();
@@ -351,12 +351,12 @@ uint16_t BlockAllocationTable::nextFreeBlock(uint16_t maxBlock, uint16_t startin
     {
         maxBlock = std::min(maxBlock, uint16_t(BATSize));
         for (uint16_t i = startingBlock; i < maxBlock; ++i)
-          if (m_map[i - FSTBlocks] == 0)
-            return i;
+            if (m_map[i - FSTBlocks] == 0)
+                return i;
 
         for (uint16_t i = FSTBlocks; i < startingBlock; ++i)
-          if (m_map[i - FSTBlocks] == 0)
-            return i;
+            if (m_map[i - FSTBlocks] == 0)
+                return i;
     }
 
     return 0xFFFF;
@@ -393,12 +393,11 @@ uint16_t BlockAllocationTable::allocateBlocks(uint16_t count, uint16_t maxBlocks
         uint16_t tmpCount = count;
         while ((count--) > 0)
         {
-            if (count == 0)
-                m_map[(freeBlock - FSTBlocks)] = 0xFFFF;
-            else
+            m_map[(freeBlock - FSTBlocks)] = 0xFFFF;
+            if (count != 0)
             {
-                m_map[(freeBlock - FSTBlocks)] = freeBlock + 1;
-                freeBlock = nextFreeBlock(maxBlocks - FSTBlocks, m_lastAllocated + 1);
+                m_map[(freeBlock - FSTBlocks)] = nextFreeBlock(maxBlocks - FSTBlocks, m_lastAllocated + 1);
+                freeBlock = m_map[(freeBlock - FSTBlocks)];
             }
             m_lastAllocated = freeBlock;
         }
