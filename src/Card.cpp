@@ -105,11 +105,11 @@ void Card::write(FileHandle* f, const void* buf, size_t size)
         f->file->m_modifiedTime = getGCTime();
         if (f->blockOffset > BlockSize)
         {
+            f->curBlock = m_currentBat->m_map[f->curBlock - FSTBlocks];
+            f->blockOffset = 0;
             /* TODO: Add error */
             if (f->curBlock == 0xFFFF)
                 return;
-
-            f->curBlock = m_currentBat->m_map[f->curBlock];
         }
         size_t blockOffset = (f->curBlock * BlockSize) + f->offset;
         fseek(mc, blockOffset, SEEK_SET);
