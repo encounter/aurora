@@ -220,8 +220,10 @@ class Card
 
     void swapEndian();
     void updateDirAndBat();
+    void updateChecksum();
 public:
     Card();
+    Card(const Card& other);
     Card(const SystemString& filepath, const char* game = nullptr, const char* maker=nullptr);
     ~Card();
 
@@ -299,7 +301,7 @@ public:
  * @param checksum
  * @param checksumInv
  */
-void calculateChecksum(const uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv);
+void calculateChecksumBE(const uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv);
 }
 
 #endif // __CARD_HPP__

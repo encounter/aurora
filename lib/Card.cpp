@@ -52,6 +52,17 @@ Card::Card()
     memset(__raw, 0xFF, BlockSize);
 }
 
+Card::Card(const Card& other)
+{
+    memcpy(__raw, other.__raw, BlockSize);
+    m_dir = other.m_dir;
+    m_dirBackup = other.m_dirBackup;
+    m_bat = other.m_bat;
+    m_batBackup = other.m_batBackup;
+    memcpy(m_game, other.m_game, 4);
+    memcpy(m_maker, other.m_maker, 2);
+}
+
 Card::Card(const SystemString& filename, const char* game, const char* maker)
     : m_filename(filename)
 {
@@ -111,7 +122,9 @@ Card::Card(const SystemString& filename, const char* game, const char* maker)
 
         /* Close and reopen in read/write mode */
         fclose(m_fileHandle);
+        m_fileHandle = nullptr;
         m_fileHandle = Fopen(m_filename.c_str(), _S("r+"));
+        rewind(m_fileHandle);
     }
 }
 
@@ -142,6 +155,13 @@ void Card::updateDirAndBat()
     updateBat.m_updateCounter++;
     *m_previousBat = updateBat;
     std::swap(m_currentBat, m_previousBat);
+}
+
+void Card::updateChecksum()
+{
+    swapEndian();
+    calculateChecksumBE(reinterpret_cast<uint16_t*>(__raw), 0xFE, &m_checksum, &m_checksumInv);
+    swapEndian();
 }
 
 std::unique_ptr<IFileHandle> Card::createFile(const char* filename, size_t size)
@@ -379,7 +399,7 @@ void Card::format(EDeviceId id, ECardSize size, EEncoding encoding)
     m_sizeMb      = uint16_t(size);
     m_maxBlock    = m_sizeMb * MbitToBlocks;
     m_encoding    = uint16_t(encoding);
-    calculateChecksum(reinterpret_cast<uint16_t*>(__raw), 0xFE, &m_checksum, &m_checksumInv);
+    updateChecksum();
     m_dir         = Directory();
     m_dirBackup   = m_dir;
     m_bat         = BlockAllocationTable(uint32_t(size) * MbitToBlocks);
@@ -389,8 +409,10 @@ void Card::format(EDeviceId id, ECardSize size, EEncoding encoding)
     m_currentBat  = &m_batBackup;
     m_previousBat = &m_bat;
 
-    if (!m_fileHandle)
-        m_fileHandle = Fopen(m_filename.c_str(), _S("wb"));
+    if (m_fileHandle)
+        fclose(m_fileHandle);
+
+    m_fileHandle = Fopen(m_filename.c_str(), _S("wb"));
 
     if (m_fileHandle)
     {
@@ -459,8 +481,10 @@ Card::operator bool() const
         return false;
 
     uint16_t ckSum, ckSumInv;
-    calculateChecksum(reinterpret_cast<const uint16_t*>(__raw), 0xFE, &ckSum, &ckSumInv);
-    if (ckSum != m_checksum || ckSumInv != m_checksumInv)
+    Card tmp = *this;
+    tmp.swapEndian();
+    calculateChecksumBE(reinterpret_cast<const uint16_t*>(tmp.__raw), 0xFE, &ckSum, &ckSumInv);
+    if (SBig(ckSum) != m_checksum || SBig(ckSumInv) != m_checksumInv)
         return false;
     if (!m_dir.valid() && !m_dirBackup.valid())
         return false;
@@ -514,14 +538,18 @@ void BlockAllocationTable::swapEndian()
 
 void BlockAllocationTable::updateChecksum()
 {
-    calculateChecksum(reinterpret_cast<uint16_t*>(__raw + 4), 0xFFE, &m_checksum, &m_checksumInv);
+    swapEndian();
+    calculateChecksumBE(reinterpret_cast<uint16_t*>(__raw + 4), 0xFFE, &m_checksum, &m_checksumInv);
+    swapEndian();
 }
 
 bool BlockAllocationTable::valid() const
 {
     uint16_t ckSum, ckSumInv;
-    calculateChecksum(reinterpret_cast<const uint16_t*>(__raw + 4), 0xFFE, &ckSum, &ckSumInv);
-    return (ckSum == m_checksum && ckSumInv == m_checksumInv);
+    BlockAllocationTable tmp = *this;
+    tmp.swapEndian();
+    calculateChecksumBE(reinterpret_cast<const uint16_t*>(tmp.__raw + 4), 0xFFE, &ckSum, &ckSumInv);
+    return (SBig(ckSum) == m_checksum && SBig(ckSumInv) == m_checksumInv);
 }
 
 BlockAllocationTable::BlockAllocationTable(uint32_t blockCount)
@@ -615,14 +643,18 @@ void Directory::swapEndian()
 
 void Directory::updateChecksum()
 {
-    calculateChecksum(reinterpret_cast<uint16_t*>(__raw), 0xFFE, &m_checksum, &m_checksumInv);
+    swapEndian();
+    calculateChecksumBE(reinterpret_cast<uint16_t*>(__raw), 0xFFE, &m_checksum, &m_checksumInv);
+    swapEndian();
 }
 
 bool Directory::valid() const
 {
     uint16_t ckSum, ckSumInv;
-    calculateChecksum(reinterpret_cast<const uint16_t*>(__raw), 0xFFE, &ckSum, &ckSumInv);
-    return (ckSum == m_checksum && ckSumInv == m_checksumInv);
+    Directory tmp = *this;
+    tmp.swapEndian();
+    calculateChecksumBE(reinterpret_cast<const uint16_t*>(tmp.__raw), 0xFFE, &ckSum, &ckSumInv);
+    return (SBig(ckSum) == m_checksum && SBig(ckSumInv) == m_checksumInv);
 }
 
 Directory::Directory()
@@ -681,17 +713,18 @@ File* Directory::getFile(const char* game, const char* maker, const char* filena
     return nullptr;
 }
 
-void calculateChecksum(const uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv)
+void calculateChecksumBE(const uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv)
 {
     *checksum = 0;
     *checksumInv = 0;
     for (size_t i = 0; i < len; ++i)
     {
-        *checksum += data[i];
-        *checksumInv += data[i] ^ 0xFFFF;
+        *checksum += SBig(data[i]);
+        *checksumInv += SBig(uint16_t(data[i] ^ 0xFFFF));
     }
-    *checksum = *checksum;
-    *checksumInv = *checksumInv;
+
+    *checksum = SBig(*checksum);
+    *checksumInv = SBig(*checksumInv);
     if (*checksum == 0xFFFF)
         *checksum = 0;
     if (*checksumInv == 0xFFFF)
