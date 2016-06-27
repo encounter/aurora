@@ -95,7 +95,7 @@ class File
         uint8_t __raw[0x40];
     };
 
-#pragma pop()
+#pragma pack(pop)
     void swapEndian();
 
 public:
@@ -108,7 +108,7 @@ public:
 class IFileHandle
 {
 public:
-    virtual ~IFileHandle() {}
+    virtual ~IFileHandle();
 };
 
 class BlockAllocationTable
@@ -128,10 +128,11 @@ class BlockAllocationTable
         };
         uint8_t __raw[BlockSize];
     };
-#pragma pop()
+#pragma pack(pop)
 
     void swapEndian();
     void updateChecksum();
+    bool valid() const;
 
 public:
     explicit BlockAllocationTable(uint32_t blockCount = (uint32_t(ECardSize::Card2043Mb) * MbitToBlocks));
@@ -160,10 +161,11 @@ class Directory
         };
         uint8_t __raw[BlockSize];
     };
-#pragma pop()
+#pragma pack(pop)
 
     void swapEndian();
     void updateChecksum();
+    bool valid() const;
 
 public:
     Directory();
@@ -199,7 +201,7 @@ class Card
         uint8_t __raw[BlockSize];
     };
 
-#pragma pop()
+#pragma pack(pop)
 
     SystemString m_filename;
     FILE*      m_fileHandle = nullptr;
@@ -237,7 +239,7 @@ public:
     void deleteFile(const std::unique_ptr<IFileHandle>& fh);
     void write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t size);
     void read(const std::unique_ptr<IFileHandle>& fh, void* dst, size_t size);
-    void seek(const std::unique_ptr<IFileHandle>& fh, uint32_t pos, SeekOrigin whence);
+    void seek(const std::unique_ptr<IFileHandle>& fh, int32_t pos, SeekOrigin whence);
     /**
      * @brief Sets the current game, if not null any openFile requests will only return files that match this game
      * @param game The target game id, e.g "GM8E"
@@ -287,7 +289,7 @@ public:
 
     void commit();
 
-    operator bool() const { return m_fileHandle != nullptr; }
+    operator bool() const;
 };
 
 /**
@@ -297,7 +299,7 @@ public:
  * @param checksum
  * @param checksumInv
  */
-void calculateChecksum(uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv);
+void calculateChecksum(const uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv);
 }
 
 #endif // __CARD_HPP__
