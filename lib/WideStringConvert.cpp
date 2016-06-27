@@ -1,4 +1,4 @@
-#include "WideStringConvert.hpp"
+#include "kabufuda/WideStringConvert.hpp"
 #include "utf8proc.h"
 
 namespace kabufuda

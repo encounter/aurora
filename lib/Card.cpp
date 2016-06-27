@@ -1,5 +1,5 @@
-#include "Card.hpp"
-#include "SRAM.hpp"
+#include "kabufuda/Card.hpp"
+#include "kabufuda/SRAM.hpp"
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
@@ -8,13 +8,17 @@
 namespace kabufuda
 {
 
+IFileHandle::~IFileHandle()
+{
+}
+
 class FileHandle : public IFileHandle
 {
     friend class Card;
     const char* game;
     const char* maker;
     const char* filename;
-    uint32_t offset =0;
+    int32_t offset =0;
 public:
     FileHandle() = default;
     FileHandle(const char* game, const char* maker, const char* filename)
@@ -22,7 +26,12 @@ public:
           maker(maker),
           filename(filename)
     {}
+    virtual ~FileHandle();
 };
+
+FileHandle::~FileHandle()
+{}
+
 
 void Card::swapEndian()
 {
@@ -62,6 +71,22 @@ Card::Card(const SystemString& filename, const char* game, const char* maker)
         fread(m_dirBackup.__raw, 1, BlockSize, m_fileHandle);
         fread(m_bat.__raw, 1, BlockSize, m_fileHandle);
         fread(m_batBackup.__raw, 1, BlockSize, m_fileHandle);
+
+        m_dir.swapEndian();
+        m_dirBackup.swapEndian();
+        m_bat.swapEndian();
+        m_batBackup.swapEndian();
+
+        /* Check for data integrity, restoring valid data in case of corruption if possible */
+        if (!m_dir.valid() && m_dirBackup.valid())
+            m_dir = m_dirBackup;
+        else if (!m_dirBackup.valid() && m_dir.valid())
+            m_dirBackup = m_dir;
+        if (!m_bat.valid() && m_batBackup.valid())
+            m_bat = m_batBackup;
+        else if (!m_batBackup.valid() && m_bat.valid())
+            m_batBackup = m_bat;
+
         if (m_dir.m_updateCounter > m_dirBackup.m_updateCounter)
         {
             m_currentDir = &m_dir;
@@ -83,10 +108,7 @@ Card::Card(const SystemString& filename, const char* game, const char* maker)
             m_currentBat = &m_batBackup;
             m_previousBat = &m_bat;
         }
-        m_currentDir->swapEndian();
-        m_previousDir->swapEndian();
-        m_currentBat->swapEndian();
-        m_previousBat->swapEndian();
+
         /* Close and reopen in read/write mode */
         fclose(m_fileHandle);
         m_fileHandle = Fopen(m_filename.c_str(), _S("r+"));
@@ -113,46 +135,26 @@ void Card::updateDirAndBat()
 {
     Directory updateDir = *m_currentDir;
     updateDir.m_updateCounter++;
-
     *m_previousDir = updateDir;
-    if (m_previousDir == &m_dir)
-    {
-        m_currentDir = &m_dir;
-        m_previousDir = &m_dirBackup;
-    }
-    else
-    {
-        m_currentDir = &m_dirBackup;
-        m_previousDir = &m_dir;
-    }
+    std::swap(m_currentDir, m_previousDir);
 
     BlockAllocationTable updateBat = *m_currentBat;
     updateBat.m_updateCounter++;
-
     *m_previousBat = updateBat;
-    if (m_previousBat == &m_bat)
-    {
-        m_currentBat = &m_bat;
-        m_previousBat = &m_batBackup;
-    }
-    else
-    {
-        m_currentBat = &m_batBackup;
-        m_previousBat = &m_bat;
-    }
+    std::swap(m_currentBat, m_previousBat);
 }
 
 std::unique_ptr<IFileHandle> Card::createFile(const char* filename, size_t size)
 {
+    updateDirAndBat();
     File* f = m_currentDir->getFirstFreeFile(m_game, m_maker, filename);
-    uint16_t block = m_currentBat->allocateBlocks(size / BlockSize, m_maxBlock);
+    uint16_t block = m_currentBat->allocateBlocks(uint16_t(size / BlockSize), m_maxBlock);
     if (f && block != 0xFFFF)
     {
-        f->m_modifiedTime = getGCTime();
+        f->m_modifiedTime = uint32_t(getGCTime());
         f->m_firstBlock = block;
-        f->m_blockCount = size / BlockSize;
+        f->m_blockCount = uint16_t(size / BlockSize);
 
-        updateDirAndBat();
 
         return std::unique_ptr<FileHandle>(new FileHandle(m_game, m_maker, filename));
     }
@@ -161,6 +163,7 @@ std::unique_ptr<IFileHandle> Card::createFile(const char* filename, size_t size)
 
 void Card::deleteFile(const std::unique_ptr<IFileHandle> &fh)
 {
+    updateDirAndBat();
     if (!fh)
         return;
     FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
@@ -175,7 +178,6 @@ void Card::deleteFile(const std::unique_ptr<IFileHandle> &fh)
     }
     *m_currentDir->getFile(f->game, f->maker, f->filename) = File();
 
-    updateDirAndBat();
 }
 
 void Card::write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t size)
@@ -187,11 +189,14 @@ void Card::write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t
     {
         FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
         File* file = m_currentDir->getFile(f->game, f->maker, f->filename);
+        if (!file)
+            return;
+
         /* Block handling is a little different from cache handling,
          * since each block can be in an arbitrary location we must
          * first find our starting block.
          */
-        const uint16_t blockId = (f->offset / BlockSize);
+        const uint16_t blockId = uint16_t(f->offset / BlockSize);
         uint16_t block = file->m_firstBlock;
         for (uint16_t i = 0; i < blockId; i++)
             block = m_currentBat->getNextBlock(block);
@@ -199,13 +204,13 @@ void Card::write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t
         const uint8_t* tmpBuf = reinterpret_cast<const uint8_t*>(buf);
         uint16_t curBlock = block;
         uint32_t blockOffset = f->offset % BlockSize;
-        uint32_t rem = size;
+        size_t rem = size;
         while (rem)
         {
             if (curBlock == 0xFFFF)
                 return;
 
-            uint32_t cacheSize = rem;
+            size_t cacheSize = rem;
             if (cacheSize + blockOffset > BlockSize)
                 cacheSize = BlockSize - blockOffset;
             uint32_t offset = (curBlock * BlockSize) + blockOffset;
@@ -233,11 +238,13 @@ void Card::read(const std::unique_ptr<IFileHandle> &fh, void *dst, size_t size)
     {
         FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
         File* file = m_currentDir->getFile(f->game, f->maker, f->filename);
+        if (!file)
+            return;
         /* Block handling is a little different from cache handling,
          * since each block can be in an arbitrary location we must
          * first find our starting block.
          */
-        const uint16_t blockId = (f->offset / BlockSize);
+        const uint16_t blockId = uint16_t(f->offset / BlockSize);
         uint16_t block = file->m_firstBlock;
         for (uint16_t i = 0; i < blockId; i++)
             block = m_currentBat->getNextBlock(block);
@@ -245,13 +252,13 @@ void Card::read(const std::unique_ptr<IFileHandle> &fh, void *dst, size_t size)
         uint8_t* tmpBuf = reinterpret_cast<uint8_t*>(dst);
         uint16_t curBlock = block;
         uint32_t blockOffset = f->offset % BlockSize;
-        uint32_t rem = size;
+        size_t rem = size;
         while (rem)
         {
             if (curBlock == 0xFFFF)
                 return;
 
-            uint32_t cacheSize = rem;
+            size_t cacheSize = rem;
             if (cacheSize + blockOffset > BlockSize)
                 cacheSize = BlockSize - blockOffset;
             uint32_t offset = (curBlock * BlockSize) + blockOffset;
@@ -270,14 +277,16 @@ void Card::read(const std::unique_ptr<IFileHandle> &fh, void *dst, size_t size)
     }
 }
 
-void Card::seek(const std::unique_ptr<IFileHandle> &fh, uint32_t pos, SeekOrigin whence)
+void Card::seek(const std::unique_ptr<IFileHandle> &fh, int32_t pos, SeekOrigin whence)
 {
     if (!fh)
         return;
 
     FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
     File* file = m_currentDir->getFile(f->game, f->maker, f->filename);
-    uint32_t oldOff = f->offset;
+    if (!file)
+        return;
+
     switch(whence)
     {
     case SeekOrigin::Begin:
@@ -287,7 +296,7 @@ void Card::seek(const std::unique_ptr<IFileHandle> &fh, uint32_t pos, SeekOrigin
         f->offset += pos;
         break;
     case SeekOrigin::End:
-        f->offset = (file->m_blockCount * BlockSize) - pos;
+        f->offset = int32_t(file->m_blockCount * BlockSize) - pos;
         break;
     }
 }
@@ -339,7 +348,7 @@ void Card::getSerial(uint32_t *s0, uint32_t *s1)
 {
     uint32_t serial[8];
     for (uint32_t i = 0; i < 8; i++)
-        memcpy(&serial[i], ((uint8_t*)m_serial + (i * 4)), 4);
+        memcpy(&serial[i], reinterpret_cast<uint8_t*>(m_serial + (i * 4)), 4);
     *s0 = serial[0] ^ serial[2] ^ serial[4] ^ serial[6];
     *s1 = serial[1] ^ serial[3] ^ serial[5] ^ serial[7];
 }
@@ -357,24 +366,28 @@ void Card::format(EDeviceId id, ECardSize size, EEncoding encoding)
     m_formatTime = rand;
     for (int i = 0; i < 12; i++)
     {
-        rand = (((rand * (uint64_t)0x41c64e6d) + (uint64_t)0x3039) >> 16);
-        m_serial[i] = (uint8_t)(g_SRAM.flash_id[uint32_t(id)][i] + (uint32_t)rand);
-        rand = (((rand * (uint64_t)0x41c64e6d) + (uint64_t)0x3039) >> 16);
-        rand &= (uint64_t)0x7fffULL;
+        rand = (((rand * uint64_t(0x41c64e6d)) + uint64_t(0x3039)) >> 16);
+        m_serial[i] = uint8_t(g_SRAM.flash_id[uint32_t(id)][i] + uint32_t(rand));
+        rand = (((rand * uint64_t(0x41c64e6d)) + uint64_t(0x3039)) >> 16);
+        rand &= uint64_t(0x7fffULL);
     }
 
-    m_sramBias   = SBig(g_SRAM.counter_bias);
-    m_sramLanguage = SBig(g_SRAM.lang);
+    m_sramBias   = int32_t(SBig(g_SRAM.counter_bias));
+    m_sramLanguage = uint32_t(SBig(g_SRAM.lang));
     m_unknown    = 0; /* 1 works for slot A, 0 both */
     m_deviceId    = 0;
     m_sizeMb      = uint16_t(size);
     m_maxBlock    = m_sizeMb * MbitToBlocks;
     m_encoding    = uint16_t(encoding);
-    calculateChecksum((uint16_t*)__raw, 0xFE, &m_checksum, &m_checksumInv);
+    calculateChecksum(reinterpret_cast<uint16_t*>(__raw), 0xFE, &m_checksum, &m_checksumInv);
     m_dir         = Directory();
     m_dirBackup   = m_dir;
     m_bat         = BlockAllocationTable(uint32_t(size) * MbitToBlocks);
     m_batBackup   = m_bat;
+    m_currentDir  = &m_dirBackup;
+    m_previousDir = &m_dir;
+    m_currentBat  = &m_batBackup;
+    m_previousBat = &m_bat;
 
     if (!m_fileHandle)
         m_fileHandle = Fopen(m_filename.c_str(), _S("wb"));
@@ -409,7 +422,7 @@ uint32_t Card::getSizeMbitFromFile(const SystemString& filename)
 {
     Sstat stat;
     Stat(filename.c_str(), &stat);
-    return (stat.st_size / BlockSize) / MbitToBlocks;
+    return uint32_t(stat.st_size / BlockSize) / MbitToBlocks;
 }
 
 void Card::commit()
@@ -421,19 +434,40 @@ void Card::commit()
         swapEndian();
         fwrite(__raw, 1, BlockSize, m_fileHandle);
         swapEndian();
-        Directory tmpDir = *m_currentDir;
+        Directory tmpDir = m_dir;
+        tmpDir.updateChecksum();
         tmpDir.swapEndian();
         fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
-        tmpDir = *m_previousDir;
+        tmpDir = m_dirBackup;
+        tmpDir.updateChecksum();
         tmpDir.swapEndian();
         fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
-        BlockAllocationTable tmpBat = *m_currentBat;
+        BlockAllocationTable tmpBat = m_bat;
+        tmpBat.updateChecksum();
         tmpBat.swapEndian();
         fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
-        tmpBat = *m_previousBat;
+        tmpBat = m_batBackup;
+        tmpBat.updateChecksum();
         tmpBat.swapEndian();
         fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
     }
+}
+
+Card::operator bool() const
+{
+    if (m_fileHandle == nullptr)
+        return false;
+
+    uint16_t ckSum, ckSumInv;
+    calculateChecksum(reinterpret_cast<const uint16_t*>(__raw), 0xFE, &ckSum, &ckSumInv);
+    if (ckSum != m_checksum || ckSumInv != m_checksumInv)
+        return false;
+    if (!m_dir.valid() && !m_dirBackup.valid())
+        return false;
+    if (!m_bat.valid() && !m_batBackup.valid())
+        return false;
+
+    return true;
 }
 
 File::File(char data[])
@@ -483,10 +517,17 @@ void BlockAllocationTable::updateChecksum()
     calculateChecksum(reinterpret_cast<uint16_t*>(__raw + 4), 0xFFE, &m_checksum, &m_checksumInv);
 }
 
+bool BlockAllocationTable::valid() const
+{
+    uint16_t ckSum, ckSumInv;
+    calculateChecksum(reinterpret_cast<const uint16_t*>(__raw + 4), 0xFFE, &ckSum, &ckSumInv);
+    return (ckSum == m_checksum && ckSumInv == m_checksumInv);
+}
+
 BlockAllocationTable::BlockAllocationTable(uint32_t blockCount)
 {
     memset(__raw, 0, BlockSize);
-    m_freeBlocks = blockCount - FSTBlocks;
+    m_freeBlocks = uint16_t(blockCount - FSTBlocks);
     m_lastAllocated = 4;
     updateChecksum();
 }
@@ -577,6 +618,13 @@ void Directory::updateChecksum()
     calculateChecksum(reinterpret_cast<uint16_t*>(__raw), 0xFFE, &m_checksum, &m_checksumInv);
 }
 
+bool Directory::valid() const
+{
+    uint16_t ckSum, ckSumInv;
+    calculateChecksum(reinterpret_cast<const uint16_t*>(__raw), 0xFFE, &ckSum, &ckSumInv);
+    return (ckSum == m_checksum && ckSumInv == m_checksumInv);
+}
+
 Directory::Directory()
 {
     memset(__raw, 0xFF, BlockSize);
@@ -633,7 +681,7 @@ File* Directory::getFile(const char* game, const char* maker, const char* filena
     return nullptr;
 }
 
-void calculateChecksum(uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv)
+void calculateChecksum(const uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv)
 {
     *checksum = 0;
     *checksumInv = 0;
@@ -649,5 +697,4 @@ void calculateChecksum(uint16_t* data, size_t len, uint16_t* checksum, uint16_t*
     if (*checksumInv == 0xFFFF)
         *checksumInv = 0;
 }
-
 }
