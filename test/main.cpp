@@ -6,13 +6,13 @@ int main()
     kabufuda::Card mc{_S("test.USA.raw"), "GM8E", "01"};
     if (!mc)
         mc.format(kabufuda::EDeviceId::SlotA, kabufuda::ECardSize::Card2043Mb);
-    std::unique_ptr<kabufuda::IFileHandle> f = mc.openFile("MetroidPrime A");
+    std::unique_ptr<kabufuda::IFileHandle> f = mc.openFile("MetroidPrime B");
     if (!f)
-        f = mc.createFile("MetroidPrime A", kabufuda::BlockSize);
+        f = mc.createFile("MetroidPrime B", kabufuda::BlockSize);
 
     if (f)
     {
-        const char* test = "Metroid Prime A is Cool";
+        const char* test = "Metroid Prime B is Cool";
         size_t len = strlen(test);
         uint8_t data[kabufuda::BlockSize] = {};
         mc.write(f, data, kabufuda::BlockSize);
@@ -24,7 +24,7 @@ int main()
         mc.seek(f, -2, kabufuda::SeekOrigin::Current);
         mc.read(f, &derp, 2);
         std::cout << derp << std::endl;
-        //mc.deleteFile(f);
+        mc.deleteFile(f);
     }
     return 0;
 }
