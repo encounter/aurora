@@ -1,181 +1,22 @@
-#ifndef __CARD_HPP__
-#define __CARD_HPP__
+#ifndef __KABU_CARD_HPP__
+#define __KABU_CARD_HPP__
+
+#include "BlockAllocationTable.hpp"
+#include "Directory.hpp"
+#include "File.hpp"
+#include "Util.hpp"
 
 #include <string>
 #include <vector>
 #include <memory>
-#include "Util.hpp"
 
 namespace kabufuda
 {
-uint32_t constexpr BlockSize    = 0x2000;
-uint32_t constexpr MaxFiles     = 127;
-uint32_t constexpr FSTBlocks    = 5;
-uint32_t constexpr MbitToBlocks = 0x10;
-uint32_t constexpr BATSize      = 0xFFB;
-
-/**
- * @brief The EPermissions enum
- */
-enum class EPermissions : uint8_t
-{
-};
-
-/**
- * @brief The EBannerFlags enum
- */
-enum class EBannerFlags : uint8_t
-{
-};
-
-enum class SeekOrigin
-{
-    Begin,
-    Current,
-    End
-};
-
-/**
- * @brief The EDeviceId enum
- */
-enum class EDeviceId : uint16_t
-{
-    SlotA,
-    SlotB
-};
-
-/**
- * @brief The ECardSize enum
- */
-enum class ECardSize : uint16_t
-{
-    Card59Mb   = 0x04,
-    Card123Mb  = 0x08,
-    Card251Mb  = 0x10,
-    Card507Mb  = 0x20,
-    Card1019Mb = 0x40,
-    Card2043Mb = 0x80
-};
-
-/**
- * @brief The EEncoding enum
- */
-enum class EEncoding : uint16_t
-{
-    ASCII,   /**< Standard ASCII Encoding */
-    SJIS     /**< SJIS Encoding for japanese */
-};
-
-class File
-{
-    friend class FileHandle;
-    friend class Directory;
-    friend class Card;
-#pragma pack(push, 4)
-    union
-    {
-        struct
-        {
-            uint8_t  m_id[4];
-            uint8_t  m_maker[2];
-            uint8_t  m_reserved;
-            uint8_t  m_bannerFlags;
-            char     m_filename[0x20];
-            uint32_t m_modifiedTime;
-            uint32_t m_imageOffset;
-            uint16_t m_iconFmt;
-            uint16_t m_animSpeed;
-            uint8_t  m_permissions;
-            int8_t   m_copyCounter;
-            uint16_t m_firstBlock;
-            uint16_t m_blockCount;
-            uint16_t m_reserved2;
-            uint32_t m_commentAddr;
-        };
-        uint8_t __raw[0x40];
-    };
-
-#pragma pack(pop)
-    void swapEndian();
-
-public:
-    File();
-    File(char data[0x40]);
-    File(const char* filename);
-    ~File() {}
-};
 
 class IFileHandle
 {
 public:
     virtual ~IFileHandle();
-};
-
-class BlockAllocationTable
-{
-    friend class Card;
-#pragma pack(push, 4)
-    union
-    {
-        struct
-        {
-            uint16_t m_checksum;
-            uint16_t m_checksumInv;
-            uint16_t m_updateCounter;
-            uint16_t m_freeBlocks;
-            uint16_t m_lastAllocated;
-            uint16_t m_map[0xFFB];
-        };
-        uint8_t __raw[BlockSize];
-    };
-#pragma pack(pop)
-
-    void swapEndian();
-    void updateChecksum();
-    bool valid() const;
-
-public:
-    explicit BlockAllocationTable(uint32_t blockCount = (uint32_t(ECardSize::Card2043Mb) * MbitToBlocks));
-    BlockAllocationTable(uint8_t data[BlockSize]);
-    ~BlockAllocationTable() {}
-
-    uint16_t getNextBlock(uint16_t block) const;
-    uint16_t nextFreeBlock(uint16_t maxBlock, uint16_t startingBlock) const;
-    bool clear(uint16_t first, uint16_t count);
-    uint16_t allocateBlocks(uint16_t count, uint16_t maxBlocks);
-};
-
-class Directory
-{
-    friend class Card;
-#pragma pack(push, 4)
-    union
-    {
-        struct
-        {
-            File     m_files[MaxFiles];
-            uint8_t  __padding[0x3a];
-            uint16_t m_updateCounter;
-            uint16_t m_checksum;
-            uint16_t m_checksumInv;
-        };
-        uint8_t __raw[BlockSize];
-    };
-#pragma pack(pop)
-
-    void swapEndian();
-    void updateChecksum();
-    bool valid() const;
-
-public:
-    Directory();
-    Directory(uint8_t data[BlockSize]);
-    Directory(const Directory& other);
-    void operator=(const Directory& other);
-    ~Directory() {}
-
-    File* getFirstFreeFile(const char* game, const char* maker, const char* filename);
-    File* getFile(const char* game, const char* maker, const char* filename);
 };
 
 class Card
@@ -293,15 +134,6 @@ public:
 
     operator bool() const;
 };
-
-/**
- * @brief calculateChecksum
- * @param data
- * @param len
- * @param checksum
- * @param checksumInv
- */
-void calculateChecksumBE(const uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv);
 }
 
 #endif // __CARD_HPP__
