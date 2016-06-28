@@ -1,5 +1,5 @@
-#ifndef __UTIL_HPP__
-#define __UTIL_HPP__
+#ifndef __KABU_UTIL_HPP__
+#define __KABU_UTIL_HPP__
 
 #ifndef _WIN32
 #include <stdlib.h>
@@ -305,6 +305,15 @@ static inline int Stat(const SystemChar* path, Sstat* statOut)
     return stat(path, statOut);
 #endif
 }
+
+/**
+ * @brief calculateChecksum
+ * @param data
+ * @param len
+ * @param checksum
+ * @param checksumInv
+ */
+void calculateChecksumBE(const uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv);
 }
 
-#endif // __UTIL_HPP__
+#endif // __KABU_UTIL_HPP__
