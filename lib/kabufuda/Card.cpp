@@ -435,7 +435,7 @@ EAnimationType Card::iconAnimationType(const std::unique_ptr<IFileHandle> &fh) c
 {
     File* file = _fileFromHandle(fh);
     if (!file)
-       return EAnimationType::Loop;
+        return EAnimationType::Loop;
 
     return EAnimationType(file->m_bannerFlags & 4);
 }
@@ -476,7 +476,7 @@ EAnimationSpeed Card::iconSpeed(const std::unique_ptr<IFileHandle> &fh, uint32_t
     return EAnimationSpeed((file->m_animSpeed  >> (2 * (idx))) & 3);
 }
 
-void Card::setIconAddress(const std::unique_ptr<IFileHandle> &fh, uint32_t addr)
+void Card::setImageAddress(const std::unique_ptr<IFileHandle> &fh, uint32_t addr)
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -484,7 +484,7 @@ void Card::setIconAddress(const std::unique_ptr<IFileHandle> &fh, uint32_t addr)
     file->m_iconAddress = addr;
 }
 
-int32_t Card::iconAddress(const std::unique_ptr<IFileHandle> &fh) const
+int32_t Card::imageAddress(const std::unique_ptr<IFileHandle> &fh) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)

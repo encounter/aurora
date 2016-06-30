@@ -169,8 +169,8 @@ public:
     EImageFormat iconFormat(const std::unique_ptr<IFileHandle>& fh, uint32_t idx) const;
     void setIconSpeed(const std::unique_ptr<IFileHandle>& fh, uint32_t idx, EAnimationSpeed speed);
     EAnimationSpeed iconSpeed(const std::unique_ptr<IFileHandle>& fh, uint32_t idx) const;
-    void setIconAddress(const std::unique_ptr<IFileHandle>& fh, uint32_t addr);
-    int32_t iconAddress(const std::unique_ptr<IFileHandle>& fh) const;
+    void setImageAddress(const std::unique_ptr<IFileHandle>& fh, uint32_t addr);
+    int32_t imageAddress(const std::unique_ptr<IFileHandle>& fh) const;
     void setCommentAddress(const std::unique_ptr<IFileHandle>& fh, uint32_t addr);
     int32_t commentAddress(const std::unique_ptr<IFileHandle>& fh) const;
 
