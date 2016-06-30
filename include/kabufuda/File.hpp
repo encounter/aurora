@@ -15,7 +15,7 @@ class File
     {
         struct
         {
-            uint8_t  m_id[4];
+            uint8_t  m_game[4];
             uint8_t  m_maker[2];
             uint8_t  m_reserved;
             uint8_t  m_bannerFlags;

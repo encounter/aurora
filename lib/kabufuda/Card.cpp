@@ -15,16 +15,12 @@ IFileHandle::~IFileHandle()
 class FileHandle : public IFileHandle
 {
     friend class Card;
-    const char* game;
-    const char* maker;
-    const char* filename;
+    uint32_t idx;
     int32_t offset =0;
 public:
     FileHandle() = default;
-    FileHandle(const char* game, const char* maker, const char* filename)
-        : game(game),
-          maker(maker),
-          filename(filename)
+    FileHandle(uint32_t idx)
+        : idx(idx)
     {}
     virtual ~FileHandle();
 };
@@ -139,8 +135,12 @@ Card::~Card()
 std::unique_ptr<IFileHandle> Card::openFile(const char* filename)
 {
     File* f = m_currentDir->getFile(m_game, m_maker, filename);
-    if (f)
-        return std::unique_ptr<IFileHandle>(new FileHandle(m_game, m_maker, filename));
+    int32_t idx = m_currentDir->indexForFile(f);
+    if (f && idx != -1)
+    {
+
+        return std::unique_ptr<IFileHandle>(new FileHandle(idx));
+    }
     return nullptr;
 }
 
@@ -173,7 +173,7 @@ File* Card::_fileFromHandle(const std::unique_ptr<IFileHandle> &fh) const
     if (!handle)
         return nullptr;
 
-    File* file = m_currentDir->getFile(handle->game, handle->maker, handle->filename);
+    File* file = m_currentDir->getFile(handle->idx);
     return file;
 }
 
@@ -189,18 +189,47 @@ std::unique_ptr<IFileHandle> Card::createFile(const char* filename, size_t size)
         f->m_blockCount = uint16_t(size / BlockSize);
 
 
-        return std::unique_ptr<FileHandle>(new FileHandle(m_game, m_maker, filename));
+        return std::unique_ptr<IFileHandle>(new FileHandle(m_currentDir->indexForFile(f)));
     }
     return nullptr;
 }
 
-void Card::deleteFile(const std::unique_ptr<IFileHandle> &fh)
+std::unique_ptr<IFileHandle> Card::firstFile()
+{
+    File* f = m_currentDir->getFirstNonFreeFile(0, m_game, m_maker);
+    if (f)
+        return std::unique_ptr<IFileHandle>(new FileHandle(m_currentDir->indexForFile(f)));
+
+    return nullptr;
+}
+
+std::unique_ptr<IFileHandle> Card::nextFile(const std::unique_ptr<IFileHandle>& cur)
+{
+    FileHandle* handle = dynamic_cast<FileHandle*>(cur.get());
+    if (!handle)
+        return nullptr;
+
+    File* next = m_currentDir->getFirstNonFreeFile(handle->idx + 1, m_game, m_maker);
+    if (!next)
+        return nullptr;
+    return std::unique_ptr<IFileHandle>(new FileHandle(m_currentDir->indexForFile(next)));
+}
+
+const char* Card::getFilename(const std::unique_ptr<IFileHandle>& fh)
+{
+    File* f = _fileFromHandle(fh);
+    if (!f)
+        return nullptr;
+    return f->m_filename;
+}
+
+void Card::deleteFile(const std::unique_ptr<IFileHandle>& fh)
 {
     _updateDirAndBat();
     if (!fh)
         return;
     FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
-    uint16_t block = m_currentDir->getFile(f->game, f->maker, f->filename)->m_firstBlock;
+    uint16_t block = m_currentDir->getFile(f->idx)->m_firstBlock;
 
     while(block != 0xFFFF)
     {
@@ -209,7 +238,7 @@ void Card::deleteFile(const std::unique_ptr<IFileHandle> &fh)
         m_currentBat->clear(block, 1);
         block = nextBlock;
     }
-    *m_currentDir->getFile(f->game, f->maker, f->filename) = File();
+    *m_currentDir->getFile(f->idx) = File();
 
 }
 
@@ -221,7 +250,7 @@ void Card::write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t
     if (m_fileHandle)
     {
         FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
-        File* file = m_currentDir->getFile(f->game, f->maker, f->filename);
+        File* file = m_currentDir->getFile(f->idx);
         if (!file)
             return;
 
@@ -270,7 +299,7 @@ void Card::read(const std::unique_ptr<IFileHandle> &fh, void *dst, size_t size)
     if (m_fileHandle)
     {
         FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
-        File* file = m_currentDir->getFile(f->game, f->maker, f->filename);
+        File* file = m_currentDir->getFile(f->idx);
         if (!file)
             return;
         /* Block handling is a little different from cache handling,
@@ -316,7 +345,7 @@ void Card::seek(const std::unique_ptr<IFileHandle> &fh, int32_t pos, SeekOrigin 
         return;
 
     FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
-    File* file = m_currentDir->getFile(f->game, f->maker, f->filename);
+    File* file = m_currentDir->getFile(f->idx);
     if (!file)
         return;
 
@@ -405,6 +434,22 @@ bool Card::canMove(const std::unique_ptr<IFileHandle> &fh) const
         return false;
 
     return !bool(file->m_permissions & EPermissions::NoMove);
+}
+
+const char* Card::gameId(const std::unique_ptr<IFileHandle> &fh) const
+{
+    File* file = _fileFromHandle(fh);
+    if (!file)
+        return nullptr;
+    return reinterpret_cast<const char*>(file->m_game);
+}
+
+const char *Card::maker(const std::unique_ptr<IFileHandle> &fh) const
+{
+    File* file = _fileFromHandle(fh);
+    if (!file)
+        return nullptr;
+    return reinterpret_cast<const char*>(file->m_maker);
 }
 
 void Card::setBannerFormat(const std::unique_ptr<IFileHandle>& fh, EImageFormat fmt)
@@ -564,7 +609,7 @@ bool Card::moveFileTo(const std::unique_ptr<IFileHandle> &fh, Card &dest)
     return false;
 }
 
-void Card::setGame(const char* game)
+void Card::setCurrentGame(const char* game)
 {
     if (game == nullptr)
     {
@@ -578,7 +623,7 @@ void Card::setGame(const char* game)
     memcpy(m_game, game, 4);
 }
 
-const uint8_t* Card::getGame() const
+const uint8_t* Card::getCurrentGame() const
 {
     if (strlen(m_game) == 4)
         return reinterpret_cast<const uint8_t*>(m_game);
@@ -586,7 +631,7 @@ const uint8_t* Card::getGame() const
     return nullptr;
 }
 
-void Card::setMaker(const char* maker)
+void Card::setCurrentMaker(const char* maker)
 {
     if (maker == nullptr)
     {
@@ -600,7 +645,7 @@ void Card::setMaker(const char* maker)
     memcpy(m_maker, maker, 2);
 }
 
-const uint8_t* Card::getMaker() const
+const uint8_t* Card::getCurrentMaker() const
 {
     if (strlen(m_maker) == 2)
         return reinterpret_cast<const uint8_t*>(m_maker);

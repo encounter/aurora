@@ -1,5 +1,6 @@
 #include "kabufuda/Directory.hpp"
 #include "kabufuda/Util.hpp"
+#include <cstring>
 
 
 namespace kabufuda
@@ -61,14 +62,32 @@ File* Directory::getFirstFreeFile(const char* game, const char* maker, const cha
 {
     for (uint16_t i = 0 ; i < 127 ; i++)
     {
-        if (m_files[i].m_id[0] == 0xFF)
+        if (m_files[i].m_game[0] == 0xFF)
         {
             File* ret = &m_files[i];
             *ret = File(filename);
             if (game && strlen(game) == 4)
-                memcpy(ret->m_id, game, 4);
+                memcpy(ret->m_game, game, 4);
             if (maker && strlen(maker) == 2)
                 memcpy(ret->m_maker, maker, 2);
+            return ret;
+        }
+    }
+
+    return nullptr;
+}
+
+File *Directory::getFirstNonFreeFile(uint32_t start, const char *game, const char *maker)
+{
+    for (uint16_t i = start ; i < 127 ; i++)
+    {
+        if (m_files[i].m_game[0] != 0xFF)
+        {
+            File* ret = &m_files[i];
+            if (game && std::strlen(game) == 4 && std::strncmp(reinterpret_cast<const char*>(ret->m_game), game, 4) != 0)
+                continue;
+            if (maker && std::strlen(maker) == 2 && std::strncmp(reinterpret_cast<const char*>(ret->m_maker), maker, 2) != 0)
+                continue;
             return ret;
         }
     }
@@ -80,7 +99,7 @@ File* Directory::getFile(const char* game, const char* maker, const char* filena
 {
     for (uint16_t i = 0 ; i < 127 ; i++)
     {
-        if (game && strlen(game) == 4 && memcmp(m_files[i].m_id, game, 4))
+        if (game && strlen(game) == 4 && memcmp(m_files[i].m_game, game, 4))
             continue;
         if (maker && strlen(maker) == 2 && memcmp(m_files[i].m_maker, maker, 2))
             continue;
@@ -89,5 +108,26 @@ File* Directory::getFile(const char* game, const char* maker, const char* filena
     }
 
     return nullptr;
+}
+
+File* Directory::getFile(uint32_t idx)
+{
+    if (idx >= 127)
+        return nullptr;
+
+    return &m_files[idx];
+}
+
+int32_t Directory::indexForFile(File *f)
+{
+    if (!f)
+        return -1;
+
+    auto it = std::find_if(std::begin(m_files), std::end(m_files), [&f](const File& file)->bool{
+        return f == &file;
+    });
+    if (it == std::end(m_files))
+        return -1;
+    return it - std::begin(m_files);
 }
 }
