@@ -65,7 +65,17 @@ class Card
     File* _fileFromHandle(const std::unique_ptr<IFileHandle>& fh) const;
 public:
     Card();
+    /**
+     * @brief Card
+     * @param other
+     */
     Card(const Card& other);
+    /**
+     * @brief Card
+     * @param filepath
+     * @param game
+     * @param maker
+     */
     Card(const SystemString& filepath, const char* game = nullptr, const char* maker=nullptr);
     ~Card();
 
@@ -82,6 +92,24 @@ public:
      */
     std::unique_ptr<IFileHandle>  createFile(const char* filename, size_t size);
 
+    /**
+     * @brief firstFile
+     * @return
+     */
+    std::unique_ptr<IFileHandle> firstFile();
+
+    /**
+     * @brief nextFile
+     * @param cur
+     * @return
+     */
+    std::unique_ptr<IFileHandle> nextFile(const std::unique_ptr<IFileHandle>& cur);
+    /**
+     * @brief getFilename
+     * @param fh
+     * @return
+     */
+    const char* getFilename(const std::unique_ptr<IFileHandle>& fh);
     /**
      * @brief deleteFile
      * @param fh
@@ -161,17 +189,106 @@ public:
      */
     bool canMove(const std::unique_ptr<IFileHandle>& fh) const;
 
+    /**
+     * @brief gameId
+     * @param fh
+     * @return
+     */
+    const char* gameId(const std::unique_ptr<IFileHandle>& fh) const;
+
+    /**
+     * @brief maker
+     * @param fh
+     * @return
+     */
+    const char* maker(const std::unique_ptr<IFileHandle>& fh) const;
+
+    /**
+     * @brief setBannerFormat
+     * @param fh
+     * @param fmt
+     */
     void setBannerFormat(const std::unique_ptr<IFileHandle>& fh, EImageFormat fmt);
+
+    /**
+     * @brief bannerFormat
+     * @param fh
+     * @return
+     */
     EImageFormat bannerFormat(const std::unique_ptr<IFileHandle>& fh) const;
+
+    /**
+     * @brief setIconAnimationType
+     * @param fh
+     * @param type
+     */
     void setIconAnimationType(const std::unique_ptr<IFileHandle>& fh, EAnimationType type);
+
+    /**
+     * @brief iconAnimationType
+     * @param fh
+     * @return
+     */
     EAnimationType iconAnimationType(const std::unique_ptr<IFileHandle>& fh) const;
+
+    /**
+     * @brief setIconFormat
+     * @param fh
+     * @param idx
+     * @param fmt
+     */
     void setIconFormat(const std::unique_ptr<IFileHandle>& fh, uint32_t idx, EImageFormat fmt);
+
+    /**
+     * @brief iconFormat
+     * @param fh
+     * @param idx
+     * @return
+     */
     EImageFormat iconFormat(const std::unique_ptr<IFileHandle>& fh, uint32_t idx) const;
+
+    /**
+     * @brief setIconSpeed
+     * @param fh
+     * @param idx
+     * @param speed
+     */
     void setIconSpeed(const std::unique_ptr<IFileHandle>& fh, uint32_t idx, EAnimationSpeed speed);
+
+    /**
+     * @brief iconSpeed
+     * @param fh
+     * @param idx
+     * @return
+     */
     EAnimationSpeed iconSpeed(const std::unique_ptr<IFileHandle>& fh, uint32_t idx) const;
+
+    /**
+     * @brief setImageAddress
+     * @param fh
+     * @param addr
+     */
     void setImageAddress(const std::unique_ptr<IFileHandle>& fh, uint32_t addr);
+
+    /**
+     * @brief imageAddress
+     * @param fh
+     * @return
+     */
     int32_t imageAddress(const std::unique_ptr<IFileHandle>& fh) const;
+
+    /**
+     * @brief setCommentAddress
+     * @param fh
+     * @param addr
+     */
     void setCommentAddress(const std::unique_ptr<IFileHandle>& fh, uint32_t addr);
+
+    /**
+     * @brief commentAddress
+     * @param fh
+     * @return
+     */
     int32_t commentAddress(const std::unique_ptr<IFileHandle>& fh) const;
 
     /**
@@ -195,26 +312,26 @@ public:
      * @param game The target game id, e.g "GM8E"
      * @sa openFile
      */
-    void setGame(const char* game);
+    void setCurrentGame(const char* game);
 
     /**
      * @brief Returns the currently selected game
      * @return The selected game, or nullptr
      */
-    const uint8_t* getGame() const;
+    const uint8_t* getCurrentGame() const;
 
     /**
      * @brief Sets the current maker, if not null any openFile requests will only return files that match this maker
      * @param maker The target maker id, e.g "01"
      * @sa openFile
      */
-    void setMaker(const char* maker);
+    void setCurrentMaker(const char* maker);
 
     /**
      * @brief Returns the currently selected maker
      * @return The selected maker, or nullptr
      */
-    const uint8_t* getMaker() const;
+    const uint8_t* getCurrentMaker() const;
 
     /**
      * @brief Retrieves the format assigned serial in two 32bit parts

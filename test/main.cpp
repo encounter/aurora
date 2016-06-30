@@ -10,10 +10,10 @@ int main()
     if (!mc2)
         mc2.format(kabufuda::EDeviceId::SlotA, kabufuda::ECardSize::Card2043Mb);
 
-    std::unique_ptr<kabufuda::IFileHandle> f = mc.openFile("MetroidPrime B");
+    std::unique_ptr<kabufuda::IFileHandle> f = mc.openFile("MetroidPrime A");
     if (!f)
     {
-        f = mc.createFile("MetroidPrime B", kabufuda::BlockSize);
+        f = mc.createFile("MetroidPrime A", kabufuda::BlockSize);
         mc.setPublic(f, true);
         mc.setCanCopy(f, true);
         mc.setCanMove(f, true);
@@ -40,6 +40,13 @@ int main()
             printf("Copy succeeded!\n");
         else
             printf("Copy failed...\n");
+
+        std::unique_ptr<kabufuda::IFileHandle> it = mc.firstFile();
+        while (it)
+        {
+            printf("%.4s%.2s-%s\n", mc.gameId(it), mc.maker(it), mc.getFilename(it));
+            it = mc.nextFile(it);
+        }
     }
     return 0;
 }
