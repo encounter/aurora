@@ -32,7 +32,7 @@ public:
     Directory(uint8_t data[BlockSize]);
     Directory(const Directory& other);
     void operator=(const Directory& other);
-    ~Directory() {}
+    ~Directory();
 
     File* getFirstFreeFile(const char* game, const char* maker, const char* filename);
     File* getFile(const char* game, const char* maker, const char* filename);

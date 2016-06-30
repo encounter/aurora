@@ -53,6 +53,10 @@ void Directory::operator=(const Directory& other)
     memcpy(__raw, other.__raw, BlockSize);
 }
 
+Directory::~Directory()
+{
+}
+
 File* Directory::getFirstFreeFile(const char* game, const char* maker, const char* filename)
 {
     for (uint16_t i = 0 ; i < 127 ; i++)
