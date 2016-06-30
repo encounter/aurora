@@ -41,6 +41,9 @@ BlockAllocationTable::BlockAllocationTable(uint32_t blockCount)
     updateChecksum();
 }
 
+BlockAllocationTable::~BlockAllocationTable()
+{}
+
 uint16_t BlockAllocationTable::getNextBlock(uint16_t block) const
 {
     if ((block < FSTBlocks) || (block > (BATSize - FSTBlocks)))

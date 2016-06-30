@@ -2,6 +2,7 @@
 #define __KABU_CONSTANTS_HPP__
 
 #include <stdint.h>
+#include "Util.hpp"
 
 namespace kabufuda
 {
@@ -16,13 +17,34 @@ uint32_t constexpr BATSize      = 0xFFB;
  */
 enum class EPermissions : uint8_t
 {
+    Public    = (1 << 2),
+    NoCopy    = (1 << 3),
+    NoMove    = (1 << 4),
+    Global    = (1 << 5),
+    Company   = (1 << 6)
+};
+ENABLE_BITWISE_ENUM(EPermissions)
+
+
+enum class EImageFormat : uint8_t
+{
+    None,
+    C8,
+    RGB5A3,
 };
 
-/**
- * @brief The EBannerFlags enum
- */
-enum class EBannerFlags : uint8_t
+enum class EAnimationType
 {
+    Loop   = 0,
+    Bounce = 2,
+};
+
+enum class EAnimationSpeed
+{
+    End,
+    Fast,
+    Middle,
+    Slow,
 };
 
 enum class SeekOrigin
@@ -54,6 +76,11 @@ enum class ECardSize : uint16_t
     Card2043Mb = 0x80
 };
 
+static constexpr uint32_t BannerWidth  = 96;
+static constexpr uint32_t BannerHeight = 64;
+static constexpr uint32_t IconWidth    = 32;
+static constexpr uint32_t IconHeight   = 32;
+
 /**
  * @brief The EEncoding enum
  */
@@ -63,4 +90,5 @@ enum class EEncoding : uint16_t
     SJIS     /**< SJIS Encoding for japanese */
 };
 }
+
 #endif // __KABU_CONSTANTS_HPP__

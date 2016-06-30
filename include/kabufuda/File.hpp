@@ -21,10 +21,10 @@ class File
             uint8_t  m_bannerFlags;
             char     m_filename[0x20];
             uint32_t m_modifiedTime;
-            uint32_t m_imageOffset;
+            uint32_t m_iconAddress;
             uint16_t m_iconFmt;
             uint16_t m_animSpeed;
-            uint8_t  m_permissions;
+            EPermissions  m_permissions;
             int8_t   m_copyCounter;
             uint16_t m_firstBlock;
             uint16_t m_blockCount;

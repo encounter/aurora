@@ -31,7 +31,7 @@ class BlockAllocationTable
 public:
     explicit BlockAllocationTable(uint32_t blockCount = (uint32_t(ECardSize::Card2043Mb) * MbitToBlocks));
     BlockAllocationTable(uint8_t data[BlockSize]);
-    ~BlockAllocationTable() {}
+    ~BlockAllocationTable();
 
     uint16_t getNextBlock(uint16_t block) const;
     uint16_t nextFreeBlock(uint16_t maxBlock, uint16_t startingBlock) const;

@@ -59,9 +59,10 @@ class Card
     char m_game[5] = {'\0'};
     char m_maker[3] = {'\0'};
 
-    void swapEndian();
-    void updateDirAndBat();
-    void updateChecksum();
+    void _swapEndian();
+    void _updateDirAndBat();
+    void _updateChecksum();
+    File* _fileFromHandle(const std::unique_ptr<IFileHandle>& fh) const;
 public:
     Card();
     Card(const Card& other);
@@ -73,50 +74,162 @@ public:
      * @param filename
      */
     std::unique_ptr<IFileHandle>  openFile(const char* filename);
+
     /**
      * @brief createFile
      * @param filename
      * @return
      */
     std::unique_ptr<IFileHandle>  createFile(const char* filename, size_t size);
+
+    /**
+     * @brief deleteFile
+     * @param fh
+     */
     void deleteFile(const std::unique_ptr<IFileHandle>& fh);
+
+    /**
+     * @brief write
+     * @param fh
+     * @param buf
+     * @param size
+     */
     void write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t size);
+
+    /**
+     * @brief read
+     * @param fh
+     * @param dst
+     * @param size
+     */
     void read(const std::unique_ptr<IFileHandle>& fh, void* dst, size_t size);
+
+    /**
+     * @brief seek
+     * @param fh
+     * @param pos
+     * @param whence
+     */
     void seek(const std::unique_ptr<IFileHandle>& fh, int32_t pos, SeekOrigin whence);
+
+    /**
+     * @brief Returns the current offset of the specified file
+     * @param fh The file to retrieve the offset from
+     * @return The offset or -1 if an invalid handle is passed
+     */
+    int32_t tell(const std::unique_ptr<IFileHandle>& fh);
+
+    /**
+     * @brief setPublic
+     * @param fh
+     * @param pub
+     */
+    void setPublic(const std::unique_ptr<IFileHandle>& fh, bool pub);
+
+    /**
+     * @brief isPublic
+     * @param fh
+     * @return
+     */
+    bool isPublic(const std::unique_ptr<IFileHandle>& fh) const;
+
+    /**
+     * @brief setCanCopy
+     * @param fh
+     * @param copy
+     */
+    void setCanCopy(const std::unique_ptr<IFileHandle>& fh, bool copy) const;
+
+    /**
+     * @brief canCopy
+     * @param fh
+     * @return
+     */
+    bool canCopy(const std::unique_ptr<IFileHandle>& fh) const;
+
+    /**
+     * @brief setCanMove
+     * @param fh
+     * @param move
+     */
+    void setCanMove(const std::unique_ptr<IFileHandle>& fh, bool move);
+
+    /**
+     * @brief canMove
+     * @param fh
+     * @return
+     */
+    bool canMove(const std::unique_ptr<IFileHandle>& fh) const;
+
+    void setBannerFormat(const std::unique_ptr<IFileHandle>& fh, EImageFormat fmt);
+    EImageFormat bannerFormat(const std::unique_ptr<IFileHandle>& fh) const;
+    void setIconAnimationType(const std::unique_ptr<IFileHandle>& fh, EAnimationType type);
+    EAnimationType iconAnimationType(const std::unique_ptr<IFileHandle>& fh) const;
+    void setIconFormat(const std::unique_ptr<IFileHandle>& fh, uint32_t idx, EImageFormat fmt);
+    EImageFormat iconFormat(const std::unique_ptr<IFileHandle>& fh, uint32_t idx) const;
+    void setIconSpeed(const std::unique_ptr<IFileHandle>& fh, uint32_t idx, EAnimationSpeed speed);
+    EAnimationSpeed iconSpeed(const std::unique_ptr<IFileHandle>& fh, uint32_t idx) const;
+    void setIconAddress(const std::unique_ptr<IFileHandle>& fh, uint32_t addr);
+    int32_t iconAddress(const std::unique_ptr<IFileHandle>& fh) const;
+    void setCommentAddress(const std::unique_ptr<IFileHandle>& fh, uint32_t addr);
+    int32_t commentAddress(const std::unique_ptr<IFileHandle>& fh) const;
+
+    /**
+     * @brief Copies a file from the current Card instance to a specified Card instance
+     * @param fh The file to copy
+     * @param dest The destination Card instance
+     * @return True if successful, false otherwise
+     */
+     bool copyFileTo(const std::unique_ptr<IFileHandle>&fh, Card& dest);
+
+     /**
+      * @brief moveFileTo
+      * @param fh
+      * @param dest
+      * @return
+      */
+     bool moveFileTo(const std::unique_ptr<IFileHandle>&fh, Card& dest);
+
     /**
      * @brief Sets the current game, if not null any openFile requests will only return files that match this game
      * @param game The target game id, e.g "GM8E"
      * @sa openFile
      */
     void setGame(const char* game);
+
     /**
      * @brief Returns the currently selected game
      * @return The selected game, or nullptr
      */
     const uint8_t* getGame() const;
+
     /**
      * @brief Sets the current maker, if not null any openFile requests will only return files that match this maker
      * @param maker The target maker id, e.g "01"
      * @sa openFile
      */
     void setMaker(const char* maker);
+
     /**
      * @brief Returns the currently selected maker
      * @return The selected maker, or nullptr
      */
     const uint8_t* getMaker() const;
+
     /**
      * @brief Retrieves the format assigned serial in two 32bit parts
      * @param s0
      * @param s1
      */
     void getSerial(uint32_t* s0, uint32_t* s1);
+
     /**
-     * @brief Retrieves
-     * @param checksum
-     * @param inverse
+     * @brief Retrieves the checksum values of the Card system header
+     * @param checksum The checksum of the system header
+     * @param inverse  The inverser checksum of the system header
      */
     void getChecksum(uint16_t* checksum, uint16_t* inverse);
+
     /**
      * @brief Formats the memory card and assigns a new serial
      * @param size The desired size of the file @sa ECardSize
@@ -125,11 +238,15 @@ public:
     void format(EDeviceId deviceId, ECardSize size = ECardSize::Card2043Mb, EEncoding encoding = EEncoding::ASCII);
 
     /**
-     * @brief getSizeMbit
-     * @return
+     * @brief Returns the size of the file in Megabits from a file on disk, useful for determining filesize ahead of time.
+     * @return Size of file in Megabits
      */
     static uint32_t getSizeMbitFromFile(const SystemString& filename);
 
+    /**
+     * @brief Writes any changes to the Card instance immediately to disk. <br />
+     * <b>Note:</b> <i>Under normal circumstances there is no need to call this function.</i>
+     */
     void commit();
 
     operator bool() const;
