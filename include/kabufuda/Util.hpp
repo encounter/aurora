@@ -46,19 +46,19 @@ constexpr type operator&(type a, type b)\
     using T = std::underlying_type_t<type>;\
     return type(static_cast<T>(a) & static_cast<T>(b));\
 }\
-constexpr type& operator|=(type& a, const type& b)\
+inline type& operator|=(type& a, const type& b)\
 {\
     using T = std::underlying_type_t<type>;\
     a = type(static_cast<T>(a) | static_cast<T>(b));\
     return a;\
 }\
-constexpr type& operator&=(type& a, const type& b)\
+inline type& operator&=(type& a, const type& b)\
 {\
     using T = std::underlying_type_t<type>;\
     a = type(static_cast<T>(a) & static_cast<T>(b));\
     return a;\
 }\
-constexpr type operator~(const type& key)\
+inline type operator~(const type& key)\
 {\
     using T = std::underlying_type_t<type>;\
     return type(~static_cast<T>(key));\
