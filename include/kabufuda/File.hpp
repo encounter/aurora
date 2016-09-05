@@ -11,21 +11,20 @@ class File
     friend class Directory;
     friend class Card;
 #pragma pack(push, 4)
-    union
-    {
+    union {
         struct
         {
-            uint8_t  m_game[4];
-            uint8_t  m_maker[2];
-            uint8_t  m_reserved;
-            uint8_t  m_bannerFlags;
-            char     m_filename[0x20];
+            uint8_t m_game[4];
+            uint8_t m_maker[2];
+            uint8_t m_reserved;
+            uint8_t m_bannerFlags;
+            char m_filename[0x20];
             uint32_t m_modifiedTime;
             uint32_t m_iconAddress;
             uint16_t m_iconFmt;
             uint16_t m_animSpeed;
-            EPermissions  m_permissions;
-            int8_t   m_copyCounter;
+            EPermissions m_permissions;
+            int8_t m_copyCounter;
             uint16_t m_firstBlock;
             uint16_t m_blockCount;
             uint16_t m_reserved2;
@@ -43,7 +42,6 @@ public:
     File(const char* filename);
     ~File() {}
 };
-
 }
 
 #endif // __KABU_FILE_HPP__

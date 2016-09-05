@@ -6,7 +6,7 @@ namespace kabufuda
 uint64_t getGCTime()
 {
     time_t sysTime, tzDiff, tzDST;
-    struct tm * gmTime;
+    struct tm* gmTime;
 
     time(&sysTime);
 

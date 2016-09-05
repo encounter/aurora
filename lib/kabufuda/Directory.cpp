@@ -2,14 +2,11 @@
 #include "kabufuda/Util.hpp"
 #include <cstring>
 
-
 namespace kabufuda
 {
 void Directory::swapEndian()
 {
-    std::for_each(std::begin(m_files), std::end(m_files), [](File& f){
-        f.swapEndian();
-    });
+    std::for_each(std::begin(m_files), std::end(m_files), [](File& f) { f.swapEndian(); });
 
     m_updateCounter = SBig(m_updateCounter);
     m_checksum = SBig(m_checksum);
@@ -39,28 +36,17 @@ Directory::Directory()
     updateChecksum();
 }
 
-Directory::Directory(uint8_t data[])
-{
-    memcpy(__raw, data, BlockSize);
-}
+Directory::Directory(uint8_t data[]) { memcpy(__raw, data, BlockSize); }
 
-Directory::Directory(const Directory& other)
-{
-    memcpy(__raw, other.__raw, BlockSize);
-}
+Directory::Directory(const Directory& other) { memcpy(__raw, other.__raw, BlockSize); }
 
-void Directory::operator=(const Directory& other)
-{
-    memcpy(__raw, other.__raw, BlockSize);
-}
+void Directory::operator=(const Directory& other) { memcpy(__raw, other.__raw, BlockSize); }
 
-Directory::~Directory()
-{
-}
+Directory::~Directory() {}
 
 File* Directory::getFirstFreeFile(const char* game, const char* maker, const char* filename)
 {
-    for (uint16_t i = 0 ; i < 127 ; i++)
+    for (uint16_t i = 0; i < 127; i++)
     {
         if (m_files[i].m_game[0] == 0xFF)
         {
@@ -77,16 +63,18 @@ File* Directory::getFirstFreeFile(const char* game, const char* maker, const cha
     return nullptr;
 }
 
-File *Directory::getFirstNonFreeFile(uint32_t start, const char *game, const char *maker)
+File* Directory::getFirstNonFreeFile(uint32_t start, const char* game, const char* maker)
 {
-    for (uint16_t i = start ; i < 127 ; i++)
+    for (uint16_t i = start; i < 127; i++)
     {
         if (m_files[i].m_game[0] != 0xFF)
         {
             File* ret = &m_files[i];
-            if (game && std::strlen(game) == 4 && std::strncmp(reinterpret_cast<const char*>(ret->m_game), game, 4) != 0)
+            if (game && std::strlen(game) == 4 &&
+                std::strncmp(reinterpret_cast<const char*>(ret->m_game), game, 4) != 0)
                 continue;
-            if (maker && std::strlen(maker) == 2 && std::strncmp(reinterpret_cast<const char*>(ret->m_maker), maker, 2) != 0)
+            if (maker && std::strlen(maker) == 2 &&
+                std::strncmp(reinterpret_cast<const char*>(ret->m_maker), maker, 2) != 0)
                 continue;
             return ret;
         }
@@ -97,7 +85,7 @@ File *Directory::getFirstNonFreeFile(uint32_t start, const char *game, const cha
 
 File* Directory::getFile(const char* game, const char* maker, const char* filename)
 {
-    for (uint16_t i = 0 ; i < 127 ; i++)
+    for (uint16_t i = 0; i < 127; i++)
     {
         if (game && strlen(game) == 4 && memcmp(m_files[i].m_game, game, 4))
             continue;
@@ -118,14 +106,13 @@ File* Directory::getFile(uint32_t idx)
     return &m_files[idx];
 }
 
-int32_t Directory::indexForFile(File *f)
+int32_t Directory::indexForFile(File* f)
 {
     if (!f)
         return -1;
 
-    auto it = std::find_if(std::begin(m_files), std::end(m_files), [&f](const File& file)->bool{
-        return f == &file;
-    });
+    auto it =
+        std::find_if(std::begin(m_files), std::end(m_files), [&f](const File& file) -> bool { return f == &file; });
     if (it == std::end(m_files))
         return -1;
     return it - std::begin(m_files);

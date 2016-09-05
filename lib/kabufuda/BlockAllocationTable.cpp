@@ -2,7 +2,6 @@
 #include "kabufuda/Util.hpp"
 #include <vector>
 
-
 namespace kabufuda
 {
 void BlockAllocationTable::swapEndian()
@@ -12,9 +11,7 @@ void BlockAllocationTable::swapEndian()
     m_updateCounter = SBig(m_updateCounter);
     m_freeBlocks = SBig(m_freeBlocks);
     m_lastAllocated = SBig(m_lastAllocated);
-    std::for_each(std::begin(m_map), std::end(m_map), [](uint16_t& val){
-        val = SBig(val);
-    });
+    std::for_each(std::begin(m_map), std::end(m_map), [](uint16_t& val) { val = SBig(val); });
 }
 
 void BlockAllocationTable::updateChecksum()
@@ -41,8 +38,7 @@ BlockAllocationTable::BlockAllocationTable(uint32_t blockCount)
     updateChecksum();
 }
 
-BlockAllocationTable::~BlockAllocationTable()
-{}
+BlockAllocationTable::~BlockAllocationTable() {}
 
 uint16_t BlockAllocationTable::getNextBlock(uint16_t block) const
 {
@@ -83,7 +79,7 @@ bool BlockAllocationTable::clear(uint16_t first, uint16_t count)
         if (length != count)
             return false;
 
-        for (size_t i= 0 ; i < length ; ++i)
+        for (size_t i = 0; i < length; ++i)
             m_map[blocks.at(i) - FSTBlocks] = 0;
         m_freeBlocks += count;
         return true;

@@ -9,8 +9,7 @@ class BlockAllocationTable
 {
     friend class Card;
 #pragma pack(push, 4)
-    union
-    {
+    union {
         struct
         {
             uint16_t m_checksum;
