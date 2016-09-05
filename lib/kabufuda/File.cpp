@@ -3,15 +3,9 @@
 
 namespace kabufuda
 {
-File::File()
-{
-    memset(__raw, 0xFF, 0x40);
-}
+File::File() { memset(__raw, 0xFF, 0x40); }
 
-File::File(char data[])
-{
-    memcpy(__raw, data, 0x40);
-}
+File::File(char data[]) { memcpy(__raw, data, 0x40); }
 
 File::File(const char* filename)
 {

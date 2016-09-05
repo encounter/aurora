@@ -22,19 +22,18 @@ public:
 class Card
 {
 #pragma pack(push, 4)
-    union
-    {
+    union {
         struct
         {
-            uint8_t  m_serial[12];
+            uint8_t m_serial[12];
             uint64_t m_formatTime;
-            int32_t  m_sramBias;
+            int32_t m_sramBias;
             uint32_t m_sramLanguage;
             uint32_t m_unknown;
             uint16_t m_deviceId; /* 0 for Slot A, 1 for Slot B */
             uint16_t m_sizeMb;
             uint16_t m_encoding;
-            uint8_t  __padding[468];
+            uint8_t __padding[468];
             uint16_t m_updateCounter;
             uint16_t m_checksum;
             uint16_t m_checksumInv;
@@ -45,13 +44,13 @@ class Card
 #pragma pack(pop)
 
     SystemString m_filename;
-    FILE*      m_fileHandle = nullptr;
-    Directory  m_dir;
-    Directory  m_dirBackup;
+    FILE* m_fileHandle = nullptr;
+    Directory m_dir;
+    Directory m_dirBackup;
     Directory* m_currentDir;
     Directory* m_previousDir;
-    BlockAllocationTable  m_bat;
-    BlockAllocationTable  m_batBackup;
+    BlockAllocationTable m_bat;
+    BlockAllocationTable m_batBackup;
     BlockAllocationTable* m_currentBat;
     BlockAllocationTable* m_previousBat;
 
@@ -63,6 +62,7 @@ class Card
     void _updateDirAndBat();
     void _updateChecksum();
     File* _fileFromHandle(const std::unique_ptr<IFileHandle>& fh) const;
+
 public:
     Card();
     /**
@@ -76,21 +76,21 @@ public:
      * @param game
      * @param maker
      */
-    Card(const SystemString& filepath, const char* game = nullptr, const char* maker=nullptr);
+    Card(const SystemString& filepath, const char* game = nullptr, const char* maker = nullptr);
     ~Card();
 
     /**
      * @brief openFile
      * @param filename
      */
-    std::unique_ptr<IFileHandle>  openFile(const char* filename);
+    std::unique_ptr<IFileHandle> openFile(const char* filename);
 
     /**
      * @brief createFile
      * @param filename
      * @return
      */
-    std::unique_ptr<IFileHandle>  createFile(const char* filename, size_t size);
+    std::unique_ptr<IFileHandle> createFile(const char* filename, size_t size);
 
     /**
      * @brief firstFile
@@ -297,15 +297,15 @@ public:
      * @param dest The destination Card instance
      * @return True if successful, false otherwise
      */
-     bool copyFileTo(const std::unique_ptr<IFileHandle>&fh, Card& dest);
+    bool copyFileTo(const std::unique_ptr<IFileHandle>& fh, Card& dest);
 
-     /**
-      * @brief moveFileTo
-      * @param fh
-      * @param dest
-      * @return
-      */
-     bool moveFileTo(const std::unique_ptr<IFileHandle>&fh, Card& dest);
+    /**
+     * @brief moveFileTo
+     * @param fh
+     * @param dest
+     * @return
+     */
+    bool moveFileTo(const std::unique_ptr<IFileHandle>& fh, Card& dest);
 
     /**
      * @brief Sets the current game, if not null any openFile requests will only return files that match this game
@@ -355,7 +355,8 @@ public:
     void format(EDeviceId deviceId, ECardSize size = ECardSize::Card2043Mb, EEncoding encoding = EEncoding::ASCII);
 
     /**
-     * @brief Returns the size of the file in Megabits from a file on disk, useful for determining filesize ahead of time.
+     * @brief Returns the size of the file in Megabits from a file on disk, useful for determining filesize ahead of
+     * time.
      * @return Size of file in Megabits
      */
     static uint32_t getSizeMbitFromFile(const SystemString& filename);
@@ -371,4 +372,3 @@ public:
 }
 
 #endif // __CARD_HPP__
-

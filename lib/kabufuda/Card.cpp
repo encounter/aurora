@@ -8,26 +8,21 @@
 namespace kabufuda
 {
 
-IFileHandle::~IFileHandle()
-{
-}
+IFileHandle::~IFileHandle() {}
 
 class FileHandle : public IFileHandle
 {
     friend class Card;
     uint32_t idx;
-    int32_t offset =0;
+    int32_t offset = 0;
+
 public:
     FileHandle() = default;
-    FileHandle(uint32_t idx)
-        : idx(idx)
-    {}
+    FileHandle(uint32_t idx) : idx(idx) {}
     virtual ~FileHandle();
 };
 
-FileHandle::~FileHandle()
-{}
-
+FileHandle::~FileHandle() {}
 
 void Card::_swapEndian()
 {
@@ -43,10 +38,7 @@ void Card::_swapEndian()
     m_checksumInv = SBig(m_checksumInv);
 }
 
-Card::Card()
-{
-    memset(__raw, 0xFF, BlockSize);
-}
+Card::Card() { memset(__raw, 0xFF, BlockSize); }
 
 Card::Card(const Card& other)
 {
@@ -59,8 +51,7 @@ Card::Card(const Card& other)
     memcpy(m_maker, other.m_maker, 2);
 }
 
-Card::Card(const SystemString& filename, const char* game, const char* maker)
-    : m_filename(filename)
+Card::Card(const SystemString& filename, const char* game, const char* maker) : m_filename(filename)
 {
     memset(__raw, 0xFF, BlockSize);
     if (game && strlen(game) == 4)
@@ -164,7 +155,7 @@ void Card::_updateChecksum()
     _swapEndian();
 }
 
-File* Card::_fileFromHandle(const std::unique_ptr<IFileHandle> &fh) const
+File* Card::_fileFromHandle(const std::unique_ptr<IFileHandle>& fh) const
 {
     if (!fh)
         return nullptr;
@@ -187,7 +178,6 @@ std::unique_ptr<IFileHandle> Card::createFile(const char* filename, size_t size)
         f->m_modifiedTime = uint32_t(getGCTime());
         f->m_firstBlock = block;
         f->m_blockCount = uint16_t(size / BlockSize);
-
 
         return std::unique_ptr<IFileHandle>(new FileHandle(m_currentDir->indexForFile(f)));
     }
@@ -231,7 +221,7 @@ void Card::deleteFile(const std::unique_ptr<IFileHandle>& fh)
     FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
     uint16_t block = m_currentDir->getFile(f->idx)->m_firstBlock;
 
-    while(block != 0xFFFF)
+    while (block != 0xFFFF)
     {
         /* TODO: add a fragmentation check */
         uint16_t nextBlock = m_currentBat->getNextBlock(block);
@@ -239,7 +229,6 @@ void Card::deleteFile(const std::unique_ptr<IFileHandle>& fh)
         block = nextBlock;
     }
     *m_currentDir->getFile(f->idx) = File();
-
 }
 
 void Card::write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t size)
@@ -291,7 +280,7 @@ void Card::write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t
     }
 }
 
-void Card::read(const std::unique_ptr<IFileHandle> &fh, void *dst, size_t size)
+void Card::read(const std::unique_ptr<IFileHandle>& fh, void* dst, size_t size)
 {
     if (!fh)
         return;
@@ -339,7 +328,7 @@ void Card::read(const std::unique_ptr<IFileHandle> &fh, void *dst, size_t size)
     }
 }
 
-void Card::seek(const std::unique_ptr<IFileHandle> &fh, int32_t pos, SeekOrigin whence)
+void Card::seek(const std::unique_ptr<IFileHandle>& fh, int32_t pos, SeekOrigin whence)
 {
     if (!fh)
         return;
@@ -349,7 +338,7 @@ void Card::seek(const std::unique_ptr<IFileHandle> &fh, int32_t pos, SeekOrigin 
     if (!file)
         return;
 
-    switch(whence)
+    switch (whence)
     {
     case SeekOrigin::Begin:
         f->offset = pos;
@@ -363,7 +352,7 @@ void Card::seek(const std::unique_ptr<IFileHandle> &fh, int32_t pos, SeekOrigin 
     }
 }
 
-int32_t Card::tell(const std::unique_ptr<IFileHandle> &fh)
+int32_t Card::tell(const std::unique_ptr<IFileHandle>& fh)
 {
     if (!fh)
         return -1;
@@ -385,7 +374,7 @@ void Card::setPublic(const std::unique_ptr<IFileHandle>& fh, bool pub)
         file->m_permissions &= ~EPermissions::Public;
 }
 
-bool Card::isPublic(const std::unique_ptr<IFileHandle> &fh) const
+bool Card::isPublic(const std::unique_ptr<IFileHandle>& fh) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -394,7 +383,7 @@ bool Card::isPublic(const std::unique_ptr<IFileHandle> &fh) const
     return bool(file->m_permissions & EPermissions::Public);
 }
 
-void Card::setCanCopy(const std::unique_ptr<IFileHandle> &fh, bool copy) const
+void Card::setCanCopy(const std::unique_ptr<IFileHandle>& fh, bool copy) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -406,7 +395,7 @@ void Card::setCanCopy(const std::unique_ptr<IFileHandle> &fh, bool copy) const
         file->m_permissions |= EPermissions::NoCopy;
 }
 
-bool Card::canCopy(const std::unique_ptr<IFileHandle> &fh) const
+bool Card::canCopy(const std::unique_ptr<IFileHandle>& fh) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -415,7 +404,7 @@ bool Card::canCopy(const std::unique_ptr<IFileHandle> &fh) const
     return !bool(file->m_permissions & EPermissions::NoCopy);
 }
 
-void Card::setCanMove(const std::unique_ptr<IFileHandle> &fh, bool move)
+void Card::setCanMove(const std::unique_ptr<IFileHandle>& fh, bool move)
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -427,7 +416,7 @@ void Card::setCanMove(const std::unique_ptr<IFileHandle> &fh, bool move)
         file->m_permissions |= EPermissions::NoMove;
 }
 
-bool Card::canMove(const std::unique_ptr<IFileHandle> &fh) const
+bool Card::canMove(const std::unique_ptr<IFileHandle>& fh) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -436,7 +425,7 @@ bool Card::canMove(const std::unique_ptr<IFileHandle> &fh) const
     return !bool(file->m_permissions & EPermissions::NoMove);
 }
 
-const char* Card::gameId(const std::unique_ptr<IFileHandle> &fh) const
+const char* Card::gameId(const std::unique_ptr<IFileHandle>& fh) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -444,7 +433,7 @@ const char* Card::gameId(const std::unique_ptr<IFileHandle> &fh) const
     return reinterpret_cast<const char*>(file->m_game);
 }
 
-const char *Card::maker(const std::unique_ptr<IFileHandle> &fh) const
+const char* Card::maker(const std::unique_ptr<IFileHandle>& fh) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -460,7 +449,7 @@ void Card::setBannerFormat(const std::unique_ptr<IFileHandle>& fh, EImageFormat 
     file->m_bannerFlags = (file->m_bannerFlags & ~3) | (uint8_t(fmt));
 }
 
-EImageFormat Card::bannerFormat(const std::unique_ptr<IFileHandle> &fh) const
+EImageFormat Card::bannerFormat(const std::unique_ptr<IFileHandle>& fh) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -468,15 +457,15 @@ EImageFormat Card::bannerFormat(const std::unique_ptr<IFileHandle> &fh) const
     return EImageFormat(file->m_bannerFlags & 3);
 }
 
-void Card::setIconAnimationType(const std::unique_ptr<IFileHandle> &fh, EAnimationType type)
+void Card::setIconAnimationType(const std::unique_ptr<IFileHandle>& fh, EAnimationType type)
 {
     File* file = _fileFromHandle(fh);
     if (!file)
         return;
-    file->m_bannerFlags =  (file->m_bannerFlags & ~4) | uint8_t(type);
+    file->m_bannerFlags = (file->m_bannerFlags & ~4) | uint8_t(type);
 }
 
-EAnimationType Card::iconAnimationType(const std::unique_ptr<IFileHandle> &fh) const
+EAnimationType Card::iconAnimationType(const std::unique_ptr<IFileHandle>& fh) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -485,16 +474,16 @@ EAnimationType Card::iconAnimationType(const std::unique_ptr<IFileHandle> &fh) c
     return EAnimationType(file->m_bannerFlags & 4);
 }
 
-void Card::setIconFormat(const std::unique_ptr<IFileHandle> &fh, uint32_t idx, EImageFormat fmt)
+void Card::setIconFormat(const std::unique_ptr<IFileHandle>& fh, uint32_t idx, EImageFormat fmt)
 {
     File* file = _fileFromHandle(fh);
     if (!file)
         return;
 
-    file->m_iconFmt = (file->m_iconFmt & ~(3  << (2 * idx))) | (uint16_t(fmt) << (2 * idx));
+    file->m_iconFmt = (file->m_iconFmt & ~(3 << (2 * idx))) | (uint16_t(fmt) << (2 * idx));
 }
 
-EImageFormat Card::iconFormat(const std::unique_ptr<IFileHandle> &fh, uint32_t idx) const
+EImageFormat Card::iconFormat(const std::unique_ptr<IFileHandle>& fh, uint32_t idx) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -503,25 +492,25 @@ EImageFormat Card::iconFormat(const std::unique_ptr<IFileHandle> &fh, uint32_t i
     return EImageFormat(file->m_iconFmt >> (2 * (idx)) & 3);
 }
 
-void Card::setIconSpeed(const std::unique_ptr<IFileHandle> &fh, uint32_t idx, EAnimationSpeed speed)
+void Card::setIconSpeed(const std::unique_ptr<IFileHandle>& fh, uint32_t idx, EAnimationSpeed speed)
 {
     File* file = _fileFromHandle(fh);
     if (!file)
         return;
 
-    file->m_animSpeed = (file->m_animSpeed  & ~(3 << (2 * idx))) | (uint16_t(speed) << (2 * idx));
+    file->m_animSpeed = (file->m_animSpeed & ~(3 << (2 * idx))) | (uint16_t(speed) << (2 * idx));
 }
 
-EAnimationSpeed Card::iconSpeed(const std::unique_ptr<IFileHandle> &fh, uint32_t idx) const
+EAnimationSpeed Card::iconSpeed(const std::unique_ptr<IFileHandle>& fh, uint32_t idx) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)
         return EAnimationSpeed::End;
 
-    return EAnimationSpeed((file->m_animSpeed  >> (2 * (idx))) & 3);
+    return EAnimationSpeed((file->m_animSpeed >> (2 * (idx))) & 3);
 }
 
-void Card::setImageAddress(const std::unique_ptr<IFileHandle> &fh, uint32_t addr)
+void Card::setImageAddress(const std::unique_ptr<IFileHandle>& fh, uint32_t addr)
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -529,7 +518,7 @@ void Card::setImageAddress(const std::unique_ptr<IFileHandle> &fh, uint32_t addr
     file->m_iconAddress = addr;
 }
 
-int32_t Card::imageAddress(const std::unique_ptr<IFileHandle> &fh) const
+int32_t Card::imageAddress(const std::unique_ptr<IFileHandle>& fh) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -537,7 +526,7 @@ int32_t Card::imageAddress(const std::unique_ptr<IFileHandle> &fh) const
     return file->m_iconAddress;
 }
 
-void Card::setCommentAddress(const std::unique_ptr<IFileHandle> &fh, uint32_t addr)
+void Card::setCommentAddress(const std::unique_ptr<IFileHandle>& fh, uint32_t addr)
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -545,7 +534,7 @@ void Card::setCommentAddress(const std::unique_ptr<IFileHandle> &fh, uint32_t ad
     file->m_commentAddr = addr;
 }
 
-int32_t Card::commentAddress(const std::unique_ptr<IFileHandle> &fh) const
+int32_t Card::commentAddress(const std::unique_ptr<IFileHandle>& fh) const
 {
     File* file = _fileFromHandle(fh);
     if (!file)
@@ -553,7 +542,7 @@ int32_t Card::commentAddress(const std::unique_ptr<IFileHandle> &fh) const
     return file->m_commentAddr;
 }
 
-bool Card::copyFileTo(const std::unique_ptr<IFileHandle> &fh, Card &dest)
+bool Card::copyFileTo(const std::unique_ptr<IFileHandle>& fh, Card& dest)
 {
     if (!fh)
         return false;
@@ -598,7 +587,7 @@ bool Card::copyFileTo(const std::unique_ptr<IFileHandle> &fh, Card &dest)
     return true;
 }
 
-bool Card::moveFileTo(const std::unique_ptr<IFileHandle> &fh, Card &dest)
+bool Card::moveFileTo(const std::unique_ptr<IFileHandle>& fh, Card& dest)
 {
     if (copyFileTo(fh, dest))
     {
@@ -652,7 +641,7 @@ const uint8_t* Card::getCurrentMaker() const
     return nullptr;
 }
 
-void Card::getSerial(uint32_t *s0, uint32_t *s1)
+void Card::getSerial(uint32_t* s0, uint32_t* s1)
 {
     uint32_t serial[8];
     for (uint32_t i = 0; i < 8; i++)
@@ -680,21 +669,21 @@ void Card::format(EDeviceId id, ECardSize size, EEncoding encoding)
         rand &= uint64_t(0x7fffULL);
     }
 
-    m_sramBias   = int32_t(SBig(g_SRAM.counter_bias));
+    m_sramBias = int32_t(SBig(g_SRAM.counter_bias));
     m_sramLanguage = uint32_t(SBig(g_SRAM.lang));
-    m_unknown    = 0; /* 1 works for slot A, 0 both */
-    m_deviceId    = 0;
-    m_sizeMb      = uint16_t(size);
-    m_maxBlock    = m_sizeMb * MbitToBlocks;
-    m_encoding    = uint16_t(encoding);
+    m_unknown = 0; /* 1 works for slot A, 0 both */
+    m_deviceId = 0;
+    m_sizeMb = uint16_t(size);
+    m_maxBlock = m_sizeMb * MbitToBlocks;
+    m_encoding = uint16_t(encoding);
     _updateChecksum();
-    m_dir         = Directory();
-    m_dirBackup   = m_dir;
-    m_bat         = BlockAllocationTable(uint32_t(size) * MbitToBlocks);
-    m_batBackup   = m_bat;
-    m_currentDir  = &m_dirBackup;
+    m_dir = Directory();
+    m_dirBackup = m_dir;
+    m_bat = BlockAllocationTable(uint32_t(size) * MbitToBlocks);
+    m_batBackup = m_bat;
+    m_currentDir = &m_dirBackup;
     m_previousDir = &m_dir;
-    m_currentBat  = &m_batBackup;
+    m_currentBat = &m_batBackup;
     m_previousBat = &m_bat;
 
     if (m_fileHandle)

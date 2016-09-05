@@ -9,12 +9,11 @@ class Directory
 {
     friend class Card;
 #pragma pack(push, 4)
-    union
-    {
+    union {
         struct
         {
-            File     m_files[MaxFiles];
-            uint8_t  __padding[0x3a];
+            File m_files[MaxFiles];
+            uint8_t __padding[0x3a];
             uint16_t m_updateCounter;
             uint16_t m_checksum;
             uint16_t m_checksumInv;
