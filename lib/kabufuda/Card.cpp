@@ -546,6 +546,10 @@ bool Card::copyFileTo(const std::unique_ptr<IFileHandle>& fh, Card& dest)
 {
     if (!fh)
         return false;
+
+    if (!canCopy(fh))
+        return false;
+
     /* Do a self test to avoid adding a file to itself */
     if (this == &dest)
         return false;
@@ -589,7 +593,7 @@ bool Card::copyFileTo(const std::unique_ptr<IFileHandle>& fh, Card& dest)
 
 bool Card::moveFileTo(const std::unique_ptr<IFileHandle>& fh, Card& dest)
 {
-    if (copyFileTo(fh, dest))
+    if (copyFileTo(fh, dest) && canMove(fh))
     {
         deleteFile(fh);
         return true;
