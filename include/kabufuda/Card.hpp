@@ -334,11 +334,10 @@ public:
     const uint8_t* getCurrentMaker() const;
 
     /**
-     * @brief Retrieves the format assigned serial in two 32bit parts
-     * @param s0
-     * @param s1
+     * @brief Retrieves the format assigned serial
+     * @param serial
      */
-    void getSerial(uint32_t* s0, uint32_t* s1);
+    void getSerial(uint64_t& serial);
 
     /**
      * @brief Retrieves the checksum values of the Card system header

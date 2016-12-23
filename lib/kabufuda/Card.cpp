@@ -645,13 +645,15 @@ const uint8_t* Card::getCurrentMaker() const
     return nullptr;
 }
 
-void Card::getSerial(uint32_t* s0, uint32_t* s1)
+void Card::getSerial(uint64_t& serial)
 {
-    uint32_t serial[8];
+    Card copy = *this;
+    copy._swapEndian();
+    uint32_t serialBuf[8];
     for (uint32_t i = 0; i < 8; i++)
-        memcpy(&serial[i], reinterpret_cast<uint8_t*>(m_serial + (i * 4)), 4);
-    *s0 = serial[0] ^ serial[2] ^ serial[4] ^ serial[6];
-    *s1 = serial[1] ^ serial[3] ^ serial[5] ^ serial[7];
+        serialBuf[i] = SBig(*reinterpret_cast<uint32_t*>(copy.__raw + (i * 4)));
+    serial = uint64_t(serialBuf[0] ^ serialBuf[2] ^ serialBuf[4] ^ serialBuf[6]) << 32 |
+             (serialBuf[1] ^ serialBuf[3] ^ serialBuf[5] ^ serialBuf[7]);
 }
 
 void Card::getChecksum(uint16_t* checksum, uint16_t* inverse)
