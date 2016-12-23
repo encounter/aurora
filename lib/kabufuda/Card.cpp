@@ -554,13 +554,13 @@ bool Card::copyFileTo(const std::unique_ptr<IFileHandle>& fh, Card& dest)
     if (this == &dest)
         return false;
 
-    /* Check to make sure dest does not already contain fh */
-    if (dest._fileFromHandle(fh) != nullptr)
-        return false;
-
     /* Now to add fh */
     File* toCopy = _fileFromHandle(fh);
     if (!toCopy)
+        return false;
+
+    /* Check to make sure dest does not already contain fh */
+    if (dest.openFile(toCopy->m_filename) != nullptr)
         return false;
 
     /* Try to allocate a new file */
@@ -647,13 +647,13 @@ const uint8_t* Card::getCurrentMaker() const
 
 void Card::getSerial(uint64_t& serial)
 {
-    Card copy = *this;
-    copy._swapEndian();
+    _swapEndian();
     uint32_t serialBuf[8];
     for (uint32_t i = 0; i < 8; i++)
-        serialBuf[i] = SBig(*reinterpret_cast<uint32_t*>(copy.__raw + (i * 4)));
+        serialBuf[i] = SBig(*reinterpret_cast<uint32_t*>(__raw + (i * 4)));
     serial = uint64_t(serialBuf[0] ^ serialBuf[2] ^ serialBuf[4] ^ serialBuf[6]) << 32 |
              (serialBuf[1] ^ serialBuf[3] ^ serialBuf[5] ^ serialBuf[7]);
+    _swapEndian();
 }
 
 void Card::getChecksum(uint16_t* checksum, uint16_t* inverse)
