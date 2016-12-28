@@ -8,17 +8,18 @@
 namespace kabufuda
 {
 
+#define ROUND_UP_8192(val) (((val) + 8191) & ~8191)
+
 IFileHandle::~IFileHandle() {}
 
 class FileHandle : public IFileHandle
 {
     friend class Card;
-    uint32_t idx;
     int32_t offset = 0;
 
 public:
     FileHandle() = default;
-    FileHandle(uint32_t idx) : idx(idx) {}
+    FileHandle(uint32_t idx) : IFileHandle(idx) {}
     virtual ~FileHandle();
 };
 
@@ -109,7 +110,6 @@ Card::Card(const SystemString& filename, const char* game, const char* maker) : 
 
         /* Close and reopen in read/write mode */
         fclose(m_fileHandle);
-        m_fileHandle = nullptr;
         m_fileHandle = Fopen(m_filename.c_str(), _S("r+"));
         rewind(m_fileHandle);
     }
@@ -129,10 +129,16 @@ std::unique_ptr<IFileHandle> Card::openFile(const char* filename)
     int32_t idx = m_currentDir->indexForFile(f);
     if (f && idx != -1)
     {
-
-        return std::unique_ptr<IFileHandle>(new FileHandle(idx));
+        return std::make_unique<FileHandle>(idx);
     }
     return nullptr;
+}
+
+std::unique_ptr<IFileHandle> Card::openFile(uint32_t fileno)
+{
+    if (fileno >= 127)
+        return nullptr;
+    return std::make_unique<FileHandle>(fileno);
 }
 
 void Card::_updateDirAndBat()
@@ -168,27 +174,40 @@ File* Card::_fileFromHandle(const std::unique_ptr<IFileHandle>& fh) const
     return file;
 }
 
-std::unique_ptr<IFileHandle> Card::createFile(const char* filename, size_t size)
+ECardResult Card::createFile(const char* filename, size_t size,
+                             std::unique_ptr<IFileHandle>& handleOut)
 {
+    if (strlen(filename) > 32)
+        return ECardResult::NAMETOOLONG;
+    if (m_currentDir->getFile(m_game, m_maker, filename))
+        return ECardResult::EXIST;
+    uint16_t neededBlocks = ROUND_UP_8192(size) / BlockSize;
+    if (neededBlocks > m_currentBat->numFreeBlocks())
+        return ECardResult::INSSPACE;
+    if (!m_currentDir->hasFreeFile())
+        return ECardResult::NOENT;
+
     _updateDirAndBat();
     File* f = m_currentDir->getFirstFreeFile(m_game, m_maker, filename);
-    uint16_t block = m_currentBat->allocateBlocks(uint16_t(size / BlockSize), m_maxBlock);
+    uint16_t block = m_currentBat->allocateBlocks(neededBlocks, m_maxBlock);
     if (f && block != 0xFFFF)
     {
         f->m_modifiedTime = uint32_t(getGCTime());
         f->m_firstBlock = block;
-        f->m_blockCount = uint16_t(size / BlockSize);
+        f->m_blockCount = neededBlocks;
 
-        return std::unique_ptr<IFileHandle>(new FileHandle(m_currentDir->indexForFile(f)));
+        handleOut = std::make_unique<FileHandle>(m_currentDir->indexForFile(f));
+        return ECardResult::READY;
     }
-    return nullptr;
+
+    return ECardResult::FATAL_ERROR;
 }
 
 std::unique_ptr<IFileHandle> Card::firstFile()
 {
     File* f = m_currentDir->getFirstNonFreeFile(0, m_game, m_maker);
     if (f)
-        return std::unique_ptr<IFileHandle>(new FileHandle(m_currentDir->indexForFile(f)));
+        return std::make_unique<FileHandle>(m_currentDir->indexForFile(f));
 
     return nullptr;
 }
@@ -202,7 +221,7 @@ std::unique_ptr<IFileHandle> Card::nextFile(const std::unique_ptr<IFileHandle>& 
     File* next = m_currentDir->getFirstNonFreeFile(handle->idx + 1, m_game, m_maker);
     if (!next)
         return nullptr;
-    return std::unique_ptr<IFileHandle>(new FileHandle(m_currentDir->indexForFile(next)));
+    return std::make_unique<FileHandle>(m_currentDir->indexForFile(next));
 }
 
 const char* Card::getFilename(const std::unique_ptr<IFileHandle>& fh)
@@ -213,14 +232,9 @@ const char* Card::getFilename(const std::unique_ptr<IFileHandle>& fh)
     return f->m_filename;
 }
 
-void Card::deleteFile(const std::unique_ptr<IFileHandle>& fh)
+void Card::_deleteFile(File& f)
 {
-    _updateDirAndBat();
-    if (!fh)
-        return;
-    FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
-    uint16_t block = m_currentDir->getFile(f->idx)->m_firstBlock;
-
+    uint16_t block = f.m_firstBlock;
     while (block != 0xFFFF)
     {
         /* TODO: add a fragmentation check */
@@ -228,7 +242,52 @@ void Card::deleteFile(const std::unique_ptr<IFileHandle>& fh)
         m_currentBat->clear(block, 1);
         block = nextBlock;
     }
-    *m_currentDir->getFile(f->idx) = File();
+    f = File();
+}
+
+void Card::deleteFile(const std::unique_ptr<IFileHandle>& fh)
+{
+    _updateDirAndBat();
+    if (!fh)
+        return;
+    FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
+    _deleteFile(*m_currentDir->getFile(f->idx));
+}
+
+ECardResult Card::deleteFile(const char* filename)
+{
+    _updateDirAndBat();
+    File* f = m_currentDir->getFile(m_game, m_maker, filename);
+    if (!f)
+        return ECardResult::NOFILE;
+
+    _deleteFile(*f);
+    return ECardResult::READY;
+}
+
+ECardResult Card::deleteFile(uint32_t fileno)
+{
+    _updateDirAndBat();
+    File* f = m_currentDir->getFile(fileno);
+    if (!f)
+        return ECardResult::NOFILE;
+
+    _deleteFile(*f);
+    return ECardResult::READY;
+}
+
+ECardResult Card::renameFile(const char* oldName, const char* newName)
+{
+    if (strlen(newName) > 32)
+        return ECardResult::NAMETOOLONG;
+
+    _updateDirAndBat();
+    File* f = m_currentDir->getFile(m_game, m_maker, oldName);
+    if (!f)
+        return ECardResult::NOFILE;
+
+    strncpy(f->m_filename, newName, 32);
+    return ECardResult::READY;
 }
 
 void Card::write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t size)
@@ -564,7 +623,8 @@ bool Card::copyFileTo(const std::unique_ptr<IFileHandle>& fh, Card& dest)
         return false;
 
     /* Try to allocate a new file */
-    std::unique_ptr<IFileHandle> tmpHandle = dest.createFile(toCopy->m_filename, toCopy->m_blockCount * BlockSize);
+    std::unique_ptr<IFileHandle> tmpHandle;
+    dest.createFile(toCopy->m_filename, toCopy->m_blockCount * BlockSize, tmpHandle);
     if (!tmpHandle)
         return false;
 
@@ -656,13 +716,19 @@ void Card::getSerial(uint64_t& serial)
     _swapEndian();
 }
 
-void Card::getChecksum(uint16_t* checksum, uint16_t* inverse)
+void Card::getChecksum(uint16_t& checksum, uint16_t& inverse)
 {
-    *checksum = m_checksum;
-    *inverse = m_checksumInv;
+    checksum = m_checksum;
+    inverse = m_checksumInv;
 }
 
-void Card::format(EDeviceId id, ECardSize size, EEncoding encoding)
+void Card::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed)
+{
+    bytesNotUsed = m_currentBat->numFreeBlocks() * 0x2000;
+    filesNotUsed = m_currentDir->numFreeFiles();
+}
+
+void Card::format(ECardSlot id, ECardSize size, EEncoding encoding)
 {
     memset(__raw, 0xFF, BlockSize);
     uint64_t rand = uint64_t(getGCTime());
@@ -723,11 +789,12 @@ void Card::format(EDeviceId id, ECardSize size, EEncoding encoding)
     }
 }
 
-uint32_t Card::getSizeMbitFromFile(const SystemString& filename)
+ProbeResults Card::probeCardFile(const SystemString& filename)
 {
     Sstat stat;
-    Stat(filename.c_str(), &stat);
-    return uint32_t(stat.st_size / BlockSize) / MbitToBlocks;
+    if (Stat(filename.c_str(), &stat))
+        return { ECardResult::NOCARD, 0, 0 };
+    return { ECardResult::READY, uint32_t(stat.st_size / BlockSize) / MbitToBlocks, 0x2000 };
 }
 
 void Card::commit()
@@ -758,22 +825,22 @@ void Card::commit()
     }
 }
 
-Card::operator bool() const
+ECardResult Card::getError() const
 {
     if (m_fileHandle == nullptr)
-        return false;
+        return ECardResult::NOCARD;
 
     uint16_t ckSum, ckSumInv;
     Card tmp = *this;
     tmp._swapEndian();
     calculateChecksumBE(reinterpret_cast<const uint16_t*>(tmp.__raw), 0xFE, &ckSum, &ckSumInv);
     if (SBig(ckSum) != m_checksum || SBig(ckSumInv) != m_checksumInv)
-        return false;
+        return ECardResult::BROKEN;
     if (!m_dir.valid() && !m_dirBackup.valid())
-        return false;
+        return ECardResult::BROKEN;
     if (!m_bat.valid() && !m_batBackup.valid())
-        return false;
+        return ECardResult::BROKEN;
 
-    return true;
+    return ECardResult::READY;
 }
 }

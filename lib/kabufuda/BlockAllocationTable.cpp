@@ -43,7 +43,7 @@ BlockAllocationTable::~BlockAllocationTable() {}
 uint16_t BlockAllocationTable::getNextBlock(uint16_t block) const
 {
     if ((block < FSTBlocks) || (block > (BATSize - FSTBlocks)))
-        return 0;
+        return 0xFFFF;
 
     return m_map[block - FSTBlocks];
 }

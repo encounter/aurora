@@ -5,18 +5,18 @@ int main()
 {
     kabufuda::Card mc{_S("test.USA.raw"), "GM8E", "01"};
     if (!mc)
-        mc.format(kabufuda::EDeviceId::SlotA, kabufuda::ECardSize::Card2043Mb);
+        mc.format(kabufuda::ECardSlot::SlotA, kabufuda::ECardSize::Card2043Mb);
     uint64_t a = 0;
     mc.getSerial(a);
 
     kabufuda::Card mc2{_S("test2.USA.raw"), "GM8E", "01"};
     if (!mc2)
-        mc2.format(kabufuda::EDeviceId::SlotA, kabufuda::ECardSize::Card2043Mb);
+        mc2.format(kabufuda::ECardSlot::SlotA, kabufuda::ECardSize::Card2043Mb);
 
     std::unique_ptr<kabufuda::IFileHandle> f = mc.openFile("MetroidPrime A");
     if (!f)
     {
-        f = mc.createFile("MetroidPrime A", kabufuda::BlockSize);
+        mc.createFile("MetroidPrime A", kabufuda::BlockSize, f);
         mc.setPublic(f, true);
         mc.setCanCopy(f, true);
         mc.setCanMove(f, true);
