@@ -13,7 +13,8 @@ int main()
     if (!mc2)
         mc2.format(kabufuda::ECardSlot::SlotA, kabufuda::ECardSize::Card2043Mb);
 
-    std::unique_ptr<kabufuda::IFileHandle> f = mc.openFile("MetroidPrime A");
+    std::unique_ptr<kabufuda::IFileHandle> f;
+    mc.openFile("MetroidPrime A", f);
     if (!f)
     {
         mc.createFile("MetroidPrime A", kabufuda::BlockSize, f);
