@@ -21,6 +21,9 @@
 #include <Windows.h>
 #include <wchar.h>
 #include "winsupport.hpp"
+#if UNICODE
+#define CARD_UCS2 1
+#endif
 #endif
 
 #include <stdarg.h>
