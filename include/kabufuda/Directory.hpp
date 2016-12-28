@@ -33,6 +33,8 @@ public:
     void operator=(const Directory& other);
     ~Directory();
 
+    bool hasFreeFile() const;
+    int32_t numFreeFiles() const;
     File* getFirstFreeFile(const char* game, const char* maker, const char* filename);
     File* getFirstNonFreeFile(uint32_t start, const char* game, const char* maker);
     File* getFile(const char* game, const char* maker, const char* filename);

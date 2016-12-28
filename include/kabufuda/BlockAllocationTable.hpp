@@ -36,6 +36,7 @@ public:
     uint16_t nextFreeBlock(uint16_t maxBlock, uint16_t startingBlock) const;
     bool clear(uint16_t first, uint16_t count);
     uint16_t allocateBlocks(uint16_t count, uint16_t maxBlocks);
+    uint16_t numFreeBlocks() const { return m_freeBlocks; }
 };
 }
 #endif // __KABU_BLOCKALLOCATIONATABLE_HPP__

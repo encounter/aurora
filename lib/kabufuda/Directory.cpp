@@ -44,6 +44,23 @@ void Directory::operator=(const Directory& other) { memcpy(__raw, other.__raw, B
 
 Directory::~Directory() {}
 
+bool Directory::hasFreeFile() const
+{
+    for (uint16_t i = 0; i < 127; i++)
+        if (m_files[i].m_game[0] == 0xFF)
+            return true;
+    return false;
+}
+
+int32_t Directory::numFreeFiles() const
+{
+    int32_t ret = 0;
+    for (uint16_t i = 0; i < 127; i++)
+        if (m_files[i].m_game[0] == 0xFF)
+            ++ret;
+    return ret;
+}
+
 File* Directory::getFirstFreeFile(const char* game, const char* maker, const char* filename)
 {
     for (uint16_t i = 0; i < 127; i++)

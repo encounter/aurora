@@ -10,13 +10,92 @@
 #include <vector>
 #include <memory>
 
+#define CARD_FILENAME_MAX 32
+#define CARD_ICON_MAX 8
+#undef NOFILE
+
 namespace kabufuda
 {
 
 class IFileHandle
 {
+protected:
+    uint32_t idx;
+    IFileHandle() = default;
+    IFileHandle(uint32_t idx) : idx(idx) {}
 public:
+    uint32_t getFileNo() const { return idx; }
     virtual ~IFileHandle();
+};
+
+enum class ECardResult
+{
+    CRC_MISMATCH = -1003, /* Extension enum for Retro's CRC check */
+    FATAL_ERROR = -128,
+    ENCODING = -13,
+    NAMETOOLONG = -12,
+    INSSPACE = -9,
+    NOENT = -8,
+    EXIST = -7,
+    BROKEN = -6,
+    IOERROR = -5,
+    NOFILE = -4,
+    NOCARD = -3,
+    WRONGDEVICE = -2,
+    BUSY = -1,
+    READY = 0
+};
+
+struct ProbeResults
+{
+    ECardResult x0_error;
+    uint32_t x4_cardSize; /* in megabits */
+    uint32_t x8_sectorSize; /* in bytes */
+};
+
+struct CardStat
+{
+    /* read-only (Set by CARDGetStatus) */
+    char x0_fileName[CARD_FILENAME_MAX];
+    uint32_t x20_length;
+    uint32_t x24_time;          /* seconds since 01/01/2000 midnight */
+    uint8_t x28_gameName[4];
+    uint8_t x2c_company[2];
+
+    /* read/write (Set by CARDGetStatus/CARDSetStatus) */
+    uint8_t x2e_bannerFormat;
+    uint8_t x2f___padding;
+    uint32_t x30_iconAddr;      /* offset to the banner, bannerTlut, icon, iconTlut data set. */
+    uint16_t x34_iconFormat;
+    uint16_t x36_iconSpeed;
+    uint32_t x38_commentAddr;   /* offset to the pair of 32 byte character strings. */
+
+    /* read-only (Set by CARDGetStatus) */
+    uint32_t x3c_offsetBanner;
+    uint32_t x40_offsetBannerTlut;
+    uint32_t x44_offsetIcon[CARD_ICON_MAX];
+    uint32_t x64_offsetIconTlut;
+    uint32_t x68_offsetData;
+
+    uint32_t GetFileLength() const { return x20_length; }
+    uint32_t GetTime() const { return x24_time; }
+    EImageFormat GetBannerFormat() const { return EImageFormat(x2e_bannerFormat & 0x3); }
+    void SetBannerFormat(EImageFormat fmt) { x2e_bannerFormat = (x2e_bannerFormat & ~0x3) | uint8_t(fmt); }
+    EImageFormat GetIconFormat(int idx) const { return EImageFormat((x34_iconFormat >> (idx * 2)) & 0x3); }
+    void SetIconFormat(EImageFormat fmt, int idx)
+    {
+        x34_iconFormat &= ~(0x3 << (idx * 2));
+        x34_iconFormat |= uint16_t(fmt) << (idx * 2);
+    }
+    void SetIconSpeed(EAnimationSpeed sp, int idx)
+    {
+        x36_iconSpeed &= ~(0x3 << (idx * 2));
+        x36_iconSpeed |= uint16_t(sp) << (idx * 2);
+    }
+    uint32_t GetIconAddr() const { return x30_iconAddr; }
+    void SetIconAddr(uint32_t addr) { x30_iconAddr = addr; }
+    uint32_t GetCommentAddr() const { return x38_commentAddr; }
+    void SetCommentAddr(uint32_t addr) { x38_commentAddr = addr; }
 };
 
 class Card
@@ -62,6 +141,7 @@ class Card
     void _updateDirAndBat();
     void _updateChecksum();
     File* _fileFromHandle(const std::unique_ptr<IFileHandle>& fh) const;
+    void _deleteFile(File& f);
 
 public:
     Card();
@@ -86,11 +166,17 @@ public:
     std::unique_ptr<IFileHandle> openFile(const char* filename);
 
     /**
+     * @brief openFile
+     * @param fileno
+     */
+    std::unique_ptr<IFileHandle> openFile(uint32_t fileno);
+
+    /**
      * @brief createFile
      * @param filename
      * @return
      */
-    std::unique_ptr<IFileHandle> createFile(const char* filename, size_t size);
+    ECardResult createFile(const char* filename, size_t size, std::unique_ptr<IFileHandle>& handleOut);
 
     /**
      * @brief firstFile
@@ -104,17 +190,38 @@ public:
      * @return
      */
     std::unique_ptr<IFileHandle> nextFile(const std::unique_ptr<IFileHandle>& cur);
+
     /**
      * @brief getFilename
      * @param fh
      * @return
      */
     const char* getFilename(const std::unique_ptr<IFileHandle>& fh);
+
     /**
      * @brief deleteFile
      * @param fh
      */
     void deleteFile(const std::unique_ptr<IFileHandle>& fh);
+
+    /**
+     * @brief deleteFile
+     * @param filename
+     */
+    ECardResult deleteFile(const char* filename);
+
+    /**
+     * @brief deleteFile
+     * @param fileno
+     */
+    ECardResult deleteFile(uint32_t fileno);
+
+    /**
+     * @brief renameFile
+     * @param oldName
+     * @param newName
+     */
+    ECardResult renameFile(const char* oldName, const char* newName);
 
     /**
      * @brief write
@@ -344,21 +451,27 @@ public:
      * @param checksum The checksum of the system header
      * @param inverse  The inverser checksum of the system header
      */
-    void getChecksum(uint16_t* checksum, uint16_t* inverse);
+    void getChecksum(uint16_t& checksum, uint16_t& inverse);
+
+    /**
+     * @brief Retrieves the available storage and directory space
+     * @param bytesNotUsed Number of free bytes out
+     * @param filesNotUsed Number of free files out
+     */
+    void getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed);
 
     /**
      * @brief Formats the memory card and assigns a new serial
      * @param size The desired size of the file @sa ECardSize
      * @param encoding The desired encoding @sa EEncoding
      */
-    void format(EDeviceId deviceId, ECardSize size = ECardSize::Card2043Mb, EEncoding encoding = EEncoding::ASCII);
+    void format(ECardSlot deviceId, ECardSize size = ECardSize::Card2043Mb, EEncoding encoding = EEncoding::ASCII);
 
     /**
-     * @brief Returns the size of the file in Megabits from a file on disk, useful for determining filesize ahead of
-     * time.
-     * @return Size of file in Megabits
+     * @brief Returns basic stats about a card image without opening a handle
+     * @return ProbeResults structure
      */
-    static uint32_t getSizeMbitFromFile(const SystemString& filename);
+    static ProbeResults probeCardFile(const SystemString& filename);
 
     /**
      * @brief Writes any changes to the Card instance immediately to disk. <br />
@@ -366,7 +479,13 @@ public:
      */
     void commit();
 
-    operator bool() const;
+    /**
+     * @brief Gets card-scope error state
+     * @return READY, BROKEN, or NOCARD
+     */
+    ECardResult getError() const;
+
+    operator bool() const { return getError() == ECardResult::READY; }
 };
 }
 

@@ -54,9 +54,9 @@ enum class SeekOrigin
 };
 
 /**
- * @brief The EDeviceId enum
+ * @brief The ECardSlot enum
  */
-enum class EDeviceId : uint16_t
+enum class ECardSlot : uint16_t
 {
     SlotA,
     SlotB

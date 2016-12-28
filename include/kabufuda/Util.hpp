@@ -127,7 +127,9 @@ static inline double SBig(double val)
     int64_t ival = bswap64(*((int64_t*)(&val)));
     return *((double*)(&ival));
 }
+#ifndef SBIG
 #define SBIG(q) (((q)&0x000000FF) << 24 | ((q)&0x0000FF00) << 8 | ((q)&0x00FF0000) >> 8 | ((q)&0xFF000000) >> 24)
+#endif
 
 static inline int16_t SLittle(int16_t val) { return val; }
 static inline uint16_t SLittle(uint16_t val) { return val; }
@@ -137,7 +139,9 @@ static inline int64_t SLittle(int64_t val) { return val; }
 static inline uint64_t SLittle(uint64_t val) { return val; }
 static inline float SLittle(float val) { return val; }
 static inline double SLittle(double val) { return val; }
+#ifndef SLITTLE
 #define SLITTLE(q) (q)
+#endif
 #else
 static inline int16_t SLittle(int16_t val) { return bswap16(val); }
 static inline uint16_t SLittle(uint16_t val) { return bswap16(val); }
@@ -155,7 +159,9 @@ static inline double SLittle(double val)
     int64_t ival = bswap64(*((int64_t*)(&val)));
     return *((double*)(&ival));
 }
+#ifndef SLITTLE
 #define SLITTLE(q) (((q)&0x000000FF) << 24 | ((q)&0x0000FF00) << 8 | ((q)&0x00FF0000) >> 8 | ((q)&0xFF000000) >> 24)
+#endif
 
 static inline int16_t SBig(int16_t val) { return val; }
 static inline uint16_t SBig(uint16_t val) { return val; }
@@ -165,7 +171,9 @@ static inline int64_t SBig(int64_t val) { return val; }
 static inline uint64_t SBig(uint64_t val) { return val; }
 static inline float SBig(float val) { return val; }
 static inline double SBig(double val) { return val; }
+#ifndef SBIG
 #define SBIG(q) (q)
+#endif
 #endif
 
 #if CARD_UCS2
