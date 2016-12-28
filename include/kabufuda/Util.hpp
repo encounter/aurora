@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <string>
 #include <string.h>
+#include "WideStringConvert.hpp"
 
 #undef bswap16
 #undef bswap32
