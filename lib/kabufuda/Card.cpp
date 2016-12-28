@@ -123,22 +123,29 @@ Card::~Card()
     m_fileHandle = nullptr;
 }
 
-std::unique_ptr<IFileHandle> Card::openFile(const char* filename)
+ECardResult Card::openFile(const char* filename, std::unique_ptr<IFileHandle>& handleOut)
 {
+    handleOut.reset();
     File* f = m_currentDir->getFile(m_game, m_maker, filename);
+    if (!f || f->m_game[0] == 0xFF)
+        return ECardResult::NOFILE;
     int32_t idx = m_currentDir->indexForFile(f);
-    if (f && idx != -1)
+    if (idx != -1)
     {
-        return std::make_unique<FileHandle>(idx);
+        handleOut = std::make_unique<FileHandle>(idx);
+        return ECardResult::READY;
     }
-    return nullptr;
+    return ECardResult::FATAL_ERROR;
 }
 
-std::unique_ptr<IFileHandle> Card::openFile(uint32_t fileno)
+ECardResult Card::openFile(uint32_t fileno, std::unique_ptr<IFileHandle>& handleOut)
 {
-    if (fileno >= 127)
-        return nullptr;
-    return std::make_unique<FileHandle>(fileno);
+    handleOut.reset();
+    File* f = m_currentDir->getFile(fileno);
+    if (!f || f->m_game[0] == 0xFF)
+        return ECardResult::NOFILE;
+    handleOut = std::make_unique<FileHandle>(fileno);
+    return ECardResult::READY;
 }
 
 void Card::_updateDirAndBat()
@@ -177,6 +184,8 @@ File* Card::_fileFromHandle(const std::unique_ptr<IFileHandle>& fh) const
 ECardResult Card::createFile(const char* filename, size_t size,
                              std::unique_ptr<IFileHandle>& handleOut)
 {
+    handleOut.reset();
+
     if (strlen(filename) > 32)
         return ECardResult::NAMETOOLONG;
     if (m_currentDir->getFile(m_game, m_maker, filename))
@@ -484,6 +493,118 @@ bool Card::canMove(const std::unique_ptr<IFileHandle>& fh) const
     return !bool(file->m_permissions & EPermissions::NoMove);
 }
 
+static uint32_t BannerSize(EImageFormat fmt)
+{
+    switch (fmt)
+    {
+    default:
+    case EImageFormat::None:
+        return 0;
+    case EImageFormat::C8:
+        return 3584;
+    case EImageFormat::RGB5A3:
+        return 6144;
+    }
+}
+
+static uint32_t IconSize(EImageFormat fmt)
+{
+    switch (fmt)
+    {
+    default:
+    case EImageFormat::None:
+        return 0;
+    case EImageFormat::C8:
+        return 1024;
+    case EImageFormat::RGB5A3:
+        return 2048;
+    }
+}
+
+static uint32_t TlutSize(EImageFormat fmt)
+{
+    switch (fmt)
+    {
+    default:
+    case EImageFormat::None:
+    case EImageFormat::RGB5A3:
+        return 0;
+    case EImageFormat::C8:
+        return 512;
+    }
+}
+
+ECardResult Card::getStatus(const std::unique_ptr<IFileHandle>& fh, CardStat& statOut) const
+{
+    File* file = _fileFromHandle(fh);
+    if (!file || file->m_game[0] == 0xFF)
+        return ECardResult::NOFILE;
+
+    strncpy(statOut.x0_fileName, file->m_filename, 32);
+    statOut.x20_length = file->m_blockCount * BlockSize;
+    statOut.x24_time = file->m_modifiedTime;
+    memcpy(statOut.x28_gameName, file->m_game, 4);
+    memcpy(statOut.x2c_company, file->m_maker, 2);
+
+    statOut.x2e_bannerFormat = file->m_bannerFlags;
+    statOut.x30_iconAddr = file->m_iconAddress;
+    statOut.x34_iconFormat = file->m_iconFmt;
+    statOut.x36_iconSpeed = file->m_animSpeed;
+    statOut.x38_commentAddr = file->m_commentAddr;
+
+    if (file->m_iconAddress == -1)
+    {
+        statOut.x3c_offsetBanner = -1;
+        statOut.x40_offsetBannerTlut = -1;
+        for (int i=0 ; i<CARD_ICON_MAX ; ++i)
+            statOut.x44_offsetIcon[i] = -1;
+        statOut.x64_offsetIconTlut = -1;
+        statOut.x68_offsetData = file->m_commentAddr + 64;
+    }
+    else
+    {
+        uint32_t cur = file->m_iconAddress;
+        statOut.x3c_offsetBanner = cur;
+        cur += BannerSize(statOut.GetBannerFormat());
+        statOut.x40_offsetBannerTlut = cur;
+        cur += TlutSize(statOut.GetBannerFormat());
+        bool palette = false;
+        for (int i=0 ; i<CARD_ICON_MAX ; ++i)
+        {
+            statOut.x44_offsetIcon[i] = cur;
+            EImageFormat fmt = statOut.GetIconFormat(i);
+            if (fmt == EImageFormat::C8)
+                palette = true;
+            cur += IconSize(fmt);
+        }
+        if (palette)
+        {
+            statOut.x64_offsetIconTlut = cur;
+            cur += TlutSize(EImageFormat::C8);
+        }
+        else
+            statOut.x64_offsetIconTlut = -1;
+        statOut.x68_offsetData = cur;
+    }
+
+    return ECardResult::READY;
+}
+
+ECardResult Card::setStatus(const std::unique_ptr<IFileHandle>& fh, const CardStat& stat)
+{
+    File* file = _fileFromHandle(fh);
+    if (!file || file->m_game[0] == 0xFF)
+        return ECardResult::NOFILE;
+
+    file->m_bannerFlags = stat.x2e_bannerFormat;
+    file->m_iconAddress = stat.x30_iconAddr;
+    file->m_iconFmt = stat.x34_iconFormat;
+    file->m_animSpeed = stat.x36_iconSpeed;
+    file->m_commentAddr = stat.x38_commentAddr;
+
+    return ECardResult::READY;
+}
+
 const char* Card::gameId(const std::unique_ptr<IFileHandle>& fh) const
 {
     File* file = _fileFromHandle(fh);
@@ -619,11 +740,12 @@ bool Card::copyFileTo(const std::unique_ptr<IFileHandle>& fh, Card& dest)
         return false;
 
     /* Check to make sure dest does not already contain fh */
-    if (dest.openFile(toCopy->m_filename) != nullptr)
+    std::unique_ptr<IFileHandle> tmpHandle;
+    dest.openFile(toCopy->m_filename, tmpHandle);
+    if (tmpHandle)
         return false;
 
     /* Try to allocate a new file */
-    std::unique_ptr<IFileHandle> tmpHandle;
     dest.createFile(toCopy->m_filename, toCopy->m_blockCount * BlockSize, tmpHandle);
     if (!tmpHandle)
         return false;
@@ -792,7 +914,7 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding)
 ProbeResults Card::probeCardFile(const SystemString& filename)
 {
     Sstat stat;
-    if (Stat(filename.c_str(), &stat))
+    if (Stat(filename.c_str(), &stat) || !S_ISREG(stat.st_mode))
         return { ECardResult::NOCARD, 0, 0 };
     return { ECardResult::READY, uint32_t(stat.st_size / BlockSize) / MbitToBlocks, 0x2000 };
 }

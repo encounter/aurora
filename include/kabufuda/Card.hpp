@@ -55,14 +55,14 @@ struct ProbeResults
 
 struct CardStat
 {
-    /* read-only (Set by CARDGetStatus) */
+    /* read-only (Set by Card::getStatus) */
     char x0_fileName[CARD_FILENAME_MAX];
     uint32_t x20_length;
     uint32_t x24_time;          /* seconds since 01/01/2000 midnight */
     uint8_t x28_gameName[4];
     uint8_t x2c_company[2];
 
-    /* read/write (Set by CARDGetStatus/CARDSetStatus) */
+    /* read/write (Set by Card::getStatus/Card::setStatus) */
     uint8_t x2e_bannerFormat;
     uint8_t x2f___padding;
     uint32_t x30_iconAddr;      /* offset to the banner, bannerTlut, icon, iconTlut data set. */
@@ -70,7 +70,7 @@ struct CardStat
     uint16_t x36_iconSpeed;
     uint32_t x38_commentAddr;   /* offset to the pair of 32 byte character strings. */
 
-    /* read-only (Set by CARDGetStatus) */
+    /* read-only (Set by Card::getStatus) */
     uint32_t x3c_offsetBanner;
     uint32_t x40_offsetBannerTlut;
     uint32_t x44_offsetIcon[CARD_ICON_MAX];
@@ -163,13 +163,13 @@ public:
      * @brief openFile
      * @param filename
      */
-    std::unique_ptr<IFileHandle> openFile(const char* filename);
+    ECardResult openFile(const char* filename, std::unique_ptr<IFileHandle>& handleOut);
 
     /**
      * @brief openFile
      * @param fileno
      */
-    std::unique_ptr<IFileHandle> openFile(uint32_t fileno);
+    ECardResult openFile(uint32_t fileno, std::unique_ptr<IFileHandle>& handleOut);
 
     /**
      * @brief createFile
@@ -295,6 +295,22 @@ public:
      * @return
      */
     bool canMove(const std::unique_ptr<IFileHandle>& fh) const;
+
+    /**
+     * @brief getStatus
+     * @param fh Handle of requested file
+     * @param statOut Structure to fill with file stat
+     * @return NOFILE or READY
+     */
+    ECardResult getStatus(const std::unique_ptr<IFileHandle>& fh, CardStat& statOut) const;
+
+    /**
+     * @brief setStatus
+     * @param fh Handle of requested file
+     * @param statOut Structure to access for file stat
+     * @return NOFILE or READY
+     */
+    ECardResult setStatus(const std::unique_ptr<IFileHandle>& fh, const CardStat& stat);
 
     /**
      * @brief gameId

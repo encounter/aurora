@@ -11,9 +11,7 @@ File::File(const char* filename)
 {
     memset(__raw, 0, 0x40);
     memset(m_filename, 0, 32);
-    size_t len = strlen(filename);
-    len = std::min<size_t>(len, 32);
-    memcpy(m_filename, filename, len);
+    strncpy(m_filename, filename, 32);
 }
 void File::swapEndian()
 {
