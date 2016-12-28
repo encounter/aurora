@@ -4,6 +4,7 @@
 #include <string.h>
 #include <algorithm>
 #include <memory>
+#include <sys/stat.h>
 
 namespace kabufuda
 {
