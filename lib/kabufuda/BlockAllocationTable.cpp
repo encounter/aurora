@@ -94,17 +94,19 @@ uint16_t BlockAllocationTable::allocateBlocks(uint16_t count, uint16_t maxBlocks
     if (freeBlock != 0xFFFF)
     {
         uint16_t tmpCount = count;
-        while ((count--) > 0)
+        while ((count--) > 0 && freeBlock != 0xFFFF)
         {
             m_map[(freeBlock - FSTBlocks)] = 0xFFFF;
             if (count != 0)
             {
-                m_map[(freeBlock - FSTBlocks)] = nextFreeBlock(maxBlocks - FSTBlocks, m_lastAllocated + 1);
+                m_map[(freeBlock - FSTBlocks)] = nextFreeBlock(maxBlocks - FSTBlocks, freeBlock + 1);
                 freeBlock = m_map[(freeBlock - FSTBlocks)];
             }
-            m_lastAllocated = freeBlock;
         }
+        if (freeBlock == 0xFFFF)
+            return 0xFFFF;
 
+        m_lastAllocated = freeBlock;
         m_freeBlocks -= tmpCount;
     }
     return firstBlock;

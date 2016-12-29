@@ -4,54 +4,27 @@
 int main()
 {
     kabufuda::Card mc{_S("test.USA.raw"), "GM8E", "01"};
-    if (!mc)
-        mc.format(kabufuda::ECardSlot::SlotA, kabufuda::ECardSize::Card2043Mb);
+    mc.format(kabufuda::ECardSlot::SlotA, kabufuda::ECardSize::Card2043Mb);
     uint64_t a = 0;
     mc.getSerial(a);
 
-    kabufuda::Card mc2{_S("test2.USA.raw"), "GM8E", "01"};
-    if (!mc2)
-        mc2.format(kabufuda::ECardSlot::SlotA, kabufuda::ECardSize::Card2043Mb);
-
     std::unique_ptr<kabufuda::IFileHandle> f;
     mc.openFile("MetroidPrime A", f);
-    if (!f)
+    for (uint32_t i = 0; i < 127; i++)
     {
-        mc.createFile("MetroidPrime A", kabufuda::BlockSize, f);
+        char name[32] = {'\0'};
+        sprintf(name, "Metroid Prime %i", i);
+        kabufuda::ECardResult res = mc.createFile(name, kabufuda::BlockSize, f);
+        if (res == kabufuda::ECardResult::INSSPACE || res == kabufuda::ECardResult::NOFILE)
+            break;
+
         mc.setPublic(f, true);
         mc.setCanCopy(f, true);
         mc.setCanMove(f, true);
-    }
-
-
-    if (f)
-    {
-        mc.setBannerFormat(f, kabufuda::EImageFormat::C8);
-        mc.setIconFormat(f, 0, kabufuda::EImageFormat::C8);
-        mc.setIconSpeed(f, 0, kabufuda::EAnimationSpeed::Middle);
-
-        mc.seek(f, 4, kabufuda::SeekOrigin::Begin);
-        mc.setCommentAddress(f, 4);
-
-        std::string comment("Metroid Prime PC Edition");
-        mc.write(f, comment.c_str(), comment.length());
-        mc.seek(f, 32 - comment.length(), kabufuda::SeekOrigin::Current);
-        comment = "Metroid Prime PC Is Cool";
-        mc.write(f, comment.c_str(), comment.length());
-        mc.seek(f, 32 - comment.length(), kabufuda::SeekOrigin::Current);
-        mc.setImageAddress(f, mc.tell(f));
-
-        if (mc.copyFileTo(f, mc2))
-            printf("Copy succeeded!\n");
-        else
-            printf("Copy failed...\n");
-
-        std::unique_ptr<kabufuda::IFileHandle> it = mc.firstFile();
-        while (it)
-        {
-            printf("%.4s%.2s-%s\n", mc.gameId(it), mc.maker(it), mc.getFilename(it));
-            it = mc.nextFile(it);
-        }
+        mc.setCommentAddress(f, 0);
+        mc.write(f, "Test\0", strlen("Test") + 1);
+        mc.seek(f, 32, kabufuda::SeekOrigin::Begin);
+        mc.write(f, "Test\0", strlen("Test") + 1);
     }
     return 0;
 }
