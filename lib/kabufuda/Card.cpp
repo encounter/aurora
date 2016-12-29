@@ -186,6 +186,8 @@ ECardResult Card::createFile(const char* filename, size_t size,
 {
     handleOut.reset();
 
+    if (size <= 0)
+        return ECardResult::FATAL_ERROR;
     if (strlen(filename) > 32)
         return ECardResult::NAMETOOLONG;
     if (m_currentDir->getFile(m_game, m_maker, filename))
@@ -198,7 +200,7 @@ ECardResult Card::createFile(const char* filename, size_t size,
 
     _updateDirAndBat();
     File* f = m_currentDir->getFirstFreeFile(m_game, m_maker, filename);
-    uint16_t block = m_currentBat->allocateBlocks(neededBlocks, m_maxBlock);
+    uint16_t block = m_currentBat->allocateBlocks(neededBlocks, m_maxBlock - FSTBlocks);
     if (f && block != 0xFFFF)
     {
         f->m_modifiedTime = uint32_t(getGCTime());
