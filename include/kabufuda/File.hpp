@@ -40,7 +40,7 @@ public:
     File();
     File(char data[0x40]);
     File(const char* filename);
-    ~File() {}
+    ~File() = default;
 };
 }
 

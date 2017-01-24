@@ -15,18 +15,14 @@ void Directory::swapEndian()
 
 void Directory::updateChecksum()
 {
-    swapEndian();
-    calculateChecksumBE(reinterpret_cast<uint16_t*>(__raw), 0xFFE, &m_checksum, &m_checksumInv);
-    swapEndian();
+    calculateChecksumLE(reinterpret_cast<uint16_t*>(__raw), 0xFFE, &m_checksum, &m_checksumInv);
 }
 
 bool Directory::valid() const
 {
     uint16_t ckSum, ckSumInv;
-    Directory tmp = *this;
-    tmp.swapEndian();
-    calculateChecksumBE(reinterpret_cast<const uint16_t*>(tmp.__raw), 0xFFE, &ckSum, &ckSumInv);
-    return (SBig(ckSum) == m_checksum && SBig(ckSumInv) == m_checksumInv);
+    calculateChecksumLE(reinterpret_cast<const uint16_t*>(__raw), 0xFFE, &ckSum, &ckSumInv);
+    return (ckSum == m_checksum && ckSumInv == m_checksumInv);
 }
 
 Directory::Directory()
@@ -37,12 +33,6 @@ Directory::Directory()
 }
 
 Directory::Directory(uint8_t data[]) { memcpy(__raw, data, BlockSize); }
-
-Directory::Directory(const Directory& other) { memcpy(__raw, other.__raw, BlockSize); }
-
-void Directory::operator=(const Directory& other) { memcpy(__raw, other.__raw, BlockSize); }
-
-Directory::~Directory() {}
 
 bool Directory::hasFreeFile() const
 {

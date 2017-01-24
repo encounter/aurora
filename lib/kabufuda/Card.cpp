@@ -41,17 +41,6 @@ void Card::_swapEndian()
 
 Card::Card() { memset(__raw, 0xFF, BlockSize); }
 
-Card::Card(const Card& other)
-{
-    memcpy(__raw, other.__raw, BlockSize);
-    m_dir = other.m_dir;
-    m_dirBackup = other.m_dirBackup;
-    m_bat = other.m_bat;
-    m_batBackup = other.m_batBackup;
-    memcpy(m_game, other.m_game, 4);
-    memcpy(m_maker, other.m_maker, 2);
-}
-
 Card::Card(const SystemString& filename, const char* game, const char* maker) : m_filename(filename)
 {
     memset(__raw, 0xFF, BlockSize);
@@ -66,47 +55,35 @@ Card::Card(const SystemString& filename, const char* game, const char* maker) : 
         fread(__raw, 1, BlockSize, m_fileHandle);
         m_maxBlock = m_sizeMb * MbitToBlocks;
         _swapEndian();
-        fread(m_dir.__raw, 1, BlockSize, m_fileHandle);
-        fread(m_dirBackup.__raw, 1, BlockSize, m_fileHandle);
-        fread(m_bat.__raw, 1, BlockSize, m_fileHandle);
-        fread(m_batBackup.__raw, 1, BlockSize, m_fileHandle);
+        fread(m_dirs[0].__raw, 1, BlockSize, m_fileHandle);
+        fread(m_dirs[1].__raw, 1, BlockSize, m_fileHandle);
+        fread(m_bats[0].__raw, 1, BlockSize, m_fileHandle);
+        fread(m_bats[1].__raw, 1, BlockSize, m_fileHandle);
 
-        m_dir.swapEndian();
-        m_dirBackup.swapEndian();
-        m_bat.swapEndian();
-        m_batBackup.swapEndian();
+        m_dirs[0].swapEndian();
+        m_dirs[1].swapEndian();
+        m_bats[0].swapEndian();
+        m_bats[1].swapEndian();
 
         /* Check for data integrity, restoring valid data in case of corruption if possible */
-        if (!m_dir.valid() && m_dirBackup.valid())
-            m_dir = m_dirBackup;
-        else if (!m_dirBackup.valid() && m_dir.valid())
-            m_dirBackup = m_dir;
-        if (!m_bat.valid() && m_batBackup.valid())
-            m_bat = m_batBackup;
-        else if (!m_batBackup.valid() && m_bat.valid())
-            m_batBackup = m_bat;
+        if (!m_dirs[0].valid() && m_dirs[1].valid())
+            m_dirs[0] = m_dirs[1];
+        else if (!m_dirs[1].valid() && m_dirs[0].valid())
+            m_dirs[1] = m_dirs[0];
+        if (!m_bats[0].valid() && m_bats[1].valid())
+            m_bats[0] = m_bats[1];
+        else if (!m_bats[1].valid() && m_bats[0].valid())
+            m_bats[1] = m_bats[0];
 
-        if (m_dir.m_updateCounter > m_dirBackup.m_updateCounter)
-        {
-            m_currentDir = &m_dir;
-            m_previousDir = &m_dirBackup;
-        }
+        if (m_dirs[0].m_updateCounter > m_dirs[1].m_updateCounter)
+            m_currentDir = 0;
         else
-        {
-            m_currentDir = &m_dirBackup;
-            m_previousDir = &m_dir;
-        }
+            m_currentDir = 1;
 
-        if (m_bat.m_updateCounter > m_batBackup.m_updateCounter)
-        {
-            m_currentBat = &m_bat;
-            m_previousBat = &m_batBackup;
-        }
+        if (m_bats[0].m_updateCounter > m_bats[1].m_updateCounter)
+            m_currentBat = 0;
         else
-        {
-            m_currentBat = &m_batBackup;
-            m_previousBat = &m_bat;
-        }
+            m_currentBat = 1;
 
         /* Close and reopen in read/write mode */
         fclose(m_fileHandle);
@@ -126,10 +103,10 @@ Card::~Card()
 ECardResult Card::openFile(const char* filename, std::unique_ptr<IFileHandle>& handleOut)
 {
     handleOut.reset();
-    File* f = m_currentDir->getFile(m_game, m_maker, filename);
+    File* f = m_dirs[m_currentDir].getFile(m_game, m_maker, filename);
     if (!f || f->m_game[0] == 0xFF)
         return ECardResult::NOFILE;
-    int32_t idx = m_currentDir->indexForFile(f);
+    int32_t idx = m_dirs[m_currentDir].indexForFile(f);
     if (idx != -1)
     {
         handleOut = std::make_unique<FileHandle>(idx);
@@ -141,7 +118,7 @@ ECardResult Card::openFile(const char* filename, std::unique_ptr<IFileHandle>& h
 ECardResult Card::openFile(uint32_t fileno, std::unique_ptr<IFileHandle>& handleOut)
 {
     handleOut.reset();
-    File* f = m_currentDir->getFile(fileno);
+    File* f = m_dirs[m_currentDir].getFile(fileno);
     if (!f || f->m_game[0] == 0xFF)
         return ECardResult::NOFILE;
     handleOut = std::make_unique<FileHandle>(fileno);
@@ -150,22 +127,20 @@ ECardResult Card::openFile(uint32_t fileno, std::unique_ptr<IFileHandle>& handle
 
 void Card::_updateDirAndBat()
 {
-    Directory updateDir = *m_currentDir;
+    Directory updateDir = m_dirs[m_currentDir];
     updateDir.m_updateCounter++;
-    *m_previousDir = updateDir;
-    std::swap(m_currentDir, m_previousDir);
+    m_dirs[!m_currentDir] = updateDir;
+    m_currentDir = !m_currentDir;
 
-    BlockAllocationTable updateBat = *m_currentBat;
+    BlockAllocationTable updateBat = m_bats[m_currentBat];
     updateBat.m_updateCounter++;
-    *m_previousBat = updateBat;
-    std::swap(m_currentBat, m_previousBat);
+    m_bats[!m_currentBat] = updateBat;
+    m_currentBat = !m_currentBat;
 }
 
 void Card::_updateChecksum()
 {
-    _swapEndian();
-    calculateChecksumBE(reinterpret_cast<uint16_t*>(__raw), 0xFE, &m_checksum, &m_checksumInv);
-    _swapEndian();
+    calculateChecksumLE(reinterpret_cast<uint16_t*>(__raw), 0xFE, &m_checksum, &m_checksumInv);
 }
 
 File* Card::_fileFromHandle(const std::unique_ptr<IFileHandle>& fh) const
@@ -177,7 +152,7 @@ File* Card::_fileFromHandle(const std::unique_ptr<IFileHandle>& fh) const
     if (!handle)
         return nullptr;
 
-    File* file = m_currentDir->getFile(handle->idx);
+    File* file = const_cast<Directory&>(m_dirs[m_currentDir]).getFile(handle->idx);
     return file;
 }
 
@@ -190,24 +165,24 @@ ECardResult Card::createFile(const char* filename, size_t size,
         return ECardResult::FATAL_ERROR;
     if (strlen(filename) > 32)
         return ECardResult::NAMETOOLONG;
-    if (m_currentDir->getFile(m_game, m_maker, filename))
+    if (m_dirs[m_currentDir].getFile(m_game, m_maker, filename))
         return ECardResult::EXIST;
     uint16_t neededBlocks = ROUND_UP_8192(size) / BlockSize;
-    if (neededBlocks > m_currentBat->numFreeBlocks())
+    if (neededBlocks > m_bats[m_currentBat].numFreeBlocks())
         return ECardResult::INSSPACE;
-    if (!m_currentDir->hasFreeFile())
+    if (!m_dirs[m_currentDir].hasFreeFile())
         return ECardResult::NOENT;
 
     _updateDirAndBat();
-    File* f = m_currentDir->getFirstFreeFile(m_game, m_maker, filename);
-    uint16_t block = m_currentBat->allocateBlocks(neededBlocks, m_maxBlock - FSTBlocks);
+    File* f = m_dirs[m_currentDir].getFirstFreeFile(m_game, m_maker, filename);
+    uint16_t block = m_bats[m_currentBat].allocateBlocks(neededBlocks, m_maxBlock - FSTBlocks);
     if (f && block != 0xFFFF)
     {
         f->m_modifiedTime = uint32_t(getGCTime());
         f->m_firstBlock = block;
         f->m_blockCount = neededBlocks;
 
-        handleOut = std::make_unique<FileHandle>(m_currentDir->indexForFile(f));
+        handleOut = std::make_unique<FileHandle>(m_dirs[m_currentDir].indexForFile(f));
         return ECardResult::READY;
     }
 
@@ -216,9 +191,9 @@ ECardResult Card::createFile(const char* filename, size_t size,
 
 std::unique_ptr<IFileHandle> Card::firstFile()
 {
-    File* f = m_currentDir->getFirstNonFreeFile(0, m_game, m_maker);
+    File* f = m_dirs[m_currentDir].getFirstNonFreeFile(0, m_game, m_maker);
     if (f)
-        return std::make_unique<FileHandle>(m_currentDir->indexForFile(f));
+        return std::make_unique<FileHandle>(m_dirs[m_currentDir].indexForFile(f));
 
     return nullptr;
 }
@@ -229,10 +204,10 @@ std::unique_ptr<IFileHandle> Card::nextFile(const std::unique_ptr<IFileHandle>& 
     if (!handle)
         return nullptr;
 
-    File* next = m_currentDir->getFirstNonFreeFile(handle->idx + 1, m_game, m_maker);
+    File* next = m_dirs[m_currentDir].getFirstNonFreeFile(handle->idx + 1, m_game, m_maker);
     if (!next)
         return nullptr;
-    return std::make_unique<FileHandle>(m_currentDir->indexForFile(next));
+    return std::make_unique<FileHandle>(m_dirs[m_currentDir].indexForFile(next));
 }
 
 const char* Card::getFilename(const std::unique_ptr<IFileHandle>& fh)
@@ -249,8 +224,8 @@ void Card::_deleteFile(File& f)
     while (block != 0xFFFF)
     {
         /* TODO: add a fragmentation check */
-        uint16_t nextBlock = m_currentBat->getNextBlock(block);
-        m_currentBat->clear(block, 1);
+        uint16_t nextBlock = m_bats[m_currentBat].getNextBlock(block);
+        m_bats[m_currentBat].clear(block, 1);
         block = nextBlock;
     }
     f = File();
@@ -262,13 +237,13 @@ void Card::deleteFile(const std::unique_ptr<IFileHandle>& fh)
     if (!fh)
         return;
     FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
-    _deleteFile(*m_currentDir->getFile(f->idx));
+    _deleteFile(*m_dirs[m_currentDir].getFile(f->idx));
 }
 
 ECardResult Card::deleteFile(const char* filename)
 {
     _updateDirAndBat();
-    File* f = m_currentDir->getFile(m_game, m_maker, filename);
+    File* f = m_dirs[m_currentDir].getFile(m_game, m_maker, filename);
     if (!f)
         return ECardResult::NOFILE;
 
@@ -279,7 +254,7 @@ ECardResult Card::deleteFile(const char* filename)
 ECardResult Card::deleteFile(uint32_t fileno)
 {
     _updateDirAndBat();
-    File* f = m_currentDir->getFile(fileno);
+    File* f = m_dirs[m_currentDir].getFile(fileno);
     if (!f)
         return ECardResult::NOFILE;
 
@@ -293,7 +268,7 @@ ECardResult Card::renameFile(const char* oldName, const char* newName)
         return ECardResult::NAMETOOLONG;
 
     _updateDirAndBat();
-    File* f = m_currentDir->getFile(m_game, m_maker, oldName);
+    File* f = m_dirs[m_currentDir].getFile(m_game, m_maker, oldName);
     if (!f)
         return ECardResult::NOFILE;
 
@@ -309,7 +284,7 @@ void Card::write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t
     if (m_fileHandle)
     {
         FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
-        File* file = m_currentDir->getFile(f->idx);
+        File* file = m_dirs[m_currentDir].getFile(f->idx);
         if (!file)
             return;
 
@@ -320,7 +295,7 @@ void Card::write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t
         const uint16_t blockId = uint16_t(f->offset / BlockSize);
         uint16_t block = file->m_firstBlock;
         for (uint16_t i = 0; i < blockId; i++)
-            block = m_currentBat->getNextBlock(block);
+            block = m_bats[m_currentBat].getNextBlock(block);
 
         const uint8_t* tmpBuf = reinterpret_cast<const uint8_t*>(buf);
         uint16_t curBlock = block;
@@ -342,7 +317,7 @@ void Card::write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t
             blockOffset += cacheSize;
             if (blockOffset >= BlockSize)
             {
-                curBlock = m_currentBat->getNextBlock(curBlock);
+                curBlock = m_bats[m_currentBat].getNextBlock(curBlock);
                 blockOffset = 0;
             }
         }
@@ -358,7 +333,7 @@ void Card::read(const std::unique_ptr<IFileHandle>& fh, void* dst, size_t size)
     if (m_fileHandle)
     {
         FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
-        File* file = m_currentDir->getFile(f->idx);
+        File* file = m_dirs[m_currentDir].getFile(f->idx);
         if (!file)
             return;
         /* Block handling is a little different from cache handling,
@@ -368,7 +343,7 @@ void Card::read(const std::unique_ptr<IFileHandle>& fh, void* dst, size_t size)
         const uint16_t blockId = uint16_t(f->offset / BlockSize);
         uint16_t block = file->m_firstBlock;
         for (uint16_t i = 0; i < blockId; i++)
-            block = m_currentBat->getNextBlock(block);
+            block = m_bats[m_currentBat].getNextBlock(block);
 
         uint8_t* tmpBuf = reinterpret_cast<uint8_t*>(dst);
         uint16_t curBlock = block;
@@ -390,7 +365,7 @@ void Card::read(const std::unique_ptr<IFileHandle>& fh, void* dst, size_t size)
             blockOffset += cacheSize;
             if (blockOffset >= BlockSize)
             {
-                curBlock = m_currentBat->getNextBlock(curBlock);
+                curBlock = m_bats[m_currentBat].getNextBlock(curBlock);
                 blockOffset = 0;
             }
         }
@@ -404,7 +379,7 @@ void Card::seek(const std::unique_ptr<IFileHandle>& fh, int32_t pos, SeekOrigin 
         return;
 
     FileHandle* f = dynamic_cast<FileHandle*>(fh.get());
-    File* file = m_currentDir->getFile(f->idx);
+    File* file = m_dirs[m_currentDir].getFile(f->idx);
     if (!file)
         return;
 
@@ -848,8 +823,8 @@ void Card::getChecksum(uint16_t& checksum, uint16_t& inverse)
 
 void Card::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed)
 {
-    bytesNotUsed = m_currentBat->numFreeBlocks() * 0x2000;
-    filesNotUsed = m_currentDir->numFreeFiles();
+    bytesNotUsed = m_bats[m_currentBat].numFreeBlocks() * 0x2000;
+    filesNotUsed = m_dirs[m_currentDir].numFreeFiles();
 }
 
 void Card::format(ECardSlot id, ECardSize size, EEncoding encoding)
@@ -873,14 +848,12 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding)
     m_maxBlock = m_sizeMb * MbitToBlocks;
     m_encoding = uint16_t(encoding);
     _updateChecksum();
-    m_dir = Directory();
-    m_dirBackup = m_dir;
-    m_bat = BlockAllocationTable(uint32_t(size) * MbitToBlocks);
-    m_batBackup = m_bat;
-    m_currentDir = &m_dirBackup;
-    m_previousDir = &m_dir;
-    m_currentBat = &m_batBackup;
-    m_previousBat = &m_bat;
+    m_dirs[0] = Directory();
+    m_dirs[1] = m_dirs[0];
+    m_bats[0] = BlockAllocationTable(uint32_t(size) * MbitToBlocks);
+    m_bats[1] = m_bats[0];
+    m_currentDir = 1;
+    m_currentBat = 1;
 
     if (m_fileHandle)
         fclose(m_fileHandle);
@@ -892,16 +865,16 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding)
         _swapEndian();
         fwrite(__raw, 1, BlockSize, m_fileHandle);
         _swapEndian();
-        Directory tmpDir = m_dir;
+        Directory tmpDir = m_dirs[0];
         tmpDir.swapEndian();
         fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
-        tmpDir = m_dirBackup;
+        tmpDir = m_dirs[1];
         tmpDir.swapEndian();
         fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
-        BlockAllocationTable tmpBat = m_bat;
+        BlockAllocationTable tmpBat = m_bats[0];
         tmpBat.swapEndian();
         fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
-        tmpBat = m_batBackup;
+        tmpBat = m_bats[1];
         tmpBat.swapEndian();
         fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
         uint32_t dataLen = ((uint32_t(size) * MbitToBlocks) - 5) * BlockSize;
@@ -930,19 +903,19 @@ void Card::commit()
         _swapEndian();
         fwrite(__raw, 1, BlockSize, m_fileHandle);
         _swapEndian();
-        Directory tmpDir = m_dir;
+        Directory tmpDir = m_dirs[0];
         tmpDir.updateChecksum();
         tmpDir.swapEndian();
         fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
-        tmpDir = m_dirBackup;
+        tmpDir = m_dirs[1];
         tmpDir.updateChecksum();
         tmpDir.swapEndian();
         fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
-        BlockAllocationTable tmpBat = m_bat;
+        BlockAllocationTable tmpBat = m_bats[0];
         tmpBat.updateChecksum();
         tmpBat.swapEndian();
         fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
-        tmpBat = m_batBackup;
+        tmpBat = m_bats[1];
         tmpBat.updateChecksum();
         tmpBat.swapEndian();
         fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
@@ -955,14 +928,12 @@ ECardResult Card::getError() const
         return ECardResult::NOCARD;
 
     uint16_t ckSum, ckSumInv;
-    Card tmp = *this;
-    tmp._swapEndian();
-    calculateChecksumBE(reinterpret_cast<const uint16_t*>(tmp.__raw), 0xFE, &ckSum, &ckSumInv);
-    if (SBig(ckSum) != m_checksum || SBig(ckSumInv) != m_checksumInv)
+    calculateChecksumLE(reinterpret_cast<const uint16_t*>(__raw), 0xFE, &ckSum, &ckSumInv);
+    if (ckSum != m_checksum || ckSumInv != m_checksumInv)
         return ECardResult::BROKEN;
-    if (!m_dir.valid() && !m_dirBackup.valid())
+    if (!m_dirs[0].valid() && !m_dirs[1].valid())
         return ECardResult::BROKEN;
-    if (!m_bat.valid() && !m_batBackup.valid())
+    if (!m_bats[0].valid() && !m_bats[1].valid())
         return ECardResult::BROKEN;
 
     return ECardResult::READY;

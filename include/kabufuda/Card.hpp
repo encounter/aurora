@@ -124,14 +124,10 @@ class Card
 
     SystemString m_filename;
     FILE* m_fileHandle = nullptr;
-    Directory m_dir;
-    Directory m_dirBackup;
-    Directory* m_currentDir;
-    Directory* m_previousDir;
-    BlockAllocationTable m_bat;
-    BlockAllocationTable m_batBackup;
-    BlockAllocationTable* m_currentBat;
-    BlockAllocationTable* m_previousBat;
+    Directory m_dirs[2];
+    BlockAllocationTable m_bats[2];
+    uint8_t m_currentDir;
+    uint8_t m_currentBat;
 
     uint16_t m_maxBlock;
     char m_game[5] = {'\0'};
@@ -149,7 +145,11 @@ public:
      * @brief Card
      * @param other
      */
-    Card(const Card& other);
+    Card(const Card& other) = delete;
+    Card& operator=(const Card& other) = delete;
+    Card(Card&& other) = default;
+    Card& operator=(Card&& other) = default;
+
     /**
      * @brief Card
      * @param filepath

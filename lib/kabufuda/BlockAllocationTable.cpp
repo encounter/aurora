@@ -16,18 +16,14 @@ void BlockAllocationTable::swapEndian()
 
 void BlockAllocationTable::updateChecksum()
 {
-    swapEndian();
-    calculateChecksumBE(reinterpret_cast<uint16_t*>(__raw + 4), 0xFFE, &m_checksum, &m_checksumInv);
-    swapEndian();
+    calculateChecksumLE(reinterpret_cast<uint16_t*>(__raw + 4), 0xFFE, &m_checksum, &m_checksumInv);
 }
 
 bool BlockAllocationTable::valid() const
 {
     uint16_t ckSum, ckSumInv;
-    BlockAllocationTable tmp = *this;
-    tmp.swapEndian();
-    calculateChecksumBE(reinterpret_cast<const uint16_t*>(tmp.__raw + 4), 0xFFE, &ckSum, &ckSumInv);
-    return (SBig(ckSum) == m_checksum && SBig(ckSumInv) == m_checksumInv);
+    calculateChecksumLE(reinterpret_cast<const uint16_t*>(__raw + 4), 0xFFE, &ckSum, &ckSumInv);
+    return (ckSum == m_checksum && ckSumInv == m_checksumInv);
 }
 
 BlockAllocationTable::BlockAllocationTable(uint32_t blockCount)
@@ -37,8 +33,6 @@ BlockAllocationTable::BlockAllocationTable(uint32_t blockCount)
     m_lastAllocated = 4;
     updateChecksum();
 }
-
-BlockAllocationTable::~BlockAllocationTable() {}
 
 uint16_t BlockAllocationTable::getNextBlock(uint16_t block) const
 {

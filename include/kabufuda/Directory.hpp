@@ -29,9 +29,7 @@ class Directory
 public:
     Directory();
     Directory(uint8_t data[BlockSize]);
-    Directory(const Directory& other);
-    void operator=(const Directory& other);
-    ~Directory();
+    ~Directory() = default;
 
     bool hasFreeFile() const;
     int32_t numFreeFiles() const;
