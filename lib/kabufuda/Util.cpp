@@ -42,19 +42,4 @@ void calculateChecksumBE(const uint16_t* data, size_t len, uint16_t* checksum, u
         *checksumInv = 0;
 }
 
-void calculateChecksumLE(const uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv)
-{
-    *checksum = 0;
-    *checksumInv = 0;
-    for (size_t i = 0; i < len; ++i)
-    {
-        *checksum += data[i];
-        *checksumInv += uint16_t(data[i] ^ 0xFFFF);
-    }
-
-    if (*checksum == 0xFFFF)
-        *checksum = 0;
-    if (*checksumInv == 0xFFFF)
-        *checksumInv = 0;
-}
 }

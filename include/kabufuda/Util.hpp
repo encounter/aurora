@@ -358,7 +358,6 @@ static inline int Stat(const SystemChar* path, Sstat* statOut)
  * @param checksumInv
  */
 void calculateChecksumBE(const uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv);
-void calculateChecksumLE(const uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv);
 }
 
 #endif // __KABU_UTIL_HPP__
