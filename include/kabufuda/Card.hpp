@@ -17,15 +17,16 @@
 namespace kabufuda
 {
 
-class IFileHandle
+class FileHandle
 {
-protected:
-    uint32_t idx;
-    IFileHandle() = default;
-    IFileHandle(uint32_t idx) : idx(idx) {}
+    friend class Card;
+    uint32_t idx = 0;
+    int32_t offset = 0;
+    FileHandle(uint32_t idx) : idx(idx) {}
 public:
+    FileHandle() = default;
     uint32_t getFileNo() const { return idx; }
-    virtual ~IFileHandle();
+    operator bool() const { return getFileNo() != 0; }
 };
 
 enum class ECardResult
@@ -136,7 +137,7 @@ class Card
     void _swapEndian();
     void _updateDirAndBat();
     void _updateChecksum();
-    File* _fileFromHandle(const std::unique_ptr<IFileHandle>& fh) const;
+    File* _fileFromHandle(const FileHandle& fh) const;
     void _deleteFile(File& f);
 
 public:
@@ -147,8 +148,8 @@ public:
      */
     Card(const Card& other) = delete;
     Card& operator=(const Card& other) = delete;
-    Card(Card&& other) = default;
-    Card& operator=(Card&& other) = default;
+    Card(Card&& other);
+    Card& operator=(Card&& other);
 
     /**
      * @brief Card
@@ -163,46 +164,53 @@ public:
      * @brief openFile
      * @param filename
      */
-    ECardResult openFile(const char* filename, std::unique_ptr<IFileHandle>& handleOut);
+    ECardResult openFile(const char* filename, FileHandle& handleOut);
 
     /**
      * @brief openFile
      * @param fileno
      */
-    ECardResult openFile(uint32_t fileno, std::unique_ptr<IFileHandle>& handleOut);
+    ECardResult openFile(uint32_t fileno, FileHandle& handleOut);
 
     /**
      * @brief createFile
      * @param filename
      * @return
      */
-    ECardResult createFile(const char* filename, size_t size, std::unique_ptr<IFileHandle>& handleOut);
+    ECardResult createFile(const char* filename, size_t size, FileHandle& handleOut);
+
+    /**
+     * @brief closeFile
+     * @param fh FileHandle to close
+     * @return
+     */
+    ECardResult closeFile(FileHandle& fh);
 
     /**
      * @brief firstFile
      * @return
      */
-    std::unique_ptr<IFileHandle> firstFile();
+    FileHandle firstFile();
 
     /**
      * @brief nextFile
      * @param cur
      * @return
      */
-    std::unique_ptr<IFileHandle> nextFile(const std::unique_ptr<IFileHandle>& cur);
+    FileHandle nextFile(const FileHandle& cur);
 
     /**
      * @brief getFilename
      * @param fh
      * @return
      */
-    const char* getFilename(const std::unique_ptr<IFileHandle>& fh);
+    const char* getFilename(const FileHandle& fh);
 
     /**
      * @brief deleteFile
      * @param fh
      */
-    void deleteFile(const std::unique_ptr<IFileHandle>& fh);
+    void deleteFile(const FileHandle& fh);
 
     /**
      * @brief deleteFile
@@ -229,7 +237,7 @@ public:
      * @param buf
      * @param size
      */
-    void write(const std::unique_ptr<IFileHandle>& fh, const void* buf, size_t size);
+    ECardResult write(FileHandle& fh, const void* buf, size_t size);
 
     /**
      * @brief read
@@ -237,7 +245,7 @@ public:
      * @param dst
      * @param size
      */
-    void read(const std::unique_ptr<IFileHandle>& fh, void* dst, size_t size);
+    ECardResult read(FileHandle& fh, void* dst, size_t size);
 
     /**
      * @brief seek
@@ -245,56 +253,56 @@ public:
      * @param pos
      * @param whence
      */
-    void seek(const std::unique_ptr<IFileHandle>& fh, int32_t pos, SeekOrigin whence);
+    void seek(FileHandle& fh, int32_t pos, SeekOrigin whence);
 
     /**
      * @brief Returns the current offset of the specified file
      * @param fh The file to retrieve the offset from
      * @return The offset or -1 if an invalid handle is passed
      */
-    int32_t tell(const std::unique_ptr<IFileHandle>& fh);
+    int32_t tell(const FileHandle& fh);
 
     /**
      * @brief setPublic
      * @param fh
      * @param pub
      */
-    void setPublic(const std::unique_ptr<IFileHandle>& fh, bool pub);
+    void setPublic(const FileHandle& fh, bool pub);
 
     /**
      * @brief isPublic
      * @param fh
      * @return
      */
-    bool isPublic(const std::unique_ptr<IFileHandle>& fh) const;
+    bool isPublic(const FileHandle& fh) const;
 
     /**
      * @brief setCanCopy
      * @param fh
      * @param copy
      */
-    void setCanCopy(const std::unique_ptr<IFileHandle>& fh, bool copy) const;
+    void setCanCopy(const FileHandle& fh, bool copy) const;
 
     /**
      * @brief canCopy
      * @param fh
      * @return
      */
-    bool canCopy(const std::unique_ptr<IFileHandle>& fh) const;
+    bool canCopy(const FileHandle& fh) const;
 
     /**
      * @brief setCanMove
      * @param fh
      * @param move
      */
-    void setCanMove(const std::unique_ptr<IFileHandle>& fh, bool move);
+    void setCanMove(const FileHandle& fh, bool move);
 
     /**
      * @brief canMove
      * @param fh
      * @return
      */
-    bool canMove(const std::unique_ptr<IFileHandle>& fh) const;
+    bool canMove(const FileHandle& fh) const;
 
     /**
      * @brief getStatus
@@ -302,7 +310,15 @@ public:
      * @param statOut Structure to fill with file stat
      * @return NOFILE or READY
      */
-    ECardResult getStatus(const std::unique_ptr<IFileHandle>& fh, CardStat& statOut) const;
+    ECardResult getStatus(const FileHandle& fh, CardStat& statOut) const;
+
+    /**
+     * @brief getStatus
+     * @param fileNo Number of requested file
+     * @param statOut Structure to fill with file stat
+     * @return NOFILE or READY
+     */
+    ECardResult getStatus(uint32_t fileNo, CardStat& statOut) const;
 
     /**
      * @brief setStatus
@@ -310,49 +326,57 @@ public:
      * @param statOut Structure to access for file stat
      * @return NOFILE or READY
      */
-    ECardResult setStatus(const std::unique_ptr<IFileHandle>& fh, const CardStat& stat);
+    ECardResult setStatus(const FileHandle& fh, const CardStat& stat);
+
+    /**
+     * @brief setStatus
+     * @param fileNo Number of requested file
+     * @param statOut Structure to access for file stat
+     * @return NOFILE or READY
+     */
+    ECardResult setStatus(uint32_t fileNo, const CardStat& stat);
 
     /**
      * @brief gameId
      * @param fh
      * @return
      */
-    const char* gameId(const std::unique_ptr<IFileHandle>& fh) const;
+    const char* gameId(const FileHandle& fh) const;
 
     /**
      * @brief maker
      * @param fh
      * @return
      */
-    const char* maker(const std::unique_ptr<IFileHandle>& fh) const;
+    const char* maker(const FileHandle& fh) const;
 
     /**
      * @brief setBannerFormat
      * @param fh
      * @param fmt
      */
-    void setBannerFormat(const std::unique_ptr<IFileHandle>& fh, EImageFormat fmt);
+    void setBannerFormat(const FileHandle& fh, EImageFormat fmt);
 
     /**
      * @brief bannerFormat
      * @param fh
      * @return
      */
-    EImageFormat bannerFormat(const std::unique_ptr<IFileHandle>& fh) const;
+    EImageFormat bannerFormat(const FileHandle& fh) const;
 
     /**
      * @brief setIconAnimationType
      * @param fh
      * @param type
      */
-    void setIconAnimationType(const std::unique_ptr<IFileHandle>& fh, EAnimationType type);
+    void setIconAnimationType(const FileHandle& fh, EAnimationType type);
 
     /**
      * @brief iconAnimationType
      * @param fh
      * @return
      */
-    EAnimationType iconAnimationType(const std::unique_ptr<IFileHandle>& fh) const;
+    EAnimationType iconAnimationType(const FileHandle& fh) const;
 
     /**
      * @brief setIconFormat
@@ -360,7 +384,7 @@ public:
      * @param idx
      * @param fmt
      */
-    void setIconFormat(const std::unique_ptr<IFileHandle>& fh, uint32_t idx, EImageFormat fmt);
+    void setIconFormat(const FileHandle& fh, uint32_t idx, EImageFormat fmt);
 
     /**
      * @brief iconFormat
@@ -368,7 +392,7 @@ public:
      * @param idx
      * @return
      */
-    EImageFormat iconFormat(const std::unique_ptr<IFileHandle>& fh, uint32_t idx) const;
+    EImageFormat iconFormat(const FileHandle& fh, uint32_t idx) const;
 
     /**
      * @brief setIconSpeed
@@ -376,7 +400,7 @@ public:
      * @param idx
      * @param speed
      */
-    void setIconSpeed(const std::unique_ptr<IFileHandle>& fh, uint32_t idx, EAnimationSpeed speed);
+    void setIconSpeed(const FileHandle& fh, uint32_t idx, EAnimationSpeed speed);
 
     /**
      * @brief iconSpeed
@@ -384,35 +408,35 @@ public:
      * @param idx
      * @return
      */
-    EAnimationSpeed iconSpeed(const std::unique_ptr<IFileHandle>& fh, uint32_t idx) const;
+    EAnimationSpeed iconSpeed(const FileHandle& fh, uint32_t idx) const;
 
     /**
      * @brief setImageAddress
      * @param fh
      * @param addr
      */
-    void setImageAddress(const std::unique_ptr<IFileHandle>& fh, uint32_t addr);
+    void setImageAddress(const FileHandle& fh, uint32_t addr);
 
     /**
      * @brief imageAddress
      * @param fh
      * @return
      */
-    int32_t imageAddress(const std::unique_ptr<IFileHandle>& fh) const;
+    int32_t imageAddress(const FileHandle& fh) const;
 
     /**
      * @brief setCommentAddress
      * @param fh
      * @param addr
      */
-    void setCommentAddress(const std::unique_ptr<IFileHandle>& fh, uint32_t addr);
+    void setCommentAddress(const FileHandle& fh, uint32_t addr);
 
     /**
      * @brief commentAddress
      * @param fh
      * @return
      */
-    int32_t commentAddress(const std::unique_ptr<IFileHandle>& fh) const;
+    int32_t commentAddress(const FileHandle& fh) const;
 
     /**
      * @brief Copies a file from the current Card instance to a specified Card instance
@@ -420,7 +444,7 @@ public:
      * @param dest The destination Card instance
      * @return True if successful, false otherwise
      */
-    bool copyFileTo(const std::unique_ptr<IFileHandle>& fh, Card& dest);
+    bool copyFileTo(FileHandle& fh, Card& dest);
 
     /**
      * @brief moveFileTo
@@ -428,7 +452,7 @@ public:
      * @param dest
      * @return
      */
-    bool moveFileTo(const std::unique_ptr<IFileHandle>& fh, Card& dest);
+    bool moveFileTo(FileHandle& fh, Card& dest);
 
     /**
      * @brief Sets the current game, if not null any openFile requests will only return files that match this game

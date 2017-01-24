@@ -8,7 +8,7 @@ int main()
     uint64_t a = 0;
     mc.getSerial(a);
 
-    std::unique_ptr<kabufuda::IFileHandle> f;
+    kabufuda::FileHandle f;
     mc.openFile("MetroidPrime A", f);
     for (uint32_t i = 0; i < 127; i++)
     {
