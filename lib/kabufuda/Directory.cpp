@@ -41,7 +41,7 @@ Directory::Directory(uint8_t data[]) { memcpy(__raw, data, BlockSize); }
 
 bool Directory::hasFreeFile() const
 {
-    for (uint16_t i = 1; i < 127; i++)
+    for (uint16_t i = 0; i < 127; i++)
         if (m_files[i].m_game[0] == 0xFF)
             return true;
     return false;
@@ -50,7 +50,7 @@ bool Directory::hasFreeFile() const
 int32_t Directory::numFreeFiles() const
 {
     int32_t ret = 0;
-    for (uint16_t i = 1; i < 127; i++)
+    for (uint16_t i = 0; i < 127; i++)
         if (m_files[i].m_game[0] == 0xFF)
             ++ret;
     return ret;
@@ -58,7 +58,7 @@ int32_t Directory::numFreeFiles() const
 
 File* Directory::getFirstFreeFile(const char* game, const char* maker, const char* filename)
 {
-    for (uint16_t i = 1; i < 127; i++)
+    for (uint16_t i = 0; i < 127; i++)
     {
         if (m_files[i].m_game[0] == 0xFF)
         {
@@ -97,7 +97,7 @@ File* Directory::getFirstNonFreeFile(uint32_t start, const char* game, const cha
 
 File* Directory::getFile(const char* game, const char* maker, const char* filename)
 {
-    for (uint16_t i = 1; i < 127; i++)
+    for (uint16_t i = 0; i < 127; i++)
     {
         if (game && strlen(game) == 4 && memcmp(m_files[i].m_game, game, 4))
             continue;
