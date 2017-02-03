@@ -135,10 +135,10 @@ class Card
     char m_maker[3] = {'\0'};
 
     void _swapEndian();
-    void _updateDirAndBat();
+    void _updateDirAndBat(const Directory& dir, const BlockAllocationTable& bat);
     void _updateChecksum();
     File* _fileFromHandle(const FileHandle& fh) const;
-    void _deleteFile(File& f);
+    void _deleteFile(File& f, BlockAllocationTable& bat);
 
 public:
     Card();
