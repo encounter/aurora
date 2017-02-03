@@ -46,6 +46,10 @@ Card::Card(Card&& other)
 
 Card& Card::operator=(Card&& other)
 {
+    commit();
+    if (m_fileHandle)
+        fclose(m_fileHandle);
+
     memmove(__raw, other.__raw, BlockSize);
     m_filename = std::move(other.m_filename);
     m_fileHandle = other.m_fileHandle;
@@ -147,17 +151,19 @@ ECardResult Card::openFile(uint32_t fileno, FileHandle& handleOut)
     return ECardResult::READY;
 }
 
-void Card::_updateDirAndBat()
+void Card::_updateDirAndBat(const Directory& dir, const BlockAllocationTable& bat)
 {
-    Directory updateDir = m_dirs[m_currentDir];
-    updateDir.m_updateCounter++;
-    m_dirs[!m_currentDir] = updateDir;
     m_currentDir = !m_currentDir;
+    Directory& updateDir = m_dirs[m_currentDir];
+    updateDir = dir;
+    updateDir.m_updateCounter++;
+    updateDir.updateChecksum();
 
-    BlockAllocationTable updateBat = m_bats[m_currentBat];
-    updateBat.m_updateCounter++;
-    m_bats[!m_currentBat] = updateBat;
     m_currentBat = !m_currentBat;
+    BlockAllocationTable& updateBat = m_bats[m_currentBat];
+    updateBat = bat;
+    updateBat.m_updateCounter++;
+    updateBat.updateChecksum();
 }
 
 void Card::_updateChecksum()
@@ -189,9 +195,10 @@ ECardResult Card::createFile(const char* filename, size_t size,
     if (!m_dirs[m_currentDir].hasFreeFile())
         return ECardResult::NOENT;
 
-    _updateDirAndBat();
-    File* f = m_dirs[m_currentDir].getFirstFreeFile(m_game, m_maker, filename);
-    uint16_t block = m_bats[m_currentBat].allocateBlocks(neededBlocks, m_maxBlock - FSTBlocks);
+    Directory dir = m_dirs[m_currentDir];
+    BlockAllocationTable bat = m_bats[m_currentBat];
+    File* f = dir.getFirstFreeFile(m_game, m_maker, filename);
+    uint16_t block = bat.allocateBlocks(neededBlocks, m_maxBlock - FSTBlocks);
     if (f && block != 0xFFFF)
     {
         f->m_modifiedTime = uint32_t(getGCTime());
@@ -199,6 +206,7 @@ ECardResult Card::createFile(const char* filename, size_t size,
         f->m_blockCount = neededBlocks;
 
         handleOut = FileHandle(m_dirs[m_currentDir].indexForFile(f));
+        _updateDirAndBat(dir, bat);
         return ECardResult::READY;
     }
 
@@ -236,14 +244,14 @@ const char* Card::getFilename(const FileHandle& fh)
     return f->m_filename;
 }
 
-void Card::_deleteFile(File& f)
+void Card::_deleteFile(File& f, BlockAllocationTable& bat)
 {
     uint16_t block = f.m_firstBlock;
     while (block != 0xFFFF)
     {
         /* TODO: add a fragmentation check */
-        uint16_t nextBlock = m_bats[m_currentBat].getNextBlock(block);
-        m_bats[m_currentBat].clear(block, 1);
+        uint16_t nextBlock = bat.getNextBlock(block);
+        bat.clear(block, 1);
         block = nextBlock;
     }
     f = File();
@@ -251,29 +259,35 @@ void Card::_deleteFile(File& f)
 
 void Card::deleteFile(const FileHandle& fh)
 {
-    _updateDirAndBat();
-    _deleteFile(*m_dirs[m_currentDir].getFile(fh.idx));
+    Directory dir = m_dirs[m_currentDir];
+    BlockAllocationTable bat = m_bats[m_currentBat];
+    _deleteFile(*dir.getFile(fh.idx), bat);
+    _updateDirAndBat(dir, bat);
 }
 
 ECardResult Card::deleteFile(const char* filename)
 {
-    _updateDirAndBat();
-    File* f = m_dirs[m_currentDir].getFile(m_game, m_maker, filename);
+    Directory dir = m_dirs[m_currentDir];
+    File* f = dir.getFile(m_game, m_maker, filename);
     if (!f)
         return ECardResult::NOFILE;
 
-    _deleteFile(*f);
+    BlockAllocationTable bat = m_bats[m_currentBat];
+    _deleteFile(*f, bat);
+    _updateDirAndBat(dir, bat);
     return ECardResult::READY;
 }
 
 ECardResult Card::deleteFile(uint32_t fileno)
 {
-    _updateDirAndBat();
-    File* f = m_dirs[m_currentDir].getFile(fileno);
+    Directory dir = m_dirs[m_currentDir];
+    File* f = dir.getFile(fileno);
     if (!f)
         return ECardResult::NOFILE;
 
-    _deleteFile(*f);
+    BlockAllocationTable bat = m_bats[m_currentBat];
+    _deleteFile(*f, bat);
+    _updateDirAndBat(dir, bat);
     return ECardResult::READY;
 }
 
@@ -282,12 +296,13 @@ ECardResult Card::renameFile(const char* oldName, const char* newName)
     if (strlen(newName) > 32)
         return ECardResult::NAMETOOLONG;
 
-    _updateDirAndBat();
-    File* f = m_dirs[m_currentDir].getFile(m_game, m_maker, oldName);
+    Directory dir = m_dirs[m_currentDir];
+    File* f = dir.getFile(m_game, m_maker, oldName);
     if (!f)
         return ECardResult::NOFILE;
 
     strncpy(f->m_filename, newName, 32);
+    _updateDirAndBat(dir, m_bats[m_currentBat]);
     return ECardResult::READY;
 }
 
@@ -930,6 +945,8 @@ void Card::commit()
         tmpBat.updateChecksum();
         tmpBat.swapEndian();
         fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
+
+        fflush(m_fileHandle);
     }
 }
 
