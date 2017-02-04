@@ -20,13 +20,13 @@ namespace kabufuda
 class FileHandle
 {
     friend class Card;
-    uint32_t idx = 0;
+    uint32_t idx = -1;
     int32_t offset = 0;
     FileHandle(uint32_t idx) : idx(idx) {}
 public:
     FileHandle() = default;
     uint32_t getFileNo() const { return idx; }
-    operator bool() const { return getFileNo() != 0; }
+    operator bool() const { return getFileNo() != -1; }
 };
 
 enum class ECardResult
@@ -518,6 +518,11 @@ public:
      * <b>Note:</b> <i>Under normal circumstances there is no need to call this function.</i>
      */
     void commit();
+
+    /**
+     * @brief Commits changes to disk and closes host file
+     */
+    void close();
 
     /**
      * @brief Gets card-scope error state

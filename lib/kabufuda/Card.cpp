@@ -10,6 +10,11 @@ namespace kabufuda
 
 #define ROUND_UP_8192(val) (((val) + 8191) & ~8191)
 
+static void NullFileAccess()
+{
+    fprintf(stderr, "Attempted to access null file\n");
+}
+
 void Card::_swapEndian()
 {
     m_formatTime = SBig(m_formatTime);
@@ -46,9 +51,7 @@ Card::Card(Card&& other)
 
 Card& Card::operator=(Card&& other)
 {
-    commit();
-    if (m_fileHandle)
-        fclose(m_fileHandle);
+    close();
 
     memmove(__raw, other.__raw, BlockSize);
     m_filename = std::move(other.m_filename);
@@ -121,9 +124,7 @@ Card::Card(const SystemString& filename, const char* game, const char* maker) : 
 
 Card::~Card()
 {
-    commit();
-    if (m_fileHandle)
-        fclose(m_fileHandle);
+    close();
 }
 
 ECardResult Card::openFile(const char* filename, FileHandle& handleOut)
@@ -175,6 +176,11 @@ void Card::_updateChecksum()
 
 File* Card::_fileFromHandle(const FileHandle& fh) const
 {
+    if (!fh)
+    {
+        NullFileAccess();
+        return nullptr;
+    }
     return const_cast<Directory&>(m_dirs[m_currentDir]).getFile(fh.idx);
 }
 
@@ -205,7 +211,7 @@ ECardResult Card::createFile(const char* filename, size_t size,
         f->m_firstBlock = block;
         f->m_blockCount = neededBlocks;
 
-        handleOut = FileHandle(m_dirs[m_currentDir].indexForFile(f));
+        handleOut = FileHandle(dir.indexForFile(f));
         _updateDirAndBat(dir, bat);
         return ECardResult::READY;
     }
@@ -230,6 +236,11 @@ FileHandle Card::firstFile()
 
 FileHandle Card::nextFile(const FileHandle& cur)
 {
+    if (!cur)
+    {
+        NullFileAccess();
+        return {};
+    }
     File* next = m_dirs[m_currentDir].getFirstNonFreeFile(cur.idx + 1, m_game, m_maker);
     if (!next)
         return {};
@@ -259,6 +270,11 @@ void Card::_deleteFile(File& f, BlockAllocationTable& bat)
 
 void Card::deleteFile(const FileHandle& fh)
 {
+    if (!fh)
+    {
+        NullFileAccess();
+        return;
+    }
     Directory dir = m_dirs[m_currentDir];
     BlockAllocationTable bat = m_bats[m_currentBat];
     _deleteFile(*dir.getFile(fh.idx), bat);
@@ -310,6 +326,11 @@ ECardResult Card::write(FileHandle& fh, const void* buf, size_t size)
 {
     if (m_fileHandle)
     {
+        if (!fh)
+        {
+            NullFileAccess();
+            return ECardResult::NOFILE;
+        }
         File* file = m_dirs[m_currentDir].getFile(fh.idx);
         if (!file)
             return ECardResult::NOFILE;
@@ -358,6 +379,11 @@ ECardResult Card::read(FileHandle& fh, void* dst, size_t size)
 {
     if (m_fileHandle)
     {
+        if (!fh)
+        {
+            NullFileAccess();
+            return ECardResult::NOFILE;
+        }
         File* file = m_dirs[m_currentDir].getFile(fh.idx);
         if (!file)
             return ECardResult::NOFILE;
@@ -403,6 +429,11 @@ ECardResult Card::read(FileHandle& fh, void* dst, size_t size)
 
 void Card::seek(FileHandle& fh, int32_t pos, SeekOrigin whence)
 {
+    if (!fh)
+    {
+        NullFileAccess();
+        return;
+    }
     File* file = m_dirs[m_currentDir].getFile(fh.idx);
     if (!file)
         return;
@@ -532,6 +563,11 @@ static uint32_t TlutSize(EImageFormat fmt)
 
 ECardResult Card::getStatus(const FileHandle& fh, CardStat& statOut) const
 {
+    if (!fh)
+    {
+        NullFileAccess();
+        return ECardResult::NOFILE;
+    }
     return getStatus(fh.idx, statOut);
 }
 
@@ -593,6 +629,11 @@ ECardResult Card::getStatus(uint32_t fileNo, CardStat& statOut) const
 
 ECardResult Card::setStatus(const FileHandle& fh, const CardStat& stat)
 {
+    if (!fh)
+    {
+        NullFileAccess();
+        return ECardResult::NOFILE;
+    }
     return setStatus(fh.idx, stat);
 }
 
@@ -947,6 +988,16 @@ void Card::commit()
         fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
 
         fflush(m_fileHandle);
+    }
+}
+
+void Card::close()
+{
+    if (m_fileHandle)
+    {
+        commit();
+        fclose(m_fileHandle);
+        m_fileHandle = nullptr;
     }
 }
 
