@@ -117,7 +117,7 @@ Card::Card(const SystemString& filename, const char* game, const char* maker) : 
 
         /* Close and reopen in read/write mode */
         fclose(m_fileHandle);
-        m_fileHandle = Fopen(m_filename.c_str(), _S("r+"));
+        m_fileHandle = Fopen(m_filename.c_str(), _S("r+b"));
         rewind(m_fileHandle);
     }
 }
@@ -949,7 +949,7 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding)
         memset(data.get(), 0xFF, dataLen);
         fwrite(data.get(), 1, dataLen, m_fileHandle);
         fclose(m_fileHandle);
-        m_fileHandle = Fopen(m_filename.c_str(), _S("r+"));
+        m_fileHandle = Fopen(m_filename.c_str(), _S("r+b"));
     }
 }
 

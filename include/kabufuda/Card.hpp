@@ -525,6 +525,11 @@ public:
     void close();
 
     /**
+     * @brief Access host filename of card
+     */
+    const SystemString& cardFilename() const { return m_filename; }
+
+    /**
      * @brief Gets card-scope error state
      * @return READY, BROKEN, or NOCARD
      */
