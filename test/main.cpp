@@ -21,7 +21,8 @@ int main()
         mc.setPublic(f, true);
         mc.setCanCopy(f, true);
         mc.setCanMove(f, true);
-        mc.setCommentAddress(f, 0);
+        kabufuda::CardStat stat = {};
+        mc.setStatus(f, stat);
         mc.write(f, "Test\0", strlen("Test") + 1);
         mc.seek(f, 32, kabufuda::SeekOrigin::Begin);
         mc.write(f, "Test\0", strlen("Test") + 1);
