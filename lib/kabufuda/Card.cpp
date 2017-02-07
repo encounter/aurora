@@ -317,8 +317,18 @@ ECardResult Card::renameFile(const char* oldName, const char* newName)
     if (!f)
         return ECardResult::NOFILE;
 
-    strncpy(f->m_filename, newName, 32);
-    _updateDirAndBat(dir, m_bats[m_currentBat]);
+    if (File* replF = dir.getFile(m_game, m_maker, newName))
+    {
+        BlockAllocationTable bat = m_bats[m_currentBat];
+        _deleteFile(*replF, bat);
+        strncpy(f->m_filename, newName, 32);
+        _updateDirAndBat(dir, bat);
+    }
+    else
+    {
+        strncpy(f->m_filename, newName, 32);
+        _updateDirAndBat(dir, m_bats[m_currentBat]);
+    }
     return ECardResult::READY;
 }
 
@@ -573,7 +583,7 @@ ECardResult Card::getStatus(const FileHandle& fh, CardStat& statOut) const
 
 ECardResult Card::getStatus(uint32_t fileNo, CardStat& statOut) const
 {
-    File* file = const_cast<Directory&>(m_dirs[m_currentDir]).getFile(fileNo);
+    const File* file = const_cast<Directory&>(m_dirs[m_currentDir]).getFile(fileNo);
     if (!file || file->m_game[0] == 0xFF)
         return ECardResult::NOFILE;
 
@@ -639,7 +649,8 @@ ECardResult Card::setStatus(const FileHandle& fh, const CardStat& stat)
 
 ECardResult Card::setStatus(uint32_t fileNo, const CardStat& stat)
 {
-    File* file = m_dirs[m_currentDir].getFile(fileNo);
+    Directory dir = m_dirs[m_currentDir];
+    File* file = dir.getFile(fileNo);
     if (!file || file->m_game[0] == 0xFF)
         return ECardResult::NOFILE;
 
@@ -649,124 +660,8 @@ ECardResult Card::setStatus(uint32_t fileNo, const CardStat& stat)
     file->m_animSpeed = stat.x36_iconSpeed;
     file->m_commentAddr = stat.x38_commentAddr;
 
+    _updateDirAndBat(dir, m_bats[m_currentBat]);
     return ECardResult::READY;
-}
-
-const char* Card::gameId(const FileHandle& fh) const
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return nullptr;
-    return reinterpret_cast<const char*>(file->m_game);
-}
-
-const char* Card::maker(const FileHandle& fh) const
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return nullptr;
-    return reinterpret_cast<const char*>(file->m_maker);
-}
-
-void Card::setBannerFormat(const FileHandle& fh, EImageFormat fmt)
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return;
-    file->m_bannerFlags = (file->m_bannerFlags & ~3) | (uint8_t(fmt));
-}
-
-EImageFormat Card::bannerFormat(const FileHandle& fh) const
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return EImageFormat::None;
-    return EImageFormat(file->m_bannerFlags & 3);
-}
-
-void Card::setIconAnimationType(const FileHandle& fh, EAnimationType type)
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return;
-    file->m_bannerFlags = (file->m_bannerFlags & ~4) | uint8_t(type);
-}
-
-EAnimationType Card::iconAnimationType(const FileHandle& fh) const
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return EAnimationType::Loop;
-
-    return EAnimationType(file->m_bannerFlags & 4);
-}
-
-void Card::setIconFormat(const FileHandle& fh, uint32_t idx, EImageFormat fmt)
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return;
-
-    file->m_iconFmt = (file->m_iconFmt & ~(3 << (2 * idx))) | (uint16_t(fmt) << (2 * idx));
-}
-
-EImageFormat Card::iconFormat(const FileHandle& fh, uint32_t idx) const
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return EImageFormat::None;
-
-    return EImageFormat(file->m_iconFmt >> (2 * (idx)) & 3);
-}
-
-void Card::setIconSpeed(const FileHandle& fh, uint32_t idx, EAnimationSpeed speed)
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return;
-
-    file->m_animSpeed = (file->m_animSpeed & ~(3 << (2 * idx))) | (uint16_t(speed) << (2 * idx));
-}
-
-EAnimationSpeed Card::iconSpeed(const FileHandle& fh, uint32_t idx) const
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return EAnimationSpeed::End;
-
-    return EAnimationSpeed((file->m_animSpeed >> (2 * (idx))) & 3);
-}
-
-void Card::setImageAddress(const FileHandle& fh, uint32_t addr)
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return;
-    file->m_iconAddress = addr;
-}
-
-int32_t Card::imageAddress(const FileHandle& fh) const
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return -1;
-    return file->m_iconAddress;
-}
-
-void Card::setCommentAddress(const FileHandle& fh, uint32_t addr)
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return;
-    file->m_commentAddr = addr;
-}
-
-int32_t Card::commentAddress(const FileHandle& fh) const
-{
-    File* file = _fileFromHandle(fh);
-    if (!file)
-        return -1;
-    return file->m_commentAddr;
 }
 
 bool Card::copyFileTo(FileHandle& fh, Card& dest)
