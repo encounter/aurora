@@ -318,7 +318,8 @@ static inline int64_t FTell(FILE* fp)
 static inline int Rename(const SystemChar* oldpath, const SystemChar* newpath)
 {
 #if CARD_UCS2
-    return _wrename(oldpath, newpath);
+    //return _wrename(oldpath, newpath);
+    return ReplaceFileW(newpath, oldpath, nullptr, 0, nullptr, nullptr) == 0;
 #else
     return rename(oldpath, newpath);
 #endif
