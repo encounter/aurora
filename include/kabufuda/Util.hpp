@@ -319,7 +319,7 @@ static inline int Rename(const SystemChar* oldpath, const SystemChar* newpath)
 {
 #if CARD_UCS2
     //return _wrename(oldpath, newpath);
-    return ReplaceFileW(newpath, oldpath, nullptr, 0, nullptr, nullptr) == 0;
+   return  MoveFileExW(oldpath, newpath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == 0;
 #else
     return rename(oldpath, newpath);
 #endif
