@@ -184,36 +184,31 @@ static inline double SBig(double val) { return val; }
 typedef wchar_t SystemChar;
 static inline size_t StrLen(const SystemChar* str) { return wcslen(str); }
 typedef std::wstring SystemString;
+typedef std::wstring_view SystemStringView;
 static inline void ToLower(SystemString& str) { std::transform(str.begin(), str.end(), str.begin(), towlower); }
 static inline void ToUpper(SystemString& str) { std::transform(str.begin(), str.end(), str.begin(), towupper); }
-class SystemUTF8View
+class SystemUTF8Conv
 {
     std::string m_utf8;
 
 public:
-    explicit SystemUTF8View(const SystemString& str) : m_utf8(WideToUTF8(str)) {}
-    operator const std::string&() const { return m_utf8; }
-    const std::string& str() const { return m_utf8; }
+    explicit SystemUTF8Conv(SystemStringView str) : m_utf8(WideToUTF8(str)) {}
+    std::string_view str() const { return m_utf8; }
     const char* c_str() const { return m_utf8.c_str(); }
-    std::string operator+(const std::string& other) const { return m_utf8 + other; }
-    std::string operator+(const char* other) const { return m_utf8 + other; }
+    std::string operator+(std::string_view other) const { return m_utf8 + other; }
 };
-inline std::string operator+(const std::string& lhs, const SystemUTF8View& rhs) { return lhs + std::string(rhs); }
-inline std::string operator+(const char* lhs, const SystemUTF8View& rhs) { return lhs + std::string(rhs); }
-class SystemStringView
+inline std::string operator+(std::string_view lhs, const SystemUTF8Conv& rhs) { return lhs + std::string(rhs); }
+class SystemStringConv
 {
     std::wstring m_sys;
 
 public:
-    explicit SystemStringView(const std::string& str) : m_sys(UTF8ToWide(str)) {}
-    operator const std::wstring&() const { return m_sys; }
-    const std::wstring& sys_str() const { return m_sys; }
+    explicit SystemStringConv(std::string_view str) : m_sys(UTF8ToWide(str)) {}
+    SystemStringView sys_str() const { return m_sys; }
     const SystemChar* c_str() const { return m_sys.c_str(); }
-    std::wstring operator+(const std::wstring& other) const { return m_sys + other; }
-    std::wstring operator+(const wchar_t* other) const { return m_sys + other; }
+    std::wstring operator+(const std::wstring_view other) const { return m_sys + other; }
 };
-inline std::wstring operator+(const std::wstring& lhs, const SystemStringView& rhs) { return lhs + std::wstring(rhs); }
-inline std::wstring operator+(const wchar_t* lhs, const SystemStringView& rhs) { return lhs + std::wstring(rhs); }
+inline std::wstring operator+(const std::wstring_view lhs, const SystemStringConv& rhs) { return lhs + std::wstring(rhs); }
 #ifndef _S
 #define _S(val) L##val
 #endif
@@ -222,36 +217,31 @@ typedef struct _stat Sstat;
 typedef char SystemChar;
 static inline size_t StrLen(const SystemChar* str) { return strlen(str); }
 typedef std::string SystemString;
+typedef std::string_view SystemStringView;
 static inline void ToLower(SystemString& str) { std::transform(str.begin(), str.end(), str.begin(), tolower); }
 static inline void ToUpper(SystemString& str) { std::transform(str.begin(), str.end(), str.begin(), toupper); }
-class SystemUTF8View
+class SystemUTF8Conv
 {
-    const std::string& m_utf8;
+    std::string_view m_utf8;
 
 public:
-    explicit SystemUTF8View(const SystemString& str) : m_utf8(str) {}
-    operator const std::string&() const { return m_utf8; }
-    const std::string& str() const { return m_utf8; }
-    const char* c_str() const { return m_utf8.c_str(); }
-    std::string operator+(const std::string& other) const { return std::string(m_utf8) + other; }
-    std::string operator+(const char* other) const { return std::string(m_utf8) + other; }
+    explicit SystemUTF8Conv(SystemStringView str) : m_utf8(str) {}
+    std::string_view str() const { return m_utf8; }
+    const char* c_str() const { return m_utf8.data(); }
+    std::string operator+(std::string_view other) const { return std::string(m_utf8) + other.data(); }
 };
-inline std::string operator+(const std::string& lhs, const SystemUTF8View& rhs) { return lhs + std::string(rhs); }
-inline std::string operator+(const char* lhs, const SystemUTF8View& rhs) { return lhs + std::string(rhs); }
-class SystemStringView
+inline std::string operator+(std::string_view lhs, const SystemUTF8Conv& rhs) { return std::string(lhs) + rhs.c_str(); }
+class SystemStringConv
 {
-    const std::string& m_sys;
+    SystemStringView m_sys;
 
 public:
-    explicit SystemStringView(const std::string& str) : m_sys(str) {}
-    operator const std::string&() const { return m_sys; }
-    const std::string& sys_str() const { return m_sys; }
-    const SystemChar* c_str() const { return m_sys.c_str(); }
-    std::string operator+(const std::string& other) const { return m_sys + other; }
-    std::string operator+(const char* other) const { return m_sys + other; }
+    explicit SystemStringConv(std::string_view str) : m_sys(str) {}
+    SystemStringView sys_str() const { return m_sys; }
+    const SystemChar* c_str() const { return m_sys.data(); }
+    std::string operator+(std::string_view other) const { return std::string(m_sys) + other.data(); }
 };
-inline std::string operator+(const std::string& lhs, const SystemStringView& rhs) { return lhs + std::string(rhs); }
-inline std::string operator+(const char* lhs, const SystemStringView& rhs) { return lhs + std::string(rhs); }
+inline std::string operator+(std::string_view lhs, const SystemStringConv& rhs) { return std::string(lhs) + rhs.c_str(); }
 #ifndef _S
 #define _S(val) val
 #endif
