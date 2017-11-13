@@ -157,7 +157,7 @@ public:
      * @param game
      * @param maker
      */
-    Card(const SystemString& filepath, const char* game = nullptr, const char* maker = nullptr);
+    Card(SystemStringView filepath, const char* game = nullptr, const char* maker = nullptr);
     ~Card();
 
     /**
@@ -409,7 +409,7 @@ public:
      * @brief Returns basic stats about a card image without opening a handle
      * @return ProbeResults structure
      */
-    static ProbeResults probeCardFile(const SystemString& filename);
+    static ProbeResults probeCardFile(SystemStringView filename);
 
     /**
      * @brief Writes any changes to the Card instance immediately to disk. <br />
@@ -425,7 +425,7 @@ public:
     /**
      * @brief Access host filename of card
      */
-    const SystemString& cardFilename() const { return m_filename; }
+    SystemStringView cardFilename() const { return m_filename; }
 
     /**
      * @brief Gets card-scope error state

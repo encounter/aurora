@@ -71,7 +71,7 @@ Card& Card::operator=(Card&& other)
     return *this;
 }
 
-Card::Card(const SystemString& filename, const char* game, const char* maker) : m_filename(filename)
+Card::Card(SystemStringView filename, const char* game, const char* maker) : m_filename(filename)
 {
     memset(__raw, 0xFF, BlockSize);
     if (game && strlen(game) == 4)
@@ -848,10 +848,10 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding)
     }
 }
 
-ProbeResults Card::probeCardFile(const SystemString& filename)
+ProbeResults Card::probeCardFile(SystemStringView filename)
 {
     Sstat stat;
-    if (Stat(filename.c_str(), &stat) || !S_ISREG(stat.st_mode))
+    if (Stat(filename.data(), &stat) || !S_ISREG(stat.st_mode))
         return { ECardResult::NOCARD, 0, 0 };
     return { ECardResult::READY, uint32_t(stat.st_size / BlockSize) / MbitToBlocks, 0x2000 };
 }

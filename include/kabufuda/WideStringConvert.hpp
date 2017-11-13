@@ -5,8 +5,8 @@
 
 namespace kabufuda
 {
-std::string WideToUTF8(const std::wstring& src);
-std::wstring UTF8ToWide(const std::string& src);
+std::string WideToUTF8(std::wstring_view src);
+std::wstring UTF8ToWide(std::string_view src);
 }
 
 #endif // __KABU_WIDESTRINGCONVERT_HPP__
