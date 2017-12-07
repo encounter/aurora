@@ -226,10 +226,16 @@ static inline utf8proc_ssize_t utf8proc_encode_char(utf8proc_int32_t uc, utf8pro
 #include <iterator>
 #include <string>
 
-class UTF8Iterator : public std::iterator<std::forward_iterator_tag, uint32_t>
+class UTF8Iterator
 {
     std::string::const_iterator m_it;
 public:
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = uint32_t;
+    using difference_type = std::ptrdiff_t;
+    using pointer = uint32_t*;
+    using reference = uint32_t&;
+
     UTF8Iterator(const std::string::const_iterator& it) : m_it(it) {}
     UTF8Iterator& operator+=(size_t v)
     {
