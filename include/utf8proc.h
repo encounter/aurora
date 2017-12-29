@@ -97,8 +97,13 @@ enum {false, true};
 typedef bool utf8proc_bool;
 #  endif
 #else
+#ifdef __cplusplus
+#  include <cstdbool>
+#  include <cinttypes>
+#else
 #  include <stdbool.h>
 #  include <inttypes.h>
+#endif
 typedef int8_t utf8proc_int8_t;
 typedef uint8_t utf8proc_uint8_t;
 typedef int16_t utf8proc_int16_t;
@@ -109,7 +114,11 @@ typedef size_t utf8proc_size_t;
 typedef ssize_t utf8proc_ssize_t;
 typedef bool utf8proc_bool;
 #endif
-#include <limits.h>
+#ifdef __cplusplus
+#  include <climits>
+#else
+#  include <limits.h>
+#endif
 
 /** @name Error codes
  * Error codes being returned by almost all functions.

@@ -1,7 +1,7 @@
 #include "kabufuda/Card.hpp"
 #include "kabufuda/SRAM.hpp"
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
 #include <algorithm>
 #include <memory>
 

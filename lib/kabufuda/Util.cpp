@@ -1,5 +1,5 @@
 #include "kabufuda/Util.hpp"
-#include <time.h>
+#include <ctime>
 
 namespace kabufuda
 {
