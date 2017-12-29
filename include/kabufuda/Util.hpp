@@ -2,7 +2,7 @@
 #define __KABU_UTIL_HPP__
 
 #ifndef _WIN32
-#include <stdlib.h>
+#include <cstdlib>
 #include <sys/stat.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
@@ -10,7 +10,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/statvfs.h>
-#include <errno.h>
+#include <cerrno>
 #else
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN 1
@@ -19,19 +19,19 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
-#include <wchar.h>
+#include <cwchar>
 #include "winsupport.hpp"
 #if UNICODE
 #define CARD_UCS2 1
 #endif
 #endif
 
-#include <stdarg.h>
-#include <stdint.h>
-#include <stdio.h>
+#include <cstdarg>
+#include <cstdint>
+#include <cstdio>
 #include <algorithm>
 #include <string>
-#include <string.h>
+#include <cstring>
 #include "WideStringConvert.hpp"
 
 #undef bswap16
