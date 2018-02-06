@@ -23,9 +23,9 @@ int main()
         mc.setCanMove(f, true);
         kabufuda::CardStat stat = {};
         mc.setStatus(f, stat);
-        mc.write(f, "Test\0", strlen("Test") + 1);
+        mc.asyncWrite(f, "Test\0", strlen("Test") + 1);
         mc.seek(f, 32, kabufuda::SeekOrigin::Begin);
-        mc.write(f, "Test\0", strlen("Test") + 1);
+        mc.asyncWrite(f, "Test\0", strlen("Test") + 1);
     }
     return 0;
 }

@@ -250,71 +250,6 @@ typedef struct stat Sstat;
 
 uint64_t getGCTime();
 
-enum class FileLockType
-{
-    None = 0,
-    Read,
-    Write
-};
-static inline FILE* Fopen(const SystemChar* path, const SystemChar* mode, FileLockType lock = FileLockType::None)
-{
-#if CARD_UCS2
-    FILE* fp = _wfopen(path, mode);
-    if (!fp)
-        return nullptr;
-#else
-    FILE* fp = fopen(path, mode);
-    if (!fp)
-        return nullptr;
-#endif
-
-    if (lock != FileLockType::None)
-    {
-#if _WIN32
-        OVERLAPPED ov = {};
-        LockFileEx((HANDLE)(uintptr_t)_fileno(fp), (lock == FileLockType::Write) ? LOCKFILE_EXCLUSIVE_LOCK : 0, 0, 0, 1,
-                   &ov);
-#else
-        if (flock(fileno(fp), ((lock == FileLockType::Write) ? LOCK_EX : LOCK_SH) | LOCK_NB))
-            fprintf(stderr, "flock %s: %s", path, strerror(errno));
-#endif
-    }
-
-    return fp;
-}
-
-static inline int FSeek(FILE* fp, int64_t offset, int whence)
-{
-#if _WIN32
-    return _fseeki64(fp, offset, whence);
-#elif __APPLE__ || __FreeBSD__
-    return fseeko(fp, offset, whence);
-#else
-    return fseeko64(fp, offset, whence);
-#endif
-}
-
-static inline int64_t FTell(FILE* fp)
-{
-#if _WIN32
-    return _ftelli64(fp);
-#elif __APPLE__ || __FreeBSD__
-    return ftello(fp);
-#else
-    return ftello64(fp);
-#endif
-}
-
-static inline int Rename(const SystemChar* oldpath, const SystemChar* newpath)
-{
-#if CARD_UCS2
-    //return _wrename(oldpath, newpath);
-   return  MoveFileExW(oldpath, newpath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == 0;
-#else
-    return rename(oldpath, newpath);
-#endif
-}
-
 #if !defined(S_ISREG) && defined(S_IFMT) && defined(S_IFREG)
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
 #endif
@@ -349,6 +284,26 @@ static inline int Stat(const SystemChar* path, Sstat* statOut)
  * @param checksumInv
  */
 void calculateChecksumBE(const uint16_t* data, size_t len, uint16_t* checksum, uint16_t* checksumInv);
+
+#undef NOFILE
+
+enum class ECardResult
+{
+    CRC_MISMATCH = -1003, /* Extension enum for Retro's CRC check */
+    FATAL_ERROR = -128,
+    ENCODING = -13,
+    NAMETOOLONG = -12,
+    INSSPACE = -9,
+    NOENT = -8,
+    EXIST = -7,
+    BROKEN = -6,
+    IOERROR = -5,
+    NOFILE = -4,
+    NOCARD = -3,
+    WRONGDEVICE = -2,
+    BUSY = -1,
+    READY = 0
+};
 }
 
 #endif // __KABU_UTIL_HPP__
