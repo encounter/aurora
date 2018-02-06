@@ -5,6 +5,7 @@
 #include "Directory.hpp"
 #include "File.hpp"
 #include "Util.hpp"
+#include "AsyncIO.hpp"
 
 #include <string>
 #include <vector>
@@ -12,7 +13,6 @@
 
 #define CARD_FILENAME_MAX 32
 #define CARD_ICON_MAX 8
-#undef NOFILE
 
 namespace kabufuda
 {
@@ -27,24 +27,6 @@ public:
     FileHandle() = default;
     uint32_t getFileNo() const { return idx; }
     operator bool() const { return getFileNo() != -1; }
-};
-
-enum class ECardResult
-{
-    CRC_MISMATCH = -1003, /* Extension enum for Retro's CRC check */
-    FATAL_ERROR = -128,
-    ENCODING = -13,
-    NAMETOOLONG = -12,
-    INSSPACE = -9,
-    NOENT = -8,
-    EXIST = -7,
-    BROKEN = -6,
-    IOERROR = -5,
-    NOFILE = -4,
-    NOCARD = -3,
-    WRONGDEVICE = -2,
-    BUSY = -1,
-    READY = 0
 };
 
 struct ProbeResults
@@ -102,31 +84,35 @@ struct CardStat
 class Card
 {
 #pragma pack(push, 4)
+    struct CardHeader
+    {
+        uint8_t m_serial[12];
+        uint64_t m_formatTime;
+        int32_t m_sramBias;
+        uint32_t m_sramLanguage;
+        uint32_t m_unknown;
+        uint16_t m_deviceId; /* 0 for Slot A, 1 for Slot B */
+        uint16_t m_sizeMb;
+        uint16_t m_encoding;
+        uint8_t __padding[468];
+        uint16_t m_updateCounter;
+        uint16_t m_checksum;
+        uint16_t m_checksumInv;
+        void _swapEndian();
+    };
     union {
-        struct
-        {
-            uint8_t m_serial[12];
-            uint64_t m_formatTime;
-            int32_t m_sramBias;
-            uint32_t m_sramLanguage;
-            uint32_t m_unknown;
-            uint16_t m_deviceId; /* 0 for Slot A, 1 for Slot B */
-            uint16_t m_sizeMb;
-            uint16_t m_encoding;
-            uint8_t __padding[468];
-            uint16_t m_updateCounter;
-            uint16_t m_checksum;
-            uint16_t m_checksumInv;
-        };
+        CardHeader m_ch;
         uint8_t __raw[BlockSize];
     };
-
+    CardHeader m_tmpCh;
 #pragma pack(pop)
 
     SystemString m_filename;
-    FILE* m_fileHandle = nullptr;
+    AsyncIO m_fileHandle;
     Directory m_dirs[2];
     BlockAllocationTable m_bats[2];
+    Directory m_tmpDirs[2];
+    BlockAllocationTable m_tmpBats[2];
     uint8_t m_currentDir;
     uint8_t m_currentBat;
 
@@ -134,11 +120,14 @@ class Card
     char m_game[5] = {'\0'};
     char m_maker[3] = {'\0'};
 
-    void _swapEndian();
     void _updateDirAndBat(const Directory& dir, const BlockAllocationTable& bat);
     void _updateChecksum();
     File* _fileFromHandle(const FileHandle& fh) const;
     void _deleteFile(File& f, BlockAllocationTable& bat);
+
+    bool m_dirty = false;
+    bool m_opened = false;
+    ECardResult _pumpOpen();
 
 public:
     Card();
@@ -157,7 +146,7 @@ public:
      * @param game
      * @param maker
      */
-    Card(SystemStringView filepath, const char* game = nullptr, const char* maker = nullptr);
+    Card(const char* game = nullptr, const char* maker = nullptr);
     ~Card();
 
     /**
@@ -237,7 +226,7 @@ public:
      * @param buf
      * @param size
      */
-    ECardResult write(FileHandle& fh, const void* buf, size_t size);
+    ECardResult asyncWrite(FileHandle& fh, const void* buf, size_t size);
 
     /**
      * @brief read
@@ -245,7 +234,7 @@ public:
      * @param dst
      * @param size
      */
-    ECardResult read(FileHandle& fh, void* dst, size_t size);
+    ECardResult asyncRead(FileHandle& fh, void* dst, size_t size);
 
     /**
      * @brief seek
@@ -336,6 +325,7 @@ public:
      */
     ECardResult setStatus(uint32_t fileNo, const CardStat& stat);
 
+#if 0 // TODO: Async-friendly implementations
     /**
      * @brief Copies a file from the current Card instance to a specified Card instance
      * @param fh The file to copy
@@ -351,6 +341,7 @@ public:
      * @return
      */
     bool moveFileTo(FileHandle& fh, Card& dest);
+#endif
 
     /**
      * @brief Sets the current game, if not null any openFile requests will only return files that match this game
@@ -416,6 +407,11 @@ public:
      * <b>Note:</b> <i>Under normal circumstances there is no need to call this function.</i>
      */
     void commit();
+
+    /**
+     * @brief Opens card image (does nothing if currently open path matches)
+     */
+    bool open(SystemStringView filepath);
 
     /**
      * @brief Commits changes to disk and closes host file

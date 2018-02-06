@@ -15,7 +15,7 @@ static void NullFileAccess()
     fprintf(stderr, "Attempted to access null file\n");
 }
 
-void Card::_swapEndian()
+void Card::CardHeader::_swapEndian()
 {
     m_formatTime = SBig(m_formatTime);
     m_sramBias = SBig(m_sramBias);
@@ -35,8 +35,7 @@ Card::Card(Card&& other)
 {
     memmove(__raw, other.__raw, BlockSize);
     m_filename = std::move(other.m_filename);
-    m_fileHandle = other.m_fileHandle;
-    other.m_fileHandle = nullptr;
+    m_fileHandle = std::move(other.m_fileHandle);
     m_dirs[0] = std::move(other.m_dirs[0]);
     m_dirs[1] = std::move(other.m_dirs[1]);
     m_bats[0] = std::move(other.m_bats[0]);
@@ -55,8 +54,7 @@ Card& Card::operator=(Card&& other)
 
     memmove(__raw, other.__raw, BlockSize);
     m_filename = std::move(other.m_filename);
-    m_fileHandle = other.m_fileHandle;
-    other.m_fileHandle = nullptr;
+    m_fileHandle = std::move(other.m_fileHandle);
     m_dirs[0] = std::move(other.m_dirs[0]);
     m_dirs[1] = std::move(other.m_dirs[1]);
     m_bats[0] = std::move(other.m_bats[0]);
@@ -71,24 +69,20 @@ Card& Card::operator=(Card&& other)
     return *this;
 }
 
-Card::Card(SystemStringView filename, const char* game, const char* maker) : m_filename(filename)
+ECardResult Card::_pumpOpen()
 {
-    memset(__raw, 0xFF, BlockSize);
-    if (game && strlen(game) == 4)
-        memcpy(m_game, game, 4);
-    if (maker && strlen(maker) == 2)
-        memcpy(m_maker, maker, 2);
+    if (m_opened)
+        return ECardResult::READY;
 
-    m_fileHandle = Fopen(m_filename.c_str(), _S("rb"));
-    if (m_fileHandle)
+    if (!m_fileHandle)
+        return ECardResult::NOCARD;
+
+    ECardResult res = m_fileHandle.pollStatus();
+    if (res == ECardResult::READY)
     {
-        fread(__raw, 1, BlockSize, m_fileHandle);
-        m_maxBlock = m_sizeMb * MbitToBlocks;
-        _swapEndian();
-        fread(m_dirs[0].__raw, 1, BlockSize, m_fileHandle);
-        fread(m_dirs[1].__raw, 1, BlockSize, m_fileHandle);
-        fread(m_bats[0].__raw, 1, BlockSize, m_fileHandle);
-        fread(m_bats[1].__raw, 1, BlockSize, m_fileHandle);
+        m_ch._swapEndian();
+        m_maxBlock = m_ch.m_sizeMb * MbitToBlocks;
+        m_fileHandle.resizeQueue(m_maxBlock);
 
         m_dirs[0].swapEndian();
         m_dirs[1].swapEndian();
@@ -115,11 +109,19 @@ Card::Card(SystemStringView filename, const char* game, const char* maker) : m_f
         else
             m_currentBat = 1;
 
-        /* Close and reopen in read/write mode */
-        fclose(m_fileHandle);
-        m_fileHandle = Fopen(m_filename.c_str(), _S("r+b"));
-        rewind(m_fileHandle);
+        m_opened = true;
     }
+
+    return res;
+}
+
+Card::Card(const char* game, const char* maker)
+{
+    memset(__raw, 0xFF, BlockSize);
+    if (game && strlen(game) == 4)
+        memcpy(m_game, game, 4);
+    if (maker && strlen(maker) == 2)
+        memcpy(m_maker, maker, 2);
 }
 
 Card::~Card()
@@ -129,6 +131,10 @@ Card::~Card()
 
 ECardResult Card::openFile(const char* filename, FileHandle& handleOut)
 {
+    ECardResult openRes = _pumpOpen();
+    if (openRes != ECardResult::READY)
+        return openRes;
+
     handleOut = {};
     File* f = m_dirs[m_currentDir].getFile(m_game, m_maker, filename);
     if (!f || f->m_game[0] == 0xFF)
@@ -144,6 +150,10 @@ ECardResult Card::openFile(const char* filename, FileHandle& handleOut)
 
 ECardResult Card::openFile(uint32_t fileno, FileHandle& handleOut)
 {
+    ECardResult openRes = _pumpOpen();
+    if (openRes != ECardResult::READY)
+        return openRes;
+
     handleOut = {};
     File* f = m_dirs[m_currentDir].getFile(fileno);
     if (!f || f->m_game[0] == 0xFF)
@@ -165,13 +175,15 @@ void Card::_updateDirAndBat(const Directory& dir, const BlockAllocationTable& ba
     updateBat = bat;
     updateBat.m_updateCounter++;
     updateBat.updateChecksum();
+
+    m_dirty = true;
 }
 
 void Card::_updateChecksum()
 {
-    _swapEndian();
-    calculateChecksumBE(reinterpret_cast<uint16_t*>(__raw), 0xFE, &m_checksum, &m_checksumInv);
-    _swapEndian();
+    m_ch._swapEndian();
+    calculateChecksumBE(reinterpret_cast<uint16_t*>(__raw), 0xFE, &m_ch.m_checksum, &m_ch.m_checksumInv);
+    m_ch._swapEndian();
 }
 
 File* Card::_fileFromHandle(const FileHandle& fh) const
@@ -187,6 +199,10 @@ File* Card::_fileFromHandle(const FileHandle& fh) const
 ECardResult Card::createFile(const char* filename, size_t size,
                              FileHandle& handleOut)
 {
+    ECardResult openRes = _pumpOpen();
+    if (openRes != ECardResult::READY)
+        return openRes;
+
     handleOut = {};
 
     if (size <= 0)
@@ -283,6 +299,10 @@ void Card::deleteFile(const FileHandle& fh)
 
 ECardResult Card::deleteFile(const char* filename)
 {
+    ECardResult openRes = _pumpOpen();
+    if (openRes != ECardResult::READY)
+        return openRes;
+
     Directory dir = m_dirs[m_currentDir];
     File* f = dir.getFile(m_game, m_maker, filename);
     if (!f)
@@ -296,6 +316,10 @@ ECardResult Card::deleteFile(const char* filename)
 
 ECardResult Card::deleteFile(uint32_t fileno)
 {
+    ECardResult openRes = _pumpOpen();
+    if (openRes != ECardResult::READY)
+        return openRes;
+
     Directory dir = m_dirs[m_currentDir];
     File* f = dir.getFile(fileno);
     if (!f)
@@ -309,6 +333,10 @@ ECardResult Card::deleteFile(uint32_t fileno)
 
 ECardResult Card::renameFile(const char* oldName, const char* newName)
 {
+    ECardResult openRes = _pumpOpen();
+    if (openRes != ECardResult::READY)
+        return openRes;
+
     if (strlen(newName) > 32)
         return ECardResult::NAMETOOLONG;
 
@@ -332,107 +360,107 @@ ECardResult Card::renameFile(const char* oldName, const char* newName)
     return ECardResult::READY;
 }
 
-ECardResult Card::write(FileHandle& fh, const void* buf, size_t size)
+ECardResult Card::asyncWrite(FileHandle& fh, const void* buf, size_t size)
 {
-    if (m_fileHandle)
+    ECardResult openRes = _pumpOpen();
+    if (openRes != ECardResult::READY)
+        return openRes;
+
+    if (!fh)
     {
-        if (!fh)
-        {
-            NullFileAccess();
-            return ECardResult::NOFILE;
-        }
-        File* file = m_dirs[m_currentDir].getFile(fh.idx);
-        if (!file)
-            return ECardResult::NOFILE;
-
-        /* Block handling is a little different from cache handling,
-         * since each block can be in an arbitrary location we must
-         * first find our starting block.
-         */
-        const uint16_t blockId = uint16_t(fh.offset / BlockSize);
-        uint16_t block = file->m_firstBlock;
-        for (uint16_t i = 0; i < blockId; i++)
-            block = m_bats[m_currentBat].getNextBlock(block);
-
-        const uint8_t* tmpBuf = reinterpret_cast<const uint8_t*>(buf);
-        uint16_t curBlock = block;
-        uint32_t blockOffset = fh.offset % BlockSize;
-        size_t rem = size;
-        while (rem)
-        {
-            if (curBlock == 0xFFFF)
-                return ECardResult::NOFILE;
-
-            size_t cacheSize = rem;
-            if (cacheSize + blockOffset > BlockSize)
-                cacheSize = BlockSize - blockOffset;
-            uint32_t offset = (curBlock * BlockSize) + blockOffset;
-            fseek(m_fileHandle, offset, SEEK_SET);
-            if (fwrite(tmpBuf, 1, cacheSize, m_fileHandle) != cacheSize)
-                return ECardResult::IOERROR;
-            tmpBuf += cacheSize;
-            rem -= cacheSize;
-            blockOffset += cacheSize;
-            if (blockOffset >= BlockSize)
-            {
-                curBlock = m_bats[m_currentBat].getNextBlock(curBlock);
-                blockOffset = 0;
-            }
-        }
-        fh.offset += size;
+        NullFileAccess();
+        return ECardResult::NOFILE;
     }
+    File* file = m_dirs[m_currentDir].getFile(fh.idx);
+    if (!file)
+        return ECardResult::NOFILE;
+
+    /* Block handling is a little different from cache handling,
+     * since each block can be in an arbitrary location we must
+     * first find our starting block.
+     */
+    const uint16_t blockId = uint16_t(fh.offset / BlockSize);
+    uint16_t block = file->m_firstBlock;
+    for (uint16_t i = 0; i < blockId; i++)
+        block = m_bats[m_currentBat].getNextBlock(block);
+
+    const uint8_t* tmpBuf = reinterpret_cast<const uint8_t*>(buf);
+    uint16_t curBlock = block;
+    uint32_t blockOffset = fh.offset % BlockSize;
+    size_t rem = size;
+    while (rem)
+    {
+        if (curBlock == 0xFFFF)
+            return ECardResult::NOFILE;
+
+        size_t cacheSize = rem;
+        if (cacheSize + blockOffset > BlockSize)
+            cacheSize = BlockSize - blockOffset;
+        uint32_t offset = (curBlock * BlockSize) + blockOffset;
+        if (!m_fileHandle.asyncWrite(curBlock, tmpBuf, cacheSize, offset))
+            return ECardResult::FATAL_ERROR;
+        tmpBuf += cacheSize;
+        rem -= cacheSize;
+        blockOffset += cacheSize;
+        if (blockOffset >= BlockSize)
+        {
+            curBlock = m_bats[m_currentBat].getNextBlock(curBlock);
+            blockOffset = 0;
+        }
+    }
+    fh.offset += size;
 
     return ECardResult::READY;
 }
 
-ECardResult Card::read(FileHandle& fh, void* dst, size_t size)
+ECardResult Card::asyncRead(FileHandle& fh, void* dst, size_t size)
 {
-    if (m_fileHandle)
+    ECardResult openRes = _pumpOpen();
+    if (openRes != ECardResult::READY)
+        return openRes;
+
+    if (!fh)
     {
-        if (!fh)
-        {
-            NullFileAccess();
-            return ECardResult::NOFILE;
-        }
-        File* file = m_dirs[m_currentDir].getFile(fh.idx);
-        if (!file)
-            return ECardResult::NOFILE;
-        /* Block handling is a little different from cache handling,
-         * since each block can be in an arbitrary location we must
-         * first find our starting block.
-         */
-        const uint16_t blockId = uint16_t(fh.offset / BlockSize);
-        uint16_t block = file->m_firstBlock;
-        for (uint16_t i = 0; i < blockId; i++)
-            block = m_bats[m_currentBat].getNextBlock(block);
-
-        uint8_t* tmpBuf = reinterpret_cast<uint8_t*>(dst);
-        uint16_t curBlock = block;
-        uint32_t blockOffset = fh.offset % BlockSize;
-        size_t rem = size;
-        while (rem)
-        {
-            if (curBlock == 0xFFFF)
-                return ECardResult::NOFILE;
-
-            size_t cacheSize = rem;
-            if (cacheSize + blockOffset > BlockSize)
-                cacheSize = BlockSize - blockOffset;
-            uint32_t offset = (curBlock * BlockSize) + blockOffset;
-            fseek(m_fileHandle, offset, SEEK_SET);
-            if (fread(tmpBuf, 1, cacheSize, m_fileHandle) != cacheSize)
-                return ECardResult::IOERROR;
-            tmpBuf += cacheSize;
-            rem -= cacheSize;
-            blockOffset += cacheSize;
-            if (blockOffset >= BlockSize)
-            {
-                curBlock = m_bats[m_currentBat].getNextBlock(curBlock);
-                blockOffset = 0;
-            }
-        }
-        fh.offset += size;
+        NullFileAccess();
+        return ECardResult::NOFILE;
     }
+    File* file = m_dirs[m_currentDir].getFile(fh.idx);
+    if (!file)
+        return ECardResult::NOFILE;
+    /* Block handling is a little different from cache handling,
+     * since each block can be in an arbitrary location we must
+     * first find our starting block.
+     */
+    const uint16_t blockId = uint16_t(fh.offset / BlockSize);
+    uint16_t block = file->m_firstBlock;
+    for (uint16_t i = 0; i < blockId; i++)
+        block = m_bats[m_currentBat].getNextBlock(block);
+
+    uint8_t* tmpBuf = reinterpret_cast<uint8_t*>(dst);
+    uint16_t curBlock = block;
+    uint32_t blockOffset = fh.offset % BlockSize;
+    size_t rem = size;
+    while (rem)
+    {
+        if (curBlock == 0xFFFF)
+            return ECardResult::NOFILE;
+
+        size_t cacheSize = rem;
+        if (cacheSize + blockOffset > BlockSize)
+            cacheSize = BlockSize - blockOffset;
+        uint32_t offset = (curBlock * BlockSize) + blockOffset;
+        if (!m_fileHandle.asyncRead(curBlock, tmpBuf, cacheSize, offset))
+            return ECardResult::FATAL_ERROR;
+        tmpBuf += cacheSize;
+        rem -= cacheSize;
+        blockOffset += cacheSize;
+        if (blockOffset >= BlockSize)
+        {
+            curBlock = m_bats[m_currentBat].getNextBlock(curBlock);
+            blockOffset = 0;
+        }
+    }
+    fh.offset += size;
 
     return ECardResult::READY;
 }
@@ -583,6 +611,10 @@ ECardResult Card::getStatus(const FileHandle& fh, CardStat& statOut) const
 
 ECardResult Card::getStatus(uint32_t fileNo, CardStat& statOut) const
 {
+    ECardResult openRes = const_cast<Card*>(this)->_pumpOpen();
+    if (openRes != ECardResult::READY)
+        return openRes;
+
     const File* file = const_cast<Directory&>(m_dirs[m_currentDir]).getFile(fileNo);
     if (!file || file->m_game[0] == 0xFF)
         return ECardResult::NOFILE;
@@ -649,6 +681,10 @@ ECardResult Card::setStatus(const FileHandle& fh, const CardStat& stat)
 
 ECardResult Card::setStatus(uint32_t fileNo, const CardStat& stat)
 {
+    ECardResult openRes = _pumpOpen();
+    if (openRes != ECardResult::READY)
+        return openRes;
+
     Directory dir = m_dirs[m_currentDir];
     File* file = dir.getFile(fileNo);
     if (!file || file->m_game[0] == 0xFF)
@@ -664,6 +700,7 @@ ECardResult Card::setStatus(uint32_t fileNo, const CardStat& stat)
     return ECardResult::READY;
 }
 
+#if 0 // TODO: Async-friendly implementations
 bool Card::copyFileTo(FileHandle& fh, Card& dest)
 {
     if (!canCopy(fh))
@@ -722,6 +759,7 @@ bool Card::moveFileTo(FileHandle& fh, Card& dest)
 
     return false;
 }
+#endif
 
 void Card::setCurrentGame(const char* game)
 {
@@ -768,19 +806,19 @@ const uint8_t* Card::getCurrentMaker() const
 
 void Card::getSerial(uint64_t& serial)
 {
-    _swapEndian();
+    m_ch._swapEndian();
     uint32_t serialBuf[8];
     for (uint32_t i = 0; i < 8; i++)
         serialBuf[i] = SBig(*reinterpret_cast<uint32_t*>(__raw + (i * 4)));
     serial = uint64_t(serialBuf[0] ^ serialBuf[2] ^ serialBuf[4] ^ serialBuf[6]) << 32 |
              (serialBuf[1] ^ serialBuf[3] ^ serialBuf[5] ^ serialBuf[7]);
-    _swapEndian();
+    m_ch._swapEndian();
 }
 
 void Card::getChecksum(uint16_t& checksum, uint16_t& inverse)
 {
-    checksum = m_checksum;
-    inverse = m_checksumInv;
+    checksum = m_ch.m_checksum;
+    inverse = m_ch.m_checksumInv;
 }
 
 void Card::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed)
@@ -789,26 +827,28 @@ void Card::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed)
     filesNotUsed = m_dirs[m_currentDir].numFreeFiles();
 }
 
+static std::unique_ptr<uint8_t[]> DummyBlock;
+
 void Card::format(ECardSlot id, ECardSize size, EEncoding encoding)
 {
     memset(__raw, 0xFF, BlockSize);
     uint64_t rand = uint64_t(getGCTime());
-    m_formatTime = rand;
+    m_ch.m_formatTime = rand;
     for (int i = 0; i < 12; i++)
     {
         rand = (((rand * uint64_t(0x41c64e6d)) + uint64_t(0x3039)) >> 16);
-        m_serial[i] = uint8_t(g_SRAM.flash_id[uint32_t(id)][i] + uint32_t(rand));
+        m_ch.m_serial[i] = uint8_t(g_SRAM.flash_id[uint32_t(id)][i] + uint32_t(rand));
         rand = (((rand * uint64_t(0x41c64e6d)) + uint64_t(0x3039)) >> 16);
         rand &= uint64_t(0x7fffULL);
     }
 
-    m_sramBias = int32_t(SBig(g_SRAM.counter_bias));
-    m_sramLanguage = uint32_t(SBig(g_SRAM.lang));
-    m_unknown = 0; /* 1 works for slot A, 0 both */
-    m_deviceId = 0;
-    m_sizeMb = uint16_t(size);
-    m_maxBlock = m_sizeMb * MbitToBlocks;
-    m_encoding = uint16_t(encoding);
+    m_ch.m_sramBias = int32_t(SBig(g_SRAM.counter_bias));
+    m_ch.m_sramLanguage = uint32_t(SBig(g_SRAM.lang));
+    m_ch.m_unknown = 0; /* 1 works for slot A, 0 both */
+    m_ch.m_deviceId = 0;
+    m_ch.m_sizeMb = uint16_t(size);
+    m_maxBlock = m_ch.m_sizeMb * MbitToBlocks;
+    m_ch.m_encoding = uint16_t(encoding);
     _updateChecksum();
     m_dirs[0] = Directory();
     m_dirs[1] = m_dirs[0];
@@ -817,34 +857,35 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding)
     m_currentDir = 1;
     m_currentBat = 1;
 
-    if (m_fileHandle)
-        fclose(m_fileHandle);
-
-    m_fileHandle = Fopen(m_filename.c_str(), _S("wb"));
+    m_fileHandle = {};
+    m_fileHandle = AsyncIO(m_filename.c_str(), true);
 
     if (m_fileHandle)
     {
-        _swapEndian();
-        fwrite(__raw, 1, BlockSize, m_fileHandle);
-        _swapEndian();
-        Directory tmpDir = m_dirs[0];
-        tmpDir.swapEndian();
-        fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
-        tmpDir = m_dirs[1];
-        tmpDir.swapEndian();
-        fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
-        BlockAllocationTable tmpBat = m_bats[0];
-        tmpBat.swapEndian();
-        fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
-        tmpBat = m_bats[1];
-        tmpBat.swapEndian();
-        fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
-        uint32_t dataLen = ((uint32_t(size) * MbitToBlocks) - 5) * BlockSize;
-        std::unique_ptr<uint8_t[]> data(new uint8_t[dataLen]);
-        memset(data.get(), 0xFF, dataLen);
-        fwrite(data.get(), 1, dataLen, m_fileHandle);
-        fclose(m_fileHandle);
-        m_fileHandle = Fopen(m_filename.c_str(), _S("r+b"));
+        m_tmpCh = m_ch;
+        m_tmpCh._swapEndian();
+        m_fileHandle.asyncWrite(0, &m_tmpCh, BlockSize, 0);
+        m_tmpDirs[0] = m_dirs[0];
+        m_tmpDirs[0].swapEndian();
+        m_fileHandle.asyncWrite(1, m_tmpDirs[0].__raw, BlockSize, BlockSize * 1);
+        m_tmpDirs[1] = m_dirs[1];
+        m_tmpDirs[1].swapEndian();
+        m_fileHandle.asyncWrite(2, m_tmpDirs[1].__raw, BlockSize, BlockSize * 2);
+        m_tmpBats[0] = m_bats[0];
+        m_tmpBats[0].swapEndian();
+        m_fileHandle.asyncWrite(3, m_tmpBats[0].__raw, BlockSize, BlockSize * 3);
+        m_tmpBats[1] = m_bats[1];
+        m_tmpBats[1].swapEndian();
+        m_fileHandle.asyncWrite(4, m_tmpBats[1].__raw, BlockSize, BlockSize * 4);
+        if (!DummyBlock)
+        {
+            DummyBlock.reset(new uint8_t[BlockSize]);
+            memset(DummyBlock.get(), 0xFF, BlockSize);
+        }
+        uint32_t blockCount = (uint32_t(size) * MbitToBlocks) - 5;
+        for (uint32_t i=0 ; i<blockCount ; ++i)
+            m_fileHandle.asyncWrite(i + 5, DummyBlock.get(), BlockSize, BlockSize * (i + 5));
+        m_dirty = false;
     }
 }
 
@@ -858,54 +899,80 @@ ProbeResults Card::probeCardFile(SystemStringView filename)
 
 void Card::commit()
 {
+    if (!m_dirty)
+        return;
     if (m_fileHandle)
     {
-        rewind(m_fileHandle);
-
-        _swapEndian();
-        fwrite(__raw, 1, BlockSize, m_fileHandle);
-        _swapEndian();
-        Directory tmpDir = m_dirs[0];
-        tmpDir.updateChecksum();
-        tmpDir.swapEndian();
-        fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
-        tmpDir = m_dirs[1];
-        tmpDir.updateChecksum();
-        tmpDir.swapEndian();
-        fwrite(tmpDir.__raw, 1, BlockSize, m_fileHandle);
-        BlockAllocationTable tmpBat = m_bats[0];
-        tmpBat.updateChecksum();
-        tmpBat.swapEndian();
-        fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
-        tmpBat = m_bats[1];
-        tmpBat.updateChecksum();
-        tmpBat.swapEndian();
-        fwrite(tmpBat.__raw, 1, BlockSize, m_fileHandle);
-
-        fflush(m_fileHandle);
+        m_tmpCh = m_ch;
+        m_tmpCh._swapEndian();
+        m_fileHandle.asyncWrite(0, &m_tmpCh, BlockSize, 0);
+        m_tmpDirs[0] = m_dirs[0];
+        m_tmpDirs[0].updateChecksum();
+        m_tmpDirs[0].swapEndian();
+        m_fileHandle.asyncWrite(1, m_tmpDirs[0].__raw, BlockSize, BlockSize * 1);
+        m_tmpDirs[1] = m_dirs[1];
+        m_tmpDirs[1].updateChecksum();
+        m_tmpDirs[1].swapEndian();
+        m_fileHandle.asyncWrite(2, m_tmpDirs[1].__raw, BlockSize, BlockSize * 2);
+        m_tmpBats[0] = m_bats[0];
+        m_tmpBats[0].updateChecksum();
+        m_tmpBats[0].swapEndian();
+        m_fileHandle.asyncWrite(3, m_tmpBats[0].__raw, BlockSize, BlockSize * 3);
+        m_tmpBats[1] = m_bats[1];
+        m_tmpBats[1].updateChecksum();
+        m_tmpBats[1].swapEndian();
+        m_fileHandle.asyncWrite(4, m_tmpBats[1].__raw, BlockSize, BlockSize * 4);
+        m_dirty = false;
     }
+}
+
+bool Card::open(SystemStringView filepath)
+{
+    m_opened = false;
+    m_filename = filepath;
+    m_fileHandle = AsyncIO(m_filename);
+    if (m_fileHandle)
+    {
+        m_fileHandle.resizeQueue(5);
+        m_fileHandle.asyncRead(0, __raw, BlockSize, 0);
+        m_fileHandle.asyncRead(1, m_dirs[0].__raw, BlockSize, BlockSize * 1);
+        m_fileHandle.asyncRead(2, m_dirs[1].__raw, BlockSize, BlockSize * 2);
+        m_fileHandle.asyncRead(3, m_bats[0].__raw, BlockSize, BlockSize * 3);
+        m_fileHandle.asyncRead(4, m_bats[1].__raw, BlockSize, BlockSize * 4);
+        return true;
+    }
+    return false;
 }
 
 void Card::close()
 {
+    m_opened = false;
     if (m_fileHandle)
     {
         commit();
-        fclose(m_fileHandle);
-        m_fileHandle = nullptr;
+        m_fileHandle.waitForCompletion();
+        m_fileHandle = {};
     }
 }
 
 ECardResult Card::getError() const
 {
-    if (m_fileHandle == nullptr)
+    if (!m_fileHandle)
         return ECardResult::NOCARD;
 
+    ECardResult pollRes = m_fileHandle.pollStatus();
+    if (pollRes != ECardResult::READY)
+        return pollRes;
+
+    ECardResult openRes = const_cast<Card*>(this)->_pumpOpen();
+    if (openRes != ECardResult::READY)
+        return openRes;
+
     uint16_t ckSum, ckSumInv;
-    const_cast<Card&>(*this)._swapEndian();
+    const_cast<Card&>(*this).m_ch._swapEndian();
     calculateChecksumBE(reinterpret_cast<const uint16_t*>(__raw), 0xFE, &ckSum, &ckSumInv);
-    bool res = (ckSum == m_checksum && ckSumInv == m_checksumInv);
-    const_cast<Card&>(*this)._swapEndian();
+    bool res = (ckSum == m_ch.m_checksum && ckSumInv == m_ch.m_checksumInv);
+    const_cast<Card&>(*this).m_ch._swapEndian();
 
     if (!res)
         return ECardResult::BROKEN;
