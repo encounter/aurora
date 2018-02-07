@@ -934,11 +934,16 @@ bool Card::open(SystemStringView filepath)
     if (m_fileHandle)
     {
         m_fileHandle.resizeQueue(5);
-        m_fileHandle.asyncRead(0, __raw, BlockSize, 0);
-        m_fileHandle.asyncRead(1, m_dirs[0].__raw, BlockSize, BlockSize * 1);
-        m_fileHandle.asyncRead(2, m_dirs[1].__raw, BlockSize, BlockSize * 2);
-        m_fileHandle.asyncRead(3, m_bats[0].__raw, BlockSize, BlockSize * 3);
-        m_fileHandle.asyncRead(4, m_bats[1].__raw, BlockSize, BlockSize * 4);
+        if (!m_fileHandle.asyncRead(0, __raw, BlockSize, 0))
+            return false;
+        if (!m_fileHandle.asyncRead(1, m_dirs[0].__raw, BlockSize, BlockSize * 1))
+            return false;
+        if (!m_fileHandle.asyncRead(2, m_dirs[1].__raw, BlockSize, BlockSize * 2))
+            return false;
+        if (!m_fileHandle.asyncRead(3, m_bats[0].__raw, BlockSize, BlockSize * 3))
+            return false;
+        if (!m_fileHandle.asyncRead(4, m_bats[1].__raw, BlockSize, BlockSize * 4))
+            return false;
         return true;
     }
     return false;
