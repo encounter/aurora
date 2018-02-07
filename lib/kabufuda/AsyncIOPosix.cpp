@@ -39,10 +39,17 @@ AsyncIO& AsyncIO::operator=(AsyncIO&& other)
     return *this;
 }
 
-SizeReturn AsyncIO::syncRead(void* buf, size_t length, off_t offset)
+void AsyncIO::_waitForOperation(size_t qIdx) const
 {
-    lseek(m_fd, offset, SEEK_SET);
-    return read(m_fd, buf, length);
+    auto& aio = const_cast<AsyncIO*>(this)->m_queue[qIdx];
+    if (aio.first.aio_fildes == 0)
+        return;
+    const struct aiocb* aiop = &aio.first;
+    struct timespec ts = {2, 0};
+    while (aio_suspend(&aiop, 1, &ts) && errno == EINTR) {}
+    if (aio_error(&aio.first) != EINPROGRESS)
+        aio.second = aio_return(&aio.first);
+    aio.first.aio_fildes = 0;
 }
 
 bool AsyncIO::asyncRead(size_t qIdx, void* buf, size_t length, off_t offset)
@@ -53,11 +60,7 @@ bool AsyncIO::asyncRead(size_t qIdx, void* buf, size_t length, off_t offset)
 #ifndef NDEBUG
         fprintf(stderr, "WARNING: synchronous kabufuda fallback, check access polling\n");
 #endif
-        const struct aiocb* aiop = &aio;
-        struct timespec ts = {2, 0};
-        while (aio_suspend(&aiop, 1, &ts) && errno == EINTR) {}
-        if (aio_error(&aio) == 0)
-            aio_return(&aio);
+        _waitForOperation(qIdx);
     }
     memset(&aio, 0, sizeof(struct aiocb));
     aio.aio_fildes = m_fd;
@@ -68,12 +71,6 @@ bool AsyncIO::asyncRead(size_t qIdx, void* buf, size_t length, off_t offset)
     return aio_read(&aio) == 0;
 }
 
-SizeReturn AsyncIO::syncWrite(const void* buf, size_t length, off_t offset)
-{
-    lseek(m_fd, offset, SEEK_SET);
-    return write(m_fd, buf, length);
-}
-
 bool AsyncIO::asyncWrite(size_t qIdx, const void* buf, size_t length, off_t offset)
 {
     struct aiocb& aio = m_queue[qIdx].first;
@@ -82,11 +79,7 @@ bool AsyncIO::asyncWrite(size_t qIdx, const void* buf, size_t length, off_t offs
 #ifndef NDEBUG
         fprintf(stderr, "WARNING: synchronous kabufuda fallback, check access polling\n");
 #endif
-        const struct aiocb* aiop = &aio;
-        struct timespec ts = {2, 0};
-        while (aio_suspend(&aiop, 1, &ts) && errno == EINTR) {}
-        if (aio_error(&aio) == 0)
-            aio_return(&aio);
+        _waitForOperation(qIdx);
     }
     memset(&aio, 0, sizeof(struct aiocb));
     aio.aio_fildes = m_fd;
@@ -117,6 +110,10 @@ ECardResult AsyncIO::pollStatus(size_t qIdx, SizeReturn* szRet) const
     case EINPROGRESS:
         return ECardResult::BUSY;
     default:
+        aio.second = aio_return(&aio.first);
+        aio.first.aio_fildes = 0;
+        if (szRet)
+            *szRet = aio.second;
         return ECardResult::IOERROR;
     }
 }
@@ -142,6 +139,8 @@ ECardResult AsyncIO::pollStatus() const
                 result = ECardResult::BUSY;
             break;
         default:
+            aio.second = aio_return(&aio.first);
+            aio.first.aio_fildes = 0;
             if (result > ECardResult::IOERROR)
                 result = ECardResult::IOERROR;
             break;
@@ -154,30 +153,9 @@ ECardResult AsyncIO::pollStatus() const
 
 void AsyncIO::waitForCompletion() const
 {
-    for (auto it = const_cast<AsyncIO*>(this)->m_queue.begin();
-         it != const_cast<AsyncIO*>(this)->m_queue.begin() + m_maxBlock;
-         ++it)
-    {
-        auto& aio = *it;
-        if (aio.first.aio_fildes == 0)
-            continue;
-        switch (aio_error(&aio.first))
-        {
-        case 0:
-            aio.second = aio_return(&aio.first);
-            aio.first.aio_fildes = 0;
-            break;
-        case EINPROGRESS:
-        {
-            const struct aiocb* aiop = &aio.first;
-            struct timespec ts = {2, 0};
-            while (aio_suspend(&aiop, 1, &ts) && errno == EINTR) {}
-            break;
-        }
-        default:
-            break;
-        }
-    }
+    for (size_t i=0 ; i<m_maxBlock ; ++i)
+        _waitForOperation(i);
+    const_cast<AsyncIO*>(this)->m_maxBlock = 0;
 }
 
 }
