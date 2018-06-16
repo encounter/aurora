@@ -862,8 +862,11 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding)
 
     if (m_fileHandle)
     {
+        uint32_t blockCount = (uint32_t(size) * MbitToBlocks) - 5;
+
         m_tmpCh = m_ch;
         m_tmpCh._swapEndian();
+        m_fileHandle.resizeQueue(5 + blockCount);
         m_fileHandle.asyncWrite(0, &m_tmpCh, BlockSize, 0);
         m_tmpDirs[0] = m_dirs[0];
         m_tmpDirs[0].swapEndian();
@@ -882,7 +885,6 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding)
             DummyBlock.reset(new uint8_t[BlockSize]);
             memset(DummyBlock.get(), 0xFF, BlockSize);
         }
-        uint32_t blockCount = (uint32_t(size) * MbitToBlocks) - 5;
         for (uint32_t i=0 ; i<blockCount ; ++i)
             m_fileHandle.asyncWrite(i + 5, DummyBlock.get(), BlockSize, BlockSize * (i + 5));
         m_dirty = false;
@@ -987,5 +989,12 @@ ECardResult Card::getError() const
         return ECardResult::BROKEN;
 
     return ECardResult::READY;
+}
+
+void Card::waitForCompletion() const
+{
+    if (!m_fileHandle)
+        return;
+    m_fileHandle.waitForCompletion();
 }
 }
