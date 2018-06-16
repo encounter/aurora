@@ -429,6 +429,11 @@ public:
      */
     ECardResult getError() const;
 
+    /**
+     * @brief Block caller until any asynchronous I/O operations have completed
+     */
+    void waitForCompletion() const;
+
     operator bool() const { return getError() == ECardResult::READY; }
 };
 }
