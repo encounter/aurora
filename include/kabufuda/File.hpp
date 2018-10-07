@@ -1,5 +1,4 @@
-#ifndef __KABU_FILE_HPP__
-#define __KABU_FILE_HPP__
+#pragma once
 
 #include "Constants.hpp"
 
@@ -44,4 +43,3 @@ public:
 };
 }
 
-#endif // __KABU_FILE_HPP__

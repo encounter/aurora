@@ -1,5 +1,4 @@
-#ifndef __KABU_CARD_HPP__
-#define __KABU_CARD_HPP__
+#pragma once
 
 #include "BlockAllocationTable.hpp"
 #include "Directory.hpp"
@@ -438,4 +437,3 @@ public:
 };
 }
 
-#endif // __CARD_HPP__

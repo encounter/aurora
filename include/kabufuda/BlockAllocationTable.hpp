@@ -1,5 +1,4 @@
-#ifndef __KABU_BLOCKALLOCATIONATABLE_HPP__
-#define __KABU_BLOCKALLOCATIONATABLE_HPP__
+#pragma once
 
 #include "Constants.hpp"
 
@@ -39,4 +38,3 @@ public:
     uint16_t numFreeBlocks() const { return m_freeBlocks; }
 };
 }
-#endif // __KABU_BLOCKALLOCATIONATABLE_HPP__

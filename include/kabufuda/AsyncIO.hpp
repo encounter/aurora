@@ -1,5 +1,4 @@
-#ifndef __KABU_ASYNCIO_HPP__
-#define __KABU_ASYNCIO_HPP__
+#pragma once
 
 #ifndef _WIN32
 #include <aio.h>
@@ -49,4 +48,3 @@ public:
 
 }
 
-#endif // __KABU_ASYNCIO_HPP__
