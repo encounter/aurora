@@ -1,5 +1,4 @@
-#ifndef __KABU_CONSTANTS_HPP__
-#define __KABU_CONSTANTS_HPP__
+#pragma once
 
 #include <stdint.h>
 #include "Util.hpp"
@@ -90,4 +89,3 @@ enum class EEncoding : uint16_t
 };
 }
 
-#endif // __KABU_CONSTANTS_HPP__

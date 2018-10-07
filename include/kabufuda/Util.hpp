@@ -1,5 +1,4 @@
-#ifndef __KABU_UTIL_HPP__
-#define __KABU_UTIL_HPP__
+#pragma once
 
 #ifndef _WIN32
 #include <cstdlib>
@@ -306,4 +305,3 @@ enum class ECardResult
 };
 }
 
-#endif // __KABU_UTIL_HPP__

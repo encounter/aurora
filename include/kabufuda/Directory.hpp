@@ -1,5 +1,4 @@
-#ifndef __KABU_DIRECTORY_HPP__
-#define __KABU_DIRECTORY_HPP__
+#pragma once
 
 #include "File.hpp"
 
@@ -41,4 +40,3 @@ public:
 };
 }
 
-#endif // __KABU_DIRECTORY_HPP__

@@ -1,5 +1,4 @@
-#ifndef SRAM_HPP
-#define SRAM_HPP
+#pragma once
 
 #include <stdint.h>
 
@@ -73,4 +72,3 @@ union SRAM
 extern const SRAM g_SRAM;
 }
 
-#endif // SRAM_HPP
