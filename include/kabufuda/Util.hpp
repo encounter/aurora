@@ -208,8 +208,8 @@ public:
     std::wstring operator+(const std::wstring_view other) const { return m_sys + other.data(); }
 };
 inline std::wstring operator+(const std::wstring_view lhs, const SystemStringConv& rhs) { return std::wstring(lhs) + rhs.c_str(); }
-#ifndef _S
-#define _S(val) L##val
+#ifndef _SYS_STR
+#define _SYS_STR(val) L##val
 #endif
 typedef struct _stat Sstat;
 #else
