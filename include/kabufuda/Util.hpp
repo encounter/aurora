@@ -241,8 +241,8 @@ public:
     std::string operator+(std::string_view other) const { return std::string(m_sys) + other.data(); }
 };
 inline std::string operator+(std::string_view lhs, const SystemStringConv& rhs) { return std::string(lhs) + rhs.c_str(); }
-#ifndef _S
-#define _S(val) val
+#ifndef _SYS_STR
+#define _SYS_STR(val) val
 #endif
 typedef struct stat Sstat;
 #endif
