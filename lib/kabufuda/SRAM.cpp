@@ -1,6 +1,5 @@
 #include "kabufuda/SRAM.hpp"
-namespace kabufuda
-{
+namespace kabufuda {
 // clang-format off
 const SRAM g_SRAM =
 {{
@@ -27,4 +26,4 @@ const SRAM g_SRAM =
      0x00, 0x00
 }};
 // clang-format on
-}
+} // namespace kabufuda
