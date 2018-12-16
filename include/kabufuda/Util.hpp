@@ -57,7 +57,7 @@
     a = type(static_cast<T>(a) & static_cast<T>(b));                                                                   \
     return a;                                                                                                          \
   }                                                                                                                    \
-  inline type operator~(const type& key) {                                                                             \
+  constexpr type operator~(type key) {                                                                                 \
     using T = std::underlying_type_t<type>;                                                                            \
     return type(~static_cast<T>(key));                                                                                 \
   }
