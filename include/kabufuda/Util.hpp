@@ -60,6 +60,14 @@
   constexpr type operator~(type key) {                                                                                 \
     using T = std::underlying_type_t<type>;                                                                            \
     return type(~static_cast<T>(key));                                                                                 \
+  }                                                                                                                    \
+  constexpr bool True(type key) {                                                                                      \
+    using T = std::underlying_type_t<type>;                                                                            \
+    return static_cast<T>(key) != 0;                                                                                   \
+  }                                                                                                                    \
+  constexpr bool False(type key) {                                                                                     \
+    using T = std::underlying_type_t<type>;                                                                            \
+    return static_cast<T>(key) == 0;                                                                                   \
   }
 #endif
 
