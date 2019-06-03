@@ -24,10 +24,10 @@ void Card::CardHeader::_swapEndian() {
   m_checksumInv = SBig(m_checksumInv);
 }
 
-Card::Card() { memset(__raw, 0xFF, BlockSize); }
+Card::Card() { memset(m_ch.__raw, 0xFF, BlockSize); }
 
 Card::Card(Card&& other) {
-  memmove(__raw, other.__raw, BlockSize);
+  memmove(m_ch.__raw, other.m_ch.__raw, BlockSize);
   m_filename = std::move(other.m_filename);
   m_fileHandle = std::move(other.m_fileHandle);
   m_dirs[0] = std::move(other.m_dirs[0]);
@@ -45,7 +45,7 @@ Card::Card(Card&& other) {
 Card& Card::operator=(Card&& other) {
   close();
 
-  memmove(__raw, other.__raw, BlockSize);
+  memmove(m_ch.__raw, other.m_ch.__raw, BlockSize);
   m_filename = std::move(other.m_filename);
   m_fileHandle = std::move(other.m_fileHandle);
   m_dirs[0] = std::move(other.m_dirs[0]);
@@ -107,7 +107,7 @@ ECardResult Card::_pumpOpen() {
 }
 
 Card::Card(const char* game, const char* maker) {
-  memset(__raw, 0xFF, BlockSize);
+  memset(m_ch.__raw, 0xFF, BlockSize);
   if (game && strlen(game) == 4)
     memcpy(m_game, game, 4);
   if (maker && strlen(maker) == 2)
@@ -164,7 +164,7 @@ void Card::_updateDirAndBat(const Directory& dir, const BlockAllocationTable& ba
 
 void Card::_updateChecksum() {
   m_ch._swapEndian();
-  calculateChecksumBE(reinterpret_cast<uint16_t*>(__raw), 0xFE, &m_ch.m_checksum, &m_ch.m_checksumInv);
+  calculateChecksumBE(reinterpret_cast<uint16_t*>(m_ch.__raw), 0xFE, &m_ch.m_checksum, &m_ch.m_checksumInv);
   m_ch._swapEndian();
 }
 
@@ -726,7 +726,7 @@ void Card::getSerial(uint64_t& serial) {
   m_ch._swapEndian();
   uint32_t serialBuf[8];
   for (uint32_t i = 0; i < 8; i++)
-    serialBuf[i] = SBig(*reinterpret_cast<uint32_t*>(__raw + (i * 4)));
+    serialBuf[i] = SBig(*reinterpret_cast<uint32_t*>(m_ch.__raw + (i * 4)));
   serial = uint64_t(serialBuf[0] ^ serialBuf[2] ^ serialBuf[4] ^ serialBuf[6]) << 32 |
            (serialBuf[1] ^ serialBuf[3] ^ serialBuf[5] ^ serialBuf[7]);
   m_ch._swapEndian();
@@ -745,7 +745,7 @@ void Card::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) {
 static std::unique_ptr<uint8_t[]> DummyBlock;
 
 void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
-  memset(__raw, 0xFF, BlockSize);
+  memset(m_ch.__raw, 0xFF, BlockSize);
   uint64_t rand = uint64_t(getGCTime());
   m_ch.m_formatTime = rand;
   for (int i = 0; i < 12; i++) {
@@ -779,7 +779,7 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
     m_tmpCh = m_ch;
     m_tmpCh._swapEndian();
     m_fileHandle.resizeQueue(5 + blockCount);
-    m_fileHandle.asyncWrite(0, &m_tmpCh, BlockSize, 0);
+    m_fileHandle.asyncWrite(0, &m_tmpCh.__raw, BlockSize, 0);
     m_tmpDirs[0] = m_dirs[0];
     m_tmpDirs[0].swapEndian();
     m_fileHandle.asyncWrite(1, m_tmpDirs[0].__raw, BlockSize, BlockSize * 1);
@@ -842,7 +842,7 @@ bool Card::open(SystemStringView filepath) {
   m_fileHandle = AsyncIO(m_filename);
   if (m_fileHandle) {
     m_fileHandle.resizeQueue(5);
-    if (!m_fileHandle.asyncRead(0, __raw, BlockSize, 0))
+    if (!m_fileHandle.asyncRead(0, m_ch.__raw, BlockSize, 0))
       return false;
     if (!m_fileHandle.asyncRead(1, m_dirs[0].__raw, BlockSize, BlockSize * 1))
       return false;
@@ -880,7 +880,7 @@ ECardResult Card::getError() const {
 
   uint16_t ckSum, ckSumInv;
   const_cast<Card&>(*this).m_ch._swapEndian();
-  calculateChecksumBE(reinterpret_cast<const uint16_t*>(__raw), 0xFE, &ckSum, &ckSumInv);
+  calculateChecksumBE(reinterpret_cast<const uint16_t*>(m_ch.__raw), 0xFE, &ckSum, &ckSumInv);
   bool res = (ckSum == m_ch.m_checksum && ckSumInv == m_ch.m_checksumInv);
   const_cast<Card&>(*this).m_ch._swapEndian();
 
