@@ -78,24 +78,26 @@ struct CardStat {
 class Card {
 #pragma pack(push, 4)
   struct CardHeader {
-    uint8_t m_serial[12];
-    uint64_t m_formatTime;
-    int32_t m_sramBias;
-    uint32_t m_sramLanguage;
-    uint32_t m_unknown;
-    uint16_t m_deviceId; /* 0 for Slot A, 1 for Slot B */
-    uint16_t m_sizeMb;
-    uint16_t m_encoding;
-    uint8_t __padding[468];
-    uint16_t m_updateCounter;
-    uint16_t m_checksum;
-    uint16_t m_checksumInv;
+    union {
+      struct {
+        uint8_t m_serial[12];
+        uint64_t m_formatTime;
+        int32_t m_sramBias;
+        uint32_t m_sramLanguage;
+        uint32_t m_unknown;
+        uint16_t m_deviceId; /* 0 for Slot A, 1 for Slot B */
+        uint16_t m_sizeMb;
+        uint16_t m_encoding;
+        uint8_t __padding[468];
+        uint16_t m_updateCounter;
+        uint16_t m_checksum;
+        uint16_t m_checksumInv;
+      };
+      uint8_t __raw[BlockSize];
+    };
     void _swapEndian();
   };
-  union {
-    CardHeader m_ch;
-    uint8_t __raw[BlockSize];
-  };
+  CardHeader m_ch;
   CardHeader m_tmpCh;
 #pragma pack(pop)
 
