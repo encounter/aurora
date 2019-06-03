@@ -779,7 +779,7 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
     m_tmpCh = m_ch;
     m_tmpCh._swapEndian();
     m_fileHandle.resizeQueue(5 + blockCount);
-    m_fileHandle.asyncWrite(0, &m_tmpCh.__raw, BlockSize, 0);
+    m_fileHandle.asyncWrite(0, m_tmpCh.__raw, BlockSize, 0);
     m_tmpDirs[0] = m_dirs[0];
     m_tmpDirs[0].swapEndian();
     m_fileHandle.asyncWrite(1, m_tmpDirs[0].__raw, BlockSize, BlockSize * 1);
