@@ -119,13 +119,15 @@ static inline int32_t SBig(int32_t val) { return bswap32(val); }
 static inline uint32_t SBig(uint32_t val) { return bswap32(val); }
 static inline int64_t SBig(int64_t val) { return bswap64(val); }
 static inline uint64_t SBig(uint64_t val) { return bswap64(val); }
-static inline float SBig(float val) {
-  int32_t ival = bswap32(*((int32_t*)(&val)));
-  return *((float*)(&ival));
+inline float SBig(float val) {
+  union { float f; int32_t i; } uval1 = {val};
+  union { int32_t i; float f; } uval2 = {bswap32(uval1.i)};
+  return uval2.f;
 }
-static inline double SBig(double val) {
-  int64_t ival = bswap64(*((int64_t*)(&val)));
-  return *((double*)(&ival));
+inline double SBig(double val) {
+  union { double f; int64_t i; } uval1 = {val};
+  union { int64_t i; double f; } uval2 = {bswap64(uval1.i)};
+  return uval2.f;
 }
 #ifndef SBIG
 #define SBIG(q) (((q)&0x000000FF) << 24 | ((q)&0x0000FF00) << 8 | ((q)&0x00FF0000) >> 8 | ((q)&0xFF000000) >> 24)

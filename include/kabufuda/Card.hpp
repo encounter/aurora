@@ -24,7 +24,7 @@ class FileHandle {
 public:
   FileHandle() = default;
   uint32_t getFileNo() const { return idx; }
-  operator bool() const { return getFileNo() != -1; }
+  operator bool() const { return getFileNo() != UINT32_MAX; }
 };
 
 struct ProbeResults {
