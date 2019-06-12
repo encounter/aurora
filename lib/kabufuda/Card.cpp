@@ -564,12 +564,12 @@ ECardResult Card::getStatus(uint32_t fileNo, CardStat& statOut) const {
   statOut.x36_iconSpeed = file->m_animSpeed;
   statOut.x38_commentAddr = file->m_commentAddr;
 
-  if (file->m_iconAddress == -1) {
-    statOut.x3c_offsetBanner = -1;
-    statOut.x40_offsetBannerTlut = -1;
+  if (file->m_iconAddress == UINT32_MAX) {
+    statOut.x3c_offsetBanner = UINT32_MAX;
+    statOut.x40_offsetBannerTlut = UINT32_MAX;
     for (int i = 0; i < CARD_ICON_MAX; ++i)
-      statOut.x44_offsetIcon[i] = -1;
-    statOut.x64_offsetIconTlut = -1;
+      statOut.x44_offsetIcon[i] = UINT32_MAX;
+    statOut.x64_offsetIconTlut = UINT32_MAX;
     statOut.x68_offsetData = file->m_commentAddr + 64;
   } else {
     uint32_t cur = file->m_iconAddress;
@@ -589,7 +589,7 @@ ECardResult Card::getStatus(uint32_t fileNo, CardStat& statOut) const {
       statOut.x64_offsetIconTlut = cur;
       cur += TlutSize(EImageFormat::C8);
     } else
-      statOut.x64_offsetIconTlut = -1;
+      statOut.x64_offsetIconTlut = UINT32_MAX;
     statOut.x68_offsetData = cur;
   }
 
