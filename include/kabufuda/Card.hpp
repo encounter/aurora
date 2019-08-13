@@ -125,10 +125,6 @@ class Card {
 
 public:
   Card();
-  /**
-   * @brief Card
-   * @param other
-   */
   Card(const Card& other) = delete;
   Card& operator=(const Card& other) = delete;
   Card(Card&& other);
@@ -136,185 +132,232 @@ public:
 
   /**
    * @brief Card
-   * @param filepath
-   * @param game
-   * @param maker
+   *
+   * @param game  The game code.
+   * @param maker The maker code.
    */
   Card(const char* game = nullptr, const char* maker = nullptr);
   ~Card();
 
   /**
    * @brief openFile
-   * @param filename
+   *
+   * @param[in]  filename  The name of the file to open.
+   * @param[out] handleOut Out reference that will contain the opened file handle.
+   *
+   * @return A result indicating the error status of the operation.
    */
   ECardResult openFile(const char* filename, FileHandle& handleOut);
 
   /**
    * @brief openFile
-   * @param fileno
+   *
+   * @param[in]  fileno    The file index.
+   * @param[out] handleOut Out reference that will contain the opened file handle.
+   *
+   * @return A result indicating the error status of the operation.
    */
   ECardResult openFile(uint32_t fileno, FileHandle& handleOut);
 
   /**
    * @brief createFile
-   * @param filename
-   * @return
+   *
+   * @param[in]  filename  The name of the file to create.
+   * @param[out] handleOut Out reference that will contain the handle of the created file.
+   *
+   * @return A result indicating the error status of the operation.
    */
   ECardResult createFile(const char* filename, size_t size, FileHandle& handleOut);
 
   /**
    * @brief closeFile
+   *
    * @param fh FileHandle to close
-   * @return
+   *
+   * @return READY
    */
   ECardResult closeFile(FileHandle& fh);
 
   /**
    * @brief firstFile
-   * @return
+   *
+   * @return The first file within this card instance. If
+   *         no file is able to be found, then an invalid
+   *         handle will be returned.
    */
   FileHandle firstFile();
 
   /**
    * @brief nextFile
-   * @param cur
-   * @return
+   *
+   * @param cur The file handle indicating the current file handle.
+   *
+   * @return The next file within this card. If no file can be found,
+   *         an invalid handle will be returned.
    */
   FileHandle nextFile(const FileHandle& cur);
 
   /**
    * @brief getFilename
-   * @param fh
-   * @return
+   *
+   * @param fh A valid file handle to retrieve the name of.
+   *
+   * @return Gets the name of the given file.
    */
   const char* getFilename(const FileHandle& fh);
 
   /**
    * @brief deleteFile
-   * @param fh
+   *
+   * @param fh File handle to delete.
    */
   void deleteFile(const FileHandle& fh);
 
   /**
    * @brief deleteFile
-   * @param filename
+   *
+   * @param filename The name of the file to delete.
    */
   ECardResult deleteFile(const char* filename);
 
   /**
    * @brief deleteFile
-   * @param fileno
+   *
+   * @param fileno The file number indicating the file to delete.
    */
   ECardResult deleteFile(uint32_t fileno);
 
   /**
    * @brief renameFile
-   * @param oldName
-   * @param newName
+   *
+   * @param oldName The old name of the file.
+   * @param newName The new name to assign to the file.
    */
   ECardResult renameFile(const char* oldName, const char* newName);
 
   /**
    * @brief write
-   * @param fh
-   * @param buf
-   * @param size
+   *
+   * @param fh   A valid file handle to write to.
+   * @param buf  The buffer to write to the file.
+   * @param size The size of the given buffer.
    */
   ECardResult asyncWrite(FileHandle& fh, const void* buf, size_t size);
 
   /**
    * @brief read
-   * @param fh
-   * @param dst
-   * @param size
+   *
+   * @param fh   A valid file handle to read from.
+   * @param dst  A buffer to read data into.
+   * @param size The size of the buffer to read into.
    */
   ECardResult asyncRead(FileHandle& fh, void* dst, size_t size);
 
   /**
    * @brief seek
-   * @param fh
-   * @param pos
-   * @param whence
+   *
+   * @param fh     A valid file handle.
+   * @param pos    The position to seek to.
+   * @param whence The origin to seek relative to.
    */
   void seek(FileHandle& fh, int32_t pos, SeekOrigin whence);
 
   /**
-   * @brief Returns the current offset of the specified file
-   * @param fh The file to retrieve the offset from
-   * @return The offset or -1 if an invalid handle is passed
+   * @brief Returns the current offset of the specified file.
+   *
+   * @param fh The file to retrieve the offset from.
+   *
+   * @return The offset or -1 if an invalid handle is passed.
    */
   int32_t tell(const FileHandle& fh);
 
   /**
    * @brief setPublic
-   * @param fh
-   * @param pub
+   *
+   * @param fh  The file handle to make public.
+   * @param pub Whether or not this file is public (i.e. readable by any game).
    */
   void setPublic(const FileHandle& fh, bool pub);
 
   /**
    * @brief isPublic
-   * @param fh
-   * @return
+   *
+   * @param fh The file handle to query.
+   *
+   * @return Whether or not this file is public (i.e. readable by any game).
    */
   bool isPublic(const FileHandle& fh) const;
 
   /**
    * @brief setCanCopy
-   * @param fh
-   * @param copy
+   *
+   * @param fh   The file handle to set as copyable.
+   * @param copy Whether or not to set the file handle as copyable.
    */
   void setCanCopy(const FileHandle& fh, bool copy) const;
 
   /**
    * @brief canCopy
-   * @param fh
-   * @return
+   *
+   * @param fh The file handle to query.
+   *
+   * @return Whether or not this file handle is copyable by the IPL.
    */
   bool canCopy(const FileHandle& fh) const;
 
   /**
    * @brief setCanMove
-   * @param fh
-   * @param move
+   *
+   * @param fh   The file handle to set as moveable.
+   * @param move Whether or not to set the file handle as movable.
    */
   void setCanMove(const FileHandle& fh, bool move);
 
   /**
    * @brief canMove
-   * @param fh
-   * @return
+   *
+   * @param fh The file handle to query.
+   *
+   * @return whether or not the file can be moved by the IPL.
    */
   bool canMove(const FileHandle& fh) const;
 
   /**
    * @brief getStatus
-   * @param fh Handle of requested file
+   *
+   * @param fh      Handle of requested file
    * @param statOut Structure to fill with file stat
+   *
    * @return NOFILE or READY
    */
   ECardResult getStatus(const FileHandle& fh, CardStat& statOut) const;
 
   /**
    * @brief getStatus
-   * @param fileNo Number of requested file
+   *
+   * @param fileNo  Number of requested file
    * @param statOut Structure to fill with file stat
+   *
    * @return NOFILE or READY
    */
   ECardResult getStatus(uint32_t fileNo, CardStat& statOut) const;
 
   /**
    * @brief setStatus
-   * @param fh Handle of requested file
-   * @param statOut Structure to access for file stat
+   *
+   * @param fh   Handle of requested file
+   * @param stat Structure to access for file stat
+   *
    * @return NOFILE or READY
    */
   ECardResult setStatus(const FileHandle& fh, const CardStat& stat);
 
   /**
    * @brief setStatus
+   *
    * @param fileNo Number of requested file
-   * @param statOut Structure to access for file stat
+   * @param stat   Structure to access for file stat
+   *
    * @return NOFILE or READY
    */
   ECardResult setStatus(uint32_t fileNo, const CardStat& stat);
@@ -339,60 +382,72 @@ public:
 
   /**
    * @brief Sets the current game, if not null any openFile requests will only return files that match this game
+   *
    * @param game The target game id, e.g "GM8E"
+   *
    * @sa openFile
    */
   void setCurrentGame(const char* game);
 
   /**
-   * @brief Returns the currently selected game
+   * @brief Returns the currently selected game.
+   *
    * @return The selected game, or nullptr
    */
   const uint8_t* getCurrentGame() const;
 
   /**
-   * @brief Sets the current maker, if not null any openFile requests will only return files that match this maker
-   * @param maker The target maker id, e.g "01"
+   * @brief Sets the current maker, if not null any openFile requests will only return files that match this maker.
+   *
+   * @param maker The target maker id, e.g "01".
+   *
    * @sa openFile
    */
   void setCurrentMaker(const char* maker);
 
   /**
-   * @brief Returns the currently selected maker
-   * @return The selected maker, or nullptr
+   * @brief Returns the currently selected maker.
+   *
+   * @return The selected maker, or nullptr.
    */
   const uint8_t* getCurrentMaker() const;
 
   /**
-   * @brief Retrieves the format assigned serial
-   * @param serial
+   * @brief Retrieves the format assigned serial.
+   *
+   * @param[out] serial Out reference that will contain the serial number.
    */
   void getSerial(uint64_t& serial);
 
   /**
-   * @brief Retrieves the checksum values of the Card system header
-   * @param checksum The checksum of the system header
-   * @param inverse  The inverser checksum of the system header
+   * @brief Retrieves the checksum values of the Card system header.
+   *
+   * @param checksum The checksum of the system header.
+   * @param inverse  The inverse checksum of the system header.
    */
   void getChecksum(uint16_t& checksum, uint16_t& inverse);
 
   /**
-   * @brief Retrieves the available storage and directory space
-   * @param bytesNotUsed Number of free bytes out
-   * @param filesNotUsed Number of free files out
+   * @brief Retrieves the available storage and directory space.
+   *
+   * @param bytesNotUsed Number of free bytes out.
+   * @param filesNotUsed Number of free files out.
    */
   void getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed);
 
   /**
-   * @brief Formats the memory card and assigns a new serial
-   * @param size The desired size of the file @sa ECardSize
-   * @param encoding The desired encoding @sa EEncoding
+   * @brief Formats the memory card and assigns a new serial.
+   *
+   * @param deviceId The slot to format.
+   * @param size     The desired size of the file @sa ECardSize.
+   * @param encoding The desired encoding @sa EEncoding.
    */
   void format(ECardSlot deviceId, ECardSize size = ECardSize::Card2043Mb, EEncoding encoding = EEncoding::ASCII);
 
   /**
-   * @brief Returns basic stats about a card image without opening a handle
-   * @return ProbeResults structure
+   * @brief Returns basic stats about a card image without opening a handle.
+   *
+   * @return ProbeResults structure.
    */
   static ProbeResults probeCardFile(SystemStringView filename);
 
@@ -403,31 +458,37 @@ public:
   void commit();
 
   /**
-   * @brief Opens card image (does nothing if currently open path matches)
+   * @brief Opens card image (does nothing if currently open path matches).
    */
   bool open(SystemStringView filepath);
 
   /**
-   * @brief Commits changes to disk and closes host file
+   * @brief Commits changes to disk and closes host file.
    */
   void close();
 
   /**
-   * @brief Access host filename of card
+   * @brief Access host filename of card.
+   *
+   * @return A view to the card's filename.
    */
   SystemStringView cardFilename() const { return m_filename; }
 
   /**
-   * @brief Gets card-scope error state
+   * @brief Gets card-scope error state.
+   *
    * @return READY, BROKEN, or NOCARD
    */
   ECardResult getError() const;
 
   /**
-   * @brief Block caller until any asynchronous I/O operations have completed
+   * @brief Block caller until any asynchronous I/O operations have completed.
    */
   void waitForCompletion() const;
 
+  /**
+   * @return Whether or not the card is within a ready state.
+   */
   operator bool() const { return getError() == ECardResult::READY; }
 };
 } // namespace kabufuda
