@@ -1,5 +1,8 @@
 #include "kabufuda/AsyncIO.hpp"
 
+#include <algorithm>
+#include <cstdio>
+
 namespace kabufuda {
 
 #undef min

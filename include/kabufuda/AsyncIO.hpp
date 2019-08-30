@@ -8,8 +8,10 @@ using SizeReturn = ssize_t;
 using SizeReturn = DWORD;
 #endif
 
-#include "Util.hpp"
+#include <cstddef>
 #include <vector>
+
+#include "kabufuda/Util.hpp"
 
 namespace kabufuda {
 

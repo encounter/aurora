@@ -1,14 +1,14 @@
 #pragma once
 
-#include <stdint.h>
-#include "Util.hpp"
+#include <cstdint>
+#include "kabufuda/Util.hpp"
 
 namespace kabufuda {
-uint32_t constexpr BlockSize = 0x2000;
-uint32_t constexpr MaxFiles = 127;
-uint32_t constexpr FSTBlocks = 5;
-uint32_t constexpr MbitToBlocks = 0x10;
-uint32_t constexpr BATSize = 0xFFB;
+constexpr uint32_t BlockSize = 0x2000;
+constexpr uint32_t MaxFiles = 127;
+constexpr uint32_t FSTBlocks = 5;
+constexpr uint32_t MbitToBlocks = 0x10;
+constexpr uint32_t BATSize = 0xFFB;
 
 /**
  * @brief The EPermissions enum

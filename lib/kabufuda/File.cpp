@@ -1,4 +1,7 @@
 #include "kabufuda/File.hpp"
+
+#include <cstring>
+
 #include "kabufuda/Util.hpp"
 
 namespace kabufuda {
