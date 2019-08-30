@@ -1,9 +1,11 @@
 #include "kabufuda/Card.hpp"
-#include "kabufuda/SRAM.hpp"
+
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
-#include <algorithm>
 #include <memory>
+
+#include "kabufuda/SRAM.hpp"
 
 namespace kabufuda {
 

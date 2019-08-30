@@ -1,6 +1,9 @@
 #include "kabufuda/Directory.hpp"
-#include "kabufuda/Util.hpp"
+
+#include <algorithm>
 #include <cstring>
+
+#include "kabufuda/Util.hpp"
 
 namespace kabufuda {
 void Directory::swapEndian() {

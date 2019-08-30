@@ -1,6 +1,7 @@
 #pragma once
 
-#include "Constants.hpp"
+#include <cstdint>
+#include "kabufuda/Constants.hpp"
 
 namespace kabufuda {
 class File {

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "File.hpp"
+#include <cstdint>
+#include "kabufuda/File.hpp"
 
 namespace kabufuda {
 class Directory {

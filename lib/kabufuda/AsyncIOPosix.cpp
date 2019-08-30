@@ -1,5 +1,9 @@
 #include "kabufuda/AsyncIO.hpp"
 
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+
 namespace kabufuda {
 
 AsyncIO::AsyncIO(SystemStringView filename, bool truncate) {

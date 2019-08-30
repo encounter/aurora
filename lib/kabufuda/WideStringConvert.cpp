@@ -1,5 +1,8 @@
 #include "kabufuda/WideStringConvert.hpp"
-#include "utf8proc.h"
+
+#include <cstdio>
+
+#include <utf8proc.h>
 
 namespace kabufuda {
 std::string WideToUTF8(std::wstring_view src) {

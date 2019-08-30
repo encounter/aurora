@@ -1,15 +1,16 @@
 #pragma once
 
 #ifndef _WIN32
+#include <cerrno>
 #include <cstdlib>
-#include <sys/stat.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <sys/statvfs.h>
+
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <sys/statvfs.h>
-#include <cerrno>
 #else
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN 1
@@ -25,13 +26,12 @@
 #endif
 #endif
 
-#include <cstdarg>
-#include <cstdint>
-#include <cstdio>
 #include <algorithm>
+#include <cstdint>
 #include <string>
-#include <cstring>
-#include "WideStringConvert.hpp"
+#include <type_traits>
+
+#include "kabufuda/WideStringConvert.hpp"
 
 #undef bswap16
 #undef bswap32

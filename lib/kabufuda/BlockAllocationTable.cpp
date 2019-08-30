@@ -1,6 +1,11 @@
 #include "kabufuda/BlockAllocationTable.hpp"
-#include "kabufuda/Util.hpp"
+
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
 #include <vector>
+
+#include "kabufuda/Util.hpp"
 
 namespace kabufuda {
 void BlockAllocationTable::swapEndian() {
