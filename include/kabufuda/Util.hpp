@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <type_traits>
 
@@ -211,7 +212,7 @@ inline std::wstring operator+(const std::wstring_view lhs, const SystemStringCon
 typedef struct _stat Sstat;
 #else
 typedef char SystemChar;
-inline size_t StrLen(const SystemChar* str) { return strlen(str); }
+inline size_t StrLen(const SystemChar* str) { return std::strlen(str); }
 typedef std::string SystemString;
 typedef std::string_view SystemStringView;
 inline void ToLower(SystemString& str) { std::transform(str.begin(), str.end(), str.begin(), tolower); }
