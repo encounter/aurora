@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstring>
 #include <vector>
 
 #include "kabufuda/Util.hpp"
@@ -19,23 +18,21 @@ void BlockAllocationTable::swapEndian() {
 
 void BlockAllocationTable::updateChecksum() {
   swapEndian();
-  calculateChecksumBE(reinterpret_cast<uint16_t*>(__raw + 4), 0xFFE, &m_checksum, &m_checksumInv);
+  calculateChecksumBE(reinterpret_cast<uint16_t*>(raw.data() + 4), 0xFFE, &m_checksum, &m_checksumInv);
   swapEndian();
 }
 
 bool BlockAllocationTable::valid() const {
   uint16_t ckSum, ckSumInv;
   const_cast<BlockAllocationTable&>(*this).swapEndian();
-  calculateChecksumBE(reinterpret_cast<const uint16_t*>(__raw + 4), 0xFFE, &ckSum, &ckSumInv);
+  calculateChecksumBE(reinterpret_cast<const uint16_t*>(raw.data() + 4), 0xFFE, &ckSum, &ckSumInv);
   bool res = (ckSum == m_checksum && ckSumInv == m_checksumInv);
   const_cast<BlockAllocationTable&>(*this).swapEndian();
   return res;
 }
 
-BlockAllocationTable::BlockAllocationTable(uint32_t blockCount) {
-  memset(__raw, 0, BlockSize);
-  m_freeBlocks = uint16_t(blockCount - FSTBlocks);
-  m_lastAllocated = 4;
+BlockAllocationTable::BlockAllocationTable(uint32_t blockCount)
+: m_freeBlocks{uint16_t(blockCount - FSTBlocks)}, m_lastAllocated{4} {
   updateChecksum();
 }
 
