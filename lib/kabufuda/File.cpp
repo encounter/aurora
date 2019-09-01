@@ -1,19 +1,18 @@
 #include "kabufuda/File.hpp"
 
 #include <cstring>
-#include <iterator>
 
 #include "kabufuda/Util.hpp"
 
 namespace kabufuda {
-File::File() { raw.fill(0xFF); }
+File::File() { memset(__raw, 0xFF, 0x40); }
 
-File::File(char data[]) { std::memcpy(raw.data(), data, raw.size()); }
+File::File(char data[]) { memcpy(__raw, data, 0x40); }
 
 File::File(const char* filename) {
-  raw.fill(0);
-  std::memset(m_filename, 0, std::size(m_filename));
-  std::strncpy(m_filename, filename, std::size(m_filename));
+  memset(__raw, 0, 0x40);
+  memset(m_filename, 0, 32);
+  strncpy(m_filename, filename, 32);
 }
 void File::swapEndian() {
   m_modifiedTime = SBig(m_modifiedTime);

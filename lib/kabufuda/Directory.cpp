@@ -16,124 +16,100 @@ void Directory::swapEndian() {
 
 void Directory::updateChecksum() {
   swapEndian();
-  calculateChecksumBE(reinterpret_cast<uint16_t*>(raw.data()), 0xFFE, &m_checksum, &m_checksumInv);
+  calculateChecksumBE(reinterpret_cast<uint16_t*>(__raw), 0xFFE, &m_checksum, &m_checksumInv);
   swapEndian();
 }
 
 bool Directory::valid() const {
   uint16_t ckSum, ckSumInv;
   const_cast<Directory&>(*this).swapEndian();
-  calculateChecksumBE(reinterpret_cast<const uint16_t*>(raw.data()), 0xFFE, &ckSum, &ckSumInv);
+  calculateChecksumBE(reinterpret_cast<const uint16_t*>(__raw), 0xFFE, &ckSum, &ckSumInv);
   bool res = (ckSum == m_checksum && ckSumInv == m_checksumInv);
   const_cast<Directory&>(*this).swapEndian();
   return res;
 }
 
 Directory::Directory() {
-  raw.fill(0xFF);
+  memset(__raw, 0xFF, BlockSize);
   m_updateCounter = 0;
   updateChecksum();
 }
 
-Directory::Directory(uint8_t data[]) { std::memcpy(raw.data(), data, BlockSize); }
+Directory::Directory(uint8_t data[]) { memcpy(__raw, data, BlockSize); }
 
 bool Directory::hasFreeFile() const {
-  return std::any_of(m_files.cbegin(), m_files.cend(), [](const auto& file) { return file.m_game[0] == 0xFF; });
+  for (uint16_t i = 0; i < 127; i++)
+    if (m_files[i].m_game[0] == 0xFF)
+      return true;
+  return false;
 }
 
 int32_t Directory::numFreeFiles() const {
-  return int32_t(
-      std::count_if(m_files.cbegin(), m_files.cend(), [](const auto& file) { return file.m_game[0] == 0xFF; }));
+  int32_t ret = 0;
+  for (uint16_t i = 0; i < 127; i++)
+    if (m_files[i].m_game[0] == 0xFF)
+      ++ret;
+  return ret;
 }
 
 File* Directory::getFirstFreeFile(const char* game, const char* maker, const char* filename) {
-  const auto iter =
-      std::find_if(m_files.begin(), m_files.end(), [](const auto& file) { return file.m_game[0] == 0xFF; });
-
-  if (iter == m_files.cend()) {
-    return nullptr;
+  for (uint16_t i = 0; i < 127; i++) {
+    if (m_files[i].m_game[0] == 0xFF) {
+      File* ret = &m_files[i];
+      *ret = File(filename);
+      if (game && strlen(game) == 4)
+        memcpy(ret->m_game, game, 4);
+      if (maker && strlen(maker) == 2)
+        memcpy(ret->m_maker, maker, 2);
+      return ret;
+    }
   }
 
-  *iter = File(filename);
-  if (game != nullptr && std::strlen(game) == iter->m_game.size()) {
-    std::memcpy(iter->m_game.data(), game, iter->m_game.size());
-  }
-  if (maker != nullptr && std::strlen(maker) == iter->m_maker.size()) {
-    std::memcpy(iter->m_maker.data(), maker, iter->m_maker.size());
-  }
-
-  return &*iter;
+  return nullptr;
 }
 
 File* Directory::getFirstNonFreeFile(uint32_t start, const char* game, const char* maker) {
-  const auto iter = std::find_if(m_files.begin(), m_files.end(), [game, maker](const auto& file) {
-    if (file.m_game[0] == 0xFF) {
-      return false;
+  for (uint16_t i = start; i < 127; i++) {
+    if (m_files[i].m_game[0] != 0xFF) {
+      File* ret = &m_files[i];
+      if (game && std::strlen(game) == 4 && std::strncmp(reinterpret_cast<const char*>(ret->m_game), game, 4) != 0)
+        continue;
+      if (maker && std::strlen(maker) == 2 && std::strncmp(reinterpret_cast<const char*>(ret->m_maker), maker, 2) != 0)
+        continue;
+      return ret;
     }
-
-    const auto* const game_ptr = reinterpret_cast<const char*>(file.m_game.data());
-    const auto game_size = file.m_game.size();
-    if (game != nullptr && std::strlen(game) == game_size && std::strncmp(game_ptr, game, game_size) != 0) {
-      return false;
-    }
-
-    const auto* const maker_ptr = reinterpret_cast<const char*>(file.m_maker.data());
-    const auto maker_size = file.m_maker.size();
-    if (maker != nullptr && std::strlen(maker) == maker_size && std::strncmp(maker_ptr, maker, maker_size) != 0) {
-      return false;
-    }
-
-    return true;
-  });
-
-  if (iter == m_files.cend()) {
-    return nullptr;
   }
 
-  return &*iter;
+  return nullptr;
 }
 
 File* Directory::getFile(const char* game, const char* maker, const char* filename) {
-  const auto iter = std::find_if(m_files.begin(), m_files.end(), [=](const auto& file) {
-    const auto game_size = file.m_game.size();
-    if (game != nullptr && std::strlen(game) == game_size && std::memcmp(file.m_game.data(), game, game_size) != 0) {
-      return false;
-    }
-
-    const auto maker_size = file.m_maker.size();
-    if (maker != nullptr && std::strlen(maker) == maker_size &&
-        std::memcmp(file.m_maker.data(), maker, maker_size) != 0) {
-      return false;
-    }
-
-    return std::strcmp(file.m_filename, filename) == 0;
-  });
-
-  if (iter == m_files.cend()) {
-    return nullptr;
+  for (uint16_t i = 0; i < 127; i++) {
+    if (game && strlen(game) == 4 && memcmp(m_files[i].m_game, game, 4))
+      continue;
+    if (maker && strlen(maker) == 2 && memcmp(m_files[i].m_maker, maker, 2))
+      continue;
+    if (!strcmp(m_files[i].m_filename, filename))
+      return &m_files[i];
   }
 
-  return &*iter;
+  return nullptr;
 }
 
 File* Directory::getFile(uint32_t idx) {
-  if (idx >= m_files.size()) {
+  if (idx >= 127)
     return nullptr;
-  }
 
   return &m_files[idx];
 }
 
 int32_t Directory::indexForFile(File* f) {
-  if (f == nullptr) {
+  if (!f)
     return -1;
-  }
 
-  const auto it = std::find_if(std::cbegin(m_files), std::cend(m_files), [&f](const File& file) { return f == &file; });
-  if (it == std::cend(m_files)) {
+  auto it = std::find_if(std::begin(m_files), std::end(m_files), [&f](const File& file) -> bool { return f == &file; });
+  if (it == std::end(m_files))
     return -1;
-  }
-
-  return it - std::cbegin(m_files);
+  return it - std::begin(m_files);
 }
 } // namespace kabufuda

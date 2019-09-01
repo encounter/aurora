@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 
 // Modified code taken from libogc
@@ -42,7 +41,7 @@ union SRAMFlags {
 };
 
 union SRAM {
-  std::array<uint8_t, 64> p_SRAM;
+  uint8_t p_SRAM[64];
   struct // Stored configuration value from the system SRAM area
   {
     uint16_t checksum;      // Holds the block checksum.
@@ -56,14 +55,13 @@ union SRAM {
     SRAMFlags flags;        // Device and operations flag
 
     // Stored configuration value from the extended SRAM area
-    using FlashID = std::array<std::array<uint8_t, 12>, 2>;
-    FlashID flash_id;                       // flash_id[2][12] 96bit memorycard unlock flash ID
-    uint32_t wirelessKbd_id;                // Device ID of last connected wireless keyboard
-    std::array<uint16_t, 4> wirelessPad_id; // 16-bit device ID of last connected pad.
-    uint8_t dvderr_code;                    // last non-recoverable error from DVD interface
-    uint8_t __padding0;                     // reserved
-    std::array<uint8_t, 2> flashID_chksum;  // 8-bit checksum of unlock flash ID
-    uint32_t __padding1;                    // padding
+    uint8_t flash_id[2][12];    // flash_id[2][12] 96bit memorycard unlock flash ID
+    uint32_t wirelessKbd_id;    // Device ID of last connected wireless keyboard
+    uint16_t wirelessPad_id[4]; // 16-bit device ID of last connected pad.
+    uint8_t dvderr_code;        // last non-recoverable error from DVD interface
+    uint8_t __padding0;         // reserved
+    uint8_t flashID_chksum[2];  // 8-bit checksum of unlock flash ID
+    uint32_t __padding1;        // padding
   };
 };
 #pragma pack(pop)

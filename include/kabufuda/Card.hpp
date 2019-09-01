@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 #include <string>
 
@@ -38,8 +37,8 @@ struct CardStat {
   char x0_fileName[CARD_FILENAME_MAX];
   uint32_t x20_length;
   uint32_t x24_time; /* seconds since 01/01/2000 midnight */
-  std::array<uint8_t, 4> x28_gameName;
-  std::array<uint8_t, 2> x2c_company;
+  uint8_t x28_gameName[4];
+  uint8_t x2c_company[2];
 
   /* read/write (Set by Card::getStatus/Card::setStatus) */
   uint8_t x2e_bannerFormat;
@@ -52,7 +51,7 @@ struct CardStat {
   /* read-only (Set by Card::getStatus) */
   uint32_t x3c_offsetBanner;
   uint32_t x40_offsetBannerTlut;
-  std::array<uint32_t, CARD_ICON_MAX> x44_offsetIcon;
+  uint32_t x44_offsetIcon[CARD_ICON_MAX];
   uint32_t x64_offsetIconTlut;
   uint32_t x68_offsetData;
 
@@ -80,7 +79,7 @@ class Card {
   struct CardHeader {
     union {
       struct {
-        std::array<uint8_t, 12> m_serial;
+        uint8_t m_serial[12];
         uint64_t m_formatTime;
         int32_t m_sramBias;
         uint32_t m_sramLanguage;
@@ -88,12 +87,12 @@ class Card {
         uint16_t m_deviceId; /* 0 for Slot A, 1 for Slot B */
         uint16_t m_sizeMb;
         uint16_t m_encoding;
-        std::array<uint8_t, 468> padding;
+        uint8_t __padding[468];
         uint16_t m_updateCounter;
         uint16_t m_checksum;
         uint16_t m_checksumInv;
       };
-      std::array<uint8_t, BlockSize> raw;
+      uint8_t __raw[BlockSize];
     };
     void _swapEndian();
   };
@@ -103,10 +102,10 @@ class Card {
 
   SystemString m_filename;
   AsyncIO m_fileHandle;
-  std::array<Directory, 2> m_dirs;
-  std::array<BlockAllocationTable, 2> m_bats;
-  std::array<Directory, 2> m_tmpDirs;
-  std::array<BlockAllocationTable, 2> m_tmpBats;
+  Directory m_dirs[2];
+  BlockAllocationTable m_bats[2];
+  Directory m_tmpDirs[2];
+  BlockAllocationTable m_tmpBats[2];
   uint8_t m_currentDir;
   uint8_t m_currentBat;
 
