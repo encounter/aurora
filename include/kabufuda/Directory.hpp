@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 #include "kabufuda/File.hpp"
 
@@ -10,13 +9,13 @@ class Directory {
 #pragma pack(push, 4)
   union {
     struct {
-      std::array<File, MaxFiles> m_files;
-      std::array<uint8_t, 0x3a> padding;
+      File m_files[MaxFiles];
+      uint8_t __padding[0x3a];
       uint16_t m_updateCounter;
       uint16_t m_checksum;
       uint16_t m_checksumInv;
     };
-    std::array<uint8_t, BlockSize> raw;
+    uint8_t __raw[BlockSize];
   };
 #pragma pack(pop)
 
