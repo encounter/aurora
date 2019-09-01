@@ -691,38 +691,45 @@ bool Card::moveFileTo(FileHandle& fh, Card& dest)
 
 void Card::setCurrentGame(const char* game) {
   if (game == nullptr) {
-    memset(m_game, 0, sizeof(m_game));
+    std::memset(m_game, 0, sizeof(m_game));
     return;
   }
 
-  if (strlen(game) != 4)
+  constexpr size_t copy_amount = sizeof(m_game) - 1;
+  if (std::strlen(game) != copy_amount) {
     return;
+  }
 
-  memcpy(m_game, game, 4);
+  std::memcpy(m_game, game, copy_amount);
 }
 
 const uint8_t* Card::getCurrentGame() const {
-  if (strlen(m_game) == 4)
+  if (std::strlen(m_game) == sizeof(m_game) - 1) {
     return reinterpret_cast<const uint8_t*>(m_game);
+  }
 
   return nullptr;
 }
 
 void Card::setCurrentMaker(const char* maker) {
   if (maker == nullptr) {
-    memset(m_maker, 0, 2);
+    std::memset(m_maker, 0, sizeof(m_maker));
     return;
   }
 
-  if (strlen(maker) != 2)
+  constexpr size_t copy_amount = sizeof(m_maker) - 1;
+  if (std::strlen(maker) != copy_amount) {
     return;
+  }
 
-  memcpy(m_maker, maker, 2);
+  std::memcpy(m_maker, maker, copy_amount);
 }
 
 const uint8_t* Card::getCurrentMaker() const {
-  if (strlen(m_maker) == 2)
+  if (std::strlen(m_maker) == sizeof(m_maker) - 1) {
     return reinterpret_cast<const uint8_t*>(m_maker);
+  }
+
   return nullptr;
 }
 
