@@ -17,9 +17,9 @@ namespace kabufuda {
 
 class FileHandle {
   friend class Card;
-  uint32_t idx = -1;
+  uint32_t idx = UINT32_MAX;
   int32_t offset = 0;
-  FileHandle(uint32_t idx) : idx(idx) {}
+  explicit FileHandle(uint32_t idx) : idx(idx) {}
 
 public:
   FileHandle() = default;
