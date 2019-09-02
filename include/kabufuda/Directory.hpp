@@ -15,9 +15,12 @@ class Directory {
     uint16_t m_checksum;
     uint16_t m_checksumInv;
   };
+
+  using RawData = std::array<uint8_t, BlockSize>;
+
   union {
     Data data;
-    std::array<uint8_t, BlockSize> raw;
+    RawData raw;
   };
 #pragma pack(pop)
 
@@ -27,7 +30,7 @@ class Directory {
 
 public:
   Directory();
-  Directory(uint8_t data[BlockSize]);
+  explicit Directory(const RawData& rawData);
   ~Directory() = default;
 
   bool hasFreeFile() const;

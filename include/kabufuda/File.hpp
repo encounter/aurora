@@ -10,6 +10,8 @@ class File {
   friend class Directory;
   friend class Card;
 #pragma pack(push, 4)
+  using RawData = std::array<uint8_t, 0x40>;
+
   union {
     struct {
       std::array<uint8_t, 4> m_game;
@@ -28,7 +30,7 @@ class File {
       uint16_t m_reserved2;
       uint32_t m_commentAddr;
     };
-    std::array<uint8_t, 0x40> raw;
+    RawData raw;
   };
 
 #pragma pack(pop)
@@ -36,8 +38,8 @@ class File {
 
 public:
   File();
-  File(char data[0x40]);
-  File(const char* filename);
+  explicit File(const RawData& rawData);
+  explicit File(const char* filename);
   ~File() = default;
 };
 } // namespace kabufuda
