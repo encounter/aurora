@@ -125,7 +125,7 @@ File* Directory::getFile(uint32_t idx) {
   return &data.m_files[idx];
 }
 
-int32_t Directory::indexForFile(File* f) {
+int32_t Directory::indexForFile(const File* f) const {
   if (f == nullptr) {
     return -1;
   }

@@ -39,6 +39,6 @@ public:
   File* getFirstNonFreeFile(uint32_t start, const char* game, const char* maker);
   File* getFile(const char* game, const char* maker, const char* filename);
   File* getFile(uint32_t idx);
-  int32_t indexForFile(File* f);
+  int32_t indexForFile(const File* f) const;
 };
 } // namespace kabufuda
