@@ -204,7 +204,7 @@ public:
    *
    * @return Gets the name of the given file.
    */
-  const char* getFilename(const FileHandle& fh);
+  const char* getFilename(const FileHandle& fh) const;
 
   /**
    * @brief deleteFile
@@ -269,7 +269,7 @@ public:
    *
    * @return The offset or -1 if an invalid handle is passed.
    */
-  int32_t tell(const FileHandle& fh);
+  int32_t tell(const FileHandle& fh) const;
 
   /**
    * @brief setPublic
@@ -425,7 +425,7 @@ public:
    * @param checksum The checksum of the system header.
    * @param inverse  The inverse checksum of the system header.
    */
-  void getChecksum(uint16_t& checksum, uint16_t& inverse);
+  void getChecksum(uint16_t& checksum, uint16_t& inverse) const;
 
   /**
    * @brief Retrieves the available storage and directory space.
@@ -433,7 +433,7 @@ public:
    * @param bytesNotUsed Number of free bytes out.
    * @param filesNotUsed Number of free files out.
    */
-  void getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed);
+  void getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) const;
 
   /**
    * @brief Formats the memory card and assigns a new serial.

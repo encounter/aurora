@@ -246,10 +246,13 @@ FileHandle Card::nextFile(const FileHandle& cur) {
   return FileHandle(m_dirs[m_currentDir].indexForFile(next));
 }
 
-const char* Card::getFilename(const FileHandle& fh) {
-  File* f = _fileFromHandle(fh);
-  if (!f)
+const char* Card::getFilename(const FileHandle& fh) const {
+  const File* const f = _fileFromHandle(fh);
+
+  if (f == nullptr) {
     return nullptr;
+  }
+
   return f->m_filename;
 }
 
@@ -454,7 +457,7 @@ void Card::seek(FileHandle& fh, int32_t pos, SeekOrigin whence) {
   }
 }
 
-int32_t Card::tell(const FileHandle& fh) { return fh.offset; }
+int32_t Card::tell(const FileHandle& fh) const { return fh.offset; }
 
 void Card::setPublic(const FileHandle& fh, bool pub) {
   File* file = _fileFromHandle(fh);
@@ -755,12 +758,12 @@ void Card::getSerial(uint64_t& serial) {
   m_ch._swapEndian();
 }
 
-void Card::getChecksum(uint16_t& checksum, uint16_t& inverse) {
+void Card::getChecksum(uint16_t& checksum, uint16_t& inverse) const {
   checksum = m_ch.m_checksum;
   inverse = m_ch.m_checksumInv;
 }
 
-void Card::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) {
+void Card::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) const {
   bytesNotUsed = m_bats[m_currentBat].numFreeBlocks() * 0x2000;
   filesNotUsed = m_dirs[m_currentDir].numFreeFiles();
 }
