@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include "kabufuda/Constants.hpp"
 
@@ -11,8 +12,8 @@ class File {
 #pragma pack(push, 4)
   union {
     struct {
-      uint8_t m_game[4];
-      uint8_t m_maker[2];
+      std::array<uint8_t, 4> m_game;
+      std::array<uint8_t, 2> m_maker;
       uint8_t m_reserved;
       uint8_t m_bannerFlags;
       char m_filename[0x20];
@@ -27,7 +28,7 @@ class File {
       uint16_t m_reserved2;
       uint32_t m_commentAddr;
     };
-    uint8_t __raw[0x40];
+    std::array<uint8_t, 0x40> raw;
   };
 
 #pragma pack(pop)

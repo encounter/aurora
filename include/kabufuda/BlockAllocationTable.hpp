@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include "kabufuda/Constants.hpp"
 
@@ -14,9 +15,9 @@ class BlockAllocationTable {
       uint16_t m_updateCounter;
       uint16_t m_freeBlocks;
       uint16_t m_lastAllocated;
-      uint16_t m_map[0xFFB];
+      std::array<uint16_t, 0xFFB> m_map;
     };
-    uint8_t __raw[BlockSize];
+    std::array<uint8_t, BlockSize> raw{};
   };
 #pragma pack(pop)
 
@@ -26,7 +27,6 @@ class BlockAllocationTable {
 
 public:
   explicit BlockAllocationTable(uint32_t blockCount = (uint32_t(ECardSize::Card2043Mb) * MbitToBlocks));
-  BlockAllocationTable(uint8_t data[BlockSize]);
   ~BlockAllocationTable() = default;
 
   uint16_t getNextBlock(uint16_t block) const;
