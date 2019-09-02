@@ -118,19 +118,23 @@ Card::Card(const char* game, const char* maker) {
 Card::~Card() { close(); }
 
 ECardResult Card::openFile(const char* filename, FileHandle& handleOut) {
-  ECardResult openRes = _pumpOpen();
-  if (openRes != ECardResult::READY)
+  const ECardResult openRes = _pumpOpen();
+  if (openRes != ECardResult::READY) {
     return openRes;
+  }
 
   handleOut = {};
-  File* f = m_dirs[m_currentDir].getFile(m_game, m_maker, filename);
-  if (!f || f->m_game[0] == 0xFF)
+  const File* const f = m_dirs[m_currentDir].getFile(m_game, m_maker, filename);
+  if (!f || f->m_game[0] == 0xFF) {
     return ECardResult::NOFILE;
-  int32_t idx = m_dirs[m_currentDir].indexForFile(f);
+  }
+
+  const int32_t idx = m_dirs[m_currentDir].indexForFile(f);
   if (idx != -1) {
     handleOut = FileHandle(idx);
     return ECardResult::READY;
   }
+
   return ECardResult::FATAL_ERROR;
 }
 
@@ -219,11 +223,13 @@ ECardResult Card::closeFile(FileHandle& fh) {
 }
 
 FileHandle Card::firstFile() {
-  File* f = m_dirs[m_currentDir].getFirstNonFreeFile(0, m_game, m_maker);
-  if (f)
-    return FileHandle(m_dirs[m_currentDir].indexForFile(f));
+  const File* const f = m_dirs[m_currentDir].getFirstNonFreeFile(0, m_game, m_maker);
 
-  return {};
+  if (f == nullptr) {
+    return {};
+  }
+
+  return FileHandle(m_dirs[m_currentDir].indexForFile(f));
 }
 
 FileHandle Card::nextFile(const FileHandle& cur) {
@@ -231,9 +237,12 @@ FileHandle Card::nextFile(const FileHandle& cur) {
     NullFileAccess();
     return {};
   }
-  File* next = m_dirs[m_currentDir].getFirstNonFreeFile(cur.idx + 1, m_game, m_maker);
-  if (!next)
+
+  const File* const next = m_dirs[m_currentDir].getFirstNonFreeFile(cur.idx + 1, m_game, m_maker);
+  if (next == nullptr) {
     return {};
+  }
+
   return FileHandle(m_dirs[m_currentDir].indexForFile(next));
 }
 
