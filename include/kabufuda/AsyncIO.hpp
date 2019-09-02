@@ -28,7 +28,7 @@ class AsyncIO {
 
 public:
   AsyncIO() = default;
-  AsyncIO(SystemStringView filename, bool truncate = false);
+  explicit AsyncIO(SystemStringView filename, bool truncate = false);
   ~AsyncIO();
   AsyncIO(AsyncIO&& other);
   AsyncIO& operator=(AsyncIO&& other);
@@ -41,9 +41,9 @@ public:
   ECardResult pollStatus() const;
   void waitForCompletion() const;
 #ifndef _WIN32
-  operator bool() const { return m_fd != -1; }
+  explicit operator bool() const { return m_fd != -1; }
 #else
-  operator bool() const { return m_fh != INVALID_HANDLE_VALUE; }
+  explicit operator bool() const { return m_fh != INVALID_HANDLE_VALUE; }
 #endif
 };
 
