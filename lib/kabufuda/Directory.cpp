@@ -7,16 +7,16 @@
 
 namespace kabufuda {
 void Directory::swapEndian() {
-  std::for_each(std::begin(m_files), std::end(m_files), [](File& f) { f.swapEndian(); });
+  std::for_each(std::begin(data.m_files), std::end(data.m_files), [](File& f) { f.swapEndian(); });
 
-  m_updateCounter = SBig(m_updateCounter);
-  m_checksum = SBig(m_checksum);
-  m_checksumInv = SBig(m_checksumInv);
+  data.m_updateCounter = SBig(data.m_updateCounter);
+  data.m_checksum = SBig(data.m_checksum);
+  data.m_checksumInv = SBig(data.m_checksumInv);
 }
 
 void Directory::updateChecksum() {
   swapEndian();
-  calculateChecksumBE(reinterpret_cast<uint16_t*>(raw.data()), 0xFFE, &m_checksum, &m_checksumInv);
+  calculateChecksumBE(reinterpret_cast<uint16_t*>(raw.data()), 0xFFE, &data.m_checksum, &data.m_checksumInv);
   swapEndian();
 }
 
@@ -24,33 +24,34 @@ bool Directory::valid() const {
   uint16_t ckSum, ckSumInv;
   const_cast<Directory&>(*this).swapEndian();
   calculateChecksumBE(reinterpret_cast<const uint16_t*>(raw.data()), 0xFFE, &ckSum, &ckSumInv);
-  bool res = (ckSum == m_checksum && ckSumInv == m_checksumInv);
+  const bool res = (ckSum == data.m_checksum && ckSumInv == data.m_checksumInv);
   const_cast<Directory&>(*this).swapEndian();
   return res;
 }
 
 Directory::Directory() {
   raw.fill(0xFF);
-  m_updateCounter = 0;
+  data.m_updateCounter = 0;
   updateChecksum();
 }
 
 Directory::Directory(uint8_t data[]) { std::memcpy(raw.data(), data, BlockSize); }
 
 bool Directory::hasFreeFile() const {
-  return std::any_of(m_files.cbegin(), m_files.cend(), [](const auto& file) { return file.m_game[0] == 0xFF; });
+  return std::any_of(data.m_files.cbegin(), data.m_files.cend(),
+                     [](const auto& file) { return file.m_game[0] == 0xFF; });
 }
 
 int32_t Directory::numFreeFiles() const {
-  return int32_t(
-      std::count_if(m_files.cbegin(), m_files.cend(), [](const auto& file) { return file.m_game[0] == 0xFF; }));
+  return int32_t(std::count_if(data.m_files.cbegin(), data.m_files.cend(),
+                               [](const auto& file) { return file.m_game[0] == 0xFF; }));
 }
 
 File* Directory::getFirstFreeFile(const char* game, const char* maker, const char* filename) {
   const auto iter =
-      std::find_if(m_files.begin(), m_files.end(), [](const auto& file) { return file.m_game[0] == 0xFF; });
+      std::find_if(data.m_files.begin(), data.m_files.end(), [](const auto& file) { return file.m_game[0] == 0xFF; });
 
-  if (iter == m_files.cend()) {
+  if (iter == data.m_files.cend()) {
     return nullptr;
   }
 
@@ -66,7 +67,7 @@ File* Directory::getFirstFreeFile(const char* game, const char* maker, const cha
 }
 
 File* Directory::getFirstNonFreeFile(uint32_t start, const char* game, const char* maker) {
-  const auto iter = std::find_if(m_files.begin(), m_files.end(), [game, maker](const auto& file) {
+  const auto iter = std::find_if(data.m_files.begin() + start, data.m_files.end(), [game, maker](const auto& file) {
     if (file.m_game[0] == 0xFF) {
       return false;
     }
@@ -86,7 +87,7 @@ File* Directory::getFirstNonFreeFile(uint32_t start, const char* game, const cha
     return true;
   });
 
-  if (iter == m_files.cend()) {
+  if (iter == data.m_files.cend()) {
     return nullptr;
   }
 
@@ -94,7 +95,7 @@ File* Directory::getFirstNonFreeFile(uint32_t start, const char* game, const cha
 }
 
 File* Directory::getFile(const char* game, const char* maker, const char* filename) {
-  const auto iter = std::find_if(m_files.begin(), m_files.end(), [=](const auto& file) {
+  const auto iter = std::find_if(data.m_files.begin(), data.m_files.end(), [=](const auto& file) {
     const auto game_size = file.m_game.size();
     if (game != nullptr && std::strlen(game) == game_size && std::memcmp(file.m_game.data(), game, game_size) != 0) {
       return false;
@@ -109,7 +110,7 @@ File* Directory::getFile(const char* game, const char* maker, const char* filena
     return std::strcmp(file.m_filename, filename) == 0;
   });
 
-  if (iter == m_files.cend()) {
+  if (iter == data.m_files.cend()) {
     return nullptr;
   }
 
@@ -117,11 +118,11 @@ File* Directory::getFile(const char* game, const char* maker, const char* filena
 }
 
 File* Directory::getFile(uint32_t idx) {
-  if (idx >= m_files.size()) {
+  if (idx >= data.m_files.size()) {
     return nullptr;
   }
 
-  return &m_files[idx];
+  return &data.m_files[idx];
 }
 
 int32_t Directory::indexForFile(File* f) {
@@ -129,11 +130,12 @@ int32_t Directory::indexForFile(File* f) {
     return -1;
   }
 
-  const auto it = std::find_if(std::cbegin(m_files), std::cend(m_files), [&f](const File& file) { return f == &file; });
-  if (it == std::cend(m_files)) {
+  const auto it =
+      std::find_if(std::cbegin(data.m_files), std::cend(data.m_files), [&f](const File& file) { return f == &file; });
+  if (it == std::cend(data.m_files)) {
     return -1;
   }
 
-  return it - std::cbegin(m_files);
+  return it - std::cbegin(data.m_files);
 }
 } // namespace kabufuda

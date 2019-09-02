@@ -88,7 +88,7 @@ ECardResult Card::_pumpOpen() {
     else if (!m_bats[1].valid() && m_bats[0].valid())
       m_bats[1] = m_bats[0];
 
-    if (m_dirs[0].m_updateCounter > m_dirs[1].m_updateCounter)
+    if (m_dirs[0].data.m_updateCounter > m_dirs[1].data.m_updateCounter)
       m_currentDir = 0;
     else
       m_currentDir = 1;
@@ -151,7 +151,7 @@ void Card::_updateDirAndBat(const Directory& dir, const BlockAllocationTable& ba
   m_currentDir = !m_currentDir;
   Directory& updateDir = m_dirs[m_currentDir];
   updateDir = dir;
-  updateDir.m_updateCounter++;
+  updateDir.data.m_updateCounter++;
   updateDir.updateChecksum();
 
   m_currentBat = !m_currentBat;

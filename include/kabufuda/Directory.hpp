@@ -8,14 +8,15 @@ namespace kabufuda {
 class Directory {
   friend class Card;
 #pragma pack(push, 4)
+  struct Data {
+    std::array<File, MaxFiles> m_files;
+    std::array<uint8_t, 0x3a> padding;
+    uint16_t m_updateCounter;
+    uint16_t m_checksum;
+    uint16_t m_checksumInv;
+  };
   union {
-    struct {
-      std::array<File, MaxFiles> m_files;
-      std::array<uint8_t, 0x3a> padding;
-      uint16_t m_updateCounter;
-      uint16_t m_checksum;
-      uint16_t m_checksumInv;
-    };
+    Data data;
     std::array<uint8_t, BlockSize> raw;
   };
 #pragma pack(pop)
