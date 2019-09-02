@@ -42,6 +42,8 @@ union SRAMFlags {
 };
 
 union SRAM {
+  using FlashID = std::array<std::array<uint8_t, 12>, 2>;
+
   std::array<uint8_t, 64> p_SRAM;
   struct // Stored configuration value from the system SRAM area
   {
@@ -56,7 +58,6 @@ union SRAM {
     SRAMFlags flags;        // Device and operations flag
 
     // Stored configuration value from the extended SRAM area
-    using FlashID = std::array<std::array<uint8_t, 12>, 2>;
     FlashID flash_id;                       // flash_id[2][12] 96bit memorycard unlock flash ID
     uint32_t wirelessKbd_id;                // Device ID of last connected wireless keyboard
     std::array<uint16_t, 4> wirelessPad_id; // 16-bit device ID of last connected pad.
