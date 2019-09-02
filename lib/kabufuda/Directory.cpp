@@ -35,7 +35,7 @@ Directory::Directory() {
   updateChecksum();
 }
 
-Directory::Directory(uint8_t data[]) { std::memcpy(raw.data(), data, BlockSize); }
+Directory::Directory(const RawData& rawData) : raw{rawData} {}
 
 bool Directory::hasFreeFile() const {
   return std::any_of(data.m_files.cbegin(), data.m_files.cend(),

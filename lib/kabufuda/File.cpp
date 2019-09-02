@@ -8,7 +8,7 @@
 namespace kabufuda {
 File::File() { raw.fill(0xFF); }
 
-File::File(char data[]) { std::memcpy(raw.data(), data, raw.size()); }
+File::File(const RawData& rawData) : raw{rawData} {}
 
 File::File(const char* filename) {
   raw.fill(0);
