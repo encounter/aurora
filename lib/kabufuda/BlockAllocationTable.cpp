@@ -23,7 +23,8 @@ void BlockAllocationTable::updateChecksum() {
 }
 
 bool BlockAllocationTable::valid() const {
-  uint16_t ckSum, ckSumInv;
+  uint16_t ckSum = 0;
+  uint16_t ckSumInv = 0;
   const_cast<BlockAllocationTable&>(*this).swapEndian();
   calculateChecksumBE(reinterpret_cast<const uint16_t*>(raw.data() + 4), 0xFFE, &ckSum, &ckSumInv);
   bool res = (ckSum == m_checksum && ckSumInv == m_checksumInv);
@@ -32,7 +33,12 @@ bool BlockAllocationTable::valid() const {
 }
 
 BlockAllocationTable::BlockAllocationTable(uint32_t blockCount)
-: m_freeBlocks{uint16_t(blockCount - FSTBlocks)}, m_lastAllocated{4} {
+: m_checksum{0}
+, m_checksumInv{0}
+, m_updateCounter{0}
+, m_freeBlocks{uint16_t(blockCount - FSTBlocks)}
+, m_lastAllocated{4}
+, m_map{{0}} {
   updateChecksum();
 }
 
