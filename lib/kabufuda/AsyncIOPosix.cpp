@@ -7,7 +7,7 @@
 namespace kabufuda {
 
 AsyncIO::AsyncIO(SystemStringView filename, bool truncate) {
-  m_fd = open(filename.data(), O_RDWR | O_CREAT | (truncate ? O_TRUNC : 0));
+  m_fd = open(filename.data(), O_RDWR | O_CREAT | (truncate ? O_TRUNC : 0), 0644);
 }
 
 AsyncIO::~AsyncIO() {
