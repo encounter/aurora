@@ -18,6 +18,9 @@ class File {
       std::array<uint8_t, 2> m_maker;
       uint8_t m_reserved;
       uint8_t m_bannerFlags;
+#if __GNUC__ && !__clang__
+      __attribute__((nonstring))
+#endif
       char m_filename[0x20];
       uint32_t m_modifiedTime;
       uint32_t m_iconAddress;
