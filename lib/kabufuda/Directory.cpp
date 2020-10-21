@@ -107,7 +107,7 @@ File* Directory::getFile(const char* game, const char* maker, const char* filena
       return false;
     }
 
-    return std::strcmp(file.m_filename, filename) == 0;
+    return std::strncmp(file.m_filename, filename, 32) == 0;
   });
 
   if (iter == data.m_files.cend()) {
