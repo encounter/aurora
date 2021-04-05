@@ -329,10 +329,12 @@ ECardResult Card::renameFile(const char* oldName, const char* newName) {
   if (File* replF = dir.getFile(m_game, m_maker, newName)) {
     BlockAllocationTable bat = m_bats[m_currentBat];
     _deleteFile(*replF, bat);
-    std::strncpy(f->m_filename, newName, 32);
+    std::memset(f->m_filename, 0, std::size(f->m_filename));
+    std::strncpy(f->m_filename, newName, std::size(m_filename) - 1);
     _updateDirAndBat(dir, bat);
   } else {
-    std::strncpy(f->m_filename, newName, 32);
+    std::memset(f->m_filename, 0, std::size(f->m_filename));
+    std::strncpy(f->m_filename, newName, std::size(m_filename) - 1);
     _updateDirAndBat(dir, m_bats[m_currentBat]);
   }
   return ECardResult::READY;

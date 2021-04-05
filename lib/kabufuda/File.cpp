@@ -13,7 +13,7 @@ File::File(const RawData& rawData) : raw{rawData} {}
 File::File(const char* filename) {
   raw.fill(0);
   std::memset(m_filename, 0, std::size(m_filename));
-  std::strncpy(m_filename, filename, std::size(m_filename));
+  std::strncpy(m_filename, filename, std::size(m_filename) - 1);
 }
 void File::swapEndian() {
   m_modifiedTime = SBig(m_modifiedTime);
