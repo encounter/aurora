@@ -329,12 +329,12 @@ ECardResult Card::renameFile(const char* oldName, const char* newName) {
   if (File* replF = dir.getFile(m_game, m_maker, newName)) {
     BlockAllocationTable bat = m_bats[m_currentBat];
     _deleteFile(*replF, bat);
-    std::memset(f->m_filename, 0, std::size(f->m_filename));
-    std::strncpy(f->m_filename, newName, std::size(m_filename) - 1);
+    std::memset(f->m_filename, 0, 32);
+    std::strncpy(f->m_filename, newName, 32);
     _updateDirAndBat(dir, bat);
   } else {
-    std::memset(f->m_filename, 0, std::size(f->m_filename));
-    std::strncpy(f->m_filename, newName, std::size(m_filename) - 1);
+    std::memset(f->m_filename, 0, 32);
+    std::strncpy(f->m_filename, newName, 32);
     _updateDirAndBat(dir, m_bats[m_currentBat]);
   }
   return ECardResult::READY;
@@ -573,8 +573,8 @@ ECardResult Card::getStatus(uint32_t fileNo, CardStat& statOut) const {
   std::strncpy(statOut.x0_fileName, file->m_filename, 32);
   statOut.x20_length = file->m_blockCount * BlockSize;
   statOut.x24_time = file->m_modifiedTime;
-  statOut.x28_gameName = file->m_game;
-  statOut.x2c_company = file->m_maker;
+  memmove(statOut.x28_gameName.data(), file->m_game, 4);
+  memmove(statOut.x2c_company.data(), file->m_maker, 4);
 
   statOut.x2e_bannerFormat = file->m_bannerFlags;
   statOut.x30_iconAddr = file->m_iconAddress;

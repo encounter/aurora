@@ -7,22 +7,23 @@
 namespace kabufuda {
 class Directory {
   friend class Card;
+
 #pragma pack(push, 4)
+  using RawData = std::array<uint8_t, BlockSize>;
   struct Data {
-    std::array<File, MaxFiles> m_files;
-    std::array<uint8_t, 0x3a> padding;
+    File m_files[MaxFiles];
+    uint8_t padding[0x3a];
     uint16_t m_updateCounter;
     uint16_t m_checksum;
     uint16_t m_checksumInv;
   };
+#pragma pack(pop)
 
-  using RawData = std::array<uint8_t, BlockSize>;
 
   union {
     Data data;
     RawData raw;
   };
-#pragma pack(pop)
 
   void swapEndian();
   void updateChecksum();

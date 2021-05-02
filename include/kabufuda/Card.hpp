@@ -97,9 +97,10 @@ class Card {
     };
     void _swapEndian();
   };
+#pragma pack(pop)
+
   CardHeader m_ch;
   CardHeader m_tmpCh;
-#pragma pack(pop)
 
   SystemString m_filename;
   AsyncIO m_fileHandle;
