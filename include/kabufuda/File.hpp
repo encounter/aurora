@@ -11,11 +11,10 @@ class File {
   friend class Card;
 #pragma pack(push, 4)
   using RawData = std::array<uint8_t, 0x40>;
-
   union {
     struct {
-      std::array<uint8_t, 4> m_game;
-      std::array<uint8_t, 2> m_maker;
+      uint8_t m_game[4];
+      uint8_t m_maker[2];
       uint8_t m_reserved;
       uint8_t m_bannerFlags;
 #if __GNUC__ && !__clang__
@@ -35,7 +34,6 @@ class File {
     };
     RawData raw;
   };
-
 #pragma pack(pop)
   void swapEndian();
 
