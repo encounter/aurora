@@ -3,7 +3,7 @@
 
 int main() {
   kabufuda::Card mc{"GM8E", "01"};
-  mc.open(_SYS_STR("test.USA.raw"));
+  mc.open("test.USA.raw");
   mc.format(kabufuda::ECardSlot::SlotA, kabufuda::ECardSize::Card2043Mb);
   uint64_t a = 0;
   mc.getSerial(a);
