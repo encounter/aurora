@@ -5,7 +5,7 @@
 
 namespace kabufuda {
 
-AsyncIO::AsyncIO(SystemStringView filename, bool truncate) { m_fd = fopen(filename.data(), truncate ? "rw" : "ra"); }
+AsyncIO::AsyncIO(std::string_view filename, bool truncate) { m_fd = fopen(filename.data(), truncate ? "rw" : "ra"); }
 
 AsyncIO::~AsyncIO() {
   if (*this) {

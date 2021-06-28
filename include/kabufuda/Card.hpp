@@ -102,7 +102,7 @@ class Card {
   CardHeader m_ch;
   CardHeader m_tmpCh;
 
-  SystemString m_filename;
+  std::string m_filename;
   AsyncIO m_fileHandle;
   std::array<Directory, 2> m_dirs;
   std::array<BlockAllocationTable, 2> m_bats;
@@ -450,7 +450,7 @@ public:
    *
    * @return ProbeResults structure.
    */
-  static ProbeResults probeCardFile(SystemStringView filename);
+  static ProbeResults probeCardFile(std::string_view filename);
 
   /**
    * @brief Writes any changes to the Card instance immediately to disk. <br />
@@ -461,7 +461,7 @@ public:
   /**
    * @brief Opens card image (does nothing if currently open path matches).
    */
-  bool open(SystemStringView filepath);
+  bool open(std::string_view filepath);
 
   /**
    * @brief Commits changes to disk and closes host file.
@@ -473,7 +473,7 @@ public:
    *
    * @return A view to the card's filename.
    */
-  SystemStringView cardFilename() const { return m_filename; }
+  std::string_view cardFilename() const { return m_filename; }
 
   /**
    * @brief Gets card-scope error state.

@@ -35,7 +35,7 @@ class AsyncIO {
 
 public:
   AsyncIO() = default;
-  explicit AsyncIO(SystemStringView filename, bool truncate = false);
+  explicit AsyncIO(std::string_view filename, bool truncate = false);
   ~AsyncIO();
   AsyncIO(AsyncIO&& other);
   AsyncIO& operator=(AsyncIO&& other);

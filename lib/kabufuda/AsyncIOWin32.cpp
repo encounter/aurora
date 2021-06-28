@@ -15,7 +15,7 @@ static void ResetOverlapped(OVERLAPPED& aio, DWORD offset = 0) {
   aio.OffsetHigh = 0;
 }
 
-AsyncIO::AsyncIO(SystemStringView filename, bool truncate) {
+AsyncIO::AsyncIO(std::string_view filename, bool truncate) {
 #if WINDOWS_STORE
   CREATEFILE2_EXTENDED_PARAMETERS parms = {};
   parms.dwSize = sizeof(CREATEFILE2_EXTENDED_PARAMETERS);
@@ -24,7 +24,8 @@ AsyncIO::AsyncIO(SystemStringView filename, bool truncate) {
   m_fh = CreateFile2(filename.data(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                      truncate ? CREATE_ALWAYS : OPEN_ALWAYS, &parms);
 #else
-  m_fh = CreateFileW(filename.data(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+  WStringConv wfilename(filename);
+  m_fh = CreateFileW(wfilename.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
                      truncate ? CREATE_ALWAYS : OPEN_ALWAYS, FILE_FLAG_OVERLAPPED | FILE_ATTRIBUTE_NORMAL, nullptr);
 #endif
 }

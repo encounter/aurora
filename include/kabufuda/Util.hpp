@@ -19,11 +19,7 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
-#include <cwchar>
 #include "winsupport.hpp"
-#if UNICODE
-#define CARD_UCS2 1
-#endif
 #endif
 
 #include <algorithm>
@@ -31,8 +27,6 @@
 #include <cstring>
 #include <string>
 #include <type_traits>
-
-#include "kabufuda/WideStringConvert.hpp"
 
 #undef bswap16
 #undef bswap32
@@ -177,72 +171,10 @@ constexpr double SBig(double val) { return val; }
 #endif
 #endif
 
-#if CARD_UCS2
-typedef wchar_t SystemChar;
-inline size_t StrLen(const SystemChar* str) { return wcslen(str); }
-typedef std::wstring SystemString;
-typedef std::wstring_view SystemStringView;
-inline void ToLower(SystemString& str) { std::transform(str.begin(), str.end(), str.begin(), towlower); }
-inline void ToUpper(SystemString& str) { std::transform(str.begin(), str.end(), str.begin(), towupper); }
-class SystemUTF8Conv {
-  std::string m_utf8;
-
-public:
-  explicit SystemUTF8Conv(SystemStringView str) : m_utf8(WideToUTF8(str)) {}
-  std::string_view str() const { return m_utf8; }
-  const char* c_str() const { return m_utf8.c_str(); }
-  std::string operator+(std::string_view other) const { return m_utf8 + other.data(); }
-};
-inline std::string operator+(std::string_view lhs, const SystemUTF8Conv& rhs) { return std::string(lhs) + rhs.c_str(); }
-class SystemStringConv {
-  std::wstring m_sys;
-
-public:
-  explicit SystemStringConv(std::string_view str) : m_sys(UTF8ToWide(str)) {}
-  SystemStringView sys_str() const { return m_sys; }
-  const SystemChar* c_str() const { return m_sys.c_str(); }
-  std::wstring operator+(const std::wstring_view other) const { return m_sys + other.data(); }
-};
-inline std::wstring operator+(const std::wstring_view lhs, const SystemStringConv& rhs) {
-  return std::wstring(lhs) + rhs.c_str();
-}
-#ifndef _SYS_STR
-#define _SYS_STR(val) L##val
-#endif
-typedef struct _stat Sstat;
+#if _WIN32
+using Sstat = struct ::_stat64;
 #else
-typedef char SystemChar;
-inline size_t StrLen(const SystemChar* str) { return std::strlen(str); }
-typedef std::string SystemString;
-typedef std::string_view SystemStringView;
-inline void ToLower(SystemString& str) { std::transform(str.begin(), str.end(), str.begin(), tolower); }
-inline void ToUpper(SystemString& str) { std::transform(str.begin(), str.end(), str.begin(), toupper); }
-class SystemUTF8Conv {
-  std::string_view m_utf8;
-
-public:
-  explicit SystemUTF8Conv(SystemStringView str) : m_utf8(str) {}
-  std::string_view str() const { return m_utf8; }
-  const char* c_str() const { return m_utf8.data(); }
-  std::string operator+(std::string_view other) const { return std::string(m_utf8) + other.data(); }
-};
-inline std::string operator+(std::string_view lhs, const SystemUTF8Conv& rhs) { return std::string(lhs) + rhs.c_str(); }
-class SystemStringConv {
-  SystemStringView m_sys;
-
-public:
-  explicit SystemStringConv(std::string_view str) : m_sys(str) {}
-  SystemStringView sys_str() const { return m_sys; }
-  const SystemChar* c_str() const { return m_sys.data(); }
-  std::string operator+(std::string_view other) const { return std::string(m_sys) + other.data(); }
-};
-inline std::string operator+(std::string_view lhs, const SystemStringConv& rhs) {
-  return std::string(lhs) + rhs.c_str();
-}
-#ifndef _SYS_STR
-#define _SYS_STR(val) val
-#endif
-typedef struct stat Sstat;
+using SStat = struct stat;
 #endif
 
 uint64_t getGCTime();
@@ -255,15 +187,32 @@ uint64_t getGCTime();
 #define S_ISDIR(m) (((m)&S_IFMT) == S_IFDIR)
 #endif
 
-inline int Stat(const SystemChar* path, Sstat* statOut) {
-#if CARD_UCS2
-  size_t pos;
-  for (pos = 0; pos < 3 && path[pos] != L'\0'; ++pos) {}
-  if (pos == 2 && path[1] == L':') {
-    SystemChar fixPath[4] = {path[0], L':', L'/', L'\0'};
-    return _wstat(fixPath, statOut);
+#if _WIN32
+class WStringConv {
+  std::wstring m_sys;
+
+public:
+  explicit WStringConv(std::string_view str) {
+    int len = MultiByteToWideChar(CP_UTF8, 0, str.data(), str.size(), nullptr, 0);
+    m_sys.assign(len, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, str.data(), str.size(), &m_sys[0], len);
   }
-  return _wstat(path, statOut);
+  [[nodiscard]] std::wstring str() const { return m_sys; }
+  [[nodiscard]] const wchar_t* c_str() const { return m_sys.c_str(); }
+};
+#endif
+
+inline int Stat(const char* path, Sstat* statOut) {
+#if _WIN32
+  size_t pos;
+  WStringConv wpath(path);
+  const wchar_t* wpathP = wpath.c_str();
+  for (pos = 0; pos < 3 && wpathP[pos] != L'\0'; ++pos) {}
+  if (pos == 2 && wpathP[1] == L':') {
+    wchar_t fixPath[4] = {wpathP[0], L':', L'/', L'\0'};
+    return _wstat64(fixPath, statOut);
+  }
+  return _wstat64(wpath.c_str(), statOut);
 #else
   return stat(path, statOut);
 #endif

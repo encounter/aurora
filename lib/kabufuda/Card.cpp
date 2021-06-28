@@ -832,7 +832,7 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   }
 }
 
-ProbeResults Card::probeCardFile(SystemStringView filename) {
+ProbeResults Card::probeCardFile(std::string_view filename) {
   Sstat stat;
   if (Stat(filename.data(), &stat) || !S_ISREG(stat.st_mode))
     return {ECardResult::NOCARD, 0, 0};
@@ -866,7 +866,7 @@ void Card::commit() {
   }
 }
 
-bool Card::open(SystemStringView filepath) {
+bool Card::open(std::string_view filepath) {
   m_opened = false;
   m_filename = filepath;
   m_fileHandle = AsyncIO(m_filename);
