@@ -174,7 +174,7 @@ constexpr double SBig(double val) { return val; }
 #if _WIN32
 using Sstat = struct ::_stat64;
 #else
-using SStat = struct stat;
+using Sstat = struct stat;
 #endif
 
 uint64_t getGCTime();
