@@ -11,15 +11,6 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
-#else
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN 1
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <Windows.h>
-#include "winsupport.hpp"
 #endif
 
 #include <algorithm>
@@ -188,35 +179,10 @@ uint64_t getGCTime();
 #endif
 
 #if _WIN32
-class WStringConv {
-  std::wstring m_sys;
-
-public:
-  explicit WStringConv(std::string_view str) {
-    int len = MultiByteToWideChar(CP_UTF8, 0, str.data(), str.size(), nullptr, 0);
-    m_sys.assign(len, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, str.data(), str.size(), &m_sys[0], len);
-  }
-  [[nodiscard]] std::wstring str() const { return m_sys; }
-  [[nodiscard]] const wchar_t* c_str() const { return m_sys.c_str(); }
-};
-#endif
-
-inline int Stat(const char* path, Sstat* statOut) {
-#if _WIN32
-  size_t pos;
-  WStringConv wpath(path);
-  const wchar_t* wpathP = wpath.c_str();
-  for (pos = 0; pos < 3 && wpathP[pos] != L'\0'; ++pos) {}
-  if (pos == 2 && wpathP[1] == L':') {
-    wchar_t fixPath[4] = {wpathP[0], L':', L'/', L'\0'};
-    return _wstat64(fixPath, statOut);
-  }
-  return _wstat64(wpath.c_str(), statOut);
+int Stat(const char* path, Sstat* statOut);
 #else
-  return stat(path, statOut);
+inline int Stat(const char* path, Sstat* statOut) { return stat(path, statOut); }
 #endif
-}
 
 /**
  * @brief calculateChecksum
