@@ -45,4 +45,6 @@ ECardResult AsyncIO::pollStatus() const { return ECardResult::READY; }
 
 void AsyncIO::waitForCompletion() const {}
 
+void AsyncIO::resizeQueue(size_t queueSz) {}
+
 } // namespace kabufuda

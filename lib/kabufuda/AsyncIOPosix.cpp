@@ -142,4 +142,8 @@ void AsyncIO::waitForCompletion() const {
   const_cast<AsyncIO*>(this)->m_maxBlock = 0;
 }
 
+void AsyncIO::resizeQueue(size_t queueSz) {
+  m_queue.resize(queueSz);
+}
+
 } // namespace kabufuda
