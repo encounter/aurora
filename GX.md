@@ -1,0 +1,266 @@
+# GX API Support
+
+- GXBump
+  - [x] GXSetNumIndStages
+  - [x] GXSetIndTexOrder
+  - [x] GXSetIndTexCoordScale
+  - [x] GXSetIndTexMtx
+  - [x] GXSetTevIndirect
+  - [x] GXSetTevDirect
+  - [x] GXSetTevIndWarp
+  - [ ] GXSetTevIndTile
+  - [ ] GXSetTevIndBumpST
+  - [ ] GXSetTevIndBumpXYZ
+  - [ ] GXSetTevIndRepeat
+- GXCull
+  - [x] GXSetScissor
+  - [x] GXSetCullMode
+  - [ ] GXSetCoPlanar
+- GXDispList
+  - [x] GXBeginDisplayList (stub)
+  - [x] GXEndDisplayList (stub)
+  - [x] GXCallDisplayList
+- GXDraw
+  - [ ] GXDrawCylinder
+  - [ ] GXDrawTorus
+  - [ ] GXDrawSphere
+  - [ ] GXDrawCube
+  - [ ] GXDrawDodeca
+  - [ ] GXDrawOctahedron
+  - [ ] GXDrawIcosahedron
+  - [ ] GXDrawSphere1
+  - [ ] GXGenNormalTable
+- GXFifo
+  - [x] GXGetGPStatus (stub)
+  - [ ] GXGetFifoStatus
+  - [x] GXGetFifoPtrs (stub)
+  - [x] GXGetCPUFifo (stub)
+  - [x] GXGetGPFifo (stub)
+  - [ ] GXGetFifoBase
+  - [ ] GXGetFifoSize
+  - [ ] GXGetFifoLimits
+  - [ ] GXSetBreakPtCallback
+  - [ ] GXEnableBreakPt
+  - [ ] GXDisableBreakPt
+  - [x] GXInitFifoBase (stub)
+  - [x] GXInitFifoPtrs (stub)
+  - [ ] GXInitFifoLimits
+  - [x] GXSetCPUFifo (stub)
+  - [x] GXSetGPFifo (stub)
+  - [x] GXSaveCPUFifo (stub)
+  - [ ] GXSaveGPFifo
+  - [ ] GXRedirectWriteGatherPipe
+  - [ ] GXRestoreWriteGatherPipe
+  - [ ] GXSetCurrentGXThread
+  - [ ] GXGetCurrentGXThread
+  - [ ] GXGetOverflowCount
+  - [ ] GXResetOverflowCount
+- GXFrameBuffer
+  - [x] GXAdjustForOverscan
+  - [x] GXSetDispCopySrc (stub)
+  - [x] GXSetTexCopySrc
+  - [x] GXSetDispCopyDst (stub)
+  - [x] GXSetTexCopyDst
+  - [ ] GXSetDispCopyFrame2Field
+  - [ ] GXSetCopyClamp
+  - [x] GXSetDispCopyYScale (stub)
+  - [x] GXSetCopyClear
+  - [x] GXSetCopyFilter (stub)
+  - [x] GXSetDispCopyGamma (stub)
+  - [x] GXCopyDisp (stub)
+  - [x] GXCopyTex
+  - [ ] GXGetYScaleFactor
+  - [ ] GXGetNumXfbLines
+  - [ ] GXClearBoundingBox
+  - [ ] GXReadBoundingBox
+- GXGeometry
+  - [x] GXSetVtxDesc
+  - [x] GXSetVtxDescv
+  - [x] GXClearVtxDesc
+  - [x] GXSetVtxAttrFmt
+  - [ ] GXSetVtxAttrFmtv
+  - [x] GXSetArray
+  - [x] GXBegin
+  - [x] GXEnd
+  - [x] GXSetTexCoordGen2
+  - [x] GXSetNumTexGens
+  - [ ] GXInvalidateVtxCache
+  - [ ] GXSetLineWidth
+  - [ ] GXSetPointSize
+  - [ ] GXEnableTexOffsets
+- GXGet
+  - [ ] GXGetVtxDesc
+  - [ ] GXGetVtxDescv
+  - [ ] GXGetVtxAttrFmtv
+  - [ ] GXGetLineWidth
+  - [ ] GXGetPointSize
+  - [x] GXGetVtxAttrFmt
+  - [ ] GXGetViewportv
+  - [x] GXGetProjectionv
+  - [ ] GXGetScissor
+  - [ ] GXGetCullMode
+  - [x] GXGetLightAttnA
+  - [x] GXGetLightAttnK
+  - [x] GXGetLightPos
+  - [x] GXGetLightDir
+  - [x] GXGetLightColor
+  - [x] GXGetTexObjData
+  - [x] GXGetTexObjWidth
+  - [x] GXGetTexObjHeight
+  - [x] GXGetTexObjFmt
+  - [x] GXGetTexObjWrapS
+  - [x] GXGetTexObjWrapT
+  - [x] GXGetTexObjMipMap
+  - [ ] GXGetTexObjAll
+  - [ ] GXGetTexObjMinFilt
+  - [ ] GXGetTexObjMagFilt
+  - [ ] GXGetTexObjMinLOD
+  - [ ] GXGetTexObjMaxLOD
+  - [ ] GXGetTexObjLODBias
+  - [ ] GXGetTexObjBiasClamp
+  - [ ] GXGetTexObjEdgeLOD
+  - [ ] GXGetTexObjMaxAniso
+  - [ ] GXGetTexObjLODAll
+  - [ ] GXGetTexObjTlut
+  - [ ] GXGetTlutObjData
+  - [ ] GXGetTlutObjFmt
+  - [ ] GXGetTlutObjNumEntries
+  - [ ] GXGetTlutObjAll
+  - [ ] GXGetTexRegionAll
+  - [ ] GXGetTlutRegionAll
+- GXLighting
+  - [x] GXInitLightAttn
+  - [x] GXInitLightAttnA
+  - [x] GXInitLightAttnK
+  - [x] GXInitLightSpot
+  - [x] GXInitLightDistAttn
+  - [x] GXInitLightPos
+  - [x] GXInitLightColor
+  - [x] GXLoadLightObjImm
+  - [ ] GXLoadLightObjIndx
+  - [x] GXSetChanAmbColor
+  - [x] GXSetChanMatColor
+  - [x] GXSetNumChans
+  - [x] GXInitLightDir
+  - [x] GXInitSpecularDir
+  - [x] GXInitSpecularDirHA
+  - [x] GXSetChanCtrl
+- GXManage
+  - [x] GXInit (stub)
+  - [ ] GXAbortFrame
+  - [ ] GXSetDrawSync
+  - [ ] GXReadDrawSync
+  - [ ] GXSetDrawSyncCallback
+  - [x] GXDrawDone (stub)
+  - [x] GXSetDrawDone (stub)
+  - [ ] GXWaitDrawDone
+  - [x] GXSetDrawDoneCallback (stub)
+  - [ ] GXSetResetWritePipe
+  - [x] GXFlush (stub)
+  - [ ] GXResetWriteGatherPipe
+  - [x] GXPixModeSync (stub)
+  - [x] GXTexModeSync (stub)
+  - [ ] IsWriteGatherBufferEmpty
+  - [ ] GXSetMisc
+- GXPerf
+  - [ ] GXSetGPMetric
+  - [ ] GXClearGPMetric
+  - [ ] GXReadGPMetric
+  - [ ] GXReadGP0Metric
+  - [ ] GXReadGP1Metric
+  - [ ] GXReadMemMetric
+  - [ ] GXClearMemMetric
+  - [ ] GXReadPixMetric
+  - [ ] GXClearPixMetric
+  - [ ] GXSetVCacheMetric
+  - [ ] GXReadVCacheMetric
+  - [ ] GXClearVCacheMetric
+  - [ ] GXReadXfRasMetric
+  - [ ] GXInitXfRasMetric
+  - [ ] GXReadClksPerVtx
+- GXPixel
+  - [x] GXSetFog
+  - [x] GXSetFogColor
+  - [ ] GXInitFogAdjTable
+  - [ ] GXSetFogRangeAdj
+  - [x] GXSetBlendMode
+  - [x] GXSetColorUpdate
+  - [x] GXSetAlphaUpdate
+  - [x] GXSetZMode
+  - [ ] GXSetZCompLoc
+  - [x] GXSetPixelFmt (stub)
+  - [x] GXSetDither (stub)
+  - [x] GXSetDstAlpha
+  - [ ] GXSetFieldMask
+  - [ ] GXSetFieldMode
+- GXTev
+  - [x] GXSetTevOp
+  - [x] GXSetTevColorIn
+  - [x] GXSetTevAlphaIn
+  - [x] GXSetTevColorOp
+  - [x] GXSetTevAlphaOp
+  - [x] GXSetTevColor
+  - [x] GXSetTevColorS10
+  - [x] GXSetAlphaCompare
+  - [x] GXSetTevOrder
+  - [ ] GXSetZTexture
+  - [x] GXSetNumTevStages
+  - [x] GXSetTevKColor
+  - [x] GXSetTevKColorSel
+  - [x] GXSetTevKAlphaSel
+  - [x] GXSetTevSwapMode
+  - [x] GXSetTevSwapModeTable
+- GXTexture
+  - [x] GXInitTexObj
+  - [x] GXInitTexObjCI
+  - [x] GXInitTexObjLOD
+  - [x] GXInitTexObjData
+  - [x] GXInitTexObjWrapMode
+  - [x] GXInitTexObjTlut
+  - [ ] GXInitTexObjFilter
+  - [ ] GXInitTexObjMaxLOD
+  - [ ] GXInitTexObjMinLOD
+  - [ ] GXInitTexObjLODBias
+  - [ ] GXInitTexObjBiasClamp
+  - [ ] GXInitTexObjEdgeLOD
+  - [ ] GXInitTexObjMaxAniso
+  - [ ] GXInitTexObjUserData
+  - [ ] GXGetTexObjUserData
+  - [x] GXLoadTexObj
+  - [x] GXGetTexBufferSize
+  - [x] GXInitTlutObj
+  - [x] GXLoadTlut
+  - [ ] GXInitTexCacheRegion
+  - [ ] GXInitTexPreLoadRegion
+  - [ ] GXInitTlutRegion
+  - [ ] GXInvalidateTexRegion
+  - [x] GXInvalidateTexAll (stub)
+  - [ ] GXPreLoadEntireTexture
+  - [ ] GXSetTexRegionCallback
+  - [ ] GXSetTlutRegionCallback
+  - [ ] GXLoadTexObjPreLoaded
+  - [ ] GXSetTexCoordScaleManually
+  - [ ] GXSetTexCoordCylWrap
+  - [ ] GXSetTexCoordBias
+- GXTransform
+  - [x] GXSetProjection
+  - [ ] GXSetProjectionv
+  - [x] GXLoadPosMtxImm
+  - [ ] GXLoadPosMtxIndx
+  - [x] GXLoadNrmMtxImm
+  - [ ] GXLoadNrmMtxImm3x3
+  - [ ] GXLoadNrmMtxIndx3x3
+  - [x] GXSetCurrentMtx
+  - [x] GXLoadTexMtxImm
+  - [ ] GXLoadTexMtxIndx
+  - [ ] GXProject
+  - [x] GXSetViewport
+  - [x] GXSetViewportJitter
+  - [ ] GXSetZScaleOffset
+  - [ ] GXSetScissorBoxOffset
+  - [ ] GXSetClipMode
+- GXVert
+  - [x] GXPosition\[n]\[t]
+  - [x] GXNormal\[n]\[t]
+  - [x] GXColor\[n]\[t]
+  - [x] GXTexCoord\[n]\[t]
