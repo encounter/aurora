@@ -79,8 +79,11 @@ if (DAWN_ENABLE_NULL)
   target_sources(aurora PRIVATE lib/dawn/NullBinding.cpp)
 endif ()
 
-# Optional
 add_library(aurora_main STATIC lib/main.cpp)
 target_include_directories(aurora_main PUBLIC include)
 target_link_libraries(aurora_main PUBLIC SDL2::SDL2main)
 add_library(aurora::main ALIAS aurora_main)
+
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  add_subdirectory(examples)
+endif ()

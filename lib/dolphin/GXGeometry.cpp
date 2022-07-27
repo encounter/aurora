@@ -52,7 +52,9 @@ void GXSetTexCoordGen2(GXTexCoordID dst, GXTexGenType type, GXTexGenSrc src, u32
 
 void GXSetNumTexGens(u8 num) { update_gx_state(g_gxState.numTexGens, num); }
 
-// TODO GXInvalidateVtxCache
+void GXInvalidateVtxCache() {
+  // TODO
+}
 
 void GXSetLineWidth(u8 width, GXTexOffset offs) {
   // TODO

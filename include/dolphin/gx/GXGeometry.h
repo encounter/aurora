@@ -23,6 +23,7 @@ void GXSetArray(GXAttr attr, const void* data, u32 size, u8 stride);
 #else
 void GXSetArray(GXAttr attr, const void* data, u8 stride);
 #endif
+void GXInvalidateVtxCache(void);
 
 static inline void GXSetTexCoordGen(GXTexCoordID dst_coord, GXTexGenType func, GXTexGenSrc src_param, u32 mtx) {
   GXSetTexCoordGen2(dst_coord, func, src_param, mtx, GX_FALSE, GX_PTIDENTITY);
