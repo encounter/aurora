@@ -21,13 +21,15 @@ static inline GXAttr next_attr(size_t begin) {
 struct SStreamState {
   GXPrimitive primitive;
   u16 vertexCount = 0;
+  u16 vertexStart = 0;
   aurora::ByteBuffer vertexBuffer;
   std::vector<u16> indices;
 #ifndef NDEBUG
   GXAttr nextAttr;
 #endif
 
-  explicit SStreamState(GXPrimitive primitive, u16 numVerts, u16 vertexSize) noexcept : primitive(primitive) {
+  explicit SStreamState(GXPrimitive primitive, u16 numVerts, u16 vertexSize, u16 vertexStart) noexcept
+  : primitive(primitive), vertexStart(vertexStart) {
     vertexBuffer.reserve_extra(size_t(numVerts) * vertexSize);
     if (numVerts > 3 && (primitive == GX_TRIANGLEFAN || primitive == GX_TRIANGLESTRIP)) {
       indices.reserve((u32(numVerts) - 3) * 3 + 3);
@@ -43,6 +45,7 @@ struct SStreamState {
 };
 
 static std::optional<SStreamState> sStreamState;
+static u16 lastVertexStart = 0;
 
 void GXBegin(GXPrimitive primitive, GXVtxFmt vtxFmt, u16 nVerts) {
 #ifndef NDEBUG
@@ -73,7 +76,7 @@ void GXBegin(GXPrimitive primitive, GXVtxFmt vtxFmt, u16 nVerts) {
     Log.report(LOG_FATAL, FMT_STRING("no vtx attributes enabled?"));
     unreachable();
   }
-  sStreamState.emplace(primitive, nVerts, vertexSize);
+  sStreamState.emplace(primitive, nVerts, vertexSize, g_gxState.stateDirty ? 0 : lastVertexStart);
 }
 
 static inline void check_attr_order(GXAttr attr) noexcept {
@@ -96,26 +99,27 @@ void GXPosition3f32(float x, float y, float z) {
   state.vertexBuffer.append(&x, sizeof(float));
   state.vertexBuffer.append(&y, sizeof(float));
   state.vertexBuffer.append(&z, sizeof(float));
+  auto curVertex = state.vertexStart + state.vertexCount;
   if (state.primitive == GX_TRIANGLES || state.vertexCount < 3) {
     // pass
   } else if (state.primitive == GX_TRIANGLEFAN) {
-    state.indices.push_back(0);
-    state.indices.push_back(state.vertexCount - 1);
+    state.indices.push_back(state.vertexStart);
+    state.indices.push_back(curVertex - 1);
   } else if (state.primitive == GX_TRIANGLESTRIP) {
     if ((state.vertexCount & 1) == 0) {
-      state.indices.push_back(state.vertexCount - 2);
-      state.indices.push_back(state.vertexCount - 1);
+      state.indices.push_back(curVertex - 2);
+      state.indices.push_back(curVertex - 1);
     } else {
-      state.indices.push_back(state.vertexCount - 1);
-      state.indices.push_back(state.vertexCount - 2);
+      state.indices.push_back(curVertex - 1);
+      state.indices.push_back(curVertex - 2);
     }
   } else if (state.primitive == GX_QUADS) {
     if ((state.vertexCount & 3) == 3) {
-      state.indices.push_back(state.vertexCount - 3);
-      state.indices.push_back(state.vertexCount - 1);
+      state.indices.push_back(curVertex - 3);
+      state.indices.push_back(curVertex - 1);
     }
   }
-  state.indices.push_back(state.vertexCount);
+  state.indices.push_back(curVertex);
   ++state.vertexCount;
 }
 
@@ -171,18 +175,27 @@ void GXEnd() {
   }
   const auto vertRange = aurora::gfx::push_verts(sStreamState->vertexBuffer.data(), sStreamState->vertexBuffer.size());
   const auto indexRange = aurora::gfx::push_indices(aurora::ArrayRef{sStreamState->indices});
-  aurora::gfx::stream::PipelineConfig config{};
-  populate_pipeline_config(config, GX_TRIANGLES);
-  const auto info = aurora::gfx::gx::build_shader_info(config.shaderConfig);
-  const auto pipeline = aurora::gfx::pipeline_ref(config);
-  aurora::gfx::push_draw_command(aurora::gfx::stream::DrawData{
-      .pipeline = pipeline,
-      .vertRange = vertRange,
-      .uniformRange = build_uniform(info),
-      .indexRange = indexRange,
-      .indexCount = static_cast<uint32_t>(sStreamState->indices.size()),
-      .bindGroups = aurora::gfx::gx::build_bind_groups(info, config.shaderConfig, {}),
-      .dstAlpha = g_gxState.dstAlpha,
-  });
+  if (g_gxState.stateDirty) {
+    aurora::gfx::stream::PipelineConfig config{};
+    populate_pipeline_config(config, GX_TRIANGLES);
+    const auto info = aurora::gfx::gx::build_shader_info(config.shaderConfig);
+    const auto pipeline = aurora::gfx::pipeline_ref(config);
+    aurora::gfx::push_draw_command(aurora::gfx::stream::DrawData{
+        .pipeline = pipeline,
+        .vertRange = vertRange,
+        .uniformRange = build_uniform(info),
+        .indexRange = indexRange,
+        .indexCount = static_cast<uint32_t>(sStreamState->indices.size()),
+        .bindGroups = aurora::gfx::gx::build_bind_groups(info, config.shaderConfig, {}),
+        .dstAlpha = g_gxState.dstAlpha,
+    });
+  } else {
+    aurora::gfx::merge_draw_command(aurora::gfx::stream::DrawData{
+        .vertRange = vertRange,
+        .indexRange = indexRange,
+        .indexCount = static_cast<uint32_t>(sStreamState->indices.size()),
+    });
+  }
+  lastVertexStart = sStreamState->vertexStart + sStreamState->vertexCount;
   sStreamState.reset();
 }

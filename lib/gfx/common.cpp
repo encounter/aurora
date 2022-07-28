@@ -122,18 +122,24 @@ static ByteBuffer g_verts;
 static ByteBuffer g_uniforms;
 static ByteBuffer g_indices;
 static ByteBuffer g_storage;
-static ByteBuffer g_staticStorage;
 static ByteBuffer g_textureUpload;
 WGPUBuffer g_vertexBuffer;
 WGPUBuffer g_uniformBuffer;
 WGPUBuffer g_indexBuffer;
 WGPUBuffer g_storageBuffer;
-size_t g_staticStorageLastSize = 0;
 static std::array<WGPUBuffer, 3> g_stagingBuffers;
 static WGPUSupportedLimits g_cachedLimits;
 
 static ShaderState g_state;
 static PipelineRef g_currentPipeline;
+
+// for imgui debug
+size_t g_drawCallCount;
+size_t g_mergedDrawCallCount;
+size_t g_lastVertSize;
+size_t g_lastUniformSize;
+size_t g_lastIndexSize;
+size_t g_lastStorageSize;
 
 using CommandList = std::vector<Command>;
 struct ClipRect {
@@ -217,8 +223,25 @@ static inline void push_command(CommandType type, const Command::Data& data) {
       .data = data,
   });
 }
+static inline Command& get_last_draw_command(ShaderType type) {
+  if (g_currentRenderPass == UINT32_MAX) {
+    Log.report(LOG_FATAL, FMT_STRING("No last command"));
+    unreachable();
+  }
+  auto& last = g_renderPasses[g_currentRenderPass].commands.back();
+  if (last.type != CommandType::Draw || last.data.draw.type != type) {
+    Log.report(LOG_FATAL, FMT_STRING("Last command invalid: {} {}, expected {} {}"), magic_enum::enum_name(last.type),
+               magic_enum::enum_name(last.data.draw.type), magic_enum::enum_name(CommandType::Draw),
+               magic_enum::enum_name(type));
+    unreachable();
+  }
+  return last;
+}
 
-static void push_draw_command(ShaderDrawCommand data) { push_command(CommandType::Draw, Command::Data{.draw = data}); }
+static void push_draw_command(ShaderDrawCommand data) {
+  push_command(CommandType::Draw, Command::Data{.draw = data});
+  ++g_drawCallCount;
+}
 
 static Command::Data::SetViewportCommand g_cachedViewport;
 void set_viewport(float left, float top, float width, float height, float znear, float zfar) noexcept {
@@ -270,6 +293,22 @@ const stream::State& get_state() {
 template <>
 void push_draw_command(stream::DrawData data) {
   push_draw_command(ShaderDrawCommand{.type = ShaderType::Stream, .stream = data});
+}
+template <>
+void merge_draw_command(stream::DrawData data) {
+  auto& last = get_last_draw_command(ShaderType::Stream).data.draw.stream;
+  if (last.vertRange.offset + last.vertRange.size != data.vertRange.offset) {
+    Log.report(LOG_FATAL, FMT_STRING("Invalid merge range: {} -> {}"), last.vertRange.offset + last.vertRange.size,
+               data.vertRange.offset);
+  }
+  if (last.indexRange.offset + last.indexRange.size != data.indexRange.offset) {
+    Log.report(LOG_FATAL, FMT_STRING("Invalid merge range: {} -> {}"), last.indexRange.offset + last.indexRange.size,
+               data.indexRange.offset);
+  }
+  last.vertRange.size += data.vertRange.size;
+  last.indexRange.size += data.indexRange.size;
+  last.indexCount += data.indexCount;
+  ++g_mergedDrawCallCount;
 }
 template <>
 PipelineRef pipeline_ref(stream::PipelineConfig config) {
@@ -515,6 +554,9 @@ void begin_frame() {
   mapBuffer(g_storage, StorageBufferSize);
   mapBuffer(g_textureUpload, TextureUploadSize);
 
+  g_drawCallCount = 0;
+  g_mergedDrawCallCount = 0;
+
   g_renderPasses.emplace_back();
   g_renderPasses[0].clearColor = gx::g_gxState.clearColor;
   g_currentRenderPass = 0;
@@ -522,19 +564,13 @@ void begin_frame() {
 //  push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
 }
 
-// for imgui debug
-size_t g_lastVertSize;
-size_t g_lastUniformSize;
-size_t g_lastIndexSize;
-size_t g_lastStorageSize;
-
 void end_frame(WGPUCommandEncoder cmd) {
   uint64_t bufferOffset = 0;
   const auto writeBuffer = [&](ByteBuffer& buf, WGPUBuffer& out, uint64_t size, std::string_view label) {
     const auto writeSize = buf.size(); // Only need to copy this many bytes
     if (writeSize > 0) {
       wgpuCommandEncoderCopyBufferToBuffer(cmd, g_stagingBuffers[currentStagingBuffer], bufferOffset, out, 0,
-                                           writeSize);
+                                           ALIGN(writeSize, 4));
       buf.clear();
     }
     bufferOffset += size;
@@ -736,8 +772,8 @@ static inline Range map(ByteBuffer& target, size_t length, size_t alignment) {
   target.append_zeroes(length + padding);
   return {static_cast<uint32_t>(begin), static_cast<uint32_t>(length + padding)};
 }
-Range push_verts(const uint8_t* data, size_t length) { return push(g_verts, data, length, 4); }
-Range push_indices(const uint8_t* data, size_t length) { return push(g_indices, data, length, 4); }
+Range push_verts(const uint8_t* data, size_t length) { return push(g_verts, data, length, 0); }
+Range push_indices(const uint8_t* data, size_t length) { return push(g_indices, data, length, 0); }
 Range push_uniform(const uint8_t* data, size_t length) {
   return push(g_uniforms, data, length, g_cachedLimits.limits.minUniformBufferOffsetAlignment);
 }

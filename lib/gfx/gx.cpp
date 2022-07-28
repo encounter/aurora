@@ -473,6 +473,7 @@ Range build_uniform(const ShaderInfo& info) noexcept {
     }
     buf.append(&tex.texObj.lodBias, 4);
   }
+  g_gxState.stateDirty = false;
   return range;
 }
 

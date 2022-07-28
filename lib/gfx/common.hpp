@@ -127,7 +127,6 @@ extern WGPUBuffer g_vertexBuffer;
 extern WGPUBuffer g_uniformBuffer;
 extern WGPUBuffer g_indexBuffer;
 extern WGPUBuffer g_storageBuffer;
-extern size_t g_staticStorageLastSize;
 
 using BindGroupRef = HashType;
 using PipelineRef = HashType;
@@ -188,6 +187,8 @@ template <typename State>
 const State& get_state();
 template <typename DrawData>
 void push_draw_command(DrawData data);
+template <typename DrawData>
+void merge_draw_command(DrawData data);
 
 template <typename PipelineConfig>
 PipelineRef pipeline_ref(PipelineConfig config);

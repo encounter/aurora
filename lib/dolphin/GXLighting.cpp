@@ -134,9 +134,9 @@ void GXLoadLightObjImm(GXLightObj* light_, GXLightID id) {
   auto* light = reinterpret_cast<const GXLightObj_*>(light_);
   realLight.pos = {light->px, light->py, light->pz};
   realLight.dir = {light->nx, light->ny, light->nz};
+  realLight.color = from_gx_color(light->color);
   realLight.cosAtt = {light->a0, light->a1, light->a2};
   realLight.distAtt = {light->k0, light->k1, light->k2};
-  realLight.color = from_gx_color(light->color);
   update_gx_state(g_gxState.lights[idx], realLight);
 }
 

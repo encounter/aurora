@@ -109,7 +109,7 @@ void GXLoadTexObj(GXTexObj* obj_, GXTexMapID id) {
     obj->dataInvalidated = false;
   }
   g_gxState.textures[id] = {*obj};
-  // TODO stateDirty?
+  g_gxState.stateDirty = true; // TODO only if changed?
 }
 
 u32 GXGetTexBufferSize(u16 width, u16 height, u32 fmt, GXBool mips, u8 maxLod) {
