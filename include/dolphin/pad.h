@@ -66,6 +66,7 @@ void PADClampCircle(PADStatus* status);
 void PADControlMotor(s32 chan, u32 cmd);
 void PADSetSpec(u32 spec);
 void PADControlAllMotors(const u32* cmdArr);
+void PADSetAnalogMode(u32 mode);
 
 #ifdef TARGET_PC
 /* New API to facilitate controller interactions */
