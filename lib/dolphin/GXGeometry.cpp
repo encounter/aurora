@@ -33,9 +33,9 @@ void GXSetVtxAttrFmt(GXVtxFmt vtxfmt, GXAttr attr, GXCompCnt cnt, GXCompType typ
 
 void GXSetArray(GXAttr attr, const void* data, u32 size, u8 stride) {
   auto& array = g_gxState.arrays[attr];
-  array.data = data;
-  array.size = size;
-  array.stride = stride;
+  update_gx_state(array.data, data);
+  update_gx_state(array.size, size);
+  update_gx_state(array.stride, stride);
   array.cachedRange = {};
 }
 
