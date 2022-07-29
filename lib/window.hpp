@@ -17,4 +17,7 @@ AuroraWindowSize get_window_size();
 const AuroraEvent* poll_events();
 SDL_Window* get_sdl_window();
 SDL_Renderer* get_sdl_renderer();
+void set_title(const char* title);
+void set_fullscreen(bool fullscreen);
+bool get_fullscreen();
 }; // namespace aurora::window

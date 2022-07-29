@@ -91,6 +91,11 @@ const AuroraEvent* poll_events() {
           .type = AURORA_EXIT,
       });
     }
+
+    g_events.push_back(AuroraEvent{
+        .type = AURORA_SDL_EVENT,
+        .sdl = event,
+    });
   }
   g_events.push_back(AuroraEvent{
       .type = AURORA_NONE,
@@ -246,5 +251,11 @@ AuroraWindowSize get_window_size() {
 SDL_Window* get_sdl_window() { return g_window; }
 
 SDL_Renderer* get_sdl_renderer() { return g_renderer; }
+
+void set_title(const char* title) { SDL_SetWindowTitle(g_window, title); }
+
+void set_fullscreen(bool fullscreen) { SDL_SetWindowFullscreen(g_window, fullscreen ? SDL_WINDOW_FULLSCREEN : 0); }
+
+bool get_fullscreen() { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0u; }
 
 } // namespace aurora::window

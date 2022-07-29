@@ -16,6 +16,12 @@ void VISetNextFrameBuffer(void *fb);
 void VIWaitForRetrace(void);
 void VISetBlack(BOOL black);
 
+#ifdef TARGET_PC
+void VISetWindowTitle(const char* title);
+void VISetWindowFullscreen(bool fullscreen);
+bool VIGetWindowFullscreen();
+#endif
+
 #ifdef __cplusplus
 }
 #endif
