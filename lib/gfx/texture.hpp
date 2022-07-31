@@ -36,7 +36,7 @@ struct TextureRef {
 
   ~TextureRef() {
     wgpuTextureViewRelease(view);
-    wgpuTextureDestroy(texture);
+    wgpuTextureRelease(texture);
   }
 };
 

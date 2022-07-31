@@ -61,10 +61,10 @@ void GXSetTevColor(GXTevRegID id, GXColor color) {
 
 void GXSetTevColorS10(GXTevRegID id, GXColorS10 color) {
   update_gx_state(g_gxState.colorRegs[id], aurora::Vec4<float>{
-                                               static_cast<float>(color.r) / 1023.f,
-                                               static_cast<float>(color.g) / 1023.f,
-                                               static_cast<float>(color.b) / 1023.f,
-                                               static_cast<float>(color.a) / 1023.f,
+                                               static_cast<float>(color.r) / 255.f,
+                                               static_cast<float>(color.g) / 255.f,
+                                               static_cast<float>(color.b) / 255.f,
+                                               static_cast<float>(color.a) / 255.f,
                                            });
 }
 

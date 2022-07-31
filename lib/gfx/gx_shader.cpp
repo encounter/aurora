@@ -574,6 +574,7 @@ static inline std::string texture_conversion(const TextureConfig& tex, u32 stage
     break;
   case GX_TF_I4:
   case GX_TF_I8:
+  case GX_TF_R8_PC:
     // Splat R to RGBA
     out += fmt::format(FMT_STRING("\n    sampled{0} = vec4<f32>(sampled{0}.r);"), stageIdx);
     break;
