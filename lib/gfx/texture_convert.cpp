@@ -597,7 +597,7 @@ ByteBuffer convert_texture(u32 format, uint32_t width, uint32_t height, uint32_t
   case GX_TF_RGBA8:
     return BuildRGBA8FromGCN(width, height, mips, data);
   case GX_TF_CMPR:
-    if (wgpuDeviceHasFeature(webgpu::g_device, WGPUFeatureName_TextureCompressionBC)) {
+    if (webgpu::g_device.HasFeature(wgpu::FeatureName::TextureCompressionBC)) {
       return BuildDXT1FromGCN(width, height, mips, data);
     } else {
       return BuildRGBA8FromCMPR(width, height, mips, data);

@@ -363,9 +363,9 @@ struct PipelineConfig {
 static_assert(std::has_unique_object_representations_v<PipelineConfig>);
 
 struct GXBindGroupLayouts {
-  WGPUBindGroupLayout uniformLayout;
-  WGPUBindGroupLayout samplerLayout;
-  WGPUBindGroupLayout textureLayout;
+  wgpu::BindGroupLayout uniformLayout;
+  wgpu::BindGroupLayout samplerLayout;
+  wgpu::BindGroupLayout textureLayout;
 };
 struct GXBindGroups {
   BindGroupRef uniformBindGroup;
@@ -390,11 +390,11 @@ struct BindGroupRanges {
   std::array<Range, GX_VA_MAX_ATTR> vaRanges{};
 };
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive) noexcept;
-WGPURenderPipeline build_pipeline(const PipelineConfig& config, const ShaderInfo& info,
-                                  ArrayRef<WGPUVertexBufferLayout> vtxBuffers, WGPUShaderModule shader,
-                                  const char* label) noexcept;
+wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderInfo& info,
+                                    ArrayRef<wgpu::VertexBufferLayout> vtxBuffers, wgpu::ShaderModule shader,
+                                    const char* label) noexcept;
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept;
-WGPUShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& info) noexcept;
+wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& info) noexcept;
 // Range build_vertex_buffer(const GXShaderInfo& info) noexcept;
 Range build_uniform(const ShaderInfo& info) noexcept;
 GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const ShaderConfig& config) noexcept;

@@ -6,7 +6,7 @@
 #include <absl/container/flat_hash_map.h>
 
 constexpr bool EnableNormalVisualization = false;
-constexpr bool EnableDebugPrints = true;
+constexpr bool EnableDebugPrints = false;
 constexpr bool UsePerPixelLighting = true;
 
 namespace aurora::gfx::gx {
@@ -16,7 +16,7 @@ using namespace std::string_view_literals;
 
 static Module Log("aurora::gfx::gx");
 
-absl::flat_hash_map<ShaderRef, std::pair<WGPUShaderModule, gx::ShaderInfo>> g_gxCachedShaders;
+absl::flat_hash_map<ShaderRef, std::pair<wgpu::ShaderModule, gx::ShaderInfo>> g_gxCachedShaders;
 #ifndef NDEBUG
 static absl::flat_hash_map<ShaderRef, gx::ShaderConfig> g_gxCachedShaderConfigs;
 #endif
@@ -701,7 +701,7 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   return info;
 }
 
-WGPUShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& info) noexcept {
+wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& info) noexcept {
   const auto hash = xxh3_hash(config);
   const auto it = g_gxCachedShaders.find(hash);
   if (it != g_gxCachedShaders.end()) {
@@ -1371,16 +1371,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {{{8}{7}
     Log.report(LOG_INFO, FMT_STRING("Generated shader: {}"), shaderSource);
   }
 
-  const WGPUShaderModuleWGSLDescriptor wgslDescriptor{
-      .chain = {.sType = WGPUSType_ShaderModuleWGSLDescriptor},
-      .source = shaderSource.c_str(),
-  };
+  wgpu::ShaderModuleWGSLDescriptor wgslDescriptor{};
+  wgslDescriptor.source = shaderSource.c_str();
   const auto label = fmt::format(FMT_STRING("GX Shader {:x}"), hash);
-  const auto shaderDescriptor = WGPUShaderModuleDescriptor{
-      .nextInChain = &wgslDescriptor.chain,
+  const auto shaderDescriptor = wgpu::ShaderModuleDescriptor{
+      .nextInChain = &wgslDescriptor,
       .label = label.c_str(),
   };
-  auto shader = wgpuDeviceCreateShaderModule(webgpu::g_device, &shaderDescriptor);
+  auto shader = webgpu::g_device.CreateShaderModule(&shaderDescriptor);
 
   auto pair = std::make_pair(shader, info);
   g_gxCachedShaders.emplace(hash, pair);

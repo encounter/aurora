@@ -20,8 +20,8 @@ struct PipelineConfig : gx::PipelineConfig {};
 struct State {};
 
 State construct_state();
-WGPURenderPipeline create_pipeline(const State& state, [[maybe_unused]] const PipelineConfig& config);
-void render(const State& state, const DrawData& data, const WGPURenderPassEncoder& pass);
+wgpu::RenderPipeline create_pipeline(const State& state, [[maybe_unused]] const PipelineConfig& config);
+void render(const State& state, const DrawData& data, const wgpu::RenderPassEncoder& pass);
 
 void queue_surface(const u8* dlStart, u32 dlSize) noexcept;
 } // namespace aurora::gfx::model

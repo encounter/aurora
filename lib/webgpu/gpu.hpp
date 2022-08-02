@@ -11,75 +11,30 @@ struct SDL_Window;
 
 namespace aurora::webgpu {
 struct GraphicsConfig {
-  uint32_t width;
-  uint32_t height;
-  WGPUTextureFormat colorFormat;
-  WGPUTextureFormat depthFormat;
+  wgpu::SwapChainDescriptor swapChainDescriptor;
+  wgpu::TextureFormat depthFormat;
   uint32_t msaaSamples;
   uint16_t textureAnisotropy;
 };
 struct TextureWithSampler {
   wgpu::Texture texture;
   wgpu::TextureView view;
-  WGPUExtent3D size;
-  WGPUTextureFormat format;
+  wgpu::Extent3D size;
+  wgpu::TextureFormat format;
   wgpu::Sampler sampler;
-
-  //  TextureWithSampler() = default;
-  //  TextureWithSampler(WGPUTexture texture, WGPUTextureView view, WGPUExtent3D size, WGPUTextureFormat format,
-  //                     WGPUSampler sampler) noexcept
-  //  : texture(texture), view(view), size(size), format(format), sampler(sampler) {}
-  //  TextureWithSampler(const TextureWithSampler& rhs) noexcept
-  //  : texture(rhs.texture), view(rhs.view), size(rhs.size), format(rhs.format), sampler(rhs.sampler) {
-  //    wgpuTextureReference(texture);
-  //    wgpuTextureViewReference(view);
-  //    wgpuSamplerReference(sampler);
-  //  }
-  //  TextureWithSampler(TextureWithSampler&& rhs) noexcept
-  //  : texture(rhs.texture), view(rhs.view), size(rhs.size), format(rhs.format), sampler(rhs.sampler) {
-  //    rhs.texture = nullptr;
-  //    rhs.view = nullptr;
-  //    rhs.sampler = nullptr;
-  //  }
-  //  ~TextureWithSampler() { reset(); }
-  //  TextureWithSampler& operator=(const TextureWithSampler& rhs) noexcept {
-  //    reset();
-  //    texture = rhs.texture;
-  //    view = rhs.view;
-  //    size = rhs.size;
-  //    format = rhs.format;
-  //    sampler = rhs.sampler;
-  //    wgpuTextureReference(texture);
-  //    wgpuTextureViewReference(view);
-  //    wgpuSamplerReference(sampler);
-  //    return *this;
-  //  }
-  //  void reset() {
-  //    if (texture != nullptr) {
-  //      wgpuTextureRelease(texture);
-  //      texture = nullptr;
-  //    }
-  //    if (view != nullptr) {
-  //      wgpuTextureViewRelease(view);
-  //      view = nullptr;
-  //    }
-  //    if (sampler != nullptr) {
-  //      wgpuSamplerRelease(sampler);
-  //      sampler = nullptr;
-  //    }
-  //  }
 };
 
-extern WGPUDevice g_device;
-extern WGPUQueue g_queue;
-extern WGPUSwapChain g_swapChain;
-extern WGPUBackendType g_backendType;
+extern wgpu::Device g_device;
+extern wgpu::Queue g_queue;
+extern wgpu::SwapChain g_swapChain;
+extern wgpu::BackendType g_backendType;
 extern GraphicsConfig g_graphicsConfig;
 extern TextureWithSampler g_frameBuffer;
 extern TextureWithSampler g_frameBufferResolved;
 extern TextureWithSampler g_depthBuffer;
-extern WGPURenderPipeline g_CopyPipeline;
-extern WGPUBindGroup g_CopyBindGroup;
+extern wgpu::RenderPipeline g_CopyPipeline;
+extern wgpu::BindGroup g_CopyBindGroup;
+extern wgpu::Instance g_instance;
 
 bool initialize(AuroraBackend backend);
 void shutdown();

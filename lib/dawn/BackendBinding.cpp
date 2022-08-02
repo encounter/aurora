@@ -37,28 +37,28 @@ BackendBinding* CreateVulkanBinding(SDL_Window* window, WGPUDevice device);
 
 BackendBinding::BackendBinding(SDL_Window* window, WGPUDevice device) : m_window(window), m_device(device) {}
 
-bool DiscoverAdapter(dawn::native::Instance* instance, SDL_Window* window, WGPUBackendType type) {
+bool DiscoverAdapter(dawn::native::Instance* instance, SDL_Window* window, wgpu::BackendType type) {
   switch (type) {
 #if defined(DAWN_ENABLE_BACKEND_D3D12)
-  case WGPUBackendType_D3D12: {
+  case wgpu::BackendType::D3D12: {
     dawn::native::d3d12::AdapterDiscoveryOptions options;
     return instance->DiscoverAdapters(&options);
   }
 #endif
 #if defined(DAWN_ENABLE_BACKEND_METAL)
-  case WGPUBackendType_Metal: {
+  case wgpu::BackendType::Metal: {
     dawn::native::metal::AdapterDiscoveryOptions options;
     return instance->DiscoverAdapters(&options);
   }
 #endif
 #if defined(DAWN_ENABLE_BACKEND_VULKAN)
-  case WGPUBackendType_Vulkan: {
+  case wgpu::BackendType::Vulkan: {
     dawn::native::vulkan::AdapterDiscoveryOptions options;
     return instance->DiscoverAdapters(&options);
   }
 #endif
 #if defined(DAWN_ENABLE_BACKEND_DESKTOP_GL)
-  case WGPUBackendType_OpenGL: {
+  case wgpu::BackendType::OpenGL: {
     SDL_GL_ResetAttributes();
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
@@ -71,7 +71,7 @@ bool DiscoverAdapter(dawn::native::Instance* instance, SDL_Window* window, WGPUB
   }
 #endif
 #if defined(DAWN_ENABLE_BACKEND_OPENGLES)
-  case WGPUBackendType_OpenGLES: {
+  case wgpu::BackendType::OpenGLES: {
     SDL_GL_ResetAttributes();
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -84,7 +84,7 @@ bool DiscoverAdapter(dawn::native::Instance* instance, SDL_Window* window, WGPUB
   }
 #endif
 #if defined(DAWN_ENABLE_BACKEND_NULL)
-  case WGPUBackendType_Null:
+  case wgpu::BackendType::Null:
     instance->DiscoverDefaultAdapters();
     return true;
 #endif
@@ -93,30 +93,30 @@ bool DiscoverAdapter(dawn::native::Instance* instance, SDL_Window* window, WGPUB
   }
 }
 
-BackendBinding* CreateBinding(WGPUBackendType type, SDL_Window* window, WGPUDevice device) {
+BackendBinding* CreateBinding(wgpu::BackendType type, SDL_Window* window, WGPUDevice device) {
   switch (type) {
 #if defined(DAWN_ENABLE_BACKEND_D3D12)
-  case WGPUBackendType_D3D12:
+  case wgpu::BackendType::D3D12:
     return CreateD3D12Binding(window, device);
 #endif
 #if defined(DAWN_ENABLE_BACKEND_METAL)
-  case WGPUBackendType_Metal:
+  case wgpu::BackendType::Metal:
     return CreateMetalBinding(window, device);
 #endif
 #if defined(DAWN_ENABLE_BACKEND_NULL)
-  case WGPUBackendType_Null:
+  case wgpu::BackendType::Null:
     return CreateNullBinding(window, device);
 #endif
 #if defined(DAWN_ENABLE_BACKEND_DESKTOP_GL)
-  case WGPUBackendType_OpenGL:
+  case wgpu::BackendType::OpenGL:
     return CreateOpenGLBinding(window, device);
 #endif
 #if defined(DAWN_ENABLE_BACKEND_OPENGLES)
-  case WGPUBackendType_OpenGLES:
+  case wgpu::BackendType::OpenGLES:
     return CreateOpenGLBinding(window, device);
 #endif
 #if defined(DAWN_ENABLE_BACKEND_VULKAN)
-  case WGPUBackendType_Vulkan:
+  case wgpu::BackendType::Vulkan:
     return CreateVulkanBinding(window, device);
 #endif
   default:

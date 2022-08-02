@@ -12,7 +12,6 @@ add_library(aurora STATIC
     lib/imgui.cpp
     lib/input.cpp
     lib/window.cpp
-    lib/dawn/BackendBinding.cpp
     lib/gfx/common.cpp
     lib/gfx/texture.cpp
     lib/gfx/gx.cpp
@@ -50,7 +49,15 @@ if (NOT TARGET SDL2::SDL2-static)
   find_package(SDL2 REQUIRED)
 endif ()
 target_link_libraries(aurora PUBLIC SDL2::SDL2-static fmt::fmt imgui xxhash)
-target_link_libraries(aurora PRIVATE dawn_native dawncpp webgpu_dawn absl::btree absl::flat_hash_map)
+if (EMSCRIPTEN)
+  target_link_options(aurora PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)
+  target_compile_definitions(aurora PRIVATE ENABLE_BACKEND_WEBGPU)
+else ()
+  target_link_libraries(aurora PRIVATE dawn_native dawncpp webgpu_dawn)
+  target_sources(aurora PRIVATE lib/dawn/BackendBinding.cpp)
+  target_compile_definitions(aurora PRIVATE WEBGPU_DAWN)
+endif ()
+target_link_libraries(aurora PRIVATE absl::btree absl::flat_hash_map)
 if (DAWN_ENABLE_VULKAN)
   target_compile_definitions(aurora PRIVATE DAWN_ENABLE_BACKEND_VULKAN)
   target_sources(aurora PRIVATE lib/dawn/VulkanBinding.cpp)

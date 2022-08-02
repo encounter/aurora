@@ -5,45 +5,40 @@
 
 namespace aurora::gfx {
 struct TextureUpload {
-  WGPUTextureDataLayout layout;
-  WGPUImageCopyTexture tex;
-  WGPUExtent3D size;
+  wgpu::TextureDataLayout layout;
+  wgpu::ImageCopyTexture tex;
+  wgpu::Extent3D size;
 
-  TextureUpload(WGPUTextureDataLayout layout, WGPUImageCopyTexture tex, WGPUExtent3D size) noexcept
+  TextureUpload(wgpu::TextureDataLayout layout, wgpu::ImageCopyTexture tex, wgpu::Extent3D size) noexcept
   : layout(layout), tex(tex), size(size) {}
 };
 extern std::vector<TextureUpload> g_textureUploads;
 
 constexpr u32 InvalidTextureFormat = -1;
 struct TextureRef {
-  WGPUTexture texture;
-  WGPUTextureView view;
-  WGPUExtent3D size;
-  WGPUTextureFormat format;
+  wgpu::Texture texture;
+  wgpu::TextureView view;
+  wgpu::Extent3D size;
+  wgpu::TextureFormat format;
   uint32_t mipCount;
   u32 gxFormat;
   bool isRenderTexture; // :shrug: for now
 
-  TextureRef(WGPUTexture texture, WGPUTextureView view, WGPUExtent3D size, WGPUTextureFormat format, uint32_t mipCount,
-             u32 gxFormat, bool isRenderTexture)
-  : texture(texture)
-  , view(view)
+  TextureRef(wgpu::Texture texture, wgpu::TextureView view, wgpu::Extent3D size, wgpu::TextureFormat format,
+             uint32_t mipCount, u32 gxFormat, bool isRenderTexture)
+  : texture(std::move(texture))
+  , view(std::move(view))
   , size(size)
   , format(format)
   , mipCount(mipCount)
   , gxFormat(gxFormat)
   , isRenderTexture(isRenderTexture) {}
-
-  ~TextureRef() {
-    wgpuTextureViewRelease(view);
-    wgpuTextureRelease(texture);
-  }
 };
 
 using TextureHandle = std::shared_ptr<TextureRef>;
 
-TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format,
-                                    ArrayRef<uint8_t> data, const char* label) noexcept;
+TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format, ArrayRef<uint8_t> data,
+                                    const char* label) noexcept;
 TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format,
                                      const char* label) noexcept;
 TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 fmt, const char* label) noexcept;
@@ -84,7 +79,7 @@ struct TextureBind {
   TextureBind() noexcept = default;
   TextureBind(GXTexObj_ obj) noexcept : texObj(std::move(obj)) {}
   void reset() noexcept { texObj.ref.reset(); };
-  [[nodiscard]] WGPUSamplerDescriptor get_descriptor() const noexcept;
+  [[nodiscard]] wgpu::SamplerDescriptor get_descriptor() const noexcept;
   operator bool() const noexcept { return texObj.ref.operator bool(); }
 };
 } // namespace aurora::gfx

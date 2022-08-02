@@ -20,6 +20,9 @@ using webgpu::g_queue;
 using webgpu::g_swapChain;
 
 constexpr std::array PreferredBackendOrder{
+#ifdef ENABLE_BACKEND_WEBGPU
+    BACKEND_WEBGPU,
+#endif
 #ifdef DAWN_ENABLE_BACKEND_D3D12
 //    BACKEND_D3D12,
 #endif
@@ -90,7 +93,7 @@ static AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config)
   }
 
   // Initialize SDL_Renderer for ImGui when we can't use a Dawn backend
-  if (webgpu::g_backendType == WGPUBackendType_Null) {
+  if (webgpu::g_backendType == wgpu::BackendType::Null) {
     if (!window::create_renderer()) {
       Log.report(LOG_FATAL, FMT_STRING("Failed to initialize SDL renderer: {}"), SDL_GetError());
       unreachable();
@@ -118,13 +121,14 @@ static AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config)
   };
 }
 
-static WGPUTextureView g_currentView = nullptr;
+#ifndef EMSCRIPTEN
+static wgpu::TextureView g_currentView;
+#endif
 
 static void shutdown() noexcept {
-  if (g_currentView != nullptr) {
-    wgpuTextureViewRelease(g_currentView);
-    g_currentView = nullptr;
-  }
+#ifndef EMSCRIPTEN
+  g_currentView = {};
+#endif
   imgui::shutdown();
   gfx::shutdown();
   webgpu::shutdown();
@@ -142,7 +146,8 @@ static const AuroraEvent* update() noexcept {
 }
 
 static bool begin_frame() noexcept {
-  g_currentView = wgpuSwapChainGetCurrentTextureView(g_swapChain);
+#ifndef EMSCRIPTEN
+  g_currentView = g_swapChain.GetCurrentTextureView();
   if (!g_currentView) {
     ImGui::EndFrame();
     // Force swapchain recreation
@@ -150,50 +155,55 @@ static bool begin_frame() noexcept {
     webgpu::resize_swapchain(size.fb_width, size.fb_height, true);
     return false;
   }
+#endif
   gfx::begin_frame();
   return true;
 }
 
 static void end_frame() noexcept {
-  const auto encoderDescriptor = WGPUCommandEncoderDescriptor{
+  const auto encoderDescriptor = wgpu::CommandEncoderDescriptor{
       .label = "Redraw encoder",
   };
-  auto encoder = wgpuDeviceCreateCommandEncoder(g_device, &encoderDescriptor);
+  auto encoder = g_device.CreateCommandEncoder(&encoderDescriptor);
   gfx::end_frame(encoder);
   gfx::render(encoder);
   {
     const std::array attachments{
-        WGPURenderPassColorAttachment{
+        wgpu::RenderPassColorAttachment{
+#ifdef EMSCRIPTEN
+            .view = g_swapChain.GetCurrentTextureView(),
+#else
             .view = g_currentView,
-            .loadOp = WGPULoadOp_Clear,
-            .storeOp = WGPUStoreOp_Store,
+#endif
+            .loadOp = wgpu::LoadOp::Clear,
+            .storeOp = wgpu::StoreOp::Store,
         },
     };
-    const WGPURenderPassDescriptor renderPassDescriptor{
+    const wgpu::RenderPassDescriptor renderPassDescriptor{
         .label = "Post render pass",
         .colorAttachmentCount = attachments.size(),
         .colorAttachments = attachments.data(),
     };
-    auto pass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDescriptor);
+    auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
     // Copy EFB -> XFB (swapchain)
-    wgpuRenderPassEncoderSetPipeline(pass, webgpu::g_CopyPipeline);
-    wgpuRenderPassEncoderSetBindGroup(pass, 0, webgpu::g_CopyBindGroup, 0, nullptr);
-    wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+    pass.SetPipeline(webgpu::g_CopyPipeline);
+    pass.SetBindGroup(0, webgpu::g_CopyBindGroup, 0, nullptr);
+    pass.Draw(3);
     if (!g_initialFrame) {
       // Render ImGui
       imgui::render(pass);
     }
-    wgpuRenderPassEncoderEnd(pass);
-    wgpuRenderPassEncoderRelease(pass);
+    pass.End();
   }
-  const WGPUCommandBufferDescriptor cmdBufDescriptor{.label = "Redraw command buffer"};
-  const auto buffer = wgpuCommandEncoderFinish(encoder, &cmdBufDescriptor);
-  wgpuQueueSubmit(g_queue, 1, &buffer);
-  wgpuCommandBufferRelease(buffer);
-  wgpuCommandEncoderRelease(encoder);
-  wgpuSwapChainPresent(g_swapChain);
-  wgpuTextureViewRelease(g_currentView);
-  g_currentView = nullptr;
+  const wgpu::CommandBufferDescriptor cmdBufDescriptor{.label = "Redraw command buffer"};
+  const auto buffer = encoder.Finish(&cmdBufDescriptor);
+  g_queue.Submit(1, &buffer);
+#ifdef WEBGPU_DAWN
+  g_swapChain.Present();
+  g_currentView = {};
+#else
+  emscripten_sleep(0);
+#endif
   if (!g_initialFrame) {
     ImGui::EndFrame();
   }

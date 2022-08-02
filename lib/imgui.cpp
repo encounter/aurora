@@ -18,7 +18,7 @@ static std::string g_imguiLog{};
 static bool g_useSdlRenderer = false;
 
 static std::vector<SDL_Texture*> g_sdlTextures;
-static std::vector<WGPUTexture> g_wgpuTextures;
+static std::vector<wgpu::Texture> g_wgpuTextures;
 
 void create_context() noexcept {
   IMGUI_CHECKVERSION();
@@ -41,7 +41,8 @@ void initialize() noexcept {
   if (g_useSdlRenderer) {
     ImGui_ImplSDLRenderer_Init(renderer);
   } else {
-    ImGui_ImplWGPU_Init(webgpu::g_device, 1, webgpu::g_graphicsConfig.colorFormat);
+    const auto format = webgpu::g_graphicsConfig.swapChainDescriptor.format;
+    ImGui_ImplWGPU_Init(webgpu::g_device.Get(), 1, static_cast<WGPUTextureFormat>(format));
   }
 }
 
@@ -57,9 +58,6 @@ void shutdown() noexcept {
     SDL_DestroyTexture(texture);
   }
   g_sdlTextures.clear();
-  for (const auto& texture : g_wgpuTextures) {
-    wgpuTextureDestroy(texture);
-  }
   g_wgpuTextures.clear();
 }
 
@@ -99,7 +97,7 @@ void new_frame(const AuroraWindowSize& size) noexcept {
   ImGui::NewFrame();
 }
 
-void render(WGPURenderPassEncoder pass) noexcept {
+void render(const wgpu::RenderPassEncoder& pass) noexcept {
   ImGui::Render();
 
   auto* data = ImGui::GetDrawData();
@@ -111,7 +109,7 @@ void render(WGPURenderPassEncoder pass) noexcept {
     ImGui_ImplSDLRenderer_RenderDrawData(data);
     SDL_RenderPresent(renderer);
   } else {
-    ImGui_ImplWGPU_RenderDrawData(data, pass);
+    ImGui_ImplWGPU_RenderDrawData(data, pass.Get());
   }
 }
 
@@ -124,41 +122,41 @@ ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) no
     g_sdlTextures.push_back(texture);
     return texture;
   }
-  const auto size = WGPUExtent3D{
+  const wgpu::Extent3D size{
       .width = width,
       .height = height,
       .depthOrArrayLayers = 1,
   };
-  const auto textureDescriptor = WGPUTextureDescriptor{
+  const wgpu::TextureDescriptor textureDescriptor{
       .label = "imgui texture",
-      .usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst,
-      .dimension = WGPUTextureDimension_2D,
+      .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
+      .dimension = wgpu::TextureDimension::e2D,
       .size = size,
-      .format = WGPUTextureFormat_RGBA8Unorm,
+      .format = wgpu::TextureFormat::RGBA8Unorm,
       .mipLevelCount = 1,
       .sampleCount = 1,
   };
-  const auto textureViewDescriptor = WGPUTextureViewDescriptor{
+  const wgpu::TextureViewDescriptor textureViewDescriptor{
       .label = "imgui texture view",
-      .format = WGPUTextureFormat_RGBA8Unorm,
-      .dimension = WGPUTextureViewDimension_2D,
+      .format = wgpu::TextureFormat::RGBA8Unorm,
+      .dimension = wgpu::TextureViewDimension::e2D,
       .mipLevelCount = WGPU_MIP_LEVEL_COUNT_UNDEFINED,
       .arrayLayerCount = WGPU_ARRAY_LAYER_COUNT_UNDEFINED,
   };
-  auto texture = wgpuDeviceCreateTexture(webgpu::g_device, &textureDescriptor);
-  auto textureView = wgpuTextureCreateView(texture, &textureViewDescriptor);
+  auto texture = webgpu::g_device.CreateTexture(&textureDescriptor);
+  auto textureView = texture.CreateView(&textureViewDescriptor);
   {
-    const auto dstView = WGPUImageCopyTexture{
+    const wgpu::ImageCopyTexture dstView{
         .texture = texture,
     };
-    const auto dataLayout = WGPUTextureDataLayout{
+    const wgpu::TextureDataLayout dataLayout{
         .bytesPerRow = 4 * width,
         .rowsPerImage = height,
     };
-    wgpuQueueWriteTexture(webgpu::g_queue, &dstView, data, width * height * 4, &dataLayout, &size);
+    webgpu::g_queue.WriteTexture(&dstView, data, width * height * 4, &dataLayout, &size);
   }
   g_wgpuTextures.push_back(texture);
-  return textureView;
+  return textureView.Release();
 }
 } // namespace aurora::imgui
 

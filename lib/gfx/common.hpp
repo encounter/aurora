@@ -6,7 +6,7 @@
 #include <utility>
 #include <cstring>
 
-#include <webgpu/webgpu.h>
+#include <webgpu/webgpu_cpp.h>
 #include <xxhash_impl.h>
 
 namespace aurora {
@@ -123,10 +123,10 @@ private:
 } // namespace aurora
 
 namespace aurora::gfx {
-extern WGPUBuffer g_vertexBuffer;
-extern WGPUBuffer g_uniformBuffer;
-extern WGPUBuffer g_indexBuffer;
-extern WGPUBuffer g_storageBuffer;
+extern wgpu::Buffer g_vertexBuffer;
+extern wgpu::Buffer g_uniformBuffer;
+extern wgpu::Buffer g_indexBuffer;
+extern wgpu::Buffer g_storageBuffer;
 
 using BindGroupRef = HashType;
 using PipelineRef = HashType;
@@ -148,9 +148,9 @@ void initialize();
 void shutdown();
 
 void begin_frame();
-void end_frame(WGPUCommandEncoder cmd);
-void render(WGPUCommandEncoder cmd);
-void render_pass(WGPURenderPassEncoder pass, uint32_t idx);
+void end_frame(const wgpu::CommandEncoder& cmd);
+void render(wgpu::CommandEncoder& cmd);
+void render_pass(const wgpu::RenderPassEncoder& pass, uint32_t idx);
 void map_staging_buffer();
 
 Range push_verts(const uint8_t* data, size_t length);
@@ -192,12 +192,12 @@ void merge_draw_command(DrawData data);
 
 template <typename PipelineConfig>
 PipelineRef pipeline_ref(PipelineConfig config);
-bool bind_pipeline(PipelineRef ref, WGPURenderPassEncoder pass);
+bool bind_pipeline(PipelineRef ref, const wgpu::RenderPassEncoder& pass);
 
-BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor);
-WGPUBindGroup find_bind_group(BindGroupRef id);
+BindGroupRef bind_group_ref(const wgpu::BindGroupDescriptor& descriptor);
+const wgpu::BindGroup& find_bind_group(BindGroupRef id);
 
-WGPUSampler sampler_ref(const WGPUSamplerDescriptor& descriptor);
+const wgpu::Sampler& sampler_ref(const wgpu::SamplerDescriptor& descriptor);
 
 uint32_t align_uniform(uint32_t value);
 

@@ -197,7 +197,7 @@ void show_window() {
 }
 
 bool initialize() {
-  if (SDL_Init(SDL_INIT_EVERYTHING) < 0) {
+  if (SDL_Init(SDL_INIT_EVERYTHING & ~SDL_INIT_HAPTIC) < 0) {
     Log.report(LOG_FATAL, FMT_STRING("Error initializing SDL: {}"), SDL_GetError());
     unreachable();
   }

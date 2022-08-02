@@ -371,11 +371,11 @@ void queue_surface(const u8* dlStart, u32 dlSize) noexcept {
 
 State construct_state() { return {}; }
 
-WGPURenderPipeline create_pipeline(const State& state, [[maybe_unused]] const PipelineConfig& config) {
+wgpu::RenderPipeline create_pipeline(const State& state, [[maybe_unused]] const PipelineConfig& config) {
   const auto info = build_shader_info(config.shaderConfig); // TODO remove
   const auto shader = build_shader(config.shaderConfig, info);
 
-  std::array<WGPUVertexAttribute, gx::MaxVtxAttr> vtxAttrs{};
+  std::array<wgpu::VertexAttribute, gx::MaxVtxAttr> vtxAttrs{};
   auto [num4xAttr, rem] = std::div(config.shaderConfig.indexedAttributeCount, 4);
   u32 num2xAttr = 0;
   if (rem > 2) {
@@ -390,7 +390,7 @@ WGPURenderPipeline create_pipeline(const State& state, [[maybe_unused]] const Pi
   // Indexed attributes
   for (u32 i = 0; i < num4xAttr; ++i) {
     vtxAttrs[shaderLocation] = {
-        .format = WGPUVertexFormat_Sint16x4,
+        .format = wgpu::VertexFormat::Sint16x4,
         .offset = offset,
         .shaderLocation = shaderLocation,
     };
@@ -399,7 +399,7 @@ WGPURenderPipeline create_pipeline(const State& state, [[maybe_unused]] const Pi
   }
   for (u32 i = 0; i < num2xAttr; ++i) {
     vtxAttrs[shaderLocation] = {
-        .format = WGPUVertexFormat_Sint16x2,
+        .format = wgpu::VertexFormat::Sint16x2,
         .offset = offset,
         .shaderLocation = shaderLocation,
     };
@@ -417,8 +417,8 @@ WGPURenderPipeline create_pipeline(const State& state, [[maybe_unused]] const Pi
     switch (attr) {
     case GX_VA_POS:
     case GX_VA_NRM:
-      vtxAttrs[shaderLocation] = WGPUVertexAttribute{
-          .format = WGPUVertexFormat_Float32x3,
+      vtxAttrs[shaderLocation] = wgpu::VertexAttribute{
+          .format = wgpu::VertexFormat::Float32x3,
           .offset = offset,
           .shaderLocation = shaderLocation,
       };
@@ -426,8 +426,8 @@ WGPURenderPipeline create_pipeline(const State& state, [[maybe_unused]] const Pi
       break;
     case GX_VA_CLR0:
     case GX_VA_CLR1:
-      vtxAttrs[shaderLocation] = WGPUVertexAttribute{
-          .format = WGPUVertexFormat_Float32x4,
+      vtxAttrs[shaderLocation] = wgpu::VertexAttribute{
+          .format = wgpu::VertexFormat::Float32x4,
           .offset = offset,
           .shaderLocation = shaderLocation,
       };
@@ -441,8 +441,8 @@ WGPURenderPipeline create_pipeline(const State& state, [[maybe_unused]] const Pi
     case GX_VA_TEX5:
     case GX_VA_TEX6:
     case GX_VA_TEX7:
-      vtxAttrs[shaderLocation] = WGPUVertexAttribute{
-          .format = WGPUVertexFormat_Float32x2,
+      vtxAttrs[shaderLocation] = wgpu::VertexAttribute{
+          .format = wgpu::VertexFormat::Float32x2,
           .offset = offset,
           .shaderLocation = shaderLocation,
       };
@@ -454,9 +454,9 @@ WGPURenderPipeline create_pipeline(const State& state, [[maybe_unused]] const Pi
     ++shaderLocation;
   }
 
-  const std::array vtxBuffers{WGPUVertexBufferLayout{
+  const std::array vtxBuffers{wgpu::VertexBufferLayout{
       .arrayStride = offset,
-      .stepMode = WGPUVertexStepMode_Vertex,
+      .stepMode = wgpu::VertexStepMode::Vertex,
       .attributeCount = shaderLocation,
       .attributes = vtxAttrs.data(),
   }};
@@ -464,7 +464,7 @@ WGPURenderPipeline create_pipeline(const State& state, [[maybe_unused]] const Pi
   return build_pipeline(config, info, vtxBuffers, shader, "GX Pipeline");
 }
 
-void render(const State& state, const DrawData& data, const WGPURenderPassEncoder& pass) {
+void render(const State& state, const DrawData& data, const wgpu::RenderPassEncoder& pass) {
   if (!bind_pipeline(data.pipeline, pass)) {
     return;
   }
@@ -479,20 +479,18 @@ void render(const State& state, const DrawData& data, const WGPURenderPassEncode
     offsets[bindIdx] = range.offset;
     ++bindIdx;
   }
-  wgpuRenderPassEncoderSetBindGroup(pass, 0, find_bind_group(data.bindGroups.uniformBindGroup), bindIdx,
-                                    offsets.data());
+  pass.SetBindGroup(0, find_bind_group(data.bindGroups.uniformBindGroup), bindIdx, offsets.data());
   if (data.bindGroups.samplerBindGroup && data.bindGroups.textureBindGroup) {
-    wgpuRenderPassEncoderSetBindGroup(pass, 1, find_bind_group(data.bindGroups.samplerBindGroup), 0, nullptr);
-    wgpuRenderPassEncoderSetBindGroup(pass, 2, find_bind_group(data.bindGroups.textureBindGroup), 0, nullptr);
+    pass.SetBindGroup(1, find_bind_group(data.bindGroups.samplerBindGroup));
+    pass.SetBindGroup(2, find_bind_group(data.bindGroups.textureBindGroup));
   }
-  wgpuRenderPassEncoderSetVertexBuffer(pass, 0, g_vertexBuffer, data.vertRange.offset, data.vertRange.size);
-  wgpuRenderPassEncoderSetIndexBuffer(pass, g_indexBuffer, WGPUIndexFormat_Uint16, data.idxRange.offset,
-                                      data.idxRange.size);
+  pass.SetVertexBuffer(0, g_vertexBuffer, data.vertRange.offset, data.vertRange.size);
+  pass.SetIndexBuffer(g_indexBuffer, wgpu::IndexFormat::Uint16, data.idxRange.offset, data.idxRange.size);
   if (data.dstAlpha != UINT32_MAX) {
-    const WGPUColor color{0.f, 0.f, 0.f, data.dstAlpha / 255.f};
-    wgpuRenderPassEncoderSetBlendConstant(pass, &color);
+    const wgpu::Color color{0.f, 0.f, 0.f, data.dstAlpha / 255.f};
+    pass.SetBlendConstant(&color);
   }
-  wgpuRenderPassEncoderDrawIndexed(pass, data.indexCount, 1, 0, 0, 0);
+  pass.DrawIndexed(data.indexCount);
 }
 } // namespace aurora::gfx::model
 

@@ -19,6 +19,6 @@ struct PipelineConfig : public gx::PipelineConfig {};
 struct State {};
 
 State construct_state();
-WGPURenderPipeline create_pipeline(const State& state, [[maybe_unused]] const PipelineConfig& config);
-void render(const State& state, const DrawData& data, const WGPURenderPassEncoder& pass);
+wgpu::RenderPipeline create_pipeline(const State& state, [[maybe_unused]] const PipelineConfig& config);
+void render(const State& state, const DrawData& data, const wgpu::RenderPassEncoder& pass);
 } // namespace aurora::gfx::stream
