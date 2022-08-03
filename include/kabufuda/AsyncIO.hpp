@@ -23,7 +23,7 @@ struct AsyncIOInner;
 #endif
 
 class AsyncIO {
-#ifdef __SWITCH__
+#if defined(__SWITCH__) || defined(EMSCRIPTEN)
   FILE* m_fd;
 #elif !defined(_WIN32)
   int m_fd = -1;
@@ -48,7 +48,7 @@ public:
   ECardResult pollStatus(size_t qIdx, SizeReturn* szRet = nullptr) const;
   ECardResult pollStatus() const;
   void waitForCompletion() const;
-#ifdef __SWITCH__
+#if defined(__SWITCH__) || defined(EMSCRIPTEN)
   explicit operator bool() const { return m_fd != nullptr; }
 #elif !defined(_WIN32)
   explicit operator bool() const { return m_fd != -1; }
