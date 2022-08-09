@@ -21,10 +21,7 @@ void GXSetProjection(const void* mtx_, GXProjectionType type) {
 // TODO GXSetProjectionv
 
 void GXLoadPosMtxImm(const void* mtx_, u32 id) {
-  if (id < GX_PNMTX0 || id > GX_PNMTX9) {
-    Log.report(LOG_FATAL, FMT_STRING("invalid pn mtx {}"), id);
-    unreachable();
-  }
+  CHECK(id >= GX_PNMTX0 && id <= GX_PNMTX9, "invalid pn mtx {}", static_cast<int>(id));
   auto& state = g_gxState.pnMtx[id / 3];
 #ifdef AURORA_NATIVE_MATRIX
   const auto& mtx = *reinterpret_cast<const aurora::Mat4x4<float>*>(mtx_);
@@ -38,10 +35,7 @@ void GXLoadPosMtxImm(const void* mtx_, u32 id) {
 // TODO GXLoadPosMtxIndx
 
 void GXLoadNrmMtxImm(const void* mtx_, u32 id) {
-  if (id < GX_PNMTX0 || id > GX_PNMTX9) {
-    Log.report(LOG_FATAL, FMT_STRING("invalid pn mtx {}"), id);
-    unreachable();
-  }
+  CHECK(id >= GX_PNMTX0 && id <= GX_PNMTX9, "invalid pn mtx {}", static_cast<int>(id));
   auto& state = g_gxState.pnMtx[id / 3];
 #ifdef AURORA_NATIVE_MATRIX
   const auto& mtx = *reinterpret_cast<const aurora::Mat4x4<float>*>(mtx_);
@@ -56,23 +50,15 @@ void GXLoadNrmMtxImm(const void* mtx_, u32 id) {
 // TODO GXLoadNrmMtxIndx3x3
 
 void GXSetCurrentMtx(u32 id) {
-  if (id < GX_PNMTX0 || id > GX_PNMTX9) {
-    Log.report(LOG_FATAL, FMT_STRING("invalid pn mtx {}"), id);
-    unreachable();
-  }
+  CHECK(id >= GX_PNMTX0 && id <= GX_PNMTX9, "invalid pn mtx {}", static_cast<int>(id));
   update_gx_state(g_gxState.currentPnMtx, id / 3);
 }
 
 void GXLoadTexMtxImm(const void* mtx_, u32 id, GXTexMtxType type) {
-  if ((id < GX_TEXMTX0 || id > GX_IDENTITY) && (id < GX_PTTEXMTX0 || id > GX_PTIDENTITY)) {
-    Log.report(LOG_FATAL, FMT_STRING("invalid tex mtx {}"), id);
-    unreachable();
-  }
+  CHECK((id >= GX_TEXMTX0 && id <= GX_IDENTITY) || (id >= GX_PTTEXMTX0 && id <= GX_PTIDENTITY), "invalid tex mtx {}",
+        static_cast<int>(id));
   if (id >= GX_PTTEXMTX0) {
-    if (type != GX_MTX3x4) {
-      Log.report(LOG_FATAL, FMT_STRING("invalid pt mtx type {}"), type);
-      unreachable();
-    }
+    CHECK(type == GX_MTX3x4, "invalid pt mtx type {}", type);
     const auto idx = (id - GX_PTTEXMTX0) / 3;
 #ifdef AURORA_NATIVE_MATRIX
     const auto& mtx = *reinterpret_cast<const aurora::Mat4x4<float>*>(mtx_);

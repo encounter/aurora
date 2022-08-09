@@ -15,14 +15,8 @@ void GXSetVtxDescv(GXVtxDescList* list) {
 void GXClearVtxDesc() { g_gxState.vtxDesc.fill({}); }
 
 void GXSetVtxAttrFmt(GXVtxFmt vtxfmt, GXAttr attr, GXCompCnt cnt, GXCompType type, u8 frac) {
-  if (vtxfmt < GX_VTXFMT0 || vtxfmt >= GX_MAX_VTXFMT) {
-    Log.report(LOG_FATAL, FMT_STRING("invalid vtxfmt {}"), vtxfmt);
-    unreachable();
-  }
-  if (attr < GX_VA_PNMTXIDX || attr >= GX_VA_MAX_ATTR) {
-    Log.report(LOG_FATAL, FMT_STRING("invalid attr {}"), attr);
-    unreachable();
-  }
+  CHECK(vtxfmt >= GX_VTXFMT0 && vtxfmt < GX_MAX_VTXFMT, "invalid vtxfmt {}", static_cast<int>(vtxfmt));
+  CHECK(attr >= GX_VA_PNMTXIDX && attr < GX_VA_MAX_ATTR, "invalid attr {}", static_cast<int>(attr));
   auto& fmt = g_gxState.vtxFmts[vtxfmt].attrs[attr];
   update_gx_state(fmt.cnt, cnt);
   update_gx_state(fmt.type, type);
@@ -42,10 +36,7 @@ void GXSetArray(GXAttr attr, const void* data, u32 size, u8 stride) {
 // TODO move GXBegin, GXEnd here
 
 void GXSetTexCoordGen2(GXTexCoordID dst, GXTexGenType type, GXTexGenSrc src, u32 mtx, GXBool normalize, u32 postMtx) {
-  if (dst < GX_TEXCOORD0 || dst > GX_TEXCOORD7) {
-    Log.report(LOG_FATAL, FMT_STRING("invalid tex coord {}"), dst);
-    unreachable();
-  }
+  CHECK(dst >= GX_TEXCOORD0 && dst <= GX_TEXCOORD7, "invalid tex coord {}", static_cast<int>(dst));
   update_gx_state(g_gxState.tcgs[dst],
                   {type, src, static_cast<GXTexMtx>(mtx), static_cast<GXPTTexMtx>(postMtx), normalize});
 }

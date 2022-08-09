@@ -569,9 +569,7 @@ ByteBuffer BuildRGBA8FromCMPR(uint32_t width, uint32_t height, uint32_t mips, Ar
 
 ByteBuffer convert_texture(u32 format, uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
   switch (format) {
-  default:
-    Log.report(LOG_FATAL, FMT_STRING("convert_texture: unknown format supplied {}"), format);
-    unreachable();
+    DEFAULT_FATAL("convert_texture: unknown texture format {}", format);
   case GX_TF_R8_PC:
   case GX_TF_RGBA8_PC:
     return {}; // No conversion
@@ -588,8 +586,7 @@ ByteBuffer convert_texture(u32 format, uint32_t width, uint32_t height, uint32_t
   case GX_TF_C8:
     return BuildC8FromGCN(width, height, mips, data);
   case GX_TF_C14X2:
-    Log.report(LOG_FATAL, FMT_STRING("convert_texture: C14X2 unimplemented"));
-    unreachable();
+    FATAL("convert_texture: C14X2 unimplemented");
   case GX_TF_RGB565:
     return BuildRGB565FromGCN(width, height, mips, data);
   case GX_TF_RGB5A3:

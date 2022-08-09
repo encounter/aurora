@@ -21,6 +21,7 @@ struct TextureFormatInfo {
 };
 static TextureFormatInfo format_info(wgpu::TextureFormat format) {
   switch (format) {
+    DEFAULT_FATAL("unimplemented texture format {}", magic_enum::enum_name(format));
   case wgpu::TextureFormat::R8Unorm:
     return {1, 1, 1, false};
   case wgpu::TextureFormat::R16Sint:
@@ -30,9 +31,6 @@ static TextureFormatInfo format_info(wgpu::TextureFormat format) {
     return {1, 1, 4, false};
   case wgpu::TextureFormat::BC1RGBAUnorm:
     return {4, 4, 8, true};
-  default:
-    Log.report(LOG_FATAL, FMT_STRING("format_info: unimplemented format {}"), magic_enum::enum_name(format));
-    unreachable();
   }
 }
 static wgpu::Extent3D physical_size(wgpu::Extent3D size, TextureFormatInfo info) {
@@ -67,11 +65,8 @@ TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mi
     const uint32_t heightBlocks = physicalSize.height / info.blockHeight;
     const uint32_t bytesPerRow = widthBlocks * info.blockSize;
     const uint32_t dataSize = bytesPerRow * heightBlocks * mipSize.depthOrArrayLayers;
-    if (offset + dataSize > data.size()) {
-      Log.report(LOG_FATAL, FMT_STRING("new_static_texture_2d[{}]: expected at least {} bytes, got {}"), label,
-                 offset + dataSize, data.size());
-      unreachable();
-    }
+    CHECK(offset + dataSize <= data.size(), "new_static_texture_2d[{}]: expected at least {} bytes, got {}", label,
+          offset + dataSize, data.size());
     const wgpu::ImageCopyTexture dstView{
         .texture = ref.texture,
         .mipLevel = mip,
@@ -176,11 +171,8 @@ void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
     const uint32_t heightBlocks = physicalSize.height / info.blockHeight;
     const uint32_t bytesPerRow = widthBlocks * info.blockSize;
     const uint32_t dataSize = bytesPerRow * heightBlocks * mipSize.depthOrArrayLayers;
-    if (offset + dataSize > data.size()) {
-      Log.report(LOG_FATAL, FMT_STRING("write_texture: expected at least {} bytes, got {}"), offset + dataSize,
-                 data.size());
-      unreachable();
-    }
+    CHECK(offset + dataSize <= data.size(), "write_texture: expected at least {} bytes, got {}", offset + dataSize,
+          data.size());
     //    auto dstView = wgpu::ImageCopyTexture{
     //        .texture = ref.texture,
     //        .mipLevel = mip,

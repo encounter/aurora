@@ -52,10 +52,7 @@ void GXSetTevAlphaOp(GXTevStageID stageId, GXTevOp op, GXTevBias bias, GXTevScal
 }
 
 void GXSetTevColor(GXTevRegID id, GXColor color) {
-  if (id < GX_TEVPREV || id > GX_TEVREG2) {
-    Log.report(LOG_FATAL, FMT_STRING("bad tevreg {}"), id);
-    unreachable();
-  }
+  CHECK(id >= GX_TEVPREV && id < GX_MAX_TEVREG, "bad tevreg {}", static_cast<int>(id));
   update_gx_state(g_gxState.colorRegs[id], from_gx_color(color));
 }
 
@@ -84,10 +81,7 @@ void GXSetTevOrder(GXTevStageID id, GXTexCoordID tcid, GXTexMapID tmid, GXChanne
 void GXSetNumTevStages(u8 num) { update_gx_state(g_gxState.numTevStages, num); }
 
 void GXSetTevKColor(GXTevKColorID id, GXColor color) {
-  if (id >= GX_MAX_KCOLOR) {
-    Log.report(LOG_FATAL, FMT_STRING("bad kcolor {}"), id);
-    unreachable();
-  }
+  CHECK(id >= GX_KCOLOR0 && id < GX_MAX_KCOLOR, "bad kcolor {}", static_cast<int>(id));
   update_gx_state(g_gxState.kcolors[id], from_gx_color(color));
 }
 
@@ -103,9 +97,6 @@ void GXSetTevSwapMode(GXTevStageID stageId, GXTevSwapSel rasSel, GXTevSwapSel te
 
 void GXSetTevSwapModeTable(GXTevSwapSel id, GXTevColorChan red, GXTevColorChan green, GXTevColorChan blue,
                            GXTevColorChan alpha) {
-  if (id < GX_TEV_SWAP0 || id >= GX_MAX_TEVSWAP) {
-    Log.report(LOG_FATAL, FMT_STRING("invalid tev swap sel {}"), id);
-    unreachable();
-  }
+  CHECK(id >= GX_TEV_SWAP0 && id < GX_MAX_TEVSWAP, "bad tev swap sel {}", static_cast<int>(id));
   update_gx_state(g_gxState.tevSwapTable[id], {red, green, blue, alpha});
 }

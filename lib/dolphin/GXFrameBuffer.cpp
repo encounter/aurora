@@ -1,6 +1,7 @@
 #include "gx.hpp"
 
 #include "../window.hpp"
+#include "../webgpu/wgpu.hpp"
 
 extern "C" {
 GXRenderModeObj GXNtsc480IntDf = {
@@ -24,14 +25,13 @@ void GXAdjustForOverscan(GXRenderModeObj* rmin, GXRenderModeObj* rmout, u16 hor,
 
 void GXSetDispCopySrc(u16 left, u16 top, u16 wd, u16 ht) {}
 
-void GXSetTexCopySrc(u16 left, u16 top, u16 wd, u16 ht) {
-  // TODO
-}
+void GXSetTexCopySrc(u16 left, u16 top, u16 wd, u16 ht) { g_gxState.texCopySrc = {left, top, wd, ht}; }
 
 void GXSetDispCopyDst(u16 wd, u16 ht) {}
 
 void GXSetTexCopyDst(u16 wd, u16 ht, GXTexFmt fmt, GXBool mipmap) {
-  // TODO
+  CHECK(wd == g_gxState.texCopySrc.width && ht == g_gxState.texCopySrc.height, "Texture copy scaling unimplemented");
+  g_gxState.texCopyFmt = fmt;
 }
 
 // TODO GXSetDispCopyFrame2Field
@@ -47,7 +47,23 @@ void GXSetDispCopyGamma(GXGamma gamma) {}
 
 void GXCopyDisp(void* dest, GXBool clear) {}
 
-// TODO move GXCopyTex here
+void GXCopyTex(void* dest, GXBool clear) {
+  const auto& rect = g_gxState.texCopySrc;
+  const wgpu::Extent3D size{
+      .width = static_cast<uint32_t>(rect.width),
+      .height = static_cast<uint32_t>(rect.height),
+      .depthOrArrayLayers = 1,
+  };
+  aurora::gfx::TextureHandle handle;
+  const auto it = g_gxState.copyTextures.find(dest);
+  if (it == g_gxState.copyTextures.end() || it->second->size != size) {
+    handle = aurora::gfx::new_render_texture(rect.width, rect.height, g_gxState.texCopyFmt, "Resolved Texture");
+    g_gxState.copyTextures[dest] = handle;
+  } else {
+    handle = it->second;
+  }
+  aurora::gfx::resolve_pass(handle, rect, clear, g_gxState.clearColor);
+}
 
 // TODO GXGetYScaleFactor
 // TODO GXGetNumXfbLines

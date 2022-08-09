@@ -32,6 +32,29 @@ using namespace std::string_view_literals;
 #define ALIGN(x, a) (((x) + ((a)-1)) & ~((a)-1))
 #endif
 
+#if !defined(__has_cpp_attribute)
+#define __has_cpp_attribute(name) 0
+#endif
+#if __has_cpp_attribute(unlikely)
+#define UNLIKELY [[unlikely]]
+#else
+#define UNLIKELY
+#endif
+#define FATAL(msg, ...)                                                                                                \
+  {                                                                                                                    \
+    Log.report(LOG_FATAL, FMT_STRING(msg), ##__VA_ARGS__);                                                             \
+    unreachable();                                                                                                     \
+  }
+#define ASSERT(cond, msg, ...)                                                                                         \
+  if (!(cond))                                                                                                         \
+  UNLIKELY FATAL(msg, ##__VA_ARGS__)
+#ifdef NDEBUG
+#define CHECK
+#else
+#define CHECK(cond, msg, ...) ASSERT(cond, msg, ##__VA_ARGS__)
+#endif
+#define DEFAULT_FATAL(msg, ...) UNLIKELY default: FATAL(msg, ##__VA_ARGS__)
+
 namespace aurora {
 extern AuroraConfig g_config;
 
@@ -72,8 +95,6 @@ public:
   template <size_t N>
   constexpr ArrayRef(const std::array<T, N>& arr) : ptr(arr.data()), length(arr.size()) {}
   ArrayRef(const std::vector<T>& vec) : ptr(vec.data()), length(vec.size()) {}
-//  template <size_t N>
-//  ArrayRef(const rstl::reserved_vector<T, N>& vec) : ptr(vec.data()), length(vec.size()) {}
 
   const T* data() const { return ptr; }
   size_t size() const { return length; }

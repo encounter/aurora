@@ -31,9 +31,8 @@ private:
 
   void CreateSwapChainImpl() {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
-    if (SDL_Vulkan_CreateSurface(m_window, dawn::native::vulkan::GetInstance(m_device), &surface) != SDL_TRUE) {
-      Log.report(LOG_FATAL, FMT_STRING("Failed to create Vulkan surface: {}"), SDL_GetError());
-    }
+    ASSERT(SDL_Vulkan_CreateSurface(m_window, dawn::native::vulkan::GetInstance(m_device), &surface),
+           "Failed to create Vulkan surface: {}", SDL_GetError());
     m_swapChainImpl = dawn::native::vulkan::CreateNativeSwapChainImpl(m_device, surface);
   }
 };

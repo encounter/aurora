@@ -37,6 +37,7 @@ typedef struct {
   float scale;
 } AuroraWindowSize;
 
+typedef struct SDL_Window SDL_Window;
 typedef struct AuroraEvent AuroraEvent;
 
 typedef void (*AuroraLogCallback)(AuroraLogLevel level, const char* message, unsigned int len);
@@ -61,6 +62,7 @@ typedef struct {
 typedef struct {
   AuroraBackend backend;
   const char* configPath;
+  SDL_Window* window;
   AuroraWindowSize windowSize;
 } AuroraInfo;
 

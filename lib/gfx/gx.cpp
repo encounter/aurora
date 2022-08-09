@@ -25,6 +25,7 @@ const TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textur
 
 static inline wgpu::BlendFactor to_blend_factor(GXBlendFactor fac, bool isDst) {
   switch (fac) {
+    DEFAULT_FATAL("invalid blend factor {}", static_cast<int>(fac));
   case GX_BL_ZERO:
     return wgpu::BlendFactor::Zero;
   case GX_BL_ONE:
@@ -49,14 +50,12 @@ static inline wgpu::BlendFactor to_blend_factor(GXBlendFactor fac, bool isDst) {
     return wgpu::BlendFactor::DstAlpha;
   case GX_BL_INVDSTALPHA:
     return wgpu::BlendFactor::OneMinusDstAlpha;
-  default:
-    Log.report(LOG_FATAL, FMT_STRING("invalid blend factor {}"), fac);
-    unreachable();
   }
 }
 
 static inline wgpu::CompareFunction to_compare_function(GXCompare func) {
   switch (func) {
+    DEFAULT_FATAL("invalid depth fn {}", static_cast<int>(func));
   case GX_NEVER:
     return wgpu::CompareFunction::Never;
   case GX_LESS:
@@ -73,9 +72,6 @@ static inline wgpu::CompareFunction to_compare_function(GXCompare func) {
     return wgpu::CompareFunction::GreaterEqual;
   case GX_ALWAYS:
     return wgpu::CompareFunction::Always;
-  default:
-    Log.report(LOG_FATAL, FMT_STRING("invalid depth fn {}"), func);
-    unreachable();
   }
 }
 
@@ -83,6 +79,7 @@ static inline wgpu::BlendState to_blend_state(GXBlendMode mode, GXBlendFactor sr
                                               GXLogicOp op, u32 dstAlpha) {
   wgpu::BlendComponent colorBlendComponent;
   switch (mode) {
+    DEFAULT_FATAL("unsupported blend mode {}", static_cast<int>(mode));
   case GX_BM_NONE:
     colorBlendComponent = {
         .operation = wgpu::BlendOperation::Add,
@@ -106,6 +103,7 @@ static inline wgpu::BlendState to_blend_state(GXBlendMode mode, GXBlendFactor sr
     break;
   case GX_BM_LOGIC:
     switch (op) {
+      DEFAULT_FATAL("unsupported logic op {}", static_cast<int>(op));
     case GX_LO_CLEAR:
       colorBlendComponent = {
           .operation = wgpu::BlendOperation::Add,
@@ -127,14 +125,8 @@ static inline wgpu::BlendState to_blend_state(GXBlendMode mode, GXBlendFactor sr
           .dstFactor = wgpu::BlendFactor::One,
       };
       break;
-    default:
-      Log.report(LOG_FATAL, FMT_STRING("unsupported logic op {}"), op);
-      unreachable();
     }
     break;
-  default:
-    Log.report(LOG_FATAL, FMT_STRING("unsupported blend mode {}"), mode);
-    unreachable();
   }
   wgpu::BlendComponent alphaBlendComponent{
       .operation = wgpu::BlendOperation::Add,
@@ -168,17 +160,16 @@ static inline wgpu::ColorWriteMask to_write_mask(bool colorUpdate, bool alphaUpd
 static inline wgpu::PrimitiveState to_primitive_state(GXPrimitive gx_prim, GXCullMode gx_cullMode) {
   wgpu::PrimitiveTopology primitive = wgpu::PrimitiveTopology::TriangleList;
   switch (gx_prim) {
+    DEFAULT_FATAL("unsupported primitive type {}", static_cast<int>(gx_prim));
   case GX_TRIANGLES:
     break;
   case GX_TRIANGLESTRIP:
     primitive = wgpu::PrimitiveTopology::TriangleStrip;
     break;
-  default:
-    Log.report(LOG_FATAL, FMT_STRING("Unsupported primitive type {}"), gx_prim);
-    unreachable();
   }
   wgpu::CullMode cullMode = wgpu::CullMode::None;
   switch (gx_cullMode) {
+    DEFAULT_FATAL("unsupported cull mode {}", static_cast<int>(gx_cullMode));
   case GX_CULL_FRONT:
     cullMode = wgpu::CullMode::Front;
     break;
@@ -187,9 +178,6 @@ static inline wgpu::PrimitiveState to_primitive_state(GXPrimitive gx_prim, GXCul
     break;
   case GX_CULL_NONE:
     break;
-  default:
-    Log.report(LOG_FATAL, FMT_STRING("Unsupported cull mode {}"), gx_cullMode);
-    unreachable();
   }
   return {
       .topology = primitive,
@@ -404,6 +392,7 @@ Range build_uniform(const ShaderInfo& info) noexcept {
     }
     const auto& state = g_gxState;
     switch (info.texMtxTypes[i]) {
+      DEFAULT_FATAL("unhandled tex mtx type {}", static_cast<int>(info.texMtxTypes[i]));
     case GX_TG_MTX2x4:
       if (std::holds_alternative<Mat4x2<float>>(state.texMtxs[i])) {
         buf.append(&std::get<Mat4x2<float>>(state.texMtxs[i]), 32);
@@ -416,23 +405,16 @@ Range build_uniform(const ShaderInfo& info) noexcept {
             {0.f, 0.f},
         };
         buf.append(&mtx, 32);
-      } else {
-        Log.report(LOG_FATAL, FMT_STRING("expected 2x4 mtx in idx {}"), i);
-        unreachable();
-      }
+      } else
+        UNLIKELY FATAL("expected 2x4 mtx in idx {}", i);
       break;
     case GX_TG_MTX3x4:
       if (std::holds_alternative<Mat4x4<float>>(g_gxState.texMtxs[i])) {
         const auto& mat = std::get<Mat4x4<float>>(g_gxState.texMtxs[i]);
         buf.append(&mat, 64);
-      } else {
-        Log.report(LOG_FATAL, FMT_STRING("expected 3x4 mtx in idx {}"), i);
-        buf.append(&Mat4x4_Identity, 64);
-      }
+      } else
+        UNLIKELY FATAL("expected 3x4 mtx in idx {}", i);
       break;
-    default:
-      Log.report(LOG_FATAL, FMT_STRING("unhandled tex mtx type {}"), info.texMtxTypes[i]);
-      unreachable();
     }
   }
   for (int i = 0; i < info.usesPTTexMtx.size(); ++i) {
@@ -465,10 +447,7 @@ Range build_uniform(const ShaderInfo& info) noexcept {
       continue;
     }
     const auto& tex = get_texture(static_cast<GXTexMapID>(i));
-    if (!tex) {
-      Log.report(LOG_FATAL, FMT_STRING("unbound texture {}"), i);
-      unreachable();
-    }
+    CHECK(tex, "unbound texture {}", i);
     buf.append(&tex.texObj.lodBias, 4);
   }
   g_gxState.stateDirty = false;
@@ -512,10 +491,7 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
       continue;
     }
     const auto& tex = g_gxState.textures[i];
-    if (!tex) {
-      Log.report(LOG_FATAL, FMT_STRING("unbound texture {}"), i);
-      unreachable();
-    }
+    CHECK(tex, "unbound texture {}", i);
     samplerEntries[samplerCount] = {
         .binding = samplerCount,
         .sampler = sampler_ref(tex.get_descriptor()),
@@ -530,13 +506,8 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
     const auto& texConfig = config.textureConfig[i];
     if (is_palette_format(texConfig.loadFmt)) {
       u32 tlut = tex.texObj.tlut;
-      if (tlut < GX_TLUT0 || tlut > GX_TLUT7) {
-        Log.report(LOG_FATAL, FMT_STRING("tlut out of bounds {}"), tlut);
-        unreachable();
-      } else if (!g_gxState.tluts[tlut].ref) {
-        Log.report(LOG_FATAL, FMT_STRING("tlut unbound {}"), tlut);
-        unreachable();
-      }
+      CHECK(tlut >= GX_TLUT0 && tlut <= GX_BIGTLUT3, "tlut out of bounds {}", tlut);
+      CHECK(g_gxState.tluts[tlut].ref, "tlut unbound {}", tlut);
       textureEntries[textureCount] = {
           .binding = textureCount,
           .textureView = g_gxState.tluts[tlut].ref->view,
@@ -702,24 +673,24 @@ void shutdown() noexcept {
     item.ref.reset();
   }
   g_gxCachedShaders.clear();
+  g_gxState.copyTextures.clear();
 }
 } // namespace gx
 
 static wgpu::AddressMode wgpu_address_mode(GXTexWrapMode mode) {
   switch (mode) {
+    DEFAULT_FATAL("invalid wrap mode {}", static_cast<int>(mode));
   case GX_CLAMP:
     return wgpu::AddressMode::ClampToEdge;
   case GX_REPEAT:
     return wgpu::AddressMode::Repeat;
   case GX_MIRROR:
     return wgpu::AddressMode::MirrorRepeat;
-  default:
-    Log.report(LOG_FATAL, FMT_STRING("invalid wrap mode {}"), mode);
-    unreachable();
   }
 }
 static std::pair<wgpu::FilterMode, wgpu::FilterMode> wgpu_filter_mode(GXTexFilter filter) {
   switch (filter) {
+    DEFAULT_FATAL("invalid filter mode {}", static_cast<int>(filter));
   case GX_NEAR:
     return {wgpu::FilterMode::Nearest, wgpu::FilterMode::Linear};
   case GX_LINEAR:
@@ -732,22 +703,17 @@ static std::pair<wgpu::FilterMode, wgpu::FilterMode> wgpu_filter_mode(GXTexFilte
     return {wgpu::FilterMode::Nearest, wgpu::FilterMode::Linear};
   case GX_LIN_MIP_LIN:
     return {wgpu::FilterMode::Linear, wgpu::FilterMode::Linear};
-  default:
-    Log.report(LOG_FATAL, FMT_STRING("invalid filter mode {}"), filter);
-    unreachable();
   }
 }
 static u16 wgpu_aniso(GXAnisotropy aniso) {
   switch (aniso) {
+    DEFAULT_FATAL("invalid aniso {}", static_cast<int>(aniso));
   case GX_ANISO_1:
     return 1;
   case GX_ANISO_2:
     return std::max<u16>(webgpu::g_graphicsConfig.textureAnisotropy / 2, 1);
   case GX_ANISO_4:
     return std::max<u16>(webgpu::g_graphicsConfig.textureAnisotropy, 1);
-  default:
-    Log.report(LOG_FATAL, FMT_STRING("invalid aniso mode {}"), aniso);
-    unreachable();
   }
 }
 wgpu::SamplerDescriptor TextureBind::get_descriptor() const noexcept {

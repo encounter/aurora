@@ -143,14 +143,8 @@ size_t g_lastIndexSize;
 size_t g_lastStorageSize;
 
 using CommandList = std::vector<Command>;
-struct ClipRect {
-  int32_t x;
-  int32_t y;
-  int32_t width;
-  int32_t height;
-};
 struct RenderPass {
-  u32 resolveTarget = UINT32_MAX;
+  TextureHandle resolveTarget;
   ClipRect resolveRect;
   Vec4<float> clearColor{0.f, 0.f, 0.f, 0.f};
   CommandList commands;
@@ -158,7 +152,6 @@ struct RenderPass {
 };
 static std::vector<RenderPass> g_renderPasses;
 static u32 g_currentRenderPass = UINT32_MAX;
-std::vector<TextureHandle> g_resolvedTextures;
 std::vector<TextureUpload> g_textureUploads;
 
 static ByteBuffer g_serializedPipelines{};
@@ -212,10 +205,11 @@ static PipelineRef find_pipeline(ShaderType type, const PipelineConfig& config, 
 }
 
 static inline void push_command(CommandType type, const Command::Data& data) {
-  if (g_currentRenderPass == UINT32_MAX) {
-    Log.report(LOG_WARNING, FMT_STRING("Dropping command {}"), magic_enum::enum_name(type));
-    return;
-  }
+  if (g_currentRenderPass == UINT32_MAX)
+    UNLIKELY {
+      Log.report(LOG_WARNING, FMT_STRING("Dropping command {}"), magic_enum::enum_name(type));
+      return;
+    }
   g_renderPasses[g_currentRenderPass].commands.push_back({
       .type = type,
 #ifdef AURORA_GFX_DEBUG_GROUPS
@@ -225,17 +219,14 @@ static inline void push_command(CommandType type, const Command::Data& data) {
   });
 }
 static inline Command& get_last_draw_command(ShaderType type) {
-  if (g_currentRenderPass == UINT32_MAX) {
-    Log.report(LOG_FATAL, FMT_STRING("No last command"));
-    unreachable();
-  }
+  CHECK(g_currentRenderPass != UINT32_MAX, "No last command");
   auto& last = g_renderPasses[g_currentRenderPass].commands.back();
-  if (last.type != CommandType::Draw || last.data.draw.type != type) {
-    Log.report(LOG_FATAL, FMT_STRING("Last command invalid: {} {}, expected {} {}"), magic_enum::enum_name(last.type),
-               magic_enum::enum_name(last.data.draw.type), magic_enum::enum_name(CommandType::Draw),
-               magic_enum::enum_name(type));
-    unreachable();
-  }
+  if (last.type != CommandType::Draw || last.data.draw.type != type)
+    UNLIKELY {
+      FATAL("Last command invalid: {} {}, expected {} {}", magic_enum::enum_name(last.type),
+            magic_enum::enum_name(last.data.draw.type), magic_enum::enum_name(CommandType::Draw),
+            magic_enum::enum_name(type));
+    }
   return last;
 }
 
@@ -261,29 +252,13 @@ void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {
   }
 }
 
-static inline bool operator==(const wgpu::Extent3D& lhs, const wgpu::Extent3D& rhs) {
-  return lhs.width == rhs.width && lhs.height == rhs.height && lhs.depthOrArrayLayers == rhs.depthOrArrayLayers;
-}
-static inline bool operator!=(const wgpu::Extent3D& lhs, const wgpu::Extent3D& rhs) { return !(lhs == rhs); }
-
-void resolve_color(const ClipRect& rect, uint32_t bind, GXTexFmt fmt, bool clear_depth) noexcept {
-  if (g_resolvedTextures.size() < bind + 1) {
-    g_resolvedTextures.resize(bind + 1);
-  }
-  const wgpu::Extent3D size{
-      .width = static_cast<uint32_t>(rect.width),
-      .height = static_cast<uint32_t>(rect.height),
-      .depthOrArrayLayers = 1,
-  };
-  if (!g_resolvedTextures[bind] || g_resolvedTextures[bind]->size != size) {
-    g_resolvedTextures[bind] = new_render_texture(rect.width, rect.height, fmt, "Resolved Texture");
-  }
-  auto& currentPass = g_renderPasses[g_currentRenderPass];
-  currentPass.resolveTarget = bind;
+void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> clearColor) {
+  auto& currentPass = aurora::gfx::g_renderPasses[g_currentRenderPass];
+  currentPass.resolveTarget = std::move(texture);
   currentPass.resolveRect = rect;
   auto& newPass = g_renderPasses.emplace_back();
-  newPass.clearColor = gx::g_gxState.clearColor;
-  newPass.clear = false; // TODO
+  newPass.clearColor = clearColor;
+  newPass.clear = clear;
   ++g_currentRenderPass;
 }
 
@@ -298,14 +273,10 @@ void push_draw_command(stream::DrawData data) {
 template <>
 void merge_draw_command(stream::DrawData data) {
   auto& last = get_last_draw_command(ShaderType::Stream).data.draw.stream;
-  if (last.vertRange.offset + last.vertRange.size != data.vertRange.offset) {
-    Log.report(LOG_FATAL, FMT_STRING("Invalid merge range: {} -> {}"), last.vertRange.offset + last.vertRange.size,
-               data.vertRange.offset);
-  }
-  if (last.indexRange.offset + last.indexRange.size != data.indexRange.offset) {
-    Log.report(LOG_FATAL, FMT_STRING("Invalid merge range: {} -> {}"), last.indexRange.offset + last.indexRange.size,
-               data.indexRange.offset);
-  }
+  CHECK(last.vertRange.offset + last.vertRange.size == data.vertRange.offset, "Invalid vertex merge range: {} -> {}",
+        last.vertRange.offset + last.vertRange.size, data.vertRange.offset);
+  CHECK(last.indexRange.offset + last.indexRange.size == data.indexRange.offset, "Invalid index merge range: {} -> {}",
+        last.indexRange.offset + last.indexRange.size, data.indexRange.offset);
   last.vertRange.size += data.vertRange.size;
   last.indexRange.size += data.indexRange.size;
   last.indexCount += data.indexCount;
@@ -343,10 +314,7 @@ static void pipeline_worker() {
     // std::this_thread::sleep_for(std::chrono::milliseconds{1500});
     {
       std::scoped_lock lock{g_pipelineMutex};
-      if (!g_pipelines.try_emplace(cb.first, std::move(result)).second) {
-        Log.report(LOG_FATAL, FMT_STRING("Duplicate pipeline {}"), cb.first);
-        unreachable();
-      }
+      ASSERT(g_pipelines.try_emplace(cb.first, std::move(result)).second, "Duplicate pipeline {}", cb.first);
       g_queuedPipelines.pop_front();
       hasMore = !g_queuedPipelines.empty();
     }
@@ -473,7 +441,6 @@ void shutdown() {
 
   gx::shutdown();
 
-  g_resolvedTextures.clear();
   g_textureUploads.clear();
   g_cachedBindGroups.clear();
   g_cachedSamplers.clear();
@@ -502,10 +469,8 @@ void map_staging_buffer() {
       [](WGPUBufferMapAsyncStatus status, void* userdata) {
         if (status == WGPUBufferMapAsyncStatus_DestroyedBeforeCallback) {
           return;
-        } else if (status != WGPUBufferMapAsyncStatus_Success) {
-          Log.report(LOG_FATAL, FMT_STRING("Buffer mapping failed: {}"), status);
-          unreachable();
         }
+        ASSERT(status == WGPUBufferMapAsyncStatus_Success, "Buffer mapping failed: {}", static_cast<int>(status));
         *static_cast<bool*>(userdata) = true;
       },
       &bufferMapped);
@@ -585,10 +550,8 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
 void render(wgpu::CommandEncoder& cmd) {
   for (u32 i = 0; i < g_renderPasses.size(); ++i) {
     const auto& passInfo = g_renderPasses[i];
-    bool finalPass = i == g_renderPasses.size() - 1;
-    if (finalPass && passInfo.resolveTarget != UINT32_MAX) {
-      Log.report(LOG_FATAL, FMT_STRING("Final render pass must not have resolve target"));
-      unreachable();
+    if (i == g_renderPasses.size() - 1) {
+      ASSERT(!passInfo.resolveTarget, "Final render pass must not have resolve target");
     }
     const std::array attachments{
         wgpu::RenderPassColorAttachment{
@@ -622,7 +585,7 @@ void render(wgpu::CommandEncoder& cmd) {
     render_pass(pass, i);
     pass.End();
 
-    if (passInfo.resolveTarget != UINT32_MAX) {
+    if (passInfo.resolveTarget) {
       wgpu::ImageCopyTexture src{
           .origin =
               wgpu::Origin3D{
@@ -635,9 +598,8 @@ void render(wgpu::CommandEncoder& cmd) {
       } else {
         src.texture = webgpu::g_frameBuffer.texture;
       }
-      auto& target = g_resolvedTextures[passInfo.resolveTarget];
       const wgpu::ImageCopyTexture dst{
-          .texture = target->texture,
+          .texture = passInfo.resolveTarget->texture,
       };
       const wgpu::Extent3D size{
           .width = static_cast<uint32_t>(passInfo.resolveRect.width),
@@ -804,10 +766,7 @@ const wgpu::BindGroup& find_bind_group(BindGroupRef id) {
   return g_cachedBindGroups[id];
 #else
   const auto it = g_cachedBindGroups.find(id);
-  if (it == g_cachedBindGroups.end()) {
-    Log.report(LOG_FATAL, FMT_STRING("get_bind_group: failed to locate {}"), id);
-    unreachable();
-  }
+  CHECK(it != g_cachedBindGroups.end(), "get_bind_group: failed to locate {:x}", id);
   return it->second;
 #endif
 }

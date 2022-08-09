@@ -109,10 +109,7 @@ static void set_window_icon() noexcept {
   }
   auto* iconSurface = SDL_CreateRGBSurfaceFrom(g_config.iconRGBA8, g_config.iconWidth, g_config.iconHeight, 32,
                                                4 * g_config.iconWidth, 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000);
-  if (iconSurface == nullptr) {
-    Log.report(LOG_FATAL, FMT_STRING("Failed to create icon surface: {}"), SDL_GetError());
-    unreachable();
-  }
+  ASSERT(iconSurface != nullptr, "Failed to create icon surface: {}", SDL_GetError());
   SDL_SetWindowIcon(g_window, iconSurface);
   SDL_FreeSurface(iconSurface);
 }
@@ -197,10 +194,7 @@ void show_window() {
 }
 
 bool initialize() {
-  if (SDL_Init(SDL_INIT_EVERYTHING & ~SDL_INIT_HAPTIC) < 0) {
-    Log.report(LOG_FATAL, FMT_STRING("Error initializing SDL: {}"), SDL_GetError());
-    unreachable();
-  }
+  ASSERT(SDL_Init(SDL_INIT_EVERYTHING & ~SDL_INIT_HAPTIC) == 0, "Error initializing SDL: {}", SDL_GetError());
 
 #if !defined(_WIN32) && !defined(__APPLE__)
   SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");

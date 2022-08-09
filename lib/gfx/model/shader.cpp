@@ -66,11 +66,14 @@ static u32 prepare_vtx_buffer(ByteBuffer& buf, GXVtxFmt vtxfmt, const u8* ptr, u
   for (int attr = 0; attr < GX_VA_MAX_ATTR; attr++) {
     const auto& attrFmt = g_gxState.vtxFmts[vtxfmt].attrs[attr];
     switch (g_gxState.vtxDesc[attr]) {
+      DEFAULT_FATAL("unhandled attribute type {}", static_cast<int>(g_gxState.vtxDesc[attr]));
     case GX_NONE:
       break;
     case GX_DIRECT:
 #define COMBINE(val1, val2, val3) (((val1) << 16) | ((val2) << 8) | (val3))
       switch (COMBINE(attr, attrFmt.cnt, attrFmt.type)) {
+        DEFAULT_FATAL("not handled: attr {}, cnt {}, type {}", static_cast<int>(attr), static_cast<int>(attrFmt.cnt),
+                      static_cast<int>(attrFmt.type));
       case COMBINE(GX_VA_POS, GX_POS_XYZ, GX_F32):
       case COMBINE(GX_VA_NRM, GX_NRM_XYZ, GX_F32):
         attrArrays[attr].count = 3;
@@ -118,9 +121,6 @@ static u32 prepare_vtx_buffer(ByteBuffer& buf, GXVtxFmt vtxfmt, const u8* ptr, u
         vtxSize += 4;
         outVtxSize += 16;
         break;
-      default:
-        Log.report(LOG_FATAL, FMT_STRING("not handled: attr {}, cnt {}, type {}"), attr, attrFmt.cnt, attrFmt.type);
-        break;
       }
 #undef COMBINE
       break;
@@ -134,8 +134,6 @@ static u32 prepare_vtx_buffer(ByteBuffer& buf, GXVtxFmt vtxfmt, const u8* ptr, u
       outVtxSize += 2;
       indexedAttrs[attr] = true;
       break;
-    default:
-      Log.report(LOG_FATAL, FMT_STRING("unhandled attribute type {}"), g_gxState.vtxDesc[attr]);
     }
   }
   // Align to 4
@@ -263,9 +261,8 @@ static u16 prepare_idx_buffer(ByteBuffer& buf, GXPrimitive prim, u16 vtxStart, u
       }
       numIndices += 3;
     }
-  } else {
-    Log.report(LOG_FATAL, FMT_STRING("Unsupported primitive type {}"), static_cast<u32>(prim));
-  }
+  } else
+    UNLIKELY FATAL("unsupported primitive type {}", static_cast<u32>(prim));
   return numIndices;
 }
 
@@ -293,6 +290,7 @@ void queue_surface(const u8* dlStart, u32 dlSize) noexcept {
 
       u8 opcode = cmd & GX_OPCODE_MASK;
       switch (opcode) {
+        DEFAULT_FATAL("unimplemented opcode: {}", opcode);
       case GX_NOP:
         continue;
       case GX_LOAD_BP_REG:
@@ -315,10 +313,7 @@ void queue_surface(const u8* dlStart, u32 dlSize) noexcept {
       case GX_DRAW_LINES:
       case GX_DRAW_LINE_STRIP:
       case GX_DRAW_POINTS:
-        Log.report(LOG_FATAL, FMT_STRING("unimplemented prim type: {}"), opcode);
-        break;
-      default:
-        Log.report(LOG_FATAL, FMT_STRING("unimplemented opcode: {}"), opcode);
+        FATAL("unimplemented prim type: {}", opcode);
         break;
       }
     }
@@ -415,6 +410,7 @@ wgpu::RenderPipeline create_pipeline(const State& state, [[maybe_unused]] const 
     }
     const auto attr = static_cast<GXAttr>(i);
     switch (attr) {
+      DEFAULT_FATAL("unhandled direct attr {}", i);
     case GX_VA_POS:
     case GX_VA_NRM:
       vtxAttrs[shaderLocation] = wgpu::VertexAttribute{
@@ -448,8 +444,6 @@ wgpu::RenderPipeline create_pipeline(const State& state, [[maybe_unused]] const 
       };
       offset += 8;
       break;
-    default:
-      Log.report(LOG_FATAL, FMT_STRING("unhandled direct attr {}"), i);
     }
     ++shaderLocation;
   }

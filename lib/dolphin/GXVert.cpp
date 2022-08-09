@@ -48,12 +48,7 @@ static std::optional<SStreamState> sStreamState;
 static u16 lastVertexStart = 0;
 
 void GXBegin(GXPrimitive primitive, GXVtxFmt vtxFmt, u16 nVerts) {
-#ifndef NDEBUG
-  if (sStreamState) {
-    Log.report(LOG_FATAL, FMT_STRING("Stream began twice!"));
-    unreachable();
-  }
-#endif
+  CHECK(!sStreamState, "Stream began twice!");
   uint16_t vertexSize = 0;
   for (GXAttr attr{}; const auto type : g_gxState.vtxDesc) {
     if (type == GX_DIRECT) {
@@ -63,32 +58,23 @@ void GXBegin(GXPrimitive primitive, GXVtxFmt vtxFmt, u16 nVerts) {
         vertexSize += 16;
       } else if (attr >= GX_VA_TEX0 && attr <= GX_VA_TEX7) {
         vertexSize += 8;
-      } else {
-        Log.report(LOG_FATAL, FMT_STRING("don't know how to handle attr {}"), attr);
-        unreachable();
+      } else UNLIKELY {
+        FATAL("dont know how to handle attr {}", static_cast<int>(attr));
       }
     } else if (type == GX_INDEX8 || type == GX_INDEX16) {
       vertexSize += 2;
     }
     attr = GXAttr(attr + 1);
   }
-  if (vertexSize == 0) {
-    Log.report(LOG_FATAL, FMT_STRING("no vtx attributes enabled?"));
-    unreachable();
-  }
+  CHECK(vertexSize > 0, "no vtx attributes enabled?");
   sStreamState.emplace(primitive, nVerts, vertexSize, g_gxState.stateDirty ? 0 : lastVertexStart);
 }
 
 static inline void check_attr_order(GXAttr attr) noexcept {
 #ifndef NDEBUG
-  if (!sStreamState) {
-    Log.report(LOG_FATAL, FMT_STRING("Stream not started!"));
-    unreachable();
-  }
-  if (sStreamState->nextAttr != attr) {
-    Log.report(LOG_FATAL, FMT_STRING("bad attribute order: {}, expected {}"), attr, sStreamState->nextAttr);
-    unreachable();
-  }
+  CHECK(sStreamState, "Stream not started!");
+  CHECK(sStreamState->nextAttr == attr, "bad attribute order: {}, expected {}", static_cast<int>(attr),
+        static_cast<int>(sStreamState->nextAttr));
   sStreamState->nextAttr = next_attr(attr + 1);
 #endif
 }

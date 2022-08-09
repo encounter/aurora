@@ -268,8 +268,7 @@ void create_copy_bind_group() {
 }
 
 static void error_callback(WGPUErrorType type, char const* message, void* userdata) {
-  Log.report(LOG_FATAL, FMT_STRING("WebGPU error {}: {}"), magic_enum::enum_name(static_cast<WGPUErrorType>(type)),
-             message);
+  FATAL("WebGPU error {}: {}", static_cast<int>(type), message);
 }
 
 #ifndef WEBGPU_DAWN
@@ -378,9 +377,7 @@ bool initialize(AuroraBackend auroraBackend) {
       .label = "Surface",
   };
   g_surface = wgpu::Surface::Acquire(wgpuInstanceCreateSurface(g_instance.Get(), &surfaceDescriptor));
-  if (!g_surface) {
-    Log.report(LOG_FATAL, FMT_STRING("Failed to initialize surface"));
-  }
+  ASSERT(g_surface, "Failed to initialize surface");
   const WGPURequestAdapterOptions options{
       .compatibleSurface = g_surface.Get(),
       .powerPreference = WGPUPowerPreference_HighPerformance,

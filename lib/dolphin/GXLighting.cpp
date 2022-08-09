@@ -152,10 +152,7 @@ void GXSetChanAmbColor(GXChannelID id, GXColor color) {
     GXSetChanAmbColor(GX_ALPHA1, color);
     return;
   }
-  if (id < GX_COLOR0 || id > GX_ALPHA1) {
-    Log.report(LOG_FATAL, FMT_STRING("bad channel {}"), id);
-    unreachable();
-  }
+  CHECK(id >= GX_COLOR0 && id <= GX_ALPHA1, "bad channel {}", static_cast<int>(id));
   update_gx_state(g_gxState.colorChannelState[id].ambColor, from_gx_color(color));
 }
 
@@ -169,10 +166,7 @@ void GXSetChanMatColor(GXChannelID id, GXColor color) {
     GXSetChanMatColor(GX_ALPHA1, color);
     return;
   }
-  if (id < GX_COLOR0 || id > GX_ALPHA1) {
-    Log.report(LOG_FATAL, FMT_STRING("bad channel {}"), id);
-    unreachable();
-  }
+  CHECK(id >= GX_COLOR0 && id <= GX_ALPHA1, "bad channel {}", static_cast<int>(id));
   update_gx_state(g_gxState.colorChannelState[id].matColor, from_gx_color(color));
 }
 
@@ -224,10 +218,7 @@ void GXSetChanCtrl(GXChannelID id, bool lightingEnabled, GXColorSrc ambSrc, GXCo
     GXSetChanCtrl(GX_ALPHA1, lightingEnabled, ambSrc, matSrc, lightState, diffFn, attnFn);
     return;
   }
-  if (id < GX_COLOR0 || id > GX_ALPHA1) {
-    Log.report(LOG_FATAL, FMT_STRING("bad channel {}"), id);
-    unreachable();
-  }
+  CHECK(id >= GX_COLOR0 && id <= GX_ALPHA1, "bad channel {}", static_cast<int>(id));
   auto& chan = g_gxState.colorChannelConfig[id];
   update_gx_state(chan.lightingEnabled, lightingEnabled);
   update_gx_state(chan.ambSrc, ambSrc);

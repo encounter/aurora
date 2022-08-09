@@ -4,8 +4,6 @@
 
 #include <absl/container/flat_hash_map.h>
 
-static absl::flat_hash_map<void*, int> g_resolvedTexMap;
-
 void GXInitTexObj(GXTexObj* obj_, const void* data, u16 width, u16 height, u32 format, GXTexWrapMode wrapS,
                   GXTexWrapMode wrapT, GXBool mipmap) {
   memset(obj_, 0, sizeof(GXTexObj));
@@ -27,8 +25,10 @@ void GXInitTexObj(GXTexObj* obj_, const void* data, u16 width, u16 height, u32 f
   obj->doEdgeLod = false;
   obj->maxAniso = GX_ANISO_4;
   obj->tlut = GX_TLUT0;
-  if (g_resolvedTexMap.contains(data)) {
-    obj->dataInvalidated = false; // TODO hack
+  const auto it = g_gxState.copyTextures.find(data);
+  if (it != g_gxState.copyTextures.end()) {
+    obj->ref = it->second;
+    obj->dataInvalidated = false;
   } else {
     obj->dataInvalidated = true;
   }
@@ -55,7 +55,13 @@ void GXInitTexObjCI(GXTexObj* obj_, const void* data, u16 width, u16 height, GXC
   obj->biasClamp = false;
   obj->doEdgeLod = false;
   obj->maxAniso = GX_ANISO_4;
-  obj->dataInvalidated = true;
+  const auto it = g_gxState.copyTextures.find(data);
+  if (it != g_gxState.copyTextures.end()) {
+    obj->ref = it->second;
+    obj->dataInvalidated = false;
+  } else {
+    obj->dataInvalidated = true;
+  }
 }
 
 void GXInitTexObjLOD(GXTexObj* obj_, GXTexFilter minFilt, GXTexFilter magFilt, float minLod, float maxLod,
@@ -73,8 +79,14 @@ void GXInitTexObjLOD(GXTexObj* obj_, GXTexFilter minFilt, GXTexFilter magFilt, f
 
 void GXInitTexObjData(GXTexObj* obj_, const void* data) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
-  obj->data = data;
-  obj->dataInvalidated = true;
+  const auto it = g_gxState.copyTextures.find(data);
+  if (it != g_gxState.copyTextures.end()) {
+    obj->ref = it->second;
+    obj->dataInvalidated = false;
+  } else {
+    obj->data = data;
+    obj->dataInvalidated = true;
+  }
 }
 
 void GXInitTexObjWrapMode(GXTexObj* obj_, GXTexWrapMode wrapS, GXTexWrapMode wrapT) {
@@ -184,6 +196,7 @@ void GXInitTlutObj(GXTlutObj* obj_, const void* data, GXTlutFmt format, u16 entr
   memset(obj_, 0, sizeof(GXTlutObj));
   GXTexFmt texFmt;
   switch (format) {
+    DEFAULT_FATAL("invalid tlut format {}", static_cast<int>(format));
   case GX_TL_IA8:
     texFmt = GX_TF_IA8;
     break;
@@ -193,9 +206,6 @@ void GXInitTlutObj(GXTlutObj* obj_, const void* data, GXTlutFmt format, u16 entr
   case GX_TL_RGB5A3:
     texFmt = GX_TF_RGB5A3;
     break;
-  default:
-    Log.report(LOG_FATAL, FMT_STRING("invalid tlut format {}"), format);
-    unreachable();
   }
   auto* obj = reinterpret_cast<GXTlutObj_*>(obj_);
   obj->ref = aurora::gfx::new_static_texture_2d(
@@ -224,8 +234,3 @@ void GXInvalidateTexAll() {
 // TODO GXSetTexCoordScaleManually
 // TODO GXSetTexCoordCylWrap
 // TODO GXSetTexCoordBias
-
-void GXCopyTex(void* dest, GXBool clear) {
-  // TODO
-  g_resolvedTexMap.emplace(dest, 0);
-}

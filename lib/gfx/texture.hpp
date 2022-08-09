@@ -35,8 +35,6 @@ struct TextureRef {
   , isRenderTexture(isRenderTexture) {}
 };
 
-using TextureHandle = std::shared_ptr<TextureRef>;
-
 TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format, ArrayRef<uint8_t> data,
                                     const char* label) noexcept;
 TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format,

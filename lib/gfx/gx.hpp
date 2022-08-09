@@ -6,6 +6,7 @@
 #include "../internal.hpp"
 #include "texture.hpp"
 
+#include <absl/container/flat_hash_map.h>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -46,6 +47,7 @@ constexpr float GX_LARGE_NUMBER = -1048576.0f;
 
 namespace aurora::gfx::gx {
 constexpr u32 MaxTextures = GX_MAX_TEXMAP;
+constexpr u32 MaxTluts = 20;
 constexpr u32 MaxTevStages = GX_MAX_TEVSTAGE;
 constexpr u32 MaxColorChannels = 4;
 constexpr u32 MaxTevRegs = 4; // TEVPREV, TEVREG0-2
@@ -151,6 +153,7 @@ struct TcgConfig {
   u8 _p3 = 0;
 
   bool operator==(const TcgConfig& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
+  bool operator!=(const TcgConfig& rhs) const { return !(*this == rhs); }
 };
 static_assert(std::has_unique_object_representations_v<TcgConfig>);
 struct FogState {
@@ -165,6 +168,7 @@ struct FogState {
     return type == rhs.type && startZ == rhs.startZ && endZ == rhs.endZ && nearZ == rhs.nearZ && farZ == rhs.farZ &&
            color == rhs.color;
   }
+  bool operator!=(const FogState& rhs) const { return !(*this == rhs); }
 };
 struct TevSwap {
   GXTevColorChan red = GX_CH_RED;
@@ -173,6 +177,7 @@ struct TevSwap {
   GXTevColorChan alpha = GX_CH_ALPHA;
 
   bool operator==(const TevSwap& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
+  bool operator!=(const TevSwap& rhs) const { return !(*this == rhs); }
   explicit operator bool() const { return !(*this == TevSwap{}); }
 };
 static_assert(std::has_unique_object_representations_v<TevSwap>);
@@ -184,6 +189,7 @@ struct AlphaCompare {
   u32 ref1;
 
   bool operator==(const AlphaCompare& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
+  bool operator!=(const AlphaCompare& rhs) const { return !(*this == rhs); }
   explicit operator bool() const { return comp0 != GX_ALWAYS || comp1 != GX_ALWAYS; }
 };
 static_assert(std::has_unique_object_representations_v<AlphaCompare>);
@@ -192,6 +198,7 @@ struct IndTexMtxInfo {
   s8 scaleExp;
 
   bool operator==(const IndTexMtxInfo& rhs) const { return mtx == rhs.mtx && scaleExp == rhs.scaleExp; }
+  bool operator!=(const IndTexMtxInfo& rhs) const { return !(*this == rhs); }
 };
 struct VtxAttrFmt {
   GXCompCnt cnt;
@@ -216,6 +223,7 @@ struct Light {
   bool operator==(const Light& rhs) const {
     return pos == rhs.pos && dir == rhs.dir && color == rhs.color && cosAtt == rhs.cosAtt && distAtt == rhs.distAtt;
   }
+  bool operator!=(const Light& rhs) const { return !(*this == rhs); }
 };
 static_assert(sizeof(Light) == 80);
 struct AttrArray {
@@ -227,6 +235,7 @@ struct AttrArray {
 inline bool operator==(const AttrArray& lhs, const AttrArray& rhs) {
   return lhs.data == rhs.data && lhs.size == rhs.size && lhs.stride == rhs.stride;
 }
+inline bool operator!=(const AttrArray& lhs, const AttrArray& rhs) { return !(lhs == rhs); }
 
 struct GXState {
   std::array<PnMtx, MaxPnMtx> pnMtx;
@@ -251,7 +260,7 @@ struct GXState {
   std::array<Light, GX::MaxLights> lights;
   std::array<TevStage, MaxTevStages> tevStages;
   std::array<TextureBind, MaxTextures> textures;
-  std::array<GXTlutObj_, MaxTextures> tluts;
+  std::array<GXTlutObj_, MaxTluts> tluts;
   std::array<TexMtxVariant, MaxTexMtx> texMtxs;
   std::array<Mat4x4<float>, MaxPTTexMtx> ptTexMtxs;
   std::array<TcgConfig, MaxTexCoord> tcgs;
@@ -266,6 +275,9 @@ struct GXState {
   std::array<IndStage, MaxIndStages> indStages;
   std::array<IndTexMtxInfo, MaxIndTexMtxs> indTexMtxs;
   std::array<AttrArray, GX_VA_MAX_ATTR> arrays;
+  ClipRect texCopySrc;
+  GXTexFmt texCopyFmt;
+  absl::flat_hash_map<void*, TextureHandle> copyTextures;
   bool depthCompare = true;
   bool depthUpdate = true;
   bool colorUpdate = true;

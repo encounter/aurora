@@ -2,6 +2,7 @@
 
 #include "../internal.hpp"
 
+#include <aurora/math.hpp>
 #include <type_traits>
 #include <utility>
 #include <cstring>
@@ -136,8 +137,22 @@ struct Range {
   uint32_t offset = 0;
   uint32_t size = 0;
 
-  inline bool operator==(const Range& rhs) { return offset == rhs.offset && size == rhs.size; }
+  bool operator==(const Range& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
+  bool operator!=(const Range& rhs) const { return !(*this == rhs); }
 };
+
+struct ClipRect {
+  int32_t x;
+  int32_t y;
+  int32_t width;
+  int32_t height;
+
+  bool operator==(const ClipRect& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
+  bool operator!=(const ClipRect& rhs) const { return !(*this == rhs); }
+};
+
+struct TextureRef;
+using TextureHandle = std::shared_ptr<TextureRef>;
 
 enum class ShaderType {
   Stream,
@@ -152,6 +167,7 @@ void end_frame(const wgpu::CommandEncoder& cmd);
 void render(wgpu::CommandEncoder& cmd);
 void render_pass(const wgpu::RenderPassEncoder& pass, uint32_t idx);
 void map_staging_buffer();
+void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> clearColor);
 
 Range push_verts(const uint8_t* data, size_t length);
 template <typename T>
