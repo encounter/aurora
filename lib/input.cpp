@@ -1,8 +1,10 @@
 #include "input.hpp"
 #include "internal.hpp"
-#include "pad.hpp"
 
 #include "magic_enum.hpp"
+
+#include <dolphin/pad.h>
+#include <dolphin/si.h>
 
 #include <SDL_haptic.h>
 #include <SDL_version.h>
@@ -103,9 +105,11 @@ static std::optional<std::string> remap_controller_layout(std::string_view mappi
     entries.insert_or_assign("rightshoulder"sv, "b10"sv);
   } else if (entries.contains("leftshoulder"sv) && entries.contains("rightshoulder"sv) && entries.contains("back"sv)) {
     Log.report(LOG_INFO, FMT_STRING("Controller has standard layout"));
+#if 0
     auto a = entries["a"sv];
     entries.insert_or_assign("a"sv, entries["b"sv]);
     entries.insert_or_assign("b"sv, a);
+#endif
     auto x = entries["x"sv];
     entries.insert_or_assign("x"sv, entries["y"sv]);
     entries.insert_or_assign("y"sv, x);
