@@ -49,7 +49,7 @@ using namespace std::string_view_literals;
   if (!(cond))                                                                                                         \
   UNLIKELY FATAL(msg, ##__VA_ARGS__)
 #ifdef NDEBUG
-#define CHECK
+#define CHECK(cond, msg, ...)
 #else
 #define CHECK(cond, msg, ...) ASSERT(cond, msg, ##__VA_ARGS__)
 #endif

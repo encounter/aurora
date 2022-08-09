@@ -801,7 +801,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
     }
   }
   vtxXfrAttrsPre += fmt::format(FMT_STRING("\n    var mv_pos = ubuf.pos_mtx * vec4<f32>({}, 1.0);"
-                                           "\n    var mv_nrm = ubuf.nrm_mtx * vec4<f32>({}, 0.0);"
+                                           "\n    var mv_nrm = normalize(ubuf.nrm_mtx * vec4<f32>({}, 0.0));"
                                            "\n    out.pos = ubuf.proj * vec4<f32>(mv_pos, 1.0);"),
                                 vtx_attr(config, GX_VA_POS), vtx_attr(config, GX_VA_NRM));
   if constexpr (EnableNormalVisualization) {
