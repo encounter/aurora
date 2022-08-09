@@ -1,9 +1,11 @@
 #include "gx.hpp"
 
+#include <cfloat>
+
 constexpr aurora::Mat4x4<float> DepthCorrect{
     {1.f, 0.f, 0.f, 0.f},
     {0.f, 1.f, 0.f, 0.f},
-    {0.f, 0.f, 1.f, 0.f},
+    {0.f, 0.f, 1.f + FLT_EPSILON, 0.f},
     {0.f, 0.f, 1.f, 1.f},
 };
 
