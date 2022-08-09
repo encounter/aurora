@@ -108,6 +108,7 @@ static AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config)
   if (aurora_begin_frame()) {
     g_initialFrame = true;
   }
+  g_config.desiredBackend = selectedBackend;
   return {
       .backend = selectedBackend,
       .configPath = g_config.configPath,
@@ -213,3 +214,8 @@ void aurora_shutdown() { aurora::shutdown(); }
 const AuroraEvent* aurora_update() { return aurora::update(); }
 bool aurora_begin_frame() { return aurora::begin_frame(); }
 void aurora_end_frame() { aurora::end_frame(); }
+AuroraBackend aurora_get_backend() { return aurora::g_config.desiredBackend; }
+const AuroraBackend* aurora_get_available_backends(size_t* count) {
+  *count = aurora::PreferredBackendOrder.size();
+  return aurora::PreferredBackendOrder.data();
+}
