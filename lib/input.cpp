@@ -720,7 +720,7 @@ void PADSerializeMappings() {
                                    aurora::input::controller_name(controller.second.m_index), controller.second.m_vid,
                                    controller.second.m_pid)
                            .c_str(),
-                       "wbe");
+                       "wb");
     if (file == nullptr) {
       return;
     }
