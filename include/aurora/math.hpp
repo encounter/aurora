@@ -40,6 +40,7 @@ struct Vec2 {
 #endif
 
   bool operator==(const Vec2& rhs) const { return x == rhs.x && y == rhs.y; }
+  bool operator!=(const Vec2& rhs) const { return !(*this == rhs); }
 };
 template <typename T>
 struct Vec3 {
@@ -56,6 +57,7 @@ struct Vec3 {
 #endif
 
   bool operator==(const Vec3& rhs) const { return x == rhs.x && y == rhs.y && z == rhs.z; }
+  bool operator!=(const Vec3& rhs) const { return !(*this == rhs); }
 };
 template <typename T>
 struct Vec4 {
@@ -114,6 +116,7 @@ struct Vec4 {
     return m[0] == rhs.m[0] && m[1] == rhs.m[1] && m[2] == rhs.m[2] && m[3] == rhs.m[3];
 #endif
   }
+  bool operator!=(const Vec4& rhs) const { return !(*this == rhs); }
 };
 template <typename T>
 [[nodiscard]] inline Vec4<T> operator+(const Vec4<T>& a, const Vec4<T>& b) {
@@ -141,6 +144,7 @@ struct Mat3x2 {
   constexpr Mat3x2(const Vec2<T>& m0, const Vec2<T>& m1, const Vec2<T>& m2) : m0(m0), m1(m1), m2(m2) {}
 
   bool operator==(const Mat3x2& rhs) const { return m0 == rhs.m0 && m1 == rhs.m1 && m2 == rhs.m2; }
+  bool operator!=(const Mat3x2& rhs) const { return !(*this == rhs); }
 };
 template <typename T>
 struct Mat4x2 {
@@ -163,6 +167,7 @@ struct Mat4x2 {
   }
 
   bool operator==(const Mat4x2& rhs) const { return m0 == rhs.m0 && m1 == rhs.m1 && m2 == rhs.m2 && m3 == rhs.m3; }
+  bool operator!=(const Mat4x2& rhs) const { return !(*this == rhs); }
 };
 template <typename T>
 struct Mat4x4;
@@ -215,6 +220,7 @@ struct Mat4x4 {
   inline const Vec4<T>& operator[](size_t i) const { return *(&m0 + i); }
 
   bool operator==(const Mat4x4& rhs) const { return m0 == rhs.m0 && m1 == rhs.m1 && m2 == rhs.m2 && m3 == rhs.m3; }
+  bool operator!=(const Mat4x4& rhs) const { return !(*this == rhs); }
 };
 static_assert(sizeof(Mat4x4<float>) == sizeof(float[4][4]));
 template <typename T>
