@@ -70,6 +70,7 @@ struct TevPass {
   Arg d = Default;
 
   bool operator==(const TevPass& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
+  bool operator!=(const TevPass& rhs) const { return !(*this == rhs); }
 };
 static_assert(std::has_unique_object_representations_v<TevPass<GXTevColorArg, GX_CC_ZERO>>);
 static_assert(std::has_unique_object_representations_v<TevPass<GXTevAlphaArg, GX_CA_ZERO>>);
@@ -84,6 +85,7 @@ struct TevOp {
   u8 _p3 = 0;
 
   bool operator==(const TevOp& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
+  bool operator!=(const TevOp& rhs) const { return !(*this == rhs); }
 };
 static_assert(std::has_unique_object_representations_v<TevOp>);
 struct TevStage {
@@ -111,6 +113,7 @@ struct TevStage {
   u8 _p2 = 0;
 
   bool operator==(const TevStage& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
+  bool operator!=(const TevStage& rhs) const { return !(*this == rhs); }
 };
 static_assert(std::has_unique_object_representations_v<TevStage>);
 struct IndStage {
@@ -132,6 +135,7 @@ struct ColorChannelConfig {
   u8 _p3 = 0;
 
   bool operator==(const ColorChannelConfig& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
+  bool operator!=(const ColorChannelConfig& rhs) const { return !(*this == rhs); }
 };
 static_assert(std::has_unique_object_representations_v<ColorChannelConfig>);
 // For uniform generation
