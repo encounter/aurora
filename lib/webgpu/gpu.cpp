@@ -267,6 +267,27 @@ void create_copy_bind_group() {
   g_CopyBindGroup = g_device.CreateBindGroup(&bindGroupDescriptor);
 }
 
+static void log_callback(WGPULoggingType type, char const * message, void * userdata) {
+  AuroraLogLevel level = LOG_FATAL;
+  switch (type) {
+  case WGPULoggingType_Verbose:
+    level = LOG_DEBUG;
+    break;
+  case WGPULoggingType_Info:
+    level = LOG_INFO;
+    break;
+  case WGPULoggingType_Warning:
+    level = LOG_WARNING;
+    break;
+  case WGPULoggingType_Error:
+    level = LOG_ERROR;
+    break;
+  default:
+    break;
+  }
+  Log.report(level, FMT_STRING("WebGPU message: {}"), message);
+}
+
 static void error_callback(WGPUErrorType type, char const* message, void* userdata) {
   FATAL("WebGPU error {}: {}", static_cast<int>(type), message);
 }
@@ -480,6 +501,7 @@ bool initialize(AuroraBackend auroraBackend) {
     if (!g_device) {
       return false;
     }
+    g_device.SetLoggingCallback(&log_callback, nullptr);
     g_device.SetUncapturedErrorCallback(&error_callback, nullptr);
   }
   g_device.SetDeviceLostCallback(nullptr, nullptr);
