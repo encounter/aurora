@@ -109,6 +109,12 @@ namespace aurora::gfx {
 using NewPipelineCallback = std::function<wgpu::RenderPipeline()>;
 std::mutex g_pipelineMutex;
 static bool g_hasPipelineThread = false;
+static size_t g_pipelinesPerFrame = 0;
+#ifdef NDEBUG
+constexpr size_t BuildPipelinesPerFrame = 5;
+#else
+constexpr size_t BuildPipelinesPerFrame = 1;
+#endif
 static std::thread g_pipelineThread;
 static std::atomic_bool g_pipelineThreadEnd;
 static std::condition_variable g_pipelineCv;
@@ -176,18 +182,24 @@ static PipelineRef find_pipeline(ShaderType type, const PipelineConfig& config, 
     std::scoped_lock guard{g_pipelineMutex};
     found = g_pipelines.contains(hash);
     if (!found) {
+      const auto ref =
+          std::find_if(g_queuedPipelines.begin(), g_queuedPipelines.end(), [=](auto v) { return v.first == hash; });
       if (g_hasPipelineThread) {
-        const auto ref =
-            std::find_if(g_queuedPipelines.begin(), g_queuedPipelines.end(), [=](auto v) { return v.first == hash; });
         if (ref != g_queuedPipelines.end()) {
           found = true;
         }
       } else {
-        g_pipelines.try_emplace(hash, cb());
-        if (serialize) {
-          serialize_pipeline_config(type, config);
+        if (ref != g_queuedPipelines.end()) {
+          found = true;
+        } else if (g_pipelinesPerFrame < BuildPipelinesPerFrame) {
+          g_pipelines.try_emplace(hash, cb());
+          if (serialize) {
+            serialize_pipeline_config(type, config);
+          }
+          ++g_pipelinesPerFrame;
+          createdPipelines++;
+          found = true;
         }
-        found = true;
       }
     }
     if (!found) {
@@ -298,12 +310,16 @@ PipelineRef pipeline_ref(model::PipelineConfig config) {
 
 static void pipeline_worker() {
   bool hasMore = false;
-  while (true) {
+  while (g_hasPipelineThread || g_pipelinesPerFrame < BuildPipelinesPerFrame) {
     std::pair<PipelineRef, NewPipelineCallback> cb;
     {
       std::unique_lock lock{g_pipelineMutex};
-      if (!hasMore) {
-        g_pipelineCv.wait(lock, [] { return !g_queuedPipelines.empty() || g_pipelineThreadEnd; });
+      if (g_hasPipelineThread) {
+        if (!hasMore) {
+          g_pipelineCv.wait(lock, [] { return !g_queuedPipelines.empty() || g_pipelineThreadEnd; });
+        }
+      } else if (g_queuedPipelines.empty()) {
+        return;
       }
       if (g_pipelineThreadEnd) {
         break;
@@ -317,6 +333,9 @@ static void pipeline_worker() {
       ASSERT(g_pipelines.try_emplace(cb.first, std::move(result)).second, "Duplicate pipeline {}", cb.first);
       g_queuedPipelines.pop_front();
       hasMore = !g_queuedPipelines.empty();
+    }
+    if (!g_hasPipelineThread) {
+      ++g_pipelinesPerFrame;
     }
     createdPipelines++;
     queuedPipelines--;
@@ -507,6 +526,10 @@ void begin_frame() {
   g_currentRenderPass = 0;
   // push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   // push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
+
+  if (!g_hasPipelineThread) {
+    g_pipelinesPerFrame = 0;
+  }
 }
 
 void end_frame(const wgpu::CommandEncoder& cmd) {
@@ -545,6 +568,10 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
   currentStagingBuffer = (currentStagingBuffer + 1) % g_stagingBuffers.size();
   map_staging_buffer();
   g_currentRenderPass = UINT32_MAX;
+
+  if (!g_hasPipelineThread) {
+    pipeline_worker();
+  }
 }
 
 void render(wgpu::CommandEncoder& cmd) {
