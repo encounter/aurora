@@ -80,48 +80,51 @@ Sint32 get_instance_for_player(uint32_t player) noexcept {
   return {};
 }
 
-static std::optional<std::string> remap_controller_layout(std::string_view mapping) {
+static std::optional<std::string> remap_controller_layout(std::string mapping) {
   std::string newMapping;
   newMapping.reserve(mapping.size());
-  absl::btree_map<std::string_view, std::string_view> entries;
+  absl::btree_map<absl::string_view, absl::string_view> entries;
   for (size_t idx = 0; const auto value : absl::StrSplit(mapping, ',')) {
     if (idx < 2) {
       if (idx > 0) {
         newMapping.push_back(',');
       }
-      newMapping.append(value);
+      auto str = value.operator std::string();
+      newMapping.append(str);
     } else {
       const auto split = absl::StrSplit(value, absl::MaxSplits(':', 2));
       auto iter = split.begin();
-      entries.emplace(*iter++, *iter);
+      auto first = *iter++;
+      auto second = *iter;
+      entries.emplace(std::move(first), std::move(second));
     }
     idx++;
   }
-  if (entries.contains("rightshoulder"sv) && !entries.contains("leftshoulder"sv)) {
+  if (entries.contains("rightshoulder") && !entries.contains("leftshoulder")) {
     Log.report(LOG_INFO, FMT_STRING("Remapping GameCube controller layout"));
-    entries.insert_or_assign("back"sv, entries["rightshoulder"sv]);
+    entries.insert_or_assign("back", entries["rightshoulder"]);
     // TODO trigger buttons may differ per platform
-    entries.insert_or_assign("leftshoulder"sv, "b11"sv);
-    entries.insert_or_assign("rightshoulder"sv, "b10"sv);
-  } else if (entries.contains("leftshoulder"sv) && entries.contains("rightshoulder"sv) && entries.contains("back"sv)) {
+    entries.insert_or_assign("leftshoulder", "b11");
+    entries.insert_or_assign("rightshoulder", "b10");
+  } else if (entries.contains("leftshoulder") && entries.contains("rightshoulder") && entries.contains("back")) {
     Log.report(LOG_INFO, FMT_STRING("Controller has standard layout"));
 #if 0
     auto a = entries["a"sv];
     entries.insert_or_assign("a"sv, entries["b"sv]);
     entries.insert_or_assign("b"sv, a);
 #endif
-    auto x = entries["x"sv];
-    entries.insert_or_assign("x"sv, entries["y"sv]);
-    entries.insert_or_assign("y"sv, x);
+    auto x = entries["x"];
+    entries.insert_or_assign("x", entries["y"]);
+    entries.insert_or_assign("y", x);
   } else {
     Log.report(LOG_ERROR, FMT_STRING("Controller has unsupported layout: {}"), mapping);
     return {};
   }
   for (auto [k, v] : entries) {
     newMapping.push_back(',');
-    newMapping.append(k);
+    newMapping.append(k.operator std::string());
     newMapping.push_back(':');
-    newMapping.append(v);
+    newMapping.append(v.operator std::string());
   }
   return newMapping;
 }
