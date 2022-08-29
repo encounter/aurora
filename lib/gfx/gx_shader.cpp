@@ -800,9 +800,9 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       vtxInAttrs += fmt::format(FMT_STRING("@location({}) in_tex{}_uv: vec2<f32>"), locIdx++, attr - GX_VA_TEX0);
     }
   }
-  vtxXfrAttrsPre += fmt::format(FMT_STRING("\n    var mv_pos = ubuf.pos_mtx * vec4<f32>({}, 1.0);"
-                                           "\n    var mv_nrm = normalize(ubuf.nrm_mtx * vec4<f32>({}, 0.0));"
-                                           "\n    out.pos = ubuf.proj * vec4<f32>(mv_pos, 1.0);"),
+  vtxXfrAttrsPre += fmt::format(FMT_STRING("\n    var mv_pos = mul4x3(ubuf.pos_mtx, vec4<f32>({}, 1.0));"
+                                           "\n    var mv_nrm = normalize(mul4x3(ubuf.nrm_mtx, vec4<f32>({}, 0.0)));"
+                                           "\n    out.pos = mul4x4(ubuf.proj, vec4<f32>(mv_pos, 1.0));"),
                                 vtx_attr(config, GX_VA_POS), vtx_attr(config, GX_VA_NRM));
   if constexpr (EnableNormalVisualization) {
     vtxOutAttrs += fmt::format(FMT_STRING("\n    @location({}) nrm: vec3<f32>,"), vtxOutIdx++);
@@ -1068,7 +1068,8 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       vtxXfrAttrs += fmt::format(FMT_STRING("\n    var tc{0}_tmp = tc{0}.xyz;"), i);
     } else {
       u32 texMtxIdx = (tcg.mtx - GX_TEXMTX0) / 3;
-      vtxXfrAttrs += fmt::format(FMT_STRING("\n    var tc{0}_tmp = ubuf.texmtx{1} * tc{0};"), i, texMtxIdx);
+      vtxXfrAttrs += fmt::format(FMT_STRING("\n    var tc{0}_tmp = mul{2}(ubuf.texmtx{1}, tc{0});"), i, texMtxIdx,
+                                 info.texMtxTypes[texMtxIdx] == GX_TG_MTX3x4 ? "4x3" : "4x2");
     }
     if (tcg.normalize) {
       vtxXfrAttrs += fmt::format(FMT_STRING("\n    tc{0}_tmp = normalize(tc{0}_tmp);"), i);
@@ -1077,8 +1078,8 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       vtxXfrAttrs += fmt::format(FMT_STRING("\n    var tc{0}_proj = tc{0}_tmp;"), i);
     } else {
       u32 postMtxIdx = (tcg.postMtx - GX_PTTEXMTX0) / 3;
-      vtxXfrAttrs += fmt::format(FMT_STRING("\n    var tc{0}_proj = ubuf.postmtx{1} * vec4<f32>(tc{0}_tmp.xyz, 1.0);"),
-                                 i, postMtxIdx);
+      vtxXfrAttrs += fmt::format(
+          FMT_STRING("\n    var tc{0}_proj = mul4x3(ubuf.postmtx{1}, vec4<f32>(tc{0}_tmp.xyz, 1.0));"), i, postMtxIdx);
     }
     vtxXfrAttrs += fmt::format(FMT_STRING("\n    out.tex{0}_uv = tc{0}_proj.xy;"), i);
   }
@@ -1123,17 +1124,17 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       switch (info.texMtxTypes[i]) {
         DEFAULT_FATAL("unhandled tex mtx type {}", static_cast<int>(info.texMtxTypes[i]));
       case GX_TG_MTX2x4:
-        uniBufAttrs += fmt::format(FMT_STRING("\n    texmtx{}: mat4x2<f32>,"), i);
+        uniBufAttrs += fmt::format(FMT_STRING("\n    texmtx{}: mtx4x2,"), i);
         break;
       case GX_TG_MTX3x4:
-        uniBufAttrs += fmt::format(FMT_STRING("\n    texmtx{}: mat4x3<f32>,"), i);
+        uniBufAttrs += fmt::format(FMT_STRING("\n    texmtx{}: mtx4x3,"), i);
         break;
       }
     }
   }
   for (int i = 0; i < info.usesPTTexMtx.size(); ++i) {
     if (info.usesPTTexMtx.test(i)) {
-      uniBufAttrs += fmt::format(FMT_STRING("\n    postmtx{}: mat4x3<f32>,"), i);
+      uniBufAttrs += fmt::format(FMT_STRING("\n    postmtx{}: mtx4x3,"), i);
     }
   }
   if (info.usesFog) {
@@ -1232,11 +1233,32 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
     fragmentFn += "\n    prev = vec4<f32>(in.nrm, prev.a);";
   }
 
-  const auto shaderSource = fmt::format(FMT_STRING(R"""({10}
+  const auto shaderSource = fmt::format(FMT_STRING(R"""(
+struct mtx4x4 {{ mx: vec4<f32>, my: vec4<f32>, mz: vec4<f32>, mw: vec4<f32> }};
+struct mtx4x3 {{ mx: vec4<f32>, my: vec4<f32>, mz: vec4<f32>, mw: vec4<f32> }};
+struct mtx4x2 {{ mx: vec4<f32>, my: vec4<f32>, }};
+// TODO convert these to row major
+fn mul4x4(m: mtx4x4, v: vec4<f32>) -> vec4<f32> {{
+  var mx = vec4<f32>(m.mx.x, m.my.x, m.mz.x, m.mw.x);
+  var my = vec4<f32>(m.mx.y, m.my.y, m.mz.y, m.mw.y);
+  var mz = vec4<f32>(m.mx.z, m.my.z, m.mz.z, m.mw.z);
+  var mw = vec4<f32>(m.mx.w, m.my.w, m.mz.w, m.mw.w);
+  return vec4<f32>(dot(mx, v), dot(my, v), dot(mz, v), dot(mw, v));
+}}
+fn mul4x3(m: mtx4x3, v: vec4<f32>) -> vec3<f32> {{
+  var mx = vec4<f32>(m.mx.x, m.my.x, m.mz.x, m.mw.x);
+  var my = vec4<f32>(m.mx.y, m.my.y, m.mz.y, m.mw.y);
+  var mz = vec4<f32>(m.mx.z, m.my.z, m.mz.z, m.mw.z);
+  return vec3<f32>(dot(mx, v), dot(my, v), dot(mz, v));
+}}
+fn mul4x2(m: mtx4x2, v: vec4<f32>) -> vec2<f32> {{
+  return vec2<f32>(dot(m.mx, v), dot(m.my, v));
+}}
+{10}
 struct Uniform {{
-    pos_mtx: mat4x3<f32>,
-    nrm_mtx: mat4x3<f32>,
-    proj: mat4x4<f32>,{0}
+    pos_mtx: mtx4x3,
+    nrm_mtx: mtx4x3,
+    proj: mtx4x4,{0}
 }};
 @group(0) @binding(0)
 var<uniform> ubuf: Uniform;{3}{1}{2}
