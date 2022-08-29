@@ -37,6 +37,22 @@ BackendBinding* CreateVulkanBinding(SDL_Window* window, WGPUDevice device);
 
 BackendBinding::BackendBinding(SDL_Window* window, WGPUDevice device) : m_window(window), m_device(device) {}
 
+#if defined(DAWN_ENABLE_BACKEND_OPENGL)
+struct GLUserData {
+  SDL_Window* window;
+  SDL_GLContext context;
+};
+void GLMakeCurrent(void* userData) {
+  auto* data = static_cast<GLUserData*>(userData);
+  SDL_GL_MakeCurrent(data->window, data->context);
+}
+void GLDestroy(void* userData) {
+  auto* data = static_cast<GLUserData*>(userData);
+  SDL_GL_DeleteContext(data->context);
+  delete data;
+}
+#endif
+
 bool DiscoverAdapter(dawn::native::Instance* instance, SDL_Window* window, wgpu::BackendType type) {
   switch (type) {
 #if defined(DAWN_ENABLE_BACKEND_D3D12)
@@ -63,10 +79,15 @@ bool DiscoverAdapter(dawn::native::Instance* instance, SDL_Window* window, wgpu:
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 4);
-    SDL_GL_CreateContext(window);
-    auto getProc = reinterpret_cast<void* (*)(const char*)>(SDL_GL_GetProcAddress);
-    dawn::native::opengl::AdapterDiscoveryOptions adapterOptions;
-    adapterOptions.getProc = getProc;
+    SDL_GLContext context = SDL_GL_CreateContext(window);
+    dawn::native::opengl::AdapterDiscoveryOptions adapterOptions{WGPUBackendType_OpenGL};
+    adapterOptions.getProc = SDL_GL_GetProcAddress;
+    adapterOptions.makeCurrent = GLMakeCurrent;
+    adapterOptions.destroy = GLDestroy;
+    adapterOptions.userData = new GLUserData{
+        .window = window,
+        .context = context,
+    };
     return instance->DiscoverAdapters(&adapterOptions);
   }
 #endif
@@ -76,10 +97,15 @@ bool DiscoverAdapter(dawn::native::Instance* instance, SDL_Window* window, wgpu:
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-    SDL_GL_CreateContext(window);
-    auto getProc = reinterpret_cast<void* (*)(const char*)>(SDL_GL_GetProcAddress);
-    dawn::native::opengl::AdapterDiscoveryOptionsES adapterOptions;
-    adapterOptions.getProc = getProc;
+    SDL_GLContext context = SDL_GL_CreateContext(window);
+    dawn::native::opengl::AdapterDiscoveryOptions adapterOptions{WGPUBackendType_OpenGLES};
+    adapterOptions.getProc = SDL_GL_GetProcAddress;
+    adapterOptions.makeCurrent = GLMakeCurrent;
+    adapterOptions.destroy = GLDestroy;
+    adapterOptions.userData = new GLUserData{
+        .window = window,
+        .context = context,
+    };
     return instance->DiscoverAdapters(&adapterOptions);
   }
 #endif

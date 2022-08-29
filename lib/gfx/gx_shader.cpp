@@ -1311,14 +1311,14 @@ fn textureSamplePaletteI4(tex: texture_2d<f32>, samp: sampler, uv: vec2<f32>, tl
     return mix(t0, t1, f.y);
 }}
 
-@stage(vertex)
+@vertex
 fn vs_main({5}
 ) -> VertexOutput {{
     var out: VertexOutput;{9}{6}
     return out;
 }}
 
-@stage(fragment)
+@fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {{{8}{7}
     return prev;
 }}

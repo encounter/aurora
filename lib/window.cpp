@@ -157,6 +157,7 @@ bool create_window(AuroraBackend backend) {
 #endif
   g_window = SDL_CreateWindow(g_config.appName, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, flags);
   if (g_window == nullptr) {
+    Log.report(LOG_WARNING, FMT_STRING("Failed to create window: {}"), SDL_GetError());
     return false;
   }
   set_window_icon();

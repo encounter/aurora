@@ -170,7 +170,7 @@ var<private> uvs: array<vec2<f32>, 3> = array<vec2<f32>, 3>(
     vec2(2.0, 0.0),
 );
 
-@stage(vertex)
+@vertex
 fn vs_main(@builtin(vertex_index) vtxIdx: u32) -> VertexOutput {
     var out: VertexOutput;
     out.pos = vec4<f32>(pos[vtxIdx], 0.0, 1.0);
@@ -178,7 +178,7 @@ fn vs_main(@builtin(vertex_index) vtxIdx: u32) -> VertexOutput {
     return out;
 }
 
-@stage(fragment)
+@fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     return textureSample(efb_texture, efb_sampler, in.uv);
 }
