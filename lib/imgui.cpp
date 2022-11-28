@@ -9,7 +9,9 @@
 
 #include "../imgui/backends/imgui_impl_sdl.cpp"         // NOLINT(bugprone-suspicious-include)
 #include "../imgui/backends/imgui_impl_sdlrenderer.cpp" // NOLINT(bugprone-suspicious-include)
-#include "../imgui/backends/imgui_impl_wgpu.cpp"        // NOLINT(bugprone-suspicious-include)
+// #include "../imgui/backends/imgui_impl_wgpu.cpp"     // NOLINT(bugprone-suspicious-include)
+// TODO: Transition back to imgui-provided backend when it uses WGSL
+#include "imgui_impl_wgpu.cpp"                          // NOLINT(bugprone-suspicious-include)
 
 namespace aurora::imgui {
 static float g_scale;
