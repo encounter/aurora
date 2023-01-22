@@ -19,4 +19,5 @@ bool controller_has_rumble(Uint32 instance) noexcept;
 void controller_rumble(uint32_t instance, uint16_t low_freq_intensity, uint16_t high_freq_intensity,
                        uint16_t duration_ms) noexcept;
 uint32_t controller_count() noexcept;
+void initialize() noexcept;
 } // namespace aurora::input

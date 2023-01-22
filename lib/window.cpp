@@ -195,7 +195,8 @@ void show_window() {
 }
 
 bool initialize() {
-  ASSERT(SDL_Init(SDL_INIT_EVERYTHING & ~SDL_INIT_HAPTIC) == 0, "Error initializing SDL: {}", SDL_GetError());
+  /* We don't want to initialize anything input related here, otherwise the add events will get lost to the void */
+  ASSERT(SDL_Init(SDL_INIT_EVERYTHING & ~(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER)) == 0, "Error initializing SDL: {}", SDL_GetError());
 
 #if !defined(_WIN32) && !defined(__APPLE__)
   SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");

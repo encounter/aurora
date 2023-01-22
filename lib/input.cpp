@@ -8,6 +8,7 @@
 
 #include <SDL_haptic.h>
 #include <SDL_version.h>
+#include <SDL.h>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
@@ -226,6 +227,11 @@ void controller_rumble(uint32_t instance, uint16_t low_freq_intensity, uint16_t 
 
 uint32_t controller_count() noexcept { return g_GameControllers.size(); }
 
+void initialize() noexcept {
+  /* Make sure we initialize everything input related now, this will automatically add all of the connected controllers
+   * as expected */
+  SDL_Init(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
+}
 } // namespace aurora::input
 
 static const std::array<PADButtonMapping, 12> mDefaultButtons{{
