@@ -438,7 +438,7 @@ static void ImGui_ImplWGPU_CreateFontsTexture()
     WGPUSamplerDescriptor sampler_desc = {};
     sampler_desc.minFilter = WGPUFilterMode_Linear;
     sampler_desc.magFilter = WGPUFilterMode_Linear;
-    sampler_desc.mipmapFilter = WGPUFilterMode_Linear;
+    sampler_desc.mipmapFilter = WGPUMipmapFilterMode_Linear;
     sampler_desc.addressModeU = WGPUAddressMode_Repeat;
     sampler_desc.addressModeV = WGPUAddressMode_Repeat;
     sampler_desc.addressModeW = WGPUAddressMode_Repeat;

@@ -35,11 +35,10 @@ wgpu::BindGroup g_CopyBindGroup;
 #ifdef WEBGPU_DAWN
 static std::unique_ptr<dawn::native::Instance> g_dawnInstance;
 static dawn::native::Adapter g_adapter;
-static std::unique_ptr<utils::BackendBinding> g_backendBinding;
 #else
-wgpu::Instance g_instance;
 static wgpu::Adapter g_adapter;
 #endif
+wgpu::Instance g_instance;
 static wgpu::Surface g_surface;
 static wgpu::AdapterProperties g_adapterProperties;
 
@@ -81,7 +80,7 @@ TextureWithSampler create_render_texture(bool multisampled) {
       .addressModeW = wgpu::AddressMode::ClampToEdge,
       .magFilter = wgpu::FilterMode::Linear,
       .minFilter = wgpu::FilterMode::Linear,
-      .mipmapFilter = wgpu::FilterMode::Linear,
+      .mipmapFilter = wgpu::MipmapFilterMode::Linear,
       .lodMinClamp = 0.f,
       .lodMaxClamp = 1000.f,
       .maxAnisotropy = 1,
@@ -130,7 +129,7 @@ static TextureWithSampler create_depth_texture() {
       .addressModeW = wgpu::AddressMode::ClampToEdge,
       .magFilter = wgpu::FilterMode::Linear,
       .minFilter = wgpu::FilterMode::Linear,
-      .mipmapFilter = wgpu::FilterMode::Linear,
+      .mipmapFilter = wgpu::MipmapFilterMode::Linear,
       .lodMinClamp = 0.f,
       .lodMaxClamp = 1000.f,
       .maxAnisotropy = 1,
@@ -344,7 +343,7 @@ bool initialize(AuroraBackend auroraBackend) {
     g_instance = {}; // TODO use wgpuCreateInstance when supported
   }
 #endif
-  wgpu::BackendType backend = to_wgpu_backend(auroraBackend);
+  const wgpu::BackendType backend = to_wgpu_backend(auroraBackend);
 #ifdef EMSCRIPTEN
   if (backend != wgpu::BackendType::WebGPU) {
     Log.report(LOG_WARNING, FMT_STRING("Backend type {} unsupported"), magic_enum::enum_name(backend));
@@ -388,6 +387,12 @@ bool initialize(AuroraBackend auroraBackend) {
     }
     g_adapter = *adapterIt;
   }
+
+  const auto chainedDescriptor = utils::SetupWindowAndGetSurfaceDescriptor(window);
+  wgpu::SurfaceDescriptor surfaceDescriptor;
+  surfaceDescriptor.nextInChain = chainedDescriptor.get();
+  g_surface = g_instance.CreateSurface(&surfaceDescriptor);
+  ASSERT(g_surface, "Failed to initialize surface");
 #else
   const WGPUSurfaceDescriptorFromCanvasHTMLSelector canvasDescriptor{
       .chain = {.sType = WGPUSType_SurfaceDescriptorFromCanvasHTMLSelector},
@@ -476,9 +481,9 @@ bool initialize(AuroraBackend auroraBackend) {
       "disable_symbol_renaming",
       /* clang-format on */
     };
-    wgpu::DawnTogglesDeviceDescriptor togglesDescriptor{};
-    togglesDescriptor.forceEnabledTogglesCount = enableToggles.size();
-    togglesDescriptor.forceEnabledToggles = enableToggles.data();
+    wgpu::DawnTogglesDescriptor togglesDescriptor{};
+    togglesDescriptor.enabledTogglesCount = enableToggles.size();
+    togglesDescriptor.enabledToggles = enableToggles.data();
 #endif
     const wgpu::DeviceDescriptor deviceDescriptor{
 #ifdef WEBGPU_DAWN
@@ -508,12 +513,7 @@ bool initialize(AuroraBackend auroraBackend) {
   g_queue = g_device.GetQueue();
 
 #if WEBGPU_DAWN
-  g_backendBinding =
-      std::unique_ptr<utils::BackendBinding>(utils::CreateBinding(g_backendType, window, g_device.Get()));
-  if (!g_backendBinding) {
-    return false;
-  }
-  auto swapChainFormat = static_cast<wgpu::TextureFormat>(g_backendBinding->GetPreferredSwapChainTextureFormat());
+  auto swapChainFormat = wgpu::TextureFormat::BGRA8UnormSrgb; // TODO
 #else
   auto swapChainFormat = g_surface.GetPreferredFormat(g_adapter);
 #endif
@@ -532,9 +532,6 @@ bool initialize(AuroraBackend auroraBackend) {
               .width = size.fb_width,
               .height = size.fb_height,
               .presentMode = wgpu::PresentMode::Fifo,
-#ifdef WEBGPU_DAWN
-              .implementation = g_backendBinding->GetSwapChainImplementation(),
-#endif
           },
       .depthFormat = wgpu::TextureFormat::Depth32Float,
       .msaaSamples = g_config.msaa,
@@ -556,11 +553,10 @@ void shutdown() {
   wgpuQueueRelease(g_queue.Release());
   wgpuDeviceDestroy(g_device.Release());
   g_adapter = {};
+  g_surface = {};
 #ifdef WEBGPU_DAWN
-  g_backendBinding.reset();
   g_dawnInstance.reset();
 #else
-  g_surface = {};
   g_instance = {};
 #endif
 }
@@ -572,15 +568,7 @@ void resize_swapchain(uint32_t width, uint32_t height, bool force) {
   }
   g_graphicsConfig.swapChainDescriptor.width = width;
   g_graphicsConfig.swapChainDescriptor.height = height;
-#ifdef WEBGPU_DAWN
-  if (!g_swapChain) {
-    g_swapChain = g_device.CreateSwapChain(g_surface, &g_graphicsConfig.swapChainDescriptor);
-  }
-  g_swapChain.Configure(g_graphicsConfig.swapChainDescriptor.format, g_graphicsConfig.swapChainDescriptor.usage, width,
-                        height);
-#else
   g_swapChain = g_device.CreateSwapChain(g_surface, &g_graphicsConfig.swapChainDescriptor);
-#endif
   g_frameBuffer = create_render_texture(true);
   g_frameBufferResolved = create_render_texture(false);
   g_depthBuffer = create_depth_texture();

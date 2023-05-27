@@ -342,6 +342,77 @@ static void pipeline_worker() {
   }
 }
 
+// Load serialized pipeline cache
+void load_pipeline_cache() {
+  ByteBuffer pipelineCache;
+  u32 pipelineCacheCount = 0;
+
+  {
+    std::string path = std::string{g_config.configPath} + "/pipeline_cache.bin";
+    std::ifstream file(path, std::ios::in | std::ios::binary | std::ios::ate);
+    if (file) {
+      const auto size = file.tellg();
+      file.seekg(0, std::ios::beg);
+      constexpr size_t headerSize = sizeof(pipelineCacheCount);
+      if (size != -1 && size > headerSize) {
+        pipelineCache.append_zeroes(size_t(size) - headerSize);
+        file.read(reinterpret_cast<char*>(&pipelineCacheCount), headerSize);
+        file.read(reinterpret_cast<char*>(pipelineCache.data()), size_t(size) - headerSize);
+      }
+    }
+  }
+
+  if (pipelineCacheCount > 0) {
+    size_t offset = 0;
+    while (offset < pipelineCache.size()) {
+      ShaderType type = *reinterpret_cast<const ShaderType*>(pipelineCache.data() + offset);
+      offset += sizeof(ShaderType);
+      u32 size = *reinterpret_cast<const u32*>(pipelineCache.data() + offset);
+      offset += sizeof(u32);
+      switch (type) {
+      case ShaderType::Stream: {
+        if (size != sizeof(stream::PipelineConfig)) {
+          break;
+        }
+        const auto config = *reinterpret_cast<const stream::PipelineConfig*>(pipelineCache.data() + offset);
+        if (config.version != gx::GXPipelineConfigVersion) {
+          break;
+        }
+        find_pipeline(
+            type, config, [=]() { return stream::create_pipeline(g_state.stream, config); }, true);
+      } break;
+      case ShaderType::Model: {
+        if (size != sizeof(model::PipelineConfig)) {
+          break;
+        }
+        const auto config = *reinterpret_cast<const model::PipelineConfig*>(pipelineCache.data() + offset);
+        if (config.version != gx::GXPipelineConfigVersion) {
+          break;
+        }
+        find_pipeline(
+            type, config, [=]() { return model::create_pipeline(g_state.model, config); }, true);
+      } break;
+      default:
+        Log.report(LOG_WARNING, FMT_STRING("Unknown pipeline type {}"), static_cast<int>(type));
+        break;
+      }
+      offset += size;
+    }
+  }
+}
+
+// Write serialized pipelines to file
+void save_pipeline_cache() {
+  const auto path = std::string{g_config.configPath} + "pipeline_cache.bin";
+  std::ofstream file(path, std::ios::out | std::ios::trunc | std::ios::binary);
+  if (file) {
+    file.write(reinterpret_cast<const char*>(&g_serializedPipelineCount), sizeof(g_serializedPipelineCount));
+    file.write(reinterpret_cast<const char*>(g_serializedPipelines.data()), g_serializedPipelines.size());
+  }
+  g_serializedPipelines.clear();
+  g_serializedPipelineCount = 0;
+}
+
 void initialize() {
   // No async pipelines for OpenGL (ES)
   if (webgpu::g_backendType == wgpu::BackendType::OpenGL || webgpu::g_backendType == wgpu::BackendType::OpenGLES ||
@@ -385,58 +456,7 @@ void initialize() {
   g_state.stream = stream::construct_state();
   g_state.model = model::construct_state();
 
-  {
-    // Load serialized pipeline cache
-    std::string path = std::string{g_config.configPath} + "/pipeline_cache.bin";
-    std::ifstream file(path, std::ios::in | std::ios::binary | std::ios::ate);
-    if (file) {
-      const auto size = file.tellg();
-      file.seekg(0, std::ios::beg);
-      constexpr size_t headerSize = sizeof(g_serializedPipelineCount);
-      if (size != -1 && size > headerSize) {
-        g_serializedPipelines.append_zeroes(size_t(size) - headerSize);
-        file.read(reinterpret_cast<char*>(&g_serializedPipelineCount), headerSize);
-        file.read(reinterpret_cast<char*>(g_serializedPipelines.data()), size_t(size) - headerSize);
-      }
-    }
-  }
-  if (g_serializedPipelineCount > 0) {
-    size_t offset = 0;
-    while (offset < g_serializedPipelines.size()) {
-      ShaderType type = *reinterpret_cast<const ShaderType*>(g_serializedPipelines.data() + offset);
-      offset += sizeof(ShaderType);
-      u32 size = *reinterpret_cast<const u32*>(g_serializedPipelines.data() + offset);
-      offset += sizeof(u32);
-      switch (type) {
-      case ShaderType::Stream: {
-        if (size != sizeof(stream::PipelineConfig)) {
-          break;
-        }
-        const auto config = *reinterpret_cast<const stream::PipelineConfig*>(g_serializedPipelines.data() + offset);
-        if (config.version != gx::GXPipelineConfigVersion) {
-          break;
-        }
-        find_pipeline(
-            type, config, [=]() { return stream::create_pipeline(g_state.stream, config); }, false);
-      } break;
-      case ShaderType::Model: {
-        if (size != sizeof(model::PipelineConfig)) {
-          break;
-        }
-        const auto config = *reinterpret_cast<const model::PipelineConfig*>(g_serializedPipelines.data() + offset);
-        if (config.version != gx::GXPipelineConfigVersion) {
-          break;
-        }
-        find_pipeline(
-            type, config, [=]() { return model::create_pipeline(g_state.model, config); }, false);
-      } break;
-      default:
-        Log.report(LOG_WARNING, FMT_STRING("Unknown pipeline type {}"), static_cast<int>(type));
-        break;
-      }
-      offset += size;
-    }
-  }
+  load_pipeline_cache();
 }
 
 void shutdown() {
@@ -446,17 +466,7 @@ void shutdown() {
     g_pipelineThread.join();
   }
 
-  {
-    // Write serialized pipelines to file
-    const auto path = std::string{g_config.configPath} + "pipeline_cache.bin";
-    std::ofstream file(path, std::ios::out | std::ios::trunc | std::ios::binary);
-    if (file) {
-      file.write(reinterpret_cast<const char*>(&g_serializedPipelineCount), sizeof(g_serializedPipelineCount));
-      file.write(reinterpret_cast<const char*>(g_serializedPipelines.data()), g_serializedPipelines.size());
-    }
-    g_serializedPipelines.clear();
-    g_serializedPipelineCount = 0;
-  }
+  save_pipeline_cache();
 
   gx::shutdown();
 

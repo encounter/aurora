@@ -78,6 +78,7 @@ void process_event(const SDL_Event& event) noexcept {
 void new_frame(const AuroraWindowSize& size) noexcept {
   if (g_useSdlRenderer) {
     ImGui_ImplSDLRenderer_NewFrame();
+    g_scale = size.scale;
   } else {
     if (g_scale != size.scale) {
       if (g_scale > 0.f) {

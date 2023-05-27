@@ -688,21 +688,21 @@ static wgpu::AddressMode wgpu_address_mode(GXTexWrapMode mode) {
     return wgpu::AddressMode::MirrorRepeat;
   }
 }
-static std::pair<wgpu::FilterMode, wgpu::FilterMode> wgpu_filter_mode(GXTexFilter filter) {
+static std::pair<wgpu::FilterMode, wgpu::MipmapFilterMode> wgpu_filter_mode(GXTexFilter filter) {
   switch (filter) {
     DEFAULT_FATAL("invalid filter mode {}", static_cast<int>(filter));
   case GX_NEAR:
-    return {wgpu::FilterMode::Nearest, wgpu::FilterMode::Linear};
+    return {wgpu::FilterMode::Nearest, wgpu::MipmapFilterMode::Linear};
   case GX_LINEAR:
-    return {wgpu::FilterMode::Linear, wgpu::FilterMode::Linear};
+    return {wgpu::FilterMode::Linear, wgpu::MipmapFilterMode::Linear};
   case GX_NEAR_MIP_NEAR:
-    return {wgpu::FilterMode::Nearest, wgpu::FilterMode::Nearest};
+    return {wgpu::FilterMode::Nearest, wgpu::MipmapFilterMode::Nearest};
   case GX_LIN_MIP_NEAR:
-    return {wgpu::FilterMode::Linear, wgpu::FilterMode::Nearest};
+    return {wgpu::FilterMode::Linear, wgpu::MipmapFilterMode::Nearest};
   case GX_NEAR_MIP_LIN:
-    return {wgpu::FilterMode::Nearest, wgpu::FilterMode::Linear};
+    return {wgpu::FilterMode::Nearest, wgpu::MipmapFilterMode::Linear};
   case GX_LIN_MIP_LIN:
-    return {wgpu::FilterMode::Linear, wgpu::FilterMode::Linear};
+    return {wgpu::FilterMode::Linear, wgpu::MipmapFilterMode::Linear};
   }
 }
 static u16 wgpu_aniso(GXAnisotropy aniso) {
@@ -725,7 +725,7 @@ wgpu::SamplerDescriptor TextureBind::get_descriptor() const noexcept {
         .addressModeW = wgpu::AddressMode::Repeat,
         .magFilter = wgpu::FilterMode::Nearest,
         .minFilter = wgpu::FilterMode::Nearest,
-        .mipmapFilter = wgpu::FilterMode::Nearest,
+        .mipmapFilter = wgpu::MipmapFilterMode::Nearest,
         .lodMinClamp = 0.f,
         .lodMaxClamp = 1000.f,
         .maxAnisotropy = 1,

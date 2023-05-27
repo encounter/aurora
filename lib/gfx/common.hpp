@@ -155,8 +155,8 @@ struct TextureRef;
 using TextureHandle = std::shared_ptr<TextureRef>;
 
 enum class ShaderType {
-  Stream,
-  Model,
+  Stream = 'STRM',
+  Model = 'CMDL',
 };
 
 void initialize();
