@@ -1,6 +1,8 @@
 #include "BackendBinding.hpp"
 
 #include <SDL_syswm.h>
+#include <memory>
+
 #if defined(DAWN_ENABLE_BACKEND_D3D12)
 #include <dawn/native/D3D12Backend.h>
 #endif
@@ -63,15 +65,15 @@ bool DiscoverAdapter(dawn::native::Instance* instance, [[maybe_unused]] SDL_Wind
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 4);
     SDL_GLContext context = SDL_GL_CreateContext(window);
-    dawn::native::opengl::AdapterDiscoveryOptions adapterOptions{WGPUBackendType_OpenGL};
-    adapterOptions.getProc = SDL_GL_GetProcAddress;
-    adapterOptions.makeCurrent = GLMakeCurrent;
-    adapterOptions.destroy = GLDestroy;
-    adapterOptions.userData = new GLUserData{
+    dawn::native::opengl::PhysicalDeviceDiscoveryOptions options{WGPUBackendType_OpenGL};
+    options.getProc = SDL_GL_GetProcAddress;
+    options.makeCurrent = GLMakeCurrent;
+    options.destroy = GLDestroy;
+    options.userData = new GLUserData{
         .window = window,
         .context = context,
     };
-    return instance->DiscoverAdapters(&adapterOptions);
+    return instance->DiscoverPhysicalDevices(&options);
   }
 #endif
 #if defined(DAWN_ENABLE_BACKEND_OPENGLES)
@@ -81,15 +83,15 @@ bool DiscoverAdapter(dawn::native::Instance* instance, [[maybe_unused]] SDL_Wind
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
     SDL_GLContext context = SDL_GL_CreateContext(window);
-    dawn::native::opengl::AdapterDiscoveryOptions adapterOptions{WGPUBackendType_OpenGLES};
-    adapterOptions.getProc = SDL_GL_GetProcAddress;
-    adapterOptions.makeCurrent = GLMakeCurrent;
-    adapterOptions.destroy = GLDestroy;
-    adapterOptions.userData = new GLUserData{
+    dawn::native::opengl::PhysicalDeviceDiscoveryOptions options{WGPUBackendType_OpenGLES};
+    options.getProc = SDL_GL_GetProcAddress;
+    options.makeCurrent = GLMakeCurrent;
+    options.destroy = GLDestroy;
+    options.userData = new GLUserData{
         .window = window,
         .context = context,
     };
-    return instance->DiscoverAdapters(&adapterOptions);
+    return instance->DiscoverPhysicalDevices(&options);
   }
 #endif
 #if defined(DAWN_ENABLE_BACKEND_NULL)
@@ -105,39 +107,43 @@ bool DiscoverAdapter(dawn::native::Instance* instance, [[maybe_unused]] SDL_Wind
 std::unique_ptr<wgpu::ChainedStruct> SetupWindowAndGetSurfaceDescriptorCocoa(SDL_Window* window);
 
 std::unique_ptr<wgpu::ChainedStruct> SetupWindowAndGetSurfaceDescriptor(SDL_Window* window) {
-#if _WIN32
-  std::unique_ptr<wgpu::SurfaceDescriptorFromWindowsHWND> desc =
-      std::make_unique<wgpu::SurfaceDescriptorFromWindowsHWND>();
-  desc->hwnd = glfwGetWin32Window(window);
-  desc->hinstance = GetModuleHandle(nullptr);
-  return std::move(desc);
-#elif defined(DAWN_ENABLE_BACKEND_METAL)
+#if defined(SDL_VIDEO_DRIVER_COCOA)
   return SetupWindowAndGetSurfaceDescriptorCocoa(window);
-#elif defined(DAWN_USE_WAYLAND) || defined(DAWN_USE_X11)
-#if defined(GLFW_PLATFORM_WAYLAND) && defined(DAWN_USE_WAYLAND)
-  if (glfwGetPlatform() == GLFW_PLATFORM_WAYLAND) {
-    std::unique_ptr<wgpu::SurfaceDescriptorFromWaylandSurface> desc =
-        std::make_unique<wgpu::SurfaceDescriptorFromWaylandSurface>();
-    desc->display = glfwGetWaylandDisplay();
-    desc->surface = glfwGetWaylandWindow(window);
-    return std::move(desc);
-  } else  // NOLINT(readability/braces)
-#endif
-#if defined(DAWN_USE_X11)
-  {
-    std::unique_ptr<wgpu::SurfaceDescriptorFromXlibWindow> desc =
-        std::make_unique<wgpu::SurfaceDescriptorFromXlibWindow>();
-    desc->display = glfwGetX11Display();
-    desc->window = glfwGetX11Window(window);
-    return std::move(desc);
-  }
 #else
-  {
+  SDL_SysWMinfo wmInfo;
+  SDL_VERSION(&wmInfo.version);
+  if (SDL_GetWindowWMInfo(window, &wmInfo) == SDL_FALSE) {
     return nullptr;
   }
+#if defined(SDL_VIDEO_DRIVER_WINDOWS)
+  std::unique_ptr<wgpu::SurfaceDescriptorFromWindowsHWND> desc =
+      std::make_unique<wgpu::SurfaceDescriptorFromWindowsHWND>();
+  desc->hwnd = wmInfo.info.window;
+  desc->hinstance = wmInfo.info.hinstance;
+  return std::move(desc);
+#elif defined(SDL_VIDEO_DRIVER_WAYLAND) || defined(SDL_VIDEO_DRIVER_X11)
+#if defined(SDL_VIDEO_DRIVER_WAYLAND)
+  if (wmInfo.subsystem == SDL_SYSWM_WAYLAND) {
+    std::unique_ptr<wgpu::SurfaceDescriptorFromWaylandSurface> desc =
+        std::make_unique<wgpu::SurfaceDescriptorFromWaylandSurface>();
+    desc->display = wmInfo.info.wl.display;
+    desc->surface = wmInfo.info.wl.surface;
+    return std::move(desc);
+  }
 #endif
+#if defined(SDL_VIDEO_DRIVER_X11)
+if (wmInfo.subsystem == SDL_SYSWM_X11) {
+    std::unique_ptr<wgpu::SurfaceDescriptorFromXlibWindow> desc =
+        std::make_unique<wgpu::SurfaceDescriptorFromXlibWindow>();
+    desc->display = wmInfo.info.x11.display;
+    desc->window = wmInfo.info.x11.window;
+    return std::move(desc);
+  }
+#endif
+  return nullptr;
 #else
   return nullptr;
+#endif
 #endif
 }
 

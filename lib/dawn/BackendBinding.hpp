@@ -1,6 +1,7 @@
 #pragma once
 
 #include <dawn/native/DawnNative.h>
+#include <memory>
 #include <webgpu/webgpu_cpp.h>
 
 struct SDL_Window;
