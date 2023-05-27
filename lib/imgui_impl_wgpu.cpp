@@ -196,7 +196,7 @@ static WGPUShaderModule ImGui_ImplWGPU_CreateShaderModule(const char* source)
 {
   WGPUShaderModuleWGSLDescriptor wgsl_desc = {};
   wgsl_desc.chain.sType = WGPUSType_ShaderModuleWGSLDescriptor;
-  wgsl_desc.source = source;
+  wgsl_desc.code = source;
 
   WGPUShaderModuleDescriptor desc = {};
   desc.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&wgsl_desc);

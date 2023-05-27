@@ -1330,7 +1330,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {{{8}{7}
   }
 
   wgpu::ShaderModuleWGSLDescriptor wgslDescriptor{};
-  wgslDescriptor.source = shaderSource.c_str();
+  wgslDescriptor.code = shaderSource.c_str();
   const auto label = fmt::format(FMT_STRING("GX Shader {:x}"), hash);
   const auto shaderDescriptor = wgpu::ShaderModuleDescriptor{
       .nextInChain = &wgslDescriptor,

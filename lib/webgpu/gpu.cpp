@@ -147,7 +147,7 @@ static TextureWithSampler create_depth_texture() {
 
 void create_copy_pipeline() {
   wgpu::ShaderModuleWGSLDescriptor sourceDescriptor{};
-  sourceDescriptor.source = R"""(
+  sourceDescriptor.code = R"""(
 @group(0) @binding(0)
 var efb_sampler: sampler;
 @group(0) @binding(1)
