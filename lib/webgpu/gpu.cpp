@@ -316,6 +316,8 @@ static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
   switch (backend) {
   case BACKEND_WEBGPU:
     return wgpu::BackendType::WebGPU;
+  case BACKEND_D3D11:
+    return wgpu::BackendType::D3D11;
   case BACKEND_D3D12:
     return wgpu::BackendType::D3D12;
   case BACKEND_METAL:

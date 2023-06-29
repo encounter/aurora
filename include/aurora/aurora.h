@@ -14,6 +14,7 @@ extern "C" {
 
 typedef enum {
   BACKEND_AUTO,
+  BACKEND_D3D11,
   BACKEND_D3D12,
   BACKEND_METAL,
   BACKEND_VULKAN,

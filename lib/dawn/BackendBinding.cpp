@@ -3,6 +3,9 @@
 #include <SDL_syswm.h>
 #include <memory>
 
+#if defined(DAWN_ENABLE_BACKEND_D3D11)
+#include <dawn/native/D3D11Backend.h>
+#endif
 #if defined(DAWN_ENABLE_BACKEND_D3D12)
 #include <dawn/native/D3D12Backend.h>
 #endif
@@ -40,6 +43,12 @@ void GLDestroy(void* userData) {
 
 bool DiscoverAdapter(dawn::native::Instance* instance, [[maybe_unused]] SDL_Window* window, wgpu::BackendType type) {
   switch (type) {
+#if defined(DAWN_ENABLE_BACKEND_D3D11)
+  case wgpu::BackendType::D3D11: {
+    dawn::native::d3d11::PhysicalDeviceDiscoveryOptions options;
+    return instance->DiscoverPhysicalDevices(&options);
+  }
+#endif
 #if defined(DAWN_ENABLE_BACKEND_D3D12)
   case wgpu::BackendType::D3D12: {
     dawn::native::d3d12::PhysicalDeviceDiscoveryOptions options;
@@ -118,8 +127,8 @@ std::unique_ptr<wgpu::ChainedStruct> SetupWindowAndGetSurfaceDescriptor(SDL_Wind
 #if defined(SDL_VIDEO_DRIVER_WINDOWS)
   std::unique_ptr<wgpu::SurfaceDescriptorFromWindowsHWND> desc =
       std::make_unique<wgpu::SurfaceDescriptorFromWindowsHWND>();
-  desc->hwnd = wmInfo.info.window;
-  desc->hinstance = wmInfo.info.hinstance;
+  desc->hwnd = wmInfo.info.win.window;
+  desc->hinstance = wmInfo.info.win.hinstance;
   return std::move(desc);
 #elif defined(SDL_VIDEO_DRIVER_WAYLAND) || defined(SDL_VIDEO_DRIVER_X11)
 #if defined(SDL_VIDEO_DRIVER_WAYLAND)

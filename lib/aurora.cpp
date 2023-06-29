@@ -26,7 +26,7 @@ constexpr std::array PreferredBackendOrder{
     BACKEND_WEBGPU,
 #endif
 #ifdef DAWN_ENABLE_BACKEND_D3D12
-//    BACKEND_D3D12,
+    BACKEND_D3D12,
 #endif
 #ifdef DAWN_ENABLE_BACKEND_METAL
     BACKEND_METAL,
@@ -34,12 +34,15 @@ constexpr std::array PreferredBackendOrder{
 #ifdef DAWN_ENABLE_BACKEND_VULKAN
     BACKEND_VULKAN,
 #endif
-#ifdef DAWN_ENABLE_BACKEND_DESKTOP_GL
-    BACKEND_OPENGL,
+#ifdef DAWN_ENABLE_BACKEND_D3D11
+    BACKEND_D3D11,
 #endif
-#ifdef DAWN_ENABLE_BACKEND_OPENGLES
-    BACKEND_OPENGLES,
-#endif
+//#ifdef DAWN_ENABLE_BACKEND_DESKTOP_GL
+//    BACKEND_OPENGL,
+//#endif
+//#ifdef DAWN_ENABLE_BACKEND_OPENGLES
+//    BACKEND_OPENGLES,
+//#endif
 #ifdef DAWN_ENABLE_BACKEND_NULL
     BACKEND_NULL,
 #endif
