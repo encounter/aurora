@@ -17,6 +17,7 @@ typedef enum {
   AURORA_NONE,
   AURORA_EXIT,
   AURORA_SDL_EVENT,
+  AURORA_WINDOW_MOVED,
   AURORA_WINDOW_RESIZED,
   AURORA_CONTROLLER_ADDED,
   AURORA_CONTROLLER_REMOVED,
@@ -28,6 +29,7 @@ struct AuroraEvent {
   AuroraEventType type;
   union {
     SDL_Event sdl;
+    AuroraWindowPos windowPos;
     AuroraWindowSize windowSize;
     int32_t controller;
   };

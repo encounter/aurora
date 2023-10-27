@@ -59,6 +59,13 @@ const AuroraEvent* poll_events() {
         });
         break;
       }
+      case SDL_WINDOWEVENT_MOVED: {
+        g_events.push_back(AuroraEvent{
+            .type = AURORA_WINDOW_MOVED,
+            .windowPos = {.x = event.window.data1, .y = event.window.data2},
+        });
+        break;
+      }
       case SDL_WINDOWEVENT_SIZE_CHANGED: {
         resize_swapchain(false);
         g_events.push_back(AuroraEvent{
@@ -154,8 +161,16 @@ bool create_window(AuroraBackend backend) {
     width = 1280;
     height = 960;
   }
+
+  int32_t x = g_config.windowPosX;
+  int32_t y = g_config.windowPosY;
+  if (x < 0 || y < 0) {
+    x = SDL_WINDOWPOS_UNDEFINED;
+    y = SDL_WINDOWPOS_UNDEFINED;
+  }
+
 #endif
-  g_window = SDL_CreateWindow(g_config.appName, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, flags);
+  g_window = SDL_CreateWindow(g_config.appName, x, y, width, height, flags);
   if (g_window == nullptr) {
     Log.report(LOG_WARNING, FMT_STRING("Failed to create window: {}"), SDL_GetError());
     return false;
@@ -196,7 +211,8 @@ void show_window() {
 
 bool initialize() {
   /* We don't want to initialize anything input related here, otherwise the add events will get lost to the void */
-  ASSERT(SDL_Init(SDL_INIT_EVERYTHING & ~(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER)) == 0, "Error initializing SDL: {}", SDL_GetError());
+  ASSERT(SDL_Init(SDL_INIT_EVERYTHING & ~(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER)) == 0,
+         "Error initializing SDL: {}", SDL_GetError());
 
 #if !defined(_WIN32) && !defined(__APPLE__)
   SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
