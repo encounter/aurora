@@ -7,8 +7,8 @@
 #include <SDL.h>
 #include <webgpu/webgpu.h>
 
-#include "../imgui/backends/imgui_impl_sdl.cpp"         // NOLINT(bugprone-suspicious-include)
-#include "../imgui/backends/imgui_impl_sdlrenderer.cpp" // NOLINT(bugprone-suspicious-include)
+#include "../imgui/backends/imgui_impl_sdl2.cpp"         // NOLINT(bugprone-suspicious-include)
+#include "../imgui/backends/imgui_impl_sdlrenderer2.cpp" // NOLINT(bugprone-suspicious-include)
 // #include "../imgui/backends/imgui_impl_wgpu.cpp"     // NOLINT(bugprone-suspicious-include)
 // TODO: Transition back to imgui-provided backend when it uses WGSL
 #include "imgui_impl_wgpu.cpp"                          // NOLINT(bugprone-suspicious-include)
@@ -34,14 +34,14 @@ void create_context() noexcept {
 
 void initialize() noexcept {
   SDL_Renderer* renderer = window::get_sdl_renderer();
-  ImGui_ImplSDL2_Init(window::get_sdl_window(), renderer);
+  ImGui_ImplSDL2_Init(window::get_sdl_window(), renderer, NULL);
 #ifdef __APPLE__
   // Disable MouseCanUseGlobalState for scaling purposes
   ImGui_ImplSDL2_GetBackendData()->MouseCanUseGlobalState = false;
 #endif
   g_useSdlRenderer = renderer != nullptr;
   if (g_useSdlRenderer) {
-    ImGui_ImplSDLRenderer_Init(renderer);
+    ImGui_ImplSDLRenderer2_Init(renderer);
   } else {
     const auto format = webgpu::g_graphicsConfig.swapChainDescriptor.format;
     ImGui_ImplWGPU_Init(webgpu::g_device.Get(), 1, static_cast<WGPUTextureFormat>(format));
@@ -50,7 +50,7 @@ void initialize() noexcept {
 
 void shutdown() noexcept {
   if (g_useSdlRenderer) {
-    ImGui_ImplSDLRenderer_Shutdown();
+    ImGui_ImplSDLRenderer2_Shutdown();
   } else {
     ImGui_ImplWGPU_Shutdown();
   }
@@ -77,7 +77,7 @@ void process_event(const SDL_Event& event) noexcept {
 
 void new_frame(const AuroraWindowSize& size) noexcept {
   if (g_useSdlRenderer) {
-    ImGui_ImplSDLRenderer_NewFrame();
+    ImGui_ImplSDLRenderer2_NewFrame();
   } else {
     if (g_scale != size.scale) {
       if (g_scale > 0.f) {
@@ -106,9 +106,9 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
   // io.DisplayFramebufferScale is informational; we're rendering at full DPI
   data->FramebufferScale = {1.f, 1.f};
   if (g_useSdlRenderer) {
-    SDL_Renderer* renderer = ImGui_ImplSDLRenderer_GetBackendData()->SDLRenderer;
+    SDL_Renderer* renderer = ImGui_ImplSDLRenderer2_GetBackendData()->SDLRenderer;
     SDL_RenderClear(renderer);
-    ImGui_ImplSDLRenderer_RenderDrawData(data);
+    ImGui_ImplSDLRenderer2_RenderDrawData(data);
     SDL_RenderPresent(renderer);
   } else {
     ImGui_ImplWGPU_RenderDrawData(data, pass.Get());
@@ -117,7 +117,7 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
 
 ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) noexcept {
   if (g_useSdlRenderer) {
-    SDL_Renderer* renderer = ImGui_ImplSDLRenderer_GetBackendData()->SDLRenderer;
+    SDL_Renderer* renderer = ImGui_ImplSDLRenderer2_GetBackendData()->SDLRenderer;
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, width, height);
     SDL_UpdateTexture(texture, nullptr, data, width * 4);
     SDL_SetTextureScaleMode(texture, SDL_ScaleModeLinear);
