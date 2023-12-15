@@ -57,6 +57,7 @@ typedef struct {
   uint32_t msaa;
   uint16_t maxTextureAnisotropy;
   bool startFullscreen;
+  bool allowJoystickBackgroundEvents;
   int32_t windowPosX;
   int32_t windowPosY;
   uint32_t windowWidth;

@@ -225,8 +225,9 @@ bool initialize() {
 #endif
 
   SDL_DisableScreenSaver();
-  /* TODO: Make this an option rather than hard coding it */
-  SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+  if (g_config.allowJoystickBackgroundEvents) {
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+  }
 
   return true;
 }
