@@ -23,7 +23,7 @@
 #define __has_builtin(x) 0
 #endif
 #if __has_attribute(vector_size)
-//#define USE_GCC_VECTOR_EXTENSIONS
+#define USE_GCC_VECTOR_EXTENSIONS
 #endif
 
 namespace aurora {

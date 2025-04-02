@@ -33,6 +33,11 @@ typedef enum {
 } AuroraLogLevel;
 
 typedef struct {
+  int32_t x;
+  int32_t y;
+} AuroraWindowPos;
+
+typedef struct {
   uint32_t width;
   uint32_t height;
   uint32_t fb_width;
@@ -53,6 +58,9 @@ typedef struct {
   uint32_t msaa;
   uint16_t maxTextureAnisotropy;
   bool startFullscreen;
+  bool allowJoystickBackgroundEvents;
+  int32_t windowPosX;
+  int32_t windowPosY;
   uint32_t windowWidth;
   uint32_t windowHeight;
   void* iconRGBA8;
