@@ -11,7 +11,7 @@ struct SDL_Window;
 
 namespace aurora::webgpu {
 struct GraphicsConfig {
-  wgpu::SwapChainDescriptor swapChainDescriptor;
+  wgpu::SurfaceConfiguration surfaceConfiguration;
   wgpu::TextureFormat depthFormat;
   uint32_t msaaSamples;
   uint16_t textureAnisotropy;
@@ -26,7 +26,7 @@ struct TextureWithSampler {
 
 extern wgpu::Device g_device;
 extern wgpu::Queue g_queue;
-extern wgpu::SwapChain g_swapChain;
+extern wgpu::Surface g_surface;
 extern wgpu::BackendType g_backendType;
 extern GraphicsConfig g_graphicsConfig;
 extern TextureWithSampler g_frameBuffer;

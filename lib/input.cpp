@@ -90,8 +90,7 @@ static std::optional<std::string> remap_controller_layout(std::string mapping) {
       if (idx > 0) {
         newMapping.push_back(',');
       }
-      auto str = value.operator std::string();
-      newMapping.append(str);
+      newMapping.append(value);
     } else {
       const auto split = absl::StrSplit(value, absl::MaxSplits(':', 2));
       auto iter = split.begin();
@@ -123,9 +122,9 @@ static std::optional<std::string> remap_controller_layout(std::string mapping) {
   }
   for (auto [k, v] : entries) {
     newMapping.push_back(',');
-    newMapping.append(k.operator std::string());
+    newMapping.append(k);
     newMapping.push_back(':');
-    newMapping.append(v.operator std::string());
+    newMapping.append(v);
   }
   return newMapping;
 }

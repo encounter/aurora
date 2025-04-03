@@ -5,11 +5,11 @@
 
 namespace aurora::gfx {
 struct TextureUpload {
-  wgpu::TextureDataLayout layout;
-  wgpu::ImageCopyTexture tex;
+  wgpu::TexelCopyBufferLayout layout;
+  wgpu::TexelCopyTextureInfo tex;
   wgpu::Extent3D size;
 
-  TextureUpload(wgpu::TextureDataLayout layout, wgpu::ImageCopyTexture tex, wgpu::Extent3D size) noexcept
+  TextureUpload(wgpu::TexelCopyBufferLayout layout, wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size) noexcept
   : layout(layout), tex(tex), size(size) {}
 };
 extern std::vector<TextureUpload> g_textureUploads;

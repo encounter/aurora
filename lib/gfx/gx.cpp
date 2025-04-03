@@ -205,7 +205,7 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderIn
   const auto blendState =
       to_blend_state(config.blendMode, config.blendFacSrc, config.blendFacDst, config.blendOp, config.dstAlpha);
   const std::array colorTargets{wgpu::ColorTargetState{
-      .format = g_graphicsConfig.swapChainDescriptor.format,
+      .format = g_graphicsConfig.surfaceConfiguration.format,
       .blend = &blendState,
       .writeMask = to_write_mask(config.colorUpdate, config.alphaUpdate),
   }};

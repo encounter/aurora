@@ -92,14 +92,14 @@ namespace aurora {
 // the structure definition, which could easily change with Dawn updates.
 template <>
 inline HashType xxh3_hash(const wgpu::BindGroupDescriptor& input, HashType seed) {
-  constexpr auto offset = sizeof(void*) * 2; // skip nextInChain, label
+  constexpr auto offset = sizeof(void*) * 3; // skip nextInChain, label
   const auto hash = xxh3_hash_s(reinterpret_cast<const u8*>(&input) + offset,
                                 sizeof(wgpu::BindGroupDescriptor) - offset - sizeof(void*) /* skip entries */, seed);
   return xxh3_hash_s(input.entries, sizeof(wgpu::BindGroupEntry) * input.entryCount, hash);
 }
 template <>
 inline HashType xxh3_hash(const wgpu::SamplerDescriptor& input, HashType seed) {
-  constexpr auto offset = sizeof(void*) * 2; // skip nextInChain, label
+  constexpr auto offset = sizeof(void*) * 3; // skip nextInChain, label
   return xxh3_hash_s(reinterpret_cast<const u8*>(&input) + offset,
                      sizeof(wgpu::SamplerDescriptor) - offset - 2 /* skip padding */, seed);
 }
@@ -135,7 +135,7 @@ wgpu::Buffer g_uniformBuffer;
 wgpu::Buffer g_indexBuffer;
 wgpu::Buffer g_storageBuffer;
 static std::array<wgpu::Buffer, 3> g_stagingBuffers;
-static wgpu::SupportedLimits g_cachedLimits;
+static wgpu::Limits g_cachedLimits;
 
 static ShaderState g_state;
 static PipelineRef g_currentPipeline;
@@ -378,8 +378,7 @@ void load_pipeline_cache() {
         if (config.version != gx::GXPipelineConfigVersion) {
           break;
         }
-        find_pipeline(
-            type, config, [=]() { return stream::create_pipeline(g_state.stream, config); }, true);
+        find_pipeline(type, config, [=]() { return stream::create_pipeline(g_state.stream, config); }, true);
       } break;
       case ShaderType::Model: {
         if (size != sizeof(model::PipelineConfig)) {
@@ -389,8 +388,7 @@ void load_pipeline_cache() {
         if (config.version != gx::GXPipelineConfigVersion) {
           break;
         }
-        find_pipeline(
-            type, config, [=]() { return model::create_pipeline(g_state.model, config); }, true);
+        find_pipeline(type, config, [=]() { return model::create_pipeline(g_state.model, config); }, true);
       } break;
       default:
         Log.report(LOG_WARNING, FMT_STRING("Unknown pipeline type {}"), static_cast<int>(type));
@@ -494,24 +492,20 @@ static bool bufferMapped = false;
 void map_staging_buffer() {
   bufferMapped = false;
   g_stagingBuffers[currentStagingBuffer].MapAsync(
-      wgpu::MapMode::Write, 0, StagingBufferSize,
-      [](WGPUBufferMapAsyncStatus status, void* userdata) {
-        if (status == WGPUBufferMapAsyncStatus_DestroyedBeforeCallback) {
+      wgpu::MapMode::Write, 0, StagingBufferSize, wgpu::CallbackMode::AllowSpontaneous,
+      [](wgpu::MapAsyncStatus status, wgpu::StringView message) {
+        if (status == wgpu::MapAsyncStatus::CallbackCancelled) {
           return;
         }
-        ASSERT(status == WGPUBufferMapAsyncStatus_Success, "Buffer mapping failed: {}", static_cast<int>(status));
-        *static_cast<bool*>(userdata) = true;
-      },
-      &bufferMapped);
+        ASSERT(status == wgpu::MapAsyncStatus::Success, "Buffer mapping failed: {} {}", magic_enum::enum_name(status),
+               message);
+        bufferMapped = true;
+      });
 }
 
 void begin_frame() {
   while (!bufferMapped) {
-#ifdef EMSCRIPTEN
-    emscripten_sleep(0);
-#else
-    g_device.Tick();
-#endif
+    g_instance.ProcessEvents();
   }
   size_t bufferOffset = 0;
   auto& stagingBuf = g_stagingBuffers[currentStagingBuffer];
@@ -561,9 +555,9 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
   {
     // Perform texture copies
     for (const auto& item : g_textureUploads) {
-      const wgpu::ImageCopyBuffer buf{
+      const wgpu::TexelCopyBufferInfo buf{
           .layout =
-              wgpu::TextureDataLayout{
+              wgpu::TexelCopyBufferLayout{
                   .offset = item.layout.offset + bufferOffset,
                   .bytesPerRow = ALIGN(item.layout.bytesPerRow, 256),
                   .rowsPerImage = item.layout.rowsPerImage,
@@ -623,7 +617,7 @@ void render(wgpu::CommandEncoder& cmd) {
     pass.End();
 
     if (passInfo.resolveTarget) {
-      wgpu::ImageCopyTexture src{
+      wgpu::TexelCopyTextureInfo src{
           .origin =
               wgpu::Origin3D{
                   .x = static_cast<uint32_t>(passInfo.resolveRect.x),
@@ -635,7 +629,7 @@ void render(wgpu::CommandEncoder& cmd) {
       } else {
         src.texture = webgpu::g_frameBuffer.texture;
       }
-      const wgpu::ImageCopyTexture dst{
+      const wgpu::TexelCopyTextureInfo dst{
           .texture = passInfo.resolveTarget->texture,
       };
       const wgpu::Extent3D size{
@@ -750,10 +744,10 @@ static inline Range map(ByteBuffer& target, size_t length, size_t alignment) {
 Range push_verts(const uint8_t* data, size_t length) { return push(g_verts, data, length, 0); }
 Range push_indices(const uint8_t* data, size_t length) { return push(g_indices, data, length, 0); }
 Range push_uniform(const uint8_t* data, size_t length) {
-  return push(g_uniforms, data, length, g_cachedLimits.limits.minUniformBufferOffsetAlignment);
+  return push(g_uniforms, data, length, g_cachedLimits.minUniformBufferOffsetAlignment);
 }
 Range push_storage(const uint8_t* data, size_t length) {
-  return push(g_storage, data, length, g_cachedLimits.limits.minStorageBufferOffsetAlignment);
+  return push(g_storage, data, length, g_cachedLimits.minStorageBufferOffsetAlignment);
 }
 Range push_texture_data(const uint8_t* data, size_t length, u32 bytesPerRow, u32 rowsPerImage) {
   // For CopyBufferToTexture, we need an alignment of 256 per row (see Dawn kTextureBytesPerRowAlignment)
@@ -776,11 +770,11 @@ std::pair<ByteBuffer, Range> map_indices(size_t length) {
   return {ByteBuffer{g_indices.data() + range.offset, range.size}, range};
 }
 std::pair<ByteBuffer, Range> map_uniform(size_t length) {
-  const auto range = map(g_uniforms, length, g_cachedLimits.limits.minUniformBufferOffsetAlignment);
+  const auto range = map(g_uniforms, length, g_cachedLimits.minUniformBufferOffsetAlignment);
   return {ByteBuffer{g_uniforms.data() + range.offset, range.size}, range};
 }
 std::pair<ByteBuffer, Range> map_storage(size_t length) {
-  const auto range = map(g_storage, length, g_cachedLimits.limits.minStorageBufferOffsetAlignment);
+  const auto range = map(g_storage, length, g_cachedLimits.minStorageBufferOffsetAlignment);
   return {ByteBuffer{g_storage.data() + range.offset, range.size}, range};
 }
 
@@ -817,7 +811,7 @@ const wgpu::Sampler& sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
   return it->second;
 }
 
-uint32_t align_uniform(uint32_t value) { return ALIGN(value, g_cachedLimits.limits.minUniformBufferOffsetAlignment); }
+uint32_t align_uniform(uint32_t value) { return ALIGN(value, g_cachedLimits.minUniformBufferOffsetAlignment); }
 } // namespace aurora::gfx
 
 void push_debug_group(const char* label) {

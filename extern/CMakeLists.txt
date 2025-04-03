@@ -6,6 +6,7 @@ if (NOT EMSCRIPTEN)
     if (CMAKE_SYSTEM_NAME STREQUAL Linux)
       set(DAWN_ENABLE_OPENGLES ON CACHE BOOL "Enable compilation of the OpenGL ES backend" FORCE)
     endif ()
+    set(DAWN_FETCH_DEPENDENCIES ON CACHE BOOL "Use fetch_dawn_dependencies.py as an alternative to using depot_tools" FORCE)
     add_subdirectory(dawn EXCLUDE_FROM_ALL)
     if (DAWN_ENABLE_VULKAN)
       target_compile_definitions(dawn_native PRIVATE

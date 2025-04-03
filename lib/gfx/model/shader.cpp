@@ -449,8 +449,8 @@ wgpu::RenderPipeline create_pipeline(const State& state, [[maybe_unused]] const 
   }
 
   const std::array vtxBuffers{wgpu::VertexBufferLayout{
-      .arrayStride = offset,
       .stepMode = wgpu::VertexStepMode::Vertex,
+      .arrayStride = offset,
       .attributeCount = shaderLocation,
       .attributes = vtxAttrs.data(),
   }};

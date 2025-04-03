@@ -24,6 +24,7 @@ typedef enum {
   AURORA_CONTROLLER_REMOVED,
   AURORA_PAUSED,
   AURORA_UNPAUSED,
+  AURORA_DISPLAY_SCALE_CHANGED,
 } AuroraEventType;
 
 struct AuroraEvent {

@@ -7,9 +7,10 @@
 #include "webgpu/gpu.hpp"
 #include "window.hpp"
 
-#include <SDL3/SDL.h>
 #include <SDL3/SDL_filesystem.h>
 #include <imgui.h>
+#include <magic_enum.hpp>
+#include <webgpu/webgpu_cpp.h>
 
 namespace aurora {
 static Module Log("aurora");
@@ -19,7 +20,7 @@ AuroraConfig g_config;
 // GPU
 using webgpu::g_device;
 using webgpu::g_queue;
-using webgpu::g_swapChain;
+using webgpu::g_surface;
 
 constexpr std::array PreferredBackendOrder{
 #ifdef ENABLE_BACKEND_WEBGPU
@@ -37,12 +38,12 @@ constexpr std::array PreferredBackendOrder{
 #ifdef DAWN_ENABLE_BACKEND_D3D11
     BACKEND_D3D11,
 #endif
-//#ifdef DAWN_ENABLE_BACKEND_DESKTOP_GL
-//    BACKEND_OPENGL,
-//#endif
-//#ifdef DAWN_ENABLE_BACKEND_OPENGLES
-//    BACKEND_OPENGLES,
-//#endif
+// #ifdef DAWN_ENABLE_BACKEND_DESKTOP_GL
+//     BACKEND_OPENGL,
+// #endif
+// #ifdef DAWN_ENABLE_BACKEND_OPENGLES
+//     BACKEND_OPENGLES,
+// #endif
 #ifdef DAWN_ENABLE_BACKEND_NULL
     BACKEND_NULL,
 #endif
@@ -111,9 +112,7 @@ static AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config)
   }
   imgui::initialize();
 
-  if (aurora_begin_frame()) {
-    g_initialFrame = true;
-  }
+  g_initialFrame = true;
   g_config.desiredBackend = selectedBackend;
   return {
       .backend = selectedBackend,
@@ -123,14 +122,10 @@ static AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config)
   };
 }
 
-#ifndef EMSCRIPTEN
 static wgpu::TextureView g_currentView;
-#endif
 
 static void shutdown() noexcept {
-#ifndef EMSCRIPTEN
   g_currentView = {};
-#endif
   imgui::shutdown();
   gfx::shutdown();
   webgpu::shutdown();
@@ -139,26 +134,32 @@ static void shutdown() noexcept {
 
 static const AuroraEvent* update() noexcept {
   if (g_initialFrame) {
-    aurora_end_frame();
     g_initialFrame = false;
     input::initialize();
   }
-  const auto* events = window::poll_events();
-  imgui::new_frame(window::get_window_size());
-  return events;
+  return window::poll_events();
 }
 
 static bool begin_frame() noexcept {
-#ifndef EMSCRIPTEN
-  g_currentView = g_swapChain.GetCurrentTextureView();
-  if (!g_currentView) {
-    ImGui::EndFrame();
+  wgpu::SurfaceTexture surfaceTexture;
+  g_surface.GetCurrentTexture(&surfaceTexture);
+  switch (surfaceTexture.status) {
+  case wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal:
+    g_currentView = surfaceTexture.texture.CreateView();
+    break;
+  case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal: {
+    Log.report(LOG_WARNING, FMT_STRING("Surface texture is suboptimal"));
     // Force swapchain recreation
     const auto size = window::get_window_size();
     webgpu::resize_swapchain(size.fb_width, size.fb_height, true);
     return false;
   }
-#endif
+  default:
+    Log.report(LOG_ERROR, FMT_STRING("Failed to get surface texture: {}"),
+               magic_enum::enum_name(surfaceTexture.status));
+    return false;
+  }
+  imgui::new_frame(window::get_window_size());
   gfx::begin_frame();
   return true;
 }
@@ -173,11 +174,7 @@ static void end_frame() noexcept {
   {
     const std::array attachments{
         wgpu::RenderPassColorAttachment{
-#ifdef EMSCRIPTEN
-            .view = g_swapChain.GetCurrentTextureView(),
-#else
             .view = g_currentView,
-#endif
             .loadOp = wgpu::LoadOp::Clear,
             .storeOp = wgpu::StoreOp::Store,
         },
@@ -192,24 +189,14 @@ static void end_frame() noexcept {
     pass.SetPipeline(webgpu::g_CopyPipeline);
     pass.SetBindGroup(0, webgpu::g_CopyBindGroup, 0, nullptr);
     pass.Draw(3);
-    if (!g_initialFrame) {
-      // Render ImGui
-      imgui::render(pass);
-    }
+    imgui::render(pass);
     pass.End();
   }
   const wgpu::CommandBufferDescriptor cmdBufDescriptor{.label = "Redraw command buffer"};
   const auto buffer = encoder.Finish(&cmdBufDescriptor);
   g_queue.Submit(1, &buffer);
-#ifdef WEBGPU_DAWN
-  g_swapChain.Present();
+  g_surface.Present();
   g_currentView = {};
-#else
-  emscripten_sleep(0);
-#endif
-  if (!g_initialFrame) {
-    ImGui::EndFrame();
-  }
 }
 } // namespace aurora
 

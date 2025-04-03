@@ -1,18 +1,22 @@
 #include "gpu.hpp"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+#include <vector>
+
 #include <aurora/aurora.h>
-
-#include "../window.hpp"
-#include "../internal.hpp"
-
-#include <SDL3/SDL.h>
 #include <magic_enum.hpp>
-#include <memory>
-#include <algorithm>
+#include <webgpu/webgpu.h>
+#include <webgpu/webgpu_cpp.h>
+
+#include "../internal.hpp"
+#include "../window.hpp"
 
 #ifdef WEBGPU_DAWN
-#include <dawn/native/DawnNative.h>
 #include "../dawn/BackendBinding.hpp"
+#include <dawn/native/DawnNative.h>
 #endif
 
 namespace aurora::webgpu {
@@ -20,7 +24,7 @@ static Module Log("aurora::gpu");
 
 wgpu::Device g_device;
 wgpu::Queue g_queue;
-wgpu::SwapChain g_swapChain;
+wgpu::Surface g_surface;
 wgpu::BackendType g_backendType;
 GraphicsConfig g_graphicsConfig;
 TextureWithSampler g_frameBuffer;
@@ -32,23 +36,17 @@ static wgpu::BindGroupLayout g_CopyBindGroupLayout;
 wgpu::RenderPipeline g_CopyPipeline;
 wgpu::BindGroup g_CopyBindGroup;
 
-#ifdef WEBGPU_DAWN
-static std::unique_ptr<dawn::native::Instance> g_dawnInstance;
-static dawn::native::Adapter g_adapter;
-#else
 static wgpu::Adapter g_adapter;
-#endif
 wgpu::Instance g_instance;
-static wgpu::Surface g_surface;
-static wgpu::AdapterProperties g_adapterProperties;
+static wgpu::AdapterInfo g_adapterInfo;
 
 TextureWithSampler create_render_texture(bool multisampled) {
   const wgpu::Extent3D size{
-      .width = g_graphicsConfig.swapChainDescriptor.width,
-      .height = g_graphicsConfig.swapChainDescriptor.height,
+      .width = g_graphicsConfig.surfaceConfiguration.width,
+      .height = g_graphicsConfig.surfaceConfiguration.height,
       .depthOrArrayLayers = 1,
   };
-  const auto format = g_graphicsConfig.swapChainDescriptor.format;
+  const auto format = g_graphicsConfig.surfaceConfiguration.format;
   uint32_t sampleCount = 1;
   if (multisampled) {
     sampleCount = g_graphicsConfig.msaaSamples;
@@ -98,8 +96,8 @@ TextureWithSampler create_render_texture(bool multisampled) {
 
 static TextureWithSampler create_depth_texture() {
   const wgpu::Extent3D size{
-      .width = g_graphicsConfig.swapChainDescriptor.width,
-      .height = g_graphicsConfig.swapChainDescriptor.height,
+      .width = g_graphicsConfig.surfaceConfiguration.width,
+      .height = g_graphicsConfig.surfaceConfiguration.height,
       .depthOrArrayLayers = 1,
   };
   const auto format = g_graphicsConfig.depthFormat;
@@ -188,7 +186,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   };
   auto module = g_device.CreateShaderModule(&moduleDescriptor);
   const std::array colorTargets{wgpu::ColorTargetState{
-      .format = g_graphicsConfig.swapChainDescriptor.format,
+      .format = g_graphicsConfig.surfaceConfiguration.format,
       .writeMask = wgpu::ColorWriteMask::All,
   }};
   const wgpu::FragmentState fragmentState{
@@ -266,52 +264,6 @@ void create_copy_bind_group() {
   g_CopyBindGroup = g_device.CreateBindGroup(&bindGroupDescriptor);
 }
 
-static void log_callback(WGPULoggingType type, char const * message, void * userdata) {
-  AuroraLogLevel level = LOG_FATAL;
-  switch (type) {
-  case WGPULoggingType_Verbose:
-    level = LOG_DEBUG;
-    break;
-  case WGPULoggingType_Info:
-    level = LOG_INFO;
-    break;
-  case WGPULoggingType_Warning:
-    level = LOG_WARNING;
-    break;
-  case WGPULoggingType_Error:
-    level = LOG_ERROR;
-    break;
-  default:
-    break;
-  }
-  Log.report(level, FMT_STRING("WebGPU message: {}"), message);
-}
-
-static void error_callback(WGPUErrorType type, char const* message, void* userdata) {
-  FATAL("WebGPU error {}: {}", static_cast<int>(type), message);
-}
-
-#ifndef WEBGPU_DAWN
-static void adapter_callback(WGPURequestAdapterStatus status, WGPUAdapter adapter, char const* message,
-                             void* userdata) {
-  if (status == WGPURequestAdapterStatus_Success) {
-    g_adapter = wgpu::Adapter::Acquire(adapter);
-  } else {
-    Log.report(LOG_WARNING, FMT_STRING("Adapter request failed with message: {}"), message);
-  }
-  *static_cast<bool*>(userdata) = true;
-}
-#endif
-
-static void device_callback(WGPURequestDeviceStatus status, WGPUDevice device, char const* message, void* userdata) {
-  if (status == WGPURequestDeviceStatus_Success) {
-    g_device = wgpu::Device::Acquire(device);
-  } else {
-    Log.report(LOG_WARNING, FMT_STRING("Device request failed with message: {}"), message);
-  }
-  *static_cast<bool*>(userdata) = true;
-}
-
 static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
   switch (backend) {
   case BACKEND_WEBGPU:
@@ -334,17 +286,25 @@ static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
 }
 
 bool initialize(AuroraBackend auroraBackend) {
-#ifdef WEBGPU_DAWN
-  if (!g_dawnInstance) {
-    Log.report(LOG_INFO, FMT_STRING("Creating Dawn instance"));
-    g_dawnInstance = std::make_unique<dawn::native::Instance>();
-  }
-#else
   if (!g_instance) {
-    const wgpu::InstanceDescriptor instanceDescriptor{};
-    g_instance = {}; // TODO use wgpuCreateInstance when supported
-  }
+    Log.report(LOG_INFO, FMT_STRING("Creating WGPU instance"));
+    wgpu::InstanceDescriptor instanceDescriptor{
+        .capabilities =
+            {
+                .timedWaitAnyEnable = true,
+            },
+    };
+#ifdef WEBGPU_DAWN
+    dawn::native::DawnInstanceDescriptor dawnInstanceDescriptor;
+    dawnInstanceDescriptor.backendValidationLevel = dawn::native::BackendValidationLevel::Disabled;
+    instanceDescriptor.nextInChain = &dawnInstanceDescriptor;
 #endif
+    g_instance = wgpu::CreateInstance(&instanceDescriptor);
+    if (!g_instance) {
+      Log.report(LOG_ERROR, FMT_STRING("Failed to create WGPU instance"));
+      return false;
+    }
+  }
   const wgpu::BackendType backend = to_wgpu_backend(auroraBackend);
 #ifdef EMSCRIPTEN
   if (backend != wgpu::BackendType::WebGPU) {
@@ -358,120 +318,87 @@ bool initialize(AuroraBackend auroraBackend) {
   g_dawnInstance->EnableBackendValidation(backend != WGPUBackendType::D3D12);
 #endif
 
-#ifdef WEBGPU_DAWN
-  SDL_Window* window = window::get_sdl_window();
-  if (!utils::DiscoverAdapter(g_dawnInstance.get(), window, backend)) {
-    return false;
-  }
-  {
-    std::vector<dawn::native::Adapter> adapters = g_dawnInstance->GetAdapters();
-    std::sort(adapters.begin(), adapters.end(), [&](const auto& a, const auto& b) {
-      wgpu::AdapterProperties propertiesA;
-      wgpu::AdapterProperties propertiesB;
-      a.GetProperties(&propertiesA);
-      b.GetProperties(&propertiesB);
-      constexpr std::array PreferredTypeOrder{
-          wgpu::AdapterType::DiscreteGPU,
-          wgpu::AdapterType::IntegratedGPU,
-          wgpu::AdapterType::CPU,
-      };
-      const auto typeItA = std::find(PreferredTypeOrder.begin(), PreferredTypeOrder.end(), propertiesA.adapterType);
-      const auto typeItB = std::find(PreferredTypeOrder.begin(), PreferredTypeOrder.end(), propertiesB.adapterType);
-      return typeItA < typeItB;
-    });
-    const auto adapterIt = std::find_if(adapters.begin(), adapters.end(), [=](const auto& adapter) -> bool {
-      wgpu::AdapterProperties properties;
-      adapter.GetProperties(&properties);
-      return properties.backendType == backend;
-    });
-    if (adapterIt == adapters.end()) {
-      return false;
-    }
-    g_adapter = *adapterIt;
-  }
-
-  const auto chainedDescriptor = utils::SetupWindowAndGetSurfaceDescriptor(window);
-  wgpu::SurfaceDescriptor surfaceDescriptor;
-  surfaceDescriptor.nextInChain = chainedDescriptor.get();
-  g_surface = g_instance.CreateSurface(&surfaceDescriptor);
-  ASSERT(g_surface, "Failed to initialize surface");
-#else
+#ifdef EMSCRIPTEN
   const WGPUSurfaceDescriptorFromCanvasHTMLSelector canvasDescriptor{
       .chain = {.sType = WGPUSType_SurfaceDescriptorFromCanvasHTMLSelector},
       .selector = "#canvas",
   };
-  const WGPUSurfaceDescriptor surfaceDescriptor{
-      .nextInChain = &canvasDescriptor.chain,
+#else
+  SDL_Window* window = window::get_sdl_window();
+  const auto chainedDescriptor = utils::SetupWindowAndGetSurfaceDescriptor(window);
+#endif
+  const wgpu::SurfaceDescriptor surfaceDescriptor{
+      .nextInChain = chainedDescriptor.get(),
       .label = "Surface",
   };
-  g_surface = wgpu::Surface::Acquire(wgpuInstanceCreateSurface(g_instance.Get(), &surfaceDescriptor));
-  ASSERT(g_surface, "Failed to initialize surface");
-  const WGPURequestAdapterOptions options{
-      .compatibleSurface = g_surface.Get(),
-      .powerPreference = WGPUPowerPreference_HighPerformance,
-      .forceFallbackAdapter = false,
-  };
-  bool adapterCallbackRecieved = false;
-  wgpuInstanceRequestAdapter(g_instance.Get(), &options, adapter_callback, &adapterCallbackRecieved);
-  while (!adapterCallbackRecieved) {
-    emscripten_log(EM_LOG_CONSOLE, "Waiting for adapter...\n");
-    emscripten_sleep(100);
+  g_surface = g_instance.CreateSurface(&surfaceDescriptor);
+  if (!g_surface) {
+    Log.report(LOG_ERROR, FMT_STRING("Failed to create surface"));
+    return false;
   }
-#endif
-  g_adapter.GetProperties(&g_adapterProperties);
-  g_backendType = g_adapterProperties.backendType;
+  {
+    const wgpu::RequestAdapterOptions options{
+        .powerPreference = wgpu::PowerPreference::HighPerformance,
+        .backendType = backend,
+        .compatibleSurface = g_surface,
+    };
+    const auto future = g_instance.RequestAdapter(
+        &options, wgpu::CallbackMode::WaitAnyOnly,
+        [](wgpu::RequestAdapterStatus status, wgpu::Adapter adapter, wgpu::StringView message) {
+          if (status == wgpu::RequestAdapterStatus::Success) {
+            g_adapter = std::move(adapter);
+          } else {
+            Log.report(LOG_WARNING, FMT_STRING("Adapter request failed: {}"), message);
+          }
+        });
+    const auto status = g_instance.WaitAny(future, 5000000000);
+    if (status != wgpu::WaitStatus::Success) {
+      Log.report(LOG_ERROR, FMT_STRING("Failed to create adapter: {}"), magic_enum::enum_name(status));
+      return false;
+    }
+    if (!g_adapter) {
+      Log.report(LOG_ERROR, FMT_STRING("Failed to create adapter"));
+      return false;
+    }
+  }
+  g_adapter.GetInfo(&g_adapterInfo);
+  g_backendType = g_adapterInfo.backendType;
   const auto backendName = magic_enum::enum_name(g_backendType);
-  const char* adapterName = g_adapterProperties.name;
-  if (adapterName == nullptr) {
-    adapterName = "Unknown";
+  auto adapterName = g_adapterInfo.device;
+  if (adapterName.IsUndefined()) {
+    adapterName = wgpu::StringView("Unknown");
   }
-  const char* driverDescription = g_adapterProperties.driverDescription;
-  if (driverDescription == nullptr) {
-    driverDescription = "Unknown";
+  auto description = g_adapterInfo.description;
+  if (description.IsUndefined()) {
+    description = wgpu::StringView("Unknown");
   }
   Log.report(LOG_INFO, FMT_STRING("Graphics adapter information\n  API: {}\n  Device: {} ({})\n  Driver: {}"),
-             backendName, adapterName, magic_enum::enum_name(g_adapterProperties.adapterType), driverDescription);
+             backendName, adapterName, magic_enum::enum_name(g_adapterInfo.adapterType), description);
 
   {
-// TODO: emscripten doesn't implement wgpuAdapterGetLimits
-#ifdef WEBGPU_DAWN
-    WGPUSupportedLimits supportedLimits{};
+    wgpu::Limits supportedLimits{};
     g_adapter.GetLimits(&supportedLimits);
-    const wgpu::RequiredLimits requiredLimits{
-        .limits =
-            {
-                // Use "best" supported alignments
-                .minUniformBufferOffsetAlignment = supportedLimits.limits.minUniformBufferOffsetAlignment == 0
-                                                       ? static_cast<uint32_t>(WGPU_LIMIT_U32_UNDEFINED)
-                                                       : supportedLimits.limits.minUniformBufferOffsetAlignment,
-                .minStorageBufferOffsetAlignment = supportedLimits.limits.minStorageBufferOffsetAlignment == 0
-                                                       ? static_cast<uint32_t>(WGPU_LIMIT_U32_UNDEFINED)
-                                                       : supportedLimits.limits.minStorageBufferOffsetAlignment,
-            },
+    const wgpu::Limits requiredLimits{
+        // Use "best" supported alignments
+        .minUniformBufferOffsetAlignment = supportedLimits.minUniformBufferOffsetAlignment == 0
+                                               ? WGPU_LIMIT_U32_UNDEFINED
+                                               : supportedLimits.minUniformBufferOffsetAlignment,
+        .minStorageBufferOffsetAlignment = supportedLimits.minStorageBufferOffsetAlignment == 0
+                                               ? WGPU_LIMIT_U32_UNDEFINED
+                                               : supportedLimits.minStorageBufferOffsetAlignment,
     };
-#endif
-    std::vector<wgpu::FeatureName> features;
-#ifdef WEBGPU_DAWN
-    const auto supportedFeatures = g_adapter.GetSupportedFeatures();
-    for (const auto* const feature : supportedFeatures) {
-      if (strcmp(feature, "texture-compression-bc") == 0) {
-        features.push_back(wgpu::FeatureName::TextureCompressionBC);
-      }
-    }
-#else
-    std::vector<wgpu::FeatureName> supportedFeatures;
-    size_t featureCount = g_adapter.EnumerateFeatures(nullptr);
-    supportedFeatures.resize(featureCount);
-    g_adapter.EnumerateFeatures(supportedFeatures.data());
-    for (const auto& feature : supportedFeatures) {
+    std::vector<wgpu::FeatureName> requiredFeatures;
+    wgpu::SupportedFeatures supportedFeatures;
+    g_adapter.GetFeatures(&supportedFeatures);
+    for (size_t i = 0; i < supportedFeatures.featureCount; ++i) {
+      const auto feature = supportedFeatures.features[i];
       if (feature == wgpu::FeatureName::TextureCompressionBC) {
-        features.push_back(wgpu::FeatureName::TextureCompressionBC);
+        requiredFeatures.push_back(feature);
       }
     }
-#endif
 #ifdef WEBGPU_DAWN
-    const std::array enableToggles {
-      /* clang-format off */
+    const std::array enableToggles{
+    /* clang-format off */
 #if _WIN32
       "use_dxc",
 #endif
@@ -481,59 +408,105 @@ bool initialize(AuroraBackend auroraBackend) {
 #endif
       "use_user_defined_labels_in_backend",
       "disable_symbol_renaming",
-      /* clang-format on */
+      "enable_immediate_error_handling",
+        /* clang-format on */
     };
-    wgpu::DawnTogglesDescriptor togglesDescriptor{};
-    togglesDescriptor.enabledTogglesCount = enableToggles.size();
-    togglesDescriptor.enabledToggles = enableToggles.data();
+    const wgpu::DawnTogglesDescriptor togglesDescriptor({
+        .enabledToggleCount = enableToggles.size(),
+        .enabledToggles = enableToggles.data(),
+    });
 #endif
-    const wgpu::DeviceDescriptor deviceDescriptor{
+    wgpu::DeviceDescriptor deviceDescriptor({
 #ifdef WEBGPU_DAWN
         .nextInChain = &togglesDescriptor,
 #endif
-        .requiredFeaturesCount = static_cast<uint32_t>(features.size()),
-        .requiredFeatures = features.data(),
+        .requiredFeatureCount = requiredFeatures.size(),
+        .requiredFeatures = requiredFeatures.data(),
 #ifdef WEBGPU_DAWN
         .requiredLimits = &requiredLimits,
 #endif
-    };
-    bool deviceCallbackReceived = false;
-    g_adapter.RequestDevice(&deviceDescriptor, device_callback, &deviceCallbackReceived);
-#ifdef EMSCRIPTEN
-    while (!deviceCallbackReceived) {
-      emscripten_log(EM_LOG_CONSOLE, "Waiting for device...\n");
-      emscripten_sleep(100);
+    });
+    deviceDescriptor.SetUncapturedErrorCallback(
+        [](const wgpu::Device& device, wgpu::ErrorType type, wgpu::StringView message) {
+          FATAL("WebGPU error {}: {}", static_cast<int>(type), message);
+        });
+    deviceDescriptor.SetDeviceLostCallback(
+        wgpu::CallbackMode::AllowSpontaneous,
+        [](const wgpu::Device& device, wgpu::DeviceLostReason reason, wgpu::StringView message) {
+          Log.report(LOG_WARNING, FMT_STRING("Device lost: {}"), message);
+        });
+    const auto future =
+        g_adapter.RequestDevice(&deviceDescriptor, wgpu::CallbackMode::WaitAnyOnly,
+                                [](wgpu::RequestDeviceStatus status, wgpu::Device device, wgpu::StringView message) {
+                                  if (status == wgpu::RequestDeviceStatus::Success) {
+                                    g_device = std::move(device);
+                                  } else {
+                                    Log.report(LOG_WARNING, FMT_STRING("Device request failed: {}"), message);
+                                  }
+                                });
+    const auto status = g_instance.WaitAny(future, 5000000000);
+    if (status != wgpu::WaitStatus::Success) {
+      Log.report(LOG_ERROR, FMT_STRING("Failed to create device: {}"), magic_enum::enum_name(status));
+      return false;
     }
-#endif
     if (!g_device) {
       return false;
     }
-    g_device.SetLoggingCallback(&log_callback, nullptr);
-    g_device.SetUncapturedErrorCallback(&error_callback, nullptr);
+    g_device.SetLoggingCallback([](wgpu::LoggingType type, wgpu::StringView message) {
+      AuroraLogLevel level = LOG_FATAL;
+      switch (type) {
+      case wgpu::LoggingType::Verbose:
+        level = LOG_DEBUG;
+        break;
+      case wgpu::LoggingType::Info:
+        level = LOG_INFO;
+        break;
+      case wgpu::LoggingType::Warning:
+        level = LOG_WARNING;
+        break;
+      case wgpu::LoggingType::Error:
+        level = LOG_ERROR;
+        break;
+      default:
+        break;
+      }
+      Log.report(level, FMT_STRING("WebGPU message: {}"), message);
+    });
   }
-  g_device.SetDeviceLostCallback(nullptr, nullptr);
   g_queue = g_device.GetQueue();
 
-#if WEBGPU_DAWN
-  auto swapChainFormat = wgpu::TextureFormat::BGRA8UnormSrgb; // TODO
-#else
-  auto swapChainFormat = g_surface.GetPreferredFormat(g_adapter);
-#endif
-  if (swapChainFormat == wgpu::TextureFormat::RGBA8UnormSrgb) {
-    swapChainFormat = wgpu::TextureFormat::RGBA8Unorm;
-  } else if (swapChainFormat == wgpu::TextureFormat::BGRA8UnormSrgb) {
-    swapChainFormat = wgpu::TextureFormat::BGRA8Unorm;
+  wgpu::SurfaceCapabilities surfaceCapabilities;
+  const wgpu::Status status = g_surface.GetCapabilities(g_adapter, &surfaceCapabilities);
+  if (status != wgpu::Status::Success) {
+    Log.report(LOG_ERROR, FMT_STRING("Failed to get surface capabilities: {}"), magic_enum::enum_name(status));
+    return false;
   }
-  Log.report(LOG_INFO, FMT_STRING("Using swapchain format {}"), magic_enum::enum_name(swapChainFormat));
+  if (surfaceCapabilities.formatCount == 0) {
+    Log.report(LOG_ERROR, FMT_STRING("Surface has no formats"));
+    return false;
+  }
+  if (surfaceCapabilities.presentModeCount == 0) {
+    Log.report(LOG_ERROR, FMT_STRING("Surface has no present modes"));
+    return false;
+  }
+  auto surfaceFormat = surfaceCapabilities.formats[0];
+  auto presentMode = surfaceCapabilities.presentModes[0];
+  if (surfaceFormat == wgpu::TextureFormat::RGBA8UnormSrgb) {
+    surfaceFormat = wgpu::TextureFormat::RGBA8Unorm;
+  } else if (surfaceFormat == wgpu::TextureFormat::BGRA8UnormSrgb) {
+    surfaceFormat = wgpu::TextureFormat::BGRA8Unorm;
+  }
+  Log.report(LOG_INFO, FMT_STRING("Using surface format {}, present mode {}"), magic_enum::enum_name(surfaceFormat),
+             magic_enum::enum_name(presentMode));
   const auto size = window::get_window_size();
   g_graphicsConfig = GraphicsConfig{
-      .swapChainDescriptor =
-          wgpu::SwapChainDescriptor{
+      .surfaceConfiguration =
+          wgpu::SurfaceConfiguration{
+              .format = surfaceFormat,
               .usage = wgpu::TextureUsage::RenderAttachment,
-              .format = swapChainFormat,
               .width = size.fb_width,
               .height = size.fb_height,
-              .presentMode = wgpu::PresentMode::Fifo,
+              .presentMode = presentMode,
           },
       .depthFormat = wgpu::TextureFormat::Depth32Float,
       .msaaSamples = g_config.msaa,
@@ -551,26 +524,23 @@ void shutdown() {
   g_frameBuffer = {};
   g_frameBufferResolved = {};
   g_depthBuffer = {};
-  wgpuSwapChainRelease(g_swapChain.Release());
-  wgpuQueueRelease(g_queue.Release());
-  wgpuDeviceDestroy(g_device.Release());
-  g_adapter = {};
+  g_queue = {};
   g_surface = {};
-#ifdef WEBGPU_DAWN
-  g_dawnInstance.reset();
-#else
+  g_device = {};
+  g_adapter = {};
   g_instance = {};
-#endif
 }
 
 void resize_swapchain(uint32_t width, uint32_t height, bool force) {
-  if (!force && g_graphicsConfig.swapChainDescriptor.width == width &&
-      g_graphicsConfig.swapChainDescriptor.height == height) {
+  if (!force && g_graphicsConfig.surfaceConfiguration.width == width &&
+      g_graphicsConfig.surfaceConfiguration.height == height) {
     return;
   }
-  g_graphicsConfig.swapChainDescriptor.width = width;
-  g_graphicsConfig.swapChainDescriptor.height = height;
-  g_swapChain = g_device.CreateSwapChain(g_surface, &g_graphicsConfig.swapChainDescriptor);
+  g_graphicsConfig.surfaceConfiguration.width = width;
+  g_graphicsConfig.surfaceConfiguration.height = height;
+  auto surfaceConfiguration = g_graphicsConfig.surfaceConfiguration;
+  surfaceConfiguration.device = g_device;
+  g_surface.Configure(&surfaceConfiguration);
   g_frameBuffer = create_render_texture(true);
   g_frameBufferResolved = create_render_texture(false);
   g_depthBuffer = create_depth_texture();

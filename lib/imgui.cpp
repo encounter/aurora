@@ -1,17 +1,19 @@
 #include "imgui.hpp"
 
-#include "webgpu/gpu.hpp"
+#include <cstddef>
+#include <string>
+#include <vector>
+
+#include <webgpu/webgpu_cpp.h>
+
 #include "internal.hpp"
+#include "webgpu/gpu.hpp"
 #include "window.hpp"
 
-#include <SDL3/SDL.h>
-#include <webgpu/webgpu.h>
-
+#define IMGUI_IMPL_WEBGPU_BACKEND_DAWN
 #include "../imgui/backends/imgui_impl_sdl3.cpp"         // NOLINT(bugprone-suspicious-include)
 #include "../imgui/backends/imgui_impl_sdlrenderer3.cpp" // NOLINT(bugprone-suspicious-include)
-// #include "../imgui/backends/imgui_impl_wgpu.cpp"     // NOLINT(bugprone-suspicious-include)
-// TODO: Transition back to imgui-provided backend when it uses WGSL
-#include "imgui_impl_wgpu.cpp"                          // NOLINT(bugprone-suspicious-include)
+#include "../imgui/backends/imgui_impl_wgpu.cpp"         // NOLINT(bugprone-suspicious-include)
 
 namespace aurora::imgui {
 static float g_scale;
@@ -37,14 +39,16 @@ void initialize() noexcept {
   ImGui_ImplSDL3_Init(window::get_sdl_window(), renderer, NULL);
 #ifdef __APPLE__
   // Disable MouseCanUseGlobalState for scaling purposes
-  ImGui_ImplSDL2_GetBackendData()->MouseCanUseGlobalState = false;
+  ImGui_ImplSDL3_GetBackendData()->MouseCanUseGlobalState = false;
 #endif
   g_useSdlRenderer = renderer != nullptr;
   if (g_useSdlRenderer) {
     ImGui_ImplSDLRenderer3_Init(renderer);
   } else {
-    const auto format = webgpu::g_graphicsConfig.swapChainDescriptor.format;
-    ImGui_ImplWGPU_Init(webgpu::g_device.Get(), 1, static_cast<WGPUTextureFormat>(format));
+    ImGui_ImplWGPU_InitInfo info;
+    info.Device = webgpu::g_device.Get();
+    info.RenderTargetFormat = static_cast<WGPUTextureFormat>(webgpu::g_graphicsConfig.surfaceConfiguration.format);
+    ImGui_ImplWGPU_Init(&info);
   }
 }
 
@@ -64,14 +68,15 @@ void shutdown() noexcept {
 }
 
 void process_event(const SDL_Event& event) noexcept {
-#ifdef __APPLE__
-  if (event.type == SDL_MOUSEMOTION) {
-    auto& io = ImGui::GetIO();
-    // Scale up mouse coordinates
-    io.AddMousePosEvent(static_cast<float>(event.motion.x) * g_scale, static_cast<float>(event.motion.y) * g_scale);
+  if (event.type == SDL_EVENT_MOUSE_MOTION) {
+    SDL_Event scaledEvent = event;
+    scaledEvent.motion.x *= g_scale;
+    scaledEvent.motion.y *= g_scale;
+    scaledEvent.motion.xrel *= g_scale;
+    scaledEvent.motion.yrel *= g_scale;
+    ImGui_ImplSDL3_ProcessEvent(&scaledEvent);
     return;
   }
-#endif
   ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
@@ -82,8 +87,6 @@ void new_frame(const AuroraWindowSize& size) noexcept {
   } else {
     if (g_scale != size.scale) {
       if (g_scale > 0.f) {
-        // TODO wgpu backend bug: doesn't clear bind groups on invalidate
-        g_resources.ImageBindGroups.Clear();
         ImGui_ImplWGPU_CreateDeviceObjects();
       }
       g_scale = size.scale;
@@ -149,17 +152,17 @@ ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) no
   auto texture = webgpu::g_device.CreateTexture(&textureDescriptor);
   auto textureView = texture.CreateView(&textureViewDescriptor);
   {
-    const wgpu::ImageCopyTexture dstView{
+    const wgpu::TexelCopyTextureInfo dstView{
         .texture = texture,
     };
-    const wgpu::TextureDataLayout dataLayout{
+    const wgpu::TexelCopyBufferLayout dataLayout{
         .bytesPerRow = 4 * width,
         .rowsPerImage = height,
     };
     webgpu::g_queue.WriteTexture(&dstView, data, width * height * 4, &dataLayout, &size);
   }
   g_wgpuTextures.push_back(texture);
-  return reinterpret_cast<ImTextureID>(textureView.Release());
+  return reinterpret_cast<ImTextureID>(textureView.MoveToCHandle());
 }
 } // namespace aurora::imgui
 

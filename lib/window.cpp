@@ -64,6 +64,14 @@ const AuroraEvent* poll_events() {
       });
       break;
     }
+    case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED: {
+      resize_swapchain(false);
+      g_events.push_back(AuroraEvent{
+          .type = AURORA_DISPLAY_SCALE_CHANGED,
+          .windowSize = get_window_size(),
+      });
+      break;
+    }
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
       resize_swapchain(false);
       g_events.push_back(AuroraEvent{
