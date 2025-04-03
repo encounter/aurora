@@ -3,11 +3,12 @@
 	url = https://github.com/encounter/dawn-cmake.git
 [submodule "extern/SDL"]
 	path = extern/SDL
-	url = https://github.com/encounter/SDL.git
-	branch = merged
+	url = https://github.com/libsdl-org/SDL.git
+	branch = release-3.2.x
 [submodule "extern/imgui"]
 	path = extern/imgui
 	url = https://github.com/ocornut/imgui.git
+	branch = docking
 [submodule "extern/fmt"]
 	path = extern/fmt
 	url = https://github.com/fmtlib/fmt.git

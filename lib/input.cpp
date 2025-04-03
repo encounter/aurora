@@ -6,9 +6,9 @@
 #include <dolphin/pad.h>
 #include <dolphin/si.h>
 
-#include <SDL_haptic.h>
-#include <SDL_version.h>
-#include <SDL.h>
+#include <SDL3/SDL_haptic.h>
+#include <SDL3/SDL_version.h>
+#include <SDL3/SDL.h>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
@@ -21,7 +21,7 @@ namespace aurora::input {
 static Module Log("aurora::input");
 
 struct GameController {
-  SDL_GameController* m_controller = nullptr;
+  SDL_Gamepad* m_controller = nullptr;
   bool m_isGameCube = false;
   Sint32 m_index = -1;
   bool m_hasRumble = false;
@@ -130,16 +130,16 @@ static std::optional<std::string> remap_controller_layout(std::string mapping) {
   return newMapping;
 }
 
-Sint32 add_controller(Sint32 which) noexcept {
-  auto* ctrl = SDL_GameControllerOpen(which);
+SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
+  auto* ctrl = SDL_OpenGamepad(which);
   if (ctrl != nullptr) {
     {
-      char* mapping = SDL_GameControllerMapping(ctrl);
+      char* mapping = SDL_GetGamepadMapping(ctrl);
       if (mapping != nullptr) {
         auto newMapping = remap_controller_layout(mapping);
         SDL_free(mapping);
         if (newMapping) {
-          if (SDL_GameControllerAddMapping(newMapping->c_str()) == -1) {
+          if (SDL_AddGamepadMapping(newMapping->c_str()) == -1) {
             Log.report(LOG_ERROR, FMT_STRING("Failed to update controller mapping: {}"), SDL_GetError());
           }
         }
@@ -150,20 +150,17 @@ Sint32 add_controller(Sint32 which) noexcept {
     GameController controller;
     controller.m_controller = ctrl;
     controller.m_index = which;
-    controller.m_vid = SDL_GameControllerGetVendor(ctrl);
-    controller.m_pid = SDL_GameControllerGetProduct(ctrl);
+    controller.m_vid = SDL_GetGamepadVendor(ctrl);
+    controller.m_pid = SDL_GetGamepadProduct(ctrl);
     if (controller.m_vid == 0x05ac /* USB_VENDOR_APPLE */ && controller.m_pid == 3) {
       // Ignore Apple TV remote
-      SDL_GameControllerClose(ctrl);
+      SDL_CloseGamepad(ctrl);
       return -1;
     }
     controller.m_isGameCube = controller.m_vid == 0x057E && controller.m_pid == 0x0337;
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-    controller.m_hasRumble = (SDL_GameControllerHasRumble(ctrl) != 0u);
-#else
-    controller.m_hasRumble = true;
-#endif
-    Sint32 instance = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(ctrl));
+    const auto props = SDL_GetGamepadProperties(ctrl);
+    controller.m_hasRumble = SDL_GetBooleanProperty(props, SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, true);
+    SDL_JoystickID instance = SDL_GetJoystickID(SDL_GetGamepadJoystick(ctrl));
     g_GameControllers[instance] = controller;
     return instance;
   }
@@ -173,7 +170,7 @@ Sint32 add_controller(Sint32 which) noexcept {
 
 void remove_controller(Uint32 instance) noexcept {
   if (g_GameControllers.find(instance) != g_GameControllers.end()) {
-    SDL_GameControllerClose(g_GameControllers[instance].m_controller);
+    SDL_CloseGamepad(g_GameControllers[instance].m_controller);
     g_GameControllers.erase(instance);
   }
 }
@@ -187,20 +184,20 @@ bool is_gamecube(Uint32 instance) noexcept {
 
 int32_t player_index(Uint32 instance) noexcept {
   if (g_GameControllers.find(instance) != g_GameControllers.end()) {
-    return SDL_GameControllerGetPlayerIndex(g_GameControllers[instance].m_controller);
+    return SDL_GetGamepadPlayerIndex(g_GameControllers[instance].m_controller);
   }
   return -1;
 }
 
 void set_player_index(Uint32 instance, Sint32 index) noexcept {
   if (g_GameControllers.find(instance) != g_GameControllers.end()) {
-    SDL_GameControllerSetPlayerIndex(g_GameControllers[instance].m_controller, index);
+    SDL_SetGamepadPlayerIndex(g_GameControllers[instance].m_controller, index);
   }
 }
 
 std::string controller_name(Uint32 instance) noexcept {
   if (g_GameControllers.find(instance) != g_GameControllers.end()) {
-    const auto* name = SDL_GameControllerName(g_GameControllers[instance].m_controller);
+    const auto* name = SDL_GetGamepadName(g_GameControllers[instance].m_controller);
     if (name != nullptr) {
       return {name};
     }
@@ -220,8 +217,7 @@ void controller_rumble(uint32_t instance, uint16_t low_freq_intensity, uint16_t 
                        uint16_t duration_ms) noexcept {
 
   if (g_GameControllers.find(instance) != g_GameControllers.end()) {
-    SDL_GameControllerRumble(g_GameControllers[instance].m_controller, low_freq_intensity, high_freq_intensity,
-                             duration_ms);
+    SDL_RumbleGamepad(g_GameControllers[instance].m_controller, low_freq_intensity, high_freq_intensity, duration_ms);
   }
 }
 
@@ -230,23 +226,24 @@ uint32_t controller_count() noexcept { return g_GameControllers.size(); }
 void initialize() noexcept {
   /* Make sure we initialize everything input related now, this will automatically add all of the connected controllers
    * as expected */
-  SDL_Init(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
+  ASSERT(SDL_Init(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD), "Failed to initialize SDL subsystems: {}",
+         SDL_GetError());
 }
 } // namespace aurora::input
 
 static const std::array<PADButtonMapping, 12> mDefaultButtons{{
-    {SDL_CONTROLLER_BUTTON_A, PAD_BUTTON_A},
-    {SDL_CONTROLLER_BUTTON_B, PAD_BUTTON_B},
-    {SDL_CONTROLLER_BUTTON_X, PAD_BUTTON_X},
-    {SDL_CONTROLLER_BUTTON_Y, PAD_BUTTON_Y},
-    {SDL_CONTROLLER_BUTTON_START, PAD_BUTTON_START},
-    {SDL_CONTROLLER_BUTTON_BACK, PAD_TRIGGER_Z},
-    {SDL_CONTROLLER_BUTTON_LEFTSHOULDER, PAD_TRIGGER_L},
-    {SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, PAD_TRIGGER_R},
-    {SDL_CONTROLLER_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_CONTROLLER_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_CONTROLLER_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_CONTROLLER_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
+    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
+    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},
+    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
+    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
+    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
+    {SDL_GAMEPAD_BUTTON_BACK, PAD_TRIGGER_Z},
+    {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, PAD_TRIGGER_L},
+    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_R},
+    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
+    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
+    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
+    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
 }};
 
 void PADSetSpec(u32 spec) {}
@@ -281,7 +278,7 @@ const char* PADGetNameForControllerIndex(uint32_t idx) {
     return nullptr;
   }
 
-  return SDL_GameControllerName(ctrl->m_controller);
+  return SDL_GetGamepadName(ctrl->m_controller);
 }
 
 void PADSetPortForIndex(uint32_t idx, int32_t port) {
@@ -291,9 +288,9 @@ void PADSetPortForIndex(uint32_t idx, int32_t port) {
     return;
   }
   if (dest != nullptr) {
-    SDL_GameControllerSetPlayerIndex(dest->m_controller, -1);
+    SDL_SetGamepadPlayerIndex(dest->m_controller, -1);
   }
-  SDL_GameControllerSetPlayerIndex(ctrl->m_controller, port);
+  SDL_SetGamepadPlayerIndex(ctrl->m_controller, port);
 }
 
 int32_t PADGetIndexForPort(uint32_t port) {
@@ -317,11 +314,11 @@ void PADClearPort(uint32_t port) {
   if (ctrl == nullptr) {
     return;
   }
-  SDL_GameControllerSetPlayerIndex(ctrl->m_controller, -1);
+  SDL_SetGamepadPlayerIndex(ctrl->m_controller, -1);
 }
 
 void __PADLoadMapping(aurora::input::GameController* controller) {
-  int32_t playerIndex = SDL_GameControllerGetPlayerIndex(controller->m_controller);
+  int32_t playerIndex = SDL_GetGamepadPlayerIndex(controller->m_controller);
   if (playerIndex == -1) {
     return;
   }
@@ -386,16 +383,15 @@ uint32_t PADRead(PADStatus* status) {
       __PADLoadMapping(controller);
     }
     status[i].err = PAD_ERR_NONE;
-    std::for_each(controller->m_mapping.begin(), controller->m_mapping.end(),
-                  [&controller, &i, &status](const auto& mapping) {
-                    if (SDL_GameControllerGetButton(controller->m_controller,
-                                                    static_cast<SDL_GameControllerButton>(mapping.nativeButton))) {
-                      status[i].button |= mapping.padButton;
-                    }
-                  });
+    std::for_each(
+        controller->m_mapping.begin(), controller->m_mapping.end(), [&controller, &i, &status](const auto& mapping) {
+          if (SDL_GetGamepadButton(controller->m_controller, static_cast<SDL_GamepadButton>(mapping.nativeButton))) {
+            status[i].button |= mapping.padButton;
+          }
+        });
 
-    Sint16 x = SDL_GameControllerGetAxis(controller->m_controller, SDL_CONTROLLER_AXIS_LEFTX);
-    Sint16 y = SDL_GameControllerGetAxis(controller->m_controller, SDL_CONTROLLER_AXIS_LEFTY);
+    Sint16 x = SDL_GetGamepadAxis(controller->m_controller, SDL_GAMEPAD_AXIS_LEFTX);
+    Sint16 y = SDL_GetGamepadAxis(controller->m_controller, SDL_GAMEPAD_AXIS_LEFTY);
     if (controller->m_deadZones.useDeadzones) {
       if (std::abs(x) > controller->m_deadZones.stickDeadZone) {
         x /= 256;
@@ -415,8 +411,8 @@ uint32_t PADRead(PADStatus* status) {
     status[i].stickX = static_cast<int8_t>(x);
     status[i].stickY = static_cast<int8_t>(y);
 
-    x = SDL_GameControllerGetAxis(controller->m_controller, SDL_CONTROLLER_AXIS_RIGHTX);
-    y = SDL_GameControllerGetAxis(controller->m_controller, SDL_CONTROLLER_AXIS_RIGHTY);
+    x = SDL_GetGamepadAxis(controller->m_controller, SDL_GAMEPAD_AXIS_RIGHTX);
+    y = SDL_GetGamepadAxis(controller->m_controller, SDL_GAMEPAD_AXIS_RIGHTY);
     if (controller->m_deadZones.useDeadzones) {
       if (std::abs(x) > controller->m_deadZones.substickDeadZone) {
         x /= 256;
@@ -437,8 +433,8 @@ uint32_t PADRead(PADStatus* status) {
     status[i].substickX = static_cast<int8_t>(x);
     status[i].substickY = static_cast<int8_t>(y);
 
-    x = SDL_GameControllerGetAxis(controller->m_controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
-    y = SDL_GameControllerGetAxis(controller->m_controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+    x = SDL_GetGamepadAxis(controller->m_controller, SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
+    y = SDL_GetGamepadAxis(controller->m_controller, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
     if (/*!controller->m_isGameCube && */ controller->m_deadZones.emulateTriggers) {
       if (x > controller->m_deadZones.leftTriggerActivationZone) {
         status[i].button |= PAD_TRIGGER_L;
@@ -495,8 +491,8 @@ uint32_t SIProbe(int32_t chan) {
   }
 
   if (controller->m_isGameCube) {
-    auto level = SDL_JoystickCurrentPowerLevel(SDL_GameControllerGetJoystick(controller->m_controller));
-    if (level == SDL_JOYSTICK_POWER_UNKNOWN) {
+    auto level = SDL_GetJoystickPowerInfo(SDL_GetGamepadJoystick(controller->m_controller), nullptr);
+    if (level == SDL_POWERSTATE_UNKNOWN) {
       return SI_GC_WAVEBIRD;
     }
   }
@@ -678,7 +674,7 @@ const char* PADGetName(uint32_t port) {
     return nullptr;
   }
 
-  return SDL_GameControllerName(controller->m_controller);
+  return SDL_GetGamepadName(controller->m_controller);
 }
 
 void PADSetButtonMapping(uint32_t port, PADButtonMapping mapping) {
@@ -800,7 +796,7 @@ const char* PADGetButtonName(PADButton button) {
 }
 
 const char* PADGetNativeButtonName(uint32_t button) {
-  return SDL_GameControllerGetStringForButton(static_cast<SDL_GameControllerButton>(button));
+  return SDL_GetGamepadStringForButton(static_cast<SDL_GamepadButton>(button));
 }
 
 int32_t PADGetNativeButtonPressed(uint32_t port) {
@@ -809,8 +805,8 @@ int32_t PADGetNativeButtonPressed(uint32_t port) {
     return -1;
   }
 
-  for (uint32_t i = 0; i < SDL_CONTROLLER_BUTTON_MAX; ++i) {
-    if (SDL_GameControllerGetButton(controller->m_controller, static_cast<SDL_GameControllerButton>(i)) != 0u) {
+  for (uint32_t i = 0; i < SDL_GAMEPAD_BUTTON_COUNT; ++i) {
+    if (SDL_GetGamepadButton(controller->m_controller, static_cast<SDL_GamepadButton>(i)) != 0u) {
       return i;
     }
   }

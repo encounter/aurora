@@ -12,7 +12,8 @@ using namespace std::string_view_literals;
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #ifndef SBIG
-#define SBIG(q) (((q)&0x000000FF) << 24 | ((q)&0x0000FF00) << 8 | ((q)&0x00FF0000) >> 8 | ((q)&0xFF000000) >> 24)
+#define SBIG(q)                                                                                                        \
+  (((q) & 0x000000FF) << 24 | ((q) & 0x0000FF00) << 8 | ((q) & 0x00FF0000) >> 8 | ((q) & 0xFF000000) >> 24)
 #endif
 #else
 #ifndef SBIG
@@ -29,7 +30,7 @@ using namespace std::string_view_literals;
 #endif
 
 #ifndef ALIGN
-#define ALIGN(x, a) (((x) + ((a)-1)) & ~((a)-1))
+#define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
 #endif
 
 #if !defined(__has_cpp_attribute)
@@ -53,7 +54,16 @@ using namespace std::string_view_literals;
 #else
 #define CHECK(cond, msg, ...) ASSERT(cond, msg, ##__VA_ARGS__)
 #endif
-#define DEFAULT_FATAL(msg, ...) UNLIKELY default: FATAL(msg, ##__VA_ARGS__)
+#define DEFAULT_FATAL(msg, ...) UNLIKELY default : FATAL(msg, ##__VA_ARGS__)
+#define TRY(cond, msg, ...)                                                                                            \
+  if (!(cond))                                                                                                         \
+    UNLIKELY {                                                                                                         \
+      Log.report(LOG_ERROR, FMT_STRING(msg), ##__VA_ARGS__);                                                           \
+      return false;                                                                                                    \
+    }
+#define TRY_WARN(cond, msg, ...)                                                                                       \
+  if (!(cond))                                                                                                         \
+    UNLIKELY { Log.report(LOG_WARNING, FMT_STRING(msg), ##__VA_ARGS__); }
 
 namespace aurora {
 extern AuroraConfig g_config;

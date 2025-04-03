@@ -6,7 +6,7 @@
 #include "internal.hpp"
 
 #include <aurora/event.h>
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 namespace aurora::window {
 static Module Log("aurora::window");
@@ -43,57 +43,52 @@ const AuroraEvent* poll_events() {
     imgui::process_event(event);
 
     switch (event.type) {
-    case SDL_WINDOWEVENT: {
-      switch (event.window.event) {
-      case SDL_WINDOWEVENT_MINIMIZED: {
-        // Android/iOS: Application backgrounded
-        g_events.push_back(AuroraEvent{
-            .type = AURORA_PAUSED,
-        });
-        break;
-      }
-      case SDL_WINDOWEVENT_RESTORED: {
-        // Android/iOS: Application focused
-        g_events.push_back(AuroraEvent{
-            .type = AURORA_UNPAUSED,
-        });
-        break;
-      }
-      case SDL_WINDOWEVENT_MOVED: {
-        g_events.push_back(AuroraEvent{
-            .type = AURORA_WINDOW_MOVED,
-            .windowPos = {.x = event.window.data1, .y = event.window.data2},
-        });
-        break;
-      }
-      case SDL_WINDOWEVENT_SIZE_CHANGED: {
-        resize_swapchain(false);
-        g_events.push_back(AuroraEvent{
-            .type = AURORA_WINDOW_RESIZED,
-            .windowSize = get_window_size(),
-        });
-        break;
-      }
-      }
+    case SDL_EVENT_WINDOW_MINIMIZED: {
+      // Android/iOS: Application backgrounded
+      g_events.push_back(AuroraEvent{
+          .type = AURORA_PAUSED,
+      });
       break;
     }
-    case SDL_CONTROLLERDEVICEADDED: {
-      auto instance = input::add_controller(event.cdevice.which);
+    case SDL_EVENT_WINDOW_RESTORED: {
+      // Android/iOS: Application focused
+      g_events.push_back(AuroraEvent{
+          .type = AURORA_UNPAUSED,
+      });
+      break;
+    }
+    case SDL_EVENT_WINDOW_MOVED: {
+      g_events.push_back(AuroraEvent{
+          .type = AURORA_WINDOW_MOVED,
+          .windowPos = {.x = event.window.data1, .y = event.window.data2},
+      });
+      break;
+    }
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
+      resize_swapchain(false);
+      g_events.push_back(AuroraEvent{
+          .type = AURORA_WINDOW_RESIZED,
+          .windowSize = get_window_size(),
+      });
+      break;
+    }
+    case SDL_EVENT_GAMEPAD_ADDED: {
+      auto instance = input::add_controller(event.gdevice.which);
       g_events.push_back(AuroraEvent{
           .type = AURORA_CONTROLLER_ADDED,
           .controller = instance,
       });
       break;
     }
-    case SDL_CONTROLLERDEVICEREMOVED: {
-      input::remove_controller(event.cdevice.which);
+    case SDL_EVENT_GAMEPAD_REMOVED: {
+      input::remove_controller(event.gdevice.which);
       g_events.push_back(AuroraEvent{
           .type = AURORA_CONTROLLER_REMOVED,
-          .controller = event.cdevice.which,
+          .controller = event.gdevice.which,
       });
       break;
     }
-    case SDL_QUIT:
+    case SDL_EVENT_QUIT:
       g_events.push_back(AuroraEvent{
           .type = AURORA_EXIT,
       });
@@ -114,15 +109,17 @@ static void set_window_icon() noexcept {
   if (g_config.iconRGBA8 == nullptr) {
     return;
   }
-  auto* iconSurface = SDL_CreateRGBSurfaceFrom(g_config.iconRGBA8, g_config.iconWidth, g_config.iconHeight, 32,
-                                               4 * g_config.iconWidth, 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000);
+  auto* iconSurface =
+      SDL_CreateSurfaceFrom(g_config.iconWidth, g_config.iconHeight,
+                            SDL_GetPixelFormatForMasks(32, 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000),
+                            g_config.iconRGBA8, 4 * g_config.iconWidth);
   ASSERT(iconSurface != nullptr, "Failed to create icon surface: {}", SDL_GetError());
-  SDL_SetWindowIcon(g_window, iconSurface);
-  SDL_FreeSurface(iconSurface);
+  TRY_WARN(SDL_SetWindowIcon(g_window, iconSurface), "Failed to set window icon: {}", SDL_GetError());
+  SDL_DestroySurface(iconSurface);
 }
 
 bool create_window(AuroraBackend backend) {
-  Uint32 flags = SDL_WINDOW_ALLOW_HIGHDPI;
+  Uint32 flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
 #if TARGET_OS_IOS || TARGET_OS_TV
   flags |= SDL_WINDOW_FULLSCREEN;
 #else
@@ -170,9 +167,22 @@ bool create_window(AuroraBackend backend) {
   }
 
 #endif
-  g_window = SDL_CreateWindow(g_config.appName, x, y, width, height, flags);
+  const auto props = SDL_CreateProperties();
+  TRY(SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, g_config.appName), "Failed to set {}: {}",
+      SDL_PROP_WINDOW_CREATE_TITLE_STRING, SDL_GetError());
+  TRY(SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, x), "Failed to set {}: {}",
+      SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_GetError());
+  TRY(SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, y), "Failed to set {}: {}",
+      SDL_PROP_WINDOW_CREATE_Y_NUMBER, SDL_GetError());
+  TRY(SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, width), "Failed to set {}: {}",
+      SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, SDL_GetError());
+  TRY(SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, height), "Failed to set {}: {}",
+      SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, SDL_GetError());
+  TRY(SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, flags), "Failed to set {}: {}",
+      SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_GetError());
+  g_window = SDL_CreateWindowWithProperties(props);
   if (g_window == nullptr) {
-    Log.report(LOG_WARNING, FMT_STRING("Failed to create window: {}"), SDL_GetError());
+    Log.report(LOG_ERROR, FMT_STRING("Failed to create window: {}"), SDL_GetError());
     return false;
   }
   set_window_icon();
@@ -183,13 +193,17 @@ bool create_renderer() {
   if (g_window == nullptr) {
     return false;
   }
-  const auto flags = SDL_RENDERER_PRESENTVSYNC;
-  g_renderer = SDL_CreateRenderer(g_window, -1, flags | SDL_RENDERER_ACCELERATED);
+  const auto props = SDL_CreateProperties();
+  TRY(SDL_SetPointerProperty(props, SDL_PROP_RENDERER_CREATE_WINDOW_POINTER, g_window), "Failed to set {}: {}",
+      SDL_PROP_RENDERER_CREATE_WINDOW_POINTER, SDL_GetError());
+  TRY(SDL_SetNumberProperty(props, SDL_PROP_RENDERER_CREATE_PRESENT_VSYNC_NUMBER, SDL_RENDERER_VSYNC_ADAPTIVE),
+      "Failed to set {}: {}", SDL_PROP_RENDERER_CREATE_PRESENT_VSYNC_NUMBER, SDL_GetError());
+  g_renderer = SDL_CreateRendererWithProperties(props);
   if (g_renderer == nullptr) {
-    // Attempt fallback to SW renderer
-    g_renderer = SDL_CreateRenderer(g_window, -1, flags);
+    Log.report(LOG_ERROR, FMT_STRING("Failed to create renderer: {}"), SDL_GetError());
+    return false;
   }
-  return g_renderer != nullptr;
+  return true;
 }
 
 void destroy_window() {
@@ -205,28 +219,27 @@ void destroy_window() {
 
 void show_window() {
   if (g_window != nullptr) {
-    SDL_ShowWindow(g_window);
+    TRY_WARN(SDL_ShowWindow(g_window), "Failed to show window: {}", SDL_GetError());
   }
 }
 
 bool initialize() {
   /* We don't want to initialize anything input related here, otherwise the add events will get lost to the void */
-  ASSERT(SDL_Init(SDL_INIT_EVERYTHING & ~(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER)) == 0,
-         "Error initializing SDL: {}", SDL_GetError());
+  TRY(SDL_InitSubSystem(SDL_INIT_EVENTS | SDL_INIT_VIDEO), "Error initializing SDL: {}", SDL_GetError());
 
 #if !defined(_WIN32) && !defined(__APPLE__)
-  SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
+  TRY(SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0"), "Error setting {}: {}",
+      SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, SDL_GetError());
 #endif
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-  SDL_SetHint(SDL_HINT_SCREENSAVER_INHIBIT_ACTIVITY_NAME, g_config.appName);
-#endif
-#ifdef SDL_HINT_JOYSTICK_GAMECUBE_RUMBLE_BRAKE
-  SDL_SetHint(SDL_HINT_JOYSTICK_GAMECUBE_RUMBLE_BRAKE, "1");
-#endif
+  TRY(SDL_SetHint(SDL_HINT_SCREENSAVER_INHIBIT_ACTIVITY_NAME, g_config.appName), "Error setting {}: {}",
+      SDL_HINT_SCREENSAVER_INHIBIT_ACTIVITY_NAME, SDL_GetError());
+  TRY(SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_GAMECUBE_RUMBLE_BRAKE, "1"), "Error setting {}: {}",
+      SDL_HINT_JOYSTICK_HIDAPI_GAMECUBE_RUMBLE_BRAKE, SDL_GetError());
 
-  SDL_DisableScreenSaver();
+  TRY(SDL_DisableScreenSaver(), "Error disabling screensaver: {}", SDL_GetError());
   if (g_config.allowJoystickBackgroundEvents) {
-    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    TRY(SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1"), "Error setting {}: {}",
+        SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, SDL_GetError());
   }
 
   return true;
@@ -234,24 +247,15 @@ bool initialize() {
 
 void shutdown() {
   destroy_window();
-  SDL_EnableScreenSaver();
+  TRY_WARN(SDL_EnableScreenSaver(), "Error enabling screensaver: {}", SDL_GetError());
   SDL_Quit();
 }
 
 AuroraWindowSize get_window_size() {
   int width, height, fb_w, fb_h;
-  SDL_GetWindowSize(g_window, &width, &height);
-#if DAWN_ENABLE_BACKEND_METAL
-  SDL_Metal_GetDrawableSize(g_window, &fb_w, &fb_h);
-#else
-  SDL_GL_GetDrawableSize(g_window, &fb_w, &fb_h);
-#endif
-  float scale = static_cast<float>(fb_w) / static_cast<float>(width);
-#ifndef __APPLE__
-  if (SDL_GetDisplayDPI(SDL_GetWindowDisplayIndex(g_window), nullptr, &scale, nullptr) == 0) {
-    scale /= 96.f;
-  }
-#endif
+  ASSERT(SDL_GetWindowSize(g_window, &width, &height), "Failed to get window size: {}", SDL_GetError());
+  ASSERT(SDL_GetWindowSizeInPixels(g_window, &fb_w, &fb_h), "Failed to get window size in pixels: {}", SDL_GetError());
+  float scale = SDL_GetWindowDisplayScale(g_window);
   return {
       .width = static_cast<uint32_t>(width),
       .height = static_cast<uint32_t>(height),
@@ -265,9 +269,13 @@ SDL_Window* get_sdl_window() { return g_window; }
 
 SDL_Renderer* get_sdl_renderer() { return g_renderer; }
 
-void set_title(const char* title) { SDL_SetWindowTitle(g_window, title); }
+void set_title(const char* title) {
+  TRY_WARN(SDL_SetWindowTitle(g_window, title), "Failed to set window title: {}", SDL_GetError());
+}
 
-void set_fullscreen(bool fullscreen) { SDL_SetWindowFullscreen(g_window, fullscreen ? SDL_WINDOW_FULLSCREEN : 0); }
+void set_fullscreen(bool fullscreen) {
+  TRY_WARN(SDL_SetWindowFullscreen(g_window, fullscreen), "Failed to set window fullscreen: {}", SDL_GetError());
+}
 
 bool get_fullscreen() { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0u; }
 

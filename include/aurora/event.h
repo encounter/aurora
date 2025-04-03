@@ -3,7 +3,8 @@
 
 #include "aurora.h"
 
-#include <SDL_events.h>
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_joystick.h>
 
 #ifdef __cplusplus
 #include <cstdint>
@@ -31,7 +32,7 @@ struct AuroraEvent {
     SDL_Event sdl;
     AuroraWindowPos windowPos;
     AuroraWindowSize windowSize;
-    int32_t controller;
+    SDL_JoystickID controller;
   };
 };
 

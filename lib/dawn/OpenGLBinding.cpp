@@ -1,6 +1,6 @@
 #include "BackendBinding.hpp"
 
-#include <SDL_video.h>
+#include <SDL3/SDL_video.h>
 #include <dawn/native/OpenGLBackend.h>
 
 namespace aurora::webgpu::utils {

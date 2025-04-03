@@ -579,7 +579,7 @@ void ImGui_ImplWGPU_InvalidateDeviceObjects()
   SafeRelease(g_resources);
 
   ImGuiIO& io = ImGui::GetIO();
-  io.Fonts->SetTexID(nullptr); // We copied g_pFontTextureView to io.Fonts->TexID so let's clear that as well.
+  io.Fonts->SetTexID(0); // We copied g_pFontTextureView to io.Fonts->TexID so let's clear that as well.
 
   for (unsigned int i = 0; i < g_numFramesInFlight; i++)
     SafeRelease(g_pFrameResources[i]);

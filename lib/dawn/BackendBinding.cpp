@@ -1,6 +1,5 @@
 #include "BackendBinding.hpp"
 
-#include <SDL_syswm.h>
 #include <memory>
 
 #if defined(DAWN_ENABLE_BACKEND_D3D11)
@@ -16,7 +15,7 @@
 #include <dawn/native/VulkanBackend.h>
 #endif
 #if defined(DAWN_ENABLE_BACKEND_OPENGL)
-#include <SDL_video.h>
+#include <SDL3/SDL_video.h>
 #include <dawn/native/OpenGLBackend.h>
 #endif
 #if defined(DAWN_ENABLE_BACKEND_NULL)
@@ -36,7 +35,7 @@ void GLMakeCurrent(void* userData) {
 }
 void GLDestroy(void* userData) {
   auto* data = static_cast<GLUserData*>(userData);
-  SDL_GL_DeleteContext(data->context);
+  SDL_GL_DestroyContext(data->context);
   delete data;
 }
 #endif
@@ -75,7 +74,7 @@ bool DiscoverAdapter(dawn::native::Instance* instance, [[maybe_unused]] SDL_Wind
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 4);
     SDL_GLContext context = SDL_GL_CreateContext(window);
     dawn::native::opengl::PhysicalDeviceDiscoveryOptions options{WGPUBackendType_OpenGL};
-    options.getProc = SDL_GL_GetProcAddress;
+    options.getProc = reinterpret_cast<void* (*)(const char*)>(SDL_GL_GetProcAddress);
     options.makeCurrent = GLMakeCurrent;
     options.destroy = GLDestroy;
     options.userData = new GLUserData{
@@ -93,7 +92,7 @@ bool DiscoverAdapter(dawn::native::Instance* instance, [[maybe_unused]] SDL_Wind
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
     SDL_GLContext context = SDL_GL_CreateContext(window);
     dawn::native::opengl::PhysicalDeviceDiscoveryOptions options{WGPUBackendType_OpenGLES};
-    options.getProc = SDL_GL_GetProcAddress;
+    options.getProc = reinterpret_cast<void* (*)(const char*)>(SDL_GL_GetProcAddress);
     options.makeCurrent = GLMakeCurrent;
     options.destroy = GLDestroy;
     options.userData = new GLUserData{
@@ -116,43 +115,36 @@ bool DiscoverAdapter(dawn::native::Instance* instance, [[maybe_unused]] SDL_Wind
 std::unique_ptr<wgpu::ChainedStruct> SetupWindowAndGetSurfaceDescriptorCocoa(SDL_Window* window);
 
 std::unique_ptr<wgpu::ChainedStruct> SetupWindowAndGetSurfaceDescriptor(SDL_Window* window) {
-#if defined(SDL_VIDEO_DRIVER_COCOA)
+#if defined(SDL_PLATFORM_MACOS)
   return SetupWindowAndGetSurfaceDescriptorCocoa(window);
 #else
-  SDL_SysWMinfo wmInfo;
-  SDL_VERSION(&wmInfo.version);
-  if (SDL_GetWindowWMInfo(window, &wmInfo) == SDL_FALSE) {
-    return nullptr;
-  }
-#if defined(SDL_VIDEO_DRIVER_WINDOWS)
+  const auto props = SDL_GetWindowProperties(window);
+#if defined(SDL_PLATFORM_WIN32)
   std::unique_ptr<wgpu::SurfaceDescriptorFromWindowsHWND> desc =
       std::make_unique<wgpu::SurfaceDescriptorFromWindowsHWND>();
   desc->hwnd = wmInfo.info.win.window;
   desc->hinstance = wmInfo.info.win.hinstance;
   return std::move(desc);
-#elif defined(SDL_VIDEO_DRIVER_WAYLAND) || defined(SDL_VIDEO_DRIVER_X11)
-#if defined(SDL_VIDEO_DRIVER_WAYLAND)
-  if (wmInfo.subsystem == SDL_SYSWM_WAYLAND) {
+#elif defined(SDL_PLATFORM_LINUX)
+  if (SDL_strcmp(SDL_GetCurrentVideoDriver(), "wayland") == 0) {
     std::unique_ptr<wgpu::SurfaceDescriptorFromWaylandSurface> desc =
         std::make_unique<wgpu::SurfaceDescriptorFromWaylandSurface>();
-    desc->display = wmInfo.info.wl.display;
-    desc->surface = wmInfo.info.wl.surface;
+    desc->display =
+        SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nullptr);
+    desc->surface =
+        SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, nullptr);
     return std::move(desc);
   }
-#endif
-#if defined(SDL_VIDEO_DRIVER_X11)
-if (wmInfo.subsystem == SDL_SYSWM_X11) {
+  if (SDL_strcmp(SDL_GetCurrentVideoDriver(), "x11") == 0) {
     std::unique_ptr<wgpu::SurfaceDescriptorFromXlibWindow> desc =
         std::make_unique<wgpu::SurfaceDescriptorFromXlibWindow>();
-    desc->display = wmInfo.info.x11.display;
-    desc->window = wmInfo.info.x11.window;
+    desc->display =
+        SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
+    desc->window = SDL_GetNumberProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
     return std::move(desc);
   }
 #endif
   return nullptr;
-#else
-  return nullptr;
-#endif
 #endif
 }
 

@@ -7,8 +7,8 @@
 #include "webgpu/gpu.hpp"
 #include "window.hpp"
 
-#include <SDL.h>
-#include <SDL_filesystem.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_filesystem.h>
 #include <imgui.h>
 
 namespace aurora {
@@ -64,7 +64,7 @@ static AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config)
   if (g_config.maxTextureAnisotropy == 0) {
     g_config.maxTextureAnisotropy = 16;
   }
-  window::initialize();
+  ASSERT(window::initialize(), "Error initializing window");
 
   /* Attempt to create a window using the calling application's desired backend */
   AuroraBackend selectedBackend = config.desiredBackend;

@@ -4,11 +4,11 @@
 #include "internal.hpp"
 #include "window.hpp"
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include <webgpu/webgpu.h>
 
-#include "../imgui/backends/imgui_impl_sdl2.cpp"         // NOLINT(bugprone-suspicious-include)
-#include "../imgui/backends/imgui_impl_sdlrenderer2.cpp" // NOLINT(bugprone-suspicious-include)
+#include "../imgui/backends/imgui_impl_sdl3.cpp"         // NOLINT(bugprone-suspicious-include)
+#include "../imgui/backends/imgui_impl_sdlrenderer3.cpp" // NOLINT(bugprone-suspicious-include)
 // #include "../imgui/backends/imgui_impl_wgpu.cpp"     // NOLINT(bugprone-suspicious-include)
 // TODO: Transition back to imgui-provided backend when it uses WGSL
 #include "imgui_impl_wgpu.cpp"                          // NOLINT(bugprone-suspicious-include)
@@ -34,14 +34,14 @@ void create_context() noexcept {
 
 void initialize() noexcept {
   SDL_Renderer* renderer = window::get_sdl_renderer();
-  ImGui_ImplSDL2_Init(window::get_sdl_window(), renderer, NULL);
+  ImGui_ImplSDL3_Init(window::get_sdl_window(), renderer, NULL);
 #ifdef __APPLE__
   // Disable MouseCanUseGlobalState for scaling purposes
   ImGui_ImplSDL2_GetBackendData()->MouseCanUseGlobalState = false;
 #endif
   g_useSdlRenderer = renderer != nullptr;
   if (g_useSdlRenderer) {
-    ImGui_ImplSDLRenderer2_Init(renderer);
+    ImGui_ImplSDLRenderer3_Init(renderer);
   } else {
     const auto format = webgpu::g_graphicsConfig.swapChainDescriptor.format;
     ImGui_ImplWGPU_Init(webgpu::g_device.Get(), 1, static_cast<WGPUTextureFormat>(format));
@@ -50,11 +50,11 @@ void initialize() noexcept {
 
 void shutdown() noexcept {
   if (g_useSdlRenderer) {
-    ImGui_ImplSDLRenderer2_Shutdown();
+    ImGui_ImplSDLRenderer3_Shutdown();
   } else {
     ImGui_ImplWGPU_Shutdown();
   }
-  ImGui_ImplSDL2_Shutdown();
+  ImGui_ImplSDL3_Shutdown();
   ImGui::DestroyContext();
   for (const auto& texture : g_sdlTextures) {
     SDL_DestroyTexture(texture);
@@ -72,12 +72,12 @@ void process_event(const SDL_Event& event) noexcept {
     return;
   }
 #endif
-  ImGui_ImplSDL2_ProcessEvent(&event);
+  ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
 void new_frame(const AuroraWindowSize& size) noexcept {
   if (g_useSdlRenderer) {
-    ImGui_ImplSDLRenderer2_NewFrame();
+    ImGui_ImplSDLRenderer3_NewFrame();
     g_scale = size.scale;
   } else {
     if (g_scale != size.scale) {
@@ -90,7 +90,7 @@ void new_frame(const AuroraWindowSize& size) noexcept {
     }
     ImGui_ImplWGPU_NewFrame();
   }
-  ImGui_ImplSDL2_NewFrame();
+  ImGui_ImplSDL3_NewFrame();
 
   // Render at full DPI
   ImGui::GetIO().DisplaySize = {
@@ -107,9 +107,9 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
   // io.DisplayFramebufferScale is informational; we're rendering at full DPI
   data->FramebufferScale = {1.f, 1.f};
   if (g_useSdlRenderer) {
-    SDL_Renderer* renderer = ImGui_ImplSDLRenderer2_GetBackendData()->SDLRenderer;
+    SDL_Renderer* renderer = ImGui_ImplSDLRenderer3_GetBackendData()->Renderer;
     SDL_RenderClear(renderer);
-    ImGui_ImplSDLRenderer2_RenderDrawData(data);
+    ImGui_ImplSDLRenderer3_RenderDrawData(data, renderer);
     SDL_RenderPresent(renderer);
   } else {
     ImGui_ImplWGPU_RenderDrawData(data, pass.Get());
@@ -118,12 +118,12 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
 
 ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) noexcept {
   if (g_useSdlRenderer) {
-    SDL_Renderer* renderer = ImGui_ImplSDLRenderer2_GetBackendData()->SDLRenderer;
+    SDL_Renderer* renderer = ImGui_ImplSDLRenderer3_GetBackendData()->Renderer;
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, width, height);
     SDL_UpdateTexture(texture, nullptr, data, width * 4);
-    SDL_SetTextureScaleMode(texture, SDL_ScaleModeLinear);
+    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR);
     g_sdlTextures.push_back(texture);
-    return texture;
+    return reinterpret_cast<ImTextureID>(texture);
   }
   const wgpu::Extent3D size{
       .width = width,
@@ -159,7 +159,7 @@ ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) no
     webgpu::g_queue.WriteTexture(&dstView, data, width * height * 4, &dataLayout, &size);
   }
   g_wgpuTextures.push_back(texture);
-  return textureView.Release();
+  return reinterpret_cast<ImTextureID>(textureView.Release());
 }
 } // namespace aurora::imgui
 

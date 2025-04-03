@@ -1,6 +1,6 @@
 #include "BackendBinding.hpp"
 
-#include <SDL_syswm.h>
+#include <SDL3/SDL_syswm.h>
 #include <dawn/native/D3D12Backend.h>
 
 namespace aurora::webgpu::utils {

@@ -1,6 +1,6 @@
 #include "BackendBinding.hpp"
 
-#include <SDL_metal.h>
+#include <SDL3/SDL_metal.h>
 
 namespace aurora::webgpu::utils {
 std::unique_ptr<wgpu::ChainedStruct> SetupWindowAndGetSurfaceDescriptorCocoa(SDL_Window* window) {

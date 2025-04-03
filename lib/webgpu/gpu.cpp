@@ -5,7 +5,7 @@
 #include "../window.hpp"
 #include "../internal.hpp"
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include <magic_enum.hpp>
 #include <memory>
 #include <algorithm>
