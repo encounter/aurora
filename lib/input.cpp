@@ -460,31 +460,35 @@ uint32_t PADRead(PADStatus* status) {
   return rumbleSupport;
 }
 
+void PADControlMotor(int32_t chan, uint32_t command) {
+  auto controller = aurora::input::get_controller_for_player(chan);
+  auto instance = aurora::input::get_instance_for_player(chan);
+  if (controller == nullptr) {
+    return;
+  }
+
+  if (controller->m_isGameCube) {
+    if (command == PAD_MOTOR_STOP) {
+      aurora::input::controller_rumble(instance, 0, 1, 0);
+    } else if (command == PAD_MOTOR_RUMBLE) {
+      aurora::input::controller_rumble(instance, 1, 1, 0);
+    } else if (command == PAD_MOTOR_STOP_HARD) {
+      aurora::input::controller_rumble(instance, 0, 0, 0);
+    }
+  } else {
+    if (command == PAD_MOTOR_STOP) {
+      aurora::input::controller_rumble(instance, 0, 0, 1);
+    } else if (command == PAD_MOTOR_RUMBLE) {
+      aurora::input::controller_rumble(instance, 32767, 32767, 0);
+    } else if (command == PAD_MOTOR_STOP_HARD) {
+      aurora::input::controller_rumble(instance, 0, 0, 0);
+    }
+  }
+}
+
 void PADControlAllMotors(const uint32_t* commands) {
   for (uint32_t i = 0; i < 4; ++i) {
-    auto controller = aurora::input::get_controller_for_player(i);
-    auto instance = aurora::input::get_instance_for_player(i);
-    if (controller == nullptr) {
-      continue;
-    }
-
-    if (controller->m_isGameCube) {
-      if (commands[i] == PAD_MOTOR_STOP) {
-        aurora::input::controller_rumble(instance, 0, 1, 0);
-      } else if (commands[i] == PAD_MOTOR_RUMBLE) {
-        aurora::input::controller_rumble(instance, 1, 1, 0);
-      } else if (commands[i] == PAD_MOTOR_STOP_HARD) {
-        aurora::input::controller_rumble(instance, 0, 0, 0);
-      }
-    } else {
-      if (commands[i] == PAD_MOTOR_STOP) {
-        aurora::input::controller_rumble(instance, 0, 0, 1);
-      } else if (commands[i] == PAD_MOTOR_RUMBLE) {
-        aurora::input::controller_rumble(instance, 32767, 32767, 0);
-      } else if (commands[i] == PAD_MOTOR_STOP_HARD) {
-        aurora::input::controller_rumble(instance, 0, 0, 0);
-      }
-    }
+    PADControlMotor(i, commands[i]);
   }
 }
 
