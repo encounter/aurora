@@ -48,7 +48,7 @@ typedef struct {
 typedef struct SDL_Window SDL_Window;
 typedef struct AuroraEvent AuroraEvent;
 
-typedef void (*AuroraLogCallback)(AuroraLogLevel level, const char* message, unsigned int len);
+typedef void (*AuroraLogCallback)(AuroraLogLevel level, const char* module, const char* message, unsigned int len);
 typedef void (*AuroraImGuiInitCallback)(const AuroraWindowSize* size);
 
 typedef struct {

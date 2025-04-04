@@ -287,7 +287,7 @@ static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
 
 bool initialize(AuroraBackend auroraBackend) {
   if (!g_instance) {
-    Log.report(LOG_INFO, FMT_STRING("Creating WGPU instance"));
+    Log.report(LOG_INFO, "Creating WGPU instance");
     wgpu::InstanceDescriptor instanceDescriptor{
         .capabilities =
             {
@@ -301,18 +301,18 @@ bool initialize(AuroraBackend auroraBackend) {
 #endif
     g_instance = wgpu::CreateInstance(&instanceDescriptor);
     if (!g_instance) {
-      Log.report(LOG_ERROR, FMT_STRING("Failed to create WGPU instance"));
+      Log.report(LOG_ERROR, "Failed to create WGPU instance");
       return false;
     }
   }
   const wgpu::BackendType backend = to_wgpu_backend(auroraBackend);
 #ifdef EMSCRIPTEN
   if (backend != wgpu::BackendType::WebGPU) {
-    Log.report(LOG_WARNING, FMT_STRING("Backend type {} unsupported"), magic_enum::enum_name(backend));
+    Log.report(LOG_WARNING, "Backend type {} unsupported", magic_enum::enum_name(backend));
     return false;
   }
 #endif
-  Log.report(LOG_INFO, FMT_STRING("Attempting to initialize {}"), magic_enum::enum_name(backend));
+  Log.report(LOG_INFO, "Attempting to initialize {}", magic_enum::enum_name(backend));
 #if 0
   // D3D12's debug layer is very slow
   g_dawnInstance->EnableBackendValidation(backend != WGPUBackendType::D3D12);
@@ -333,7 +333,7 @@ bool initialize(AuroraBackend auroraBackend) {
   };
   g_surface = g_instance.CreateSurface(&surfaceDescriptor);
   if (!g_surface) {
-    Log.report(LOG_ERROR, FMT_STRING("Failed to create surface"));
+    Log.report(LOG_ERROR, "Failed to create surface");
     return false;
   }
   {
@@ -348,16 +348,16 @@ bool initialize(AuroraBackend auroraBackend) {
           if (status == wgpu::RequestAdapterStatus::Success) {
             g_adapter = std::move(adapter);
           } else {
-            Log.report(LOG_WARNING, FMT_STRING("Adapter request failed: {}"), message);
+            Log.report(LOG_WARNING, "Adapter request failed: {}", message);
           }
         });
     const auto status = g_instance.WaitAny(future, 5000000000);
     if (status != wgpu::WaitStatus::Success) {
-      Log.report(LOG_ERROR, FMT_STRING("Failed to create adapter: {}"), magic_enum::enum_name(status));
+      Log.report(LOG_ERROR, "Failed to create adapter: {}", magic_enum::enum_name(status));
       return false;
     }
     if (!g_adapter) {
-      Log.report(LOG_ERROR, FMT_STRING("Failed to create adapter"));
+      Log.report(LOG_ERROR, "Failed to create adapter");
       return false;
     }
   }
@@ -372,8 +372,9 @@ bool initialize(AuroraBackend auroraBackend) {
   if (description.IsUndefined()) {
     description = wgpu::StringView("Unknown");
   }
-  Log.report(LOG_INFO, FMT_STRING("Graphics adapter information\n  API: {}\n  Device: {} ({})\n  Driver: {}"),
-             backendName, adapterName, magic_enum::enum_name(g_adapterInfo.adapterType), description);
+  Log.report(LOG_INFO, "Graphics adapter information\n  API: {}\n  Device: {} ({})\n  Driver: {}",
+             backendName, adapterName, magic_enum::enum_name(g_adapterInfo.adapterType),
+             description);
 
   {
     wgpu::Limits supportedLimits{};
@@ -433,20 +434,20 @@ bool initialize(AuroraBackend auroraBackend) {
     deviceDescriptor.SetDeviceLostCallback(
         wgpu::CallbackMode::AllowSpontaneous,
         [](const wgpu::Device& device, wgpu::DeviceLostReason reason, wgpu::StringView message) {
-          Log.report(LOG_WARNING, FMT_STRING("Device lost: {}"), message);
+          Log.report(LOG_WARNING, "Device lost: {}", message);
         });
-    const auto future =
-        g_adapter.RequestDevice(&deviceDescriptor, wgpu::CallbackMode::WaitAnyOnly,
-                                [](wgpu::RequestDeviceStatus status, wgpu::Device device, wgpu::StringView message) {
-                                  if (status == wgpu::RequestDeviceStatus::Success) {
-                                    g_device = std::move(device);
-                                  } else {
-                                    Log.report(LOG_WARNING, FMT_STRING("Device request failed: {}"), message);
-                                  }
-                                });
+    const auto future = g_adapter.RequestDevice(
+        &deviceDescriptor, wgpu::CallbackMode::WaitAnyOnly,
+        [](wgpu::RequestDeviceStatus status, wgpu::Device device, wgpu::StringView message) {
+          if (status == wgpu::RequestDeviceStatus::Success) {
+            g_device = std::move(device);
+          } else {
+            Log.report(LOG_WARNING, "Device request failed: {}", message);
+          }
+        });
     const auto status = g_instance.WaitAny(future, 5000000000);
     if (status != wgpu::WaitStatus::Success) {
-      Log.report(LOG_ERROR, FMT_STRING("Failed to create device: {}"), magic_enum::enum_name(status));
+      Log.report(LOG_ERROR, "Failed to create device: {}", magic_enum::enum_name(status));
       return false;
     }
     if (!g_device) {
@@ -470,7 +471,7 @@ bool initialize(AuroraBackend auroraBackend) {
       default:
         break;
       }
-      Log.report(level, FMT_STRING("WebGPU message: {}"), message);
+      Log.report(level, "WebGPU message: {}", message);
     });
   }
   g_queue = g_device.GetQueue();
@@ -478,15 +479,15 @@ bool initialize(AuroraBackend auroraBackend) {
   wgpu::SurfaceCapabilities surfaceCapabilities;
   const wgpu::Status status = g_surface.GetCapabilities(g_adapter, &surfaceCapabilities);
   if (status != wgpu::Status::Success) {
-    Log.report(LOG_ERROR, FMT_STRING("Failed to get surface capabilities: {}"), magic_enum::enum_name(status));
+    Log.report(LOG_ERROR, "Failed to get surface capabilities: {}", magic_enum::enum_name(status));
     return false;
   }
   if (surfaceCapabilities.formatCount == 0) {
-    Log.report(LOG_ERROR, FMT_STRING("Surface has no formats"));
+    Log.report(LOG_ERROR, "Surface has no formats");
     return false;
   }
   if (surfaceCapabilities.presentModeCount == 0) {
-    Log.report(LOG_ERROR, FMT_STRING("Surface has no present modes"));
+    Log.report(LOG_ERROR, "Surface has no present modes");
     return false;
   }
   auto surfaceFormat = surfaceCapabilities.formats[0];
@@ -496,7 +497,7 @@ bool initialize(AuroraBackend auroraBackend) {
   } else if (surfaceFormat == wgpu::TextureFormat::BGRA8UnormSrgb) {
     surfaceFormat = wgpu::TextureFormat::BGRA8Unorm;
   }
-  Log.report(LOG_INFO, FMT_STRING("Using surface format {}, present mode {}"), magic_enum::enum_name(surfaceFormat),
+  Log.report(LOG_INFO, "Using surface format {}, present mode {}", magic_enum::enum_name(surfaceFormat),
              magic_enum::enum_name(presentMode));
   const auto size = window::get_window_size();
   g_graphicsConfig = GraphicsConfig{

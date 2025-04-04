@@ -83,8 +83,8 @@ TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mi
     offset += dataSize;
   }
   if (data.size() != UINT32_MAX && offset < data.size()) {
-    Log.report(LOG_WARNING, FMT_STRING("new_static_texture_2d[{}]: texture used {} bytes, but given {} bytes"), label,
-               offset, data.size());
+    Log.report(LOG_WARNING, "new_static_texture_2d[{}]: texture used {} bytes, but given {} bytes", label, offset,
+               data.size());
   }
   return handle;
 }
@@ -106,7 +106,7 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
       .mipLevelCount = mips,
       .sampleCount = 1,
   };
-  const auto viewLabel = fmt::format(FMT_STRING("{} view"), label);
+  const auto viewLabel = fmt::format("{} view", label);
   const wgpu::TextureViewDescriptor textureViewDescriptor{
       .label = viewLabel.c_str(),
       .format = wgpuFormat,
@@ -136,7 +136,7 @@ TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 fmt, const
       .mipLevelCount = 1,
       .sampleCount = 1,
   };
-  const auto viewLabel = fmt::format(FMT_STRING("{} view"), label);
+  const auto viewLabel = fmt::format("{} view", label);
   const wgpu::TextureViewDescriptor textureViewDescriptor{
       .label = viewLabel.c_str(),
       .format = wgpuFormat,
@@ -196,8 +196,7 @@ void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
     offset += dataSize;
   }
   if (data.size() != UINT32_MAX && offset < data.size()) {
-    Log.report(LOG_WARNING, FMT_STRING("write_texture: texture used {} bytes, but given {} bytes"), offset,
-               data.size());
+    Log.report(LOG_WARNING, "write_texture: texture used {} bytes, but given {} bytes", offset, data.size());
   }
 }
 } // namespace aurora::gfx

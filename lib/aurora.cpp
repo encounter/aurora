@@ -8,14 +8,14 @@
 #include "window.hpp"
 
 #include <SDL3/SDL_filesystem.h>
-#include <imgui.h>
 #include <magic_enum.hpp>
 #include <webgpu/webgpu_cpp.h>
 
 namespace aurora {
-static Module Log("aurora");
-
 AuroraConfig g_config;
+
+namespace {
+Module Log("aurora");
 
 // GPU
 using webgpu::g_device;
@@ -49,10 +49,11 @@ constexpr std::array PreferredBackendOrder{
 #endif
 };
 
-static bool g_initialFrame = false;
+bool g_initialFrame = false;
 
-static AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexcept {
+AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexcept {
   g_config = config;
+  Log.report(LOG_INFO, "Aurora initializing");
   if (g_config.appName == nullptr) {
     g_config.appName = "Aurora";
   }
@@ -106,7 +107,7 @@ static AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config)
 
   imgui::create_context();
   const auto size = window::get_window_size();
-  Log.report(LOG_INFO, FMT_STRING("Using framebuffer size {}x{} scale {}"), size.fb_width, size.fb_height, size.scale);
+  Log.report(LOG_INFO, "Using framebuffer size {}x{} scale {}", size.fb_width, size.fb_height, size.scale);
   if (g_config.imGuiInitCallback != nullptr) {
     g_config.imGuiInitCallback(&size);
   }
@@ -122,9 +123,9 @@ static AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config)
   };
 }
 
-static wgpu::TextureView g_currentView;
+wgpu::TextureView g_currentView;
 
-static void shutdown() noexcept {
+void shutdown() noexcept {
   g_currentView = {};
   imgui::shutdown();
   gfx::shutdown();
@@ -132,7 +133,7 @@ static void shutdown() noexcept {
   window::shutdown();
 }
 
-static const AuroraEvent* update() noexcept {
+const AuroraEvent* update() noexcept {
   if (g_initialFrame) {
     g_initialFrame = false;
     input::initialize();
@@ -140,7 +141,7 @@ static const AuroraEvent* update() noexcept {
   return window::poll_events();
 }
 
-static bool begin_frame() noexcept {
+bool begin_frame() noexcept {
   wgpu::SurfaceTexture surfaceTexture;
   g_surface.GetCurrentTexture(&surfaceTexture);
   switch (surfaceTexture.status) {
@@ -148,15 +149,14 @@ static bool begin_frame() noexcept {
     g_currentView = surfaceTexture.texture.CreateView();
     break;
   case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal: {
-    Log.report(LOG_WARNING, FMT_STRING("Surface texture is suboptimal"));
+    Log.report(LOG_WARNING, "Surface texture is suboptimal");
     // Force swapchain recreation
     const auto size = window::get_window_size();
     webgpu::resize_swapchain(size.fb_width, size.fb_height, true);
     return false;
   }
   default:
-    Log.report(LOG_ERROR, FMT_STRING("Failed to get surface texture: {}"),
-               magic_enum::enum_name(surfaceTexture.status));
+    Log.report(LOG_ERROR, "Failed to get surface texture: {}", magic_enum::enum_name(surfaceTexture.status));
     return false;
   }
   imgui::new_frame(window::get_window_size());
@@ -164,7 +164,7 @@ static bool begin_frame() noexcept {
   return true;
 }
 
-static void end_frame() noexcept {
+void end_frame() noexcept {
   const auto encoderDescriptor = wgpu::CommandEncoderDescriptor{
       .label = "Redraw encoder",
   };
@@ -198,6 +198,7 @@ static void end_frame() noexcept {
   g_surface.Present();
   g_currentView = {};
 }
+} // namespace
 } // namespace aurora
 
 // C API bindings

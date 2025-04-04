@@ -1,12 +1,11 @@
 #pragma once
 
 #include <aurora/aurora.h>
+#include <fmt/base.h>
 #include <fmt/format.h>
 
-#include <string>
-#include <string_view>
-#include <vector>
 #include <cassert>
+#include <vector>
 
 using namespace std::string_view_literals;
 
@@ -43,7 +42,7 @@ using namespace std::string_view_literals;
 #endif
 #define FATAL(msg, ...)                                                                                                \
   {                                                                                                                    \
-    Log.report(LOG_FATAL, FMT_STRING(msg), ##__VA_ARGS__);                                                             \
+    Log.report(LOG_FATAL, msg, ##__VA_ARGS__);                                                                         \
     unreachable();                                                                                                     \
   }
 #define ASSERT(cond, msg, ...)                                                                                         \
@@ -58,12 +57,12 @@ using namespace std::string_view_literals;
 #define TRY(cond, msg, ...)                                                                                            \
   if (!(cond))                                                                                                         \
     UNLIKELY {                                                                                                         \
-      Log.report(LOG_ERROR, FMT_STRING(msg), ##__VA_ARGS__);                                                           \
+      Log.report(LOG_ERROR, msg, ##__VA_ARGS__);                                                                       \
       return false;                                                                                                    \
     }
 #define TRY_WARN(cond, msg, ...)                                                                                       \
   if (!(cond))                                                                                                         \
-    UNLIKELY { Log.report(LOG_WARNING, FMT_STRING(msg), ##__VA_ARGS__); }
+    UNLIKELY { Log.report(LOG_WARNING, msg, ##__VA_ARGS__); }
 
 namespace aurora {
 extern AuroraConfig g_config;
@@ -73,10 +72,10 @@ struct Module {
   explicit Module(const char* name) noexcept : name(name) {}
 
   template <typename... T>
-  inline void report(AuroraLogLevel level, fmt::format_string<T...> fmt, T&&... args) noexcept {
+  void report(AuroraLogLevel level, fmt::format_string<T...> fmt, T&&... args) noexcept {
     auto message = fmt::format(fmt, std::forward<T>(args)...);
     if (g_config.logCallback != nullptr) {
-      g_config.logCallback(level, message.c_str(), message.size());
+      g_config.logCallback(level, name, message.c_str(), message.size());
     }
   }
 };

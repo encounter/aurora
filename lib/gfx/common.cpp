@@ -219,7 +219,7 @@ static PipelineRef find_pipeline(ShaderType type, const PipelineConfig& config, 
 static inline void push_command(CommandType type, const Command::Data& data) {
   if (g_currentRenderPass == UINT32_MAX)
     UNLIKELY {
-      Log.report(LOG_WARNING, FMT_STRING("Dropping command {}"), magic_enum::enum_name(type));
+      Log.report(LOG_WARNING, "Dropping command {}", magic_enum::enum_name(type));
       return;
     }
   g_renderPasses[g_currentRenderPass].commands.push_back({
@@ -391,7 +391,7 @@ void load_pipeline_cache() {
         find_pipeline(type, config, [=]() { return model::create_pipeline(g_state.model, config); }, true);
       } break;
       default:
-        Log.report(LOG_WARNING, FMT_STRING("Unknown pipeline type {}"), static_cast<int>(type));
+        Log.report(LOG_WARNING, "Unknown pipeline type {}", static_cast<int>(type));
         break;
       }
       offset += size;
@@ -445,7 +445,7 @@ void initialize() {
   createBuffer(g_storageBuffer, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst, StorageBufferSize,
                "Shared Storage Buffer");
   for (int i = 0; i < g_stagingBuffers.size(); ++i) {
-    const auto label = fmt::format(FMT_STRING("Staging Buffer {}"), i);
+    const auto label = fmt::format("Staging Buffer {}", i);
     createBuffer(g_stagingBuffers[i], wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc, StagingBufferSize,
                  label.c_str());
   }
@@ -605,7 +605,7 @@ void render(wgpu::CommandEncoder& cmd) {
         .depthStoreOp = wgpu::StoreOp::Store,
         .depthClearValue = 1.f,
     };
-    const auto label = fmt::format(FMT_STRING("Render pass {}"), i);
+    const auto label = fmt::format("Render pass {}", i);
     const wgpu::RenderPassDescriptor renderPassDescriptor{
         .label = label.c_str(),
         .colorAttachmentCount = attachments.size(),
