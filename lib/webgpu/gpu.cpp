@@ -386,6 +386,15 @@ bool initialize(AuroraBackend auroraBackend) {
     g_adapter.GetLimits(&supportedLimits);
     const wgpu::Limits requiredLimits{
         // Use "best" supported alignments
+        .maxTextureDimension1D = supportedLimits.maxTextureDimension1D == 0
+                                               ? WGPU_LIMIT_U32_UNDEFINED
+                                               : supportedLimits.maxTextureDimension1D,
+        .maxTextureDimension2D = supportedLimits.maxTextureDimension2D == 0
+                                               ? WGPU_LIMIT_U32_UNDEFINED
+                                               : supportedLimits.maxTextureDimension2D,
+        .maxTextureDimension3D = supportedLimits.maxTextureDimension3D == 0
+                                               ? WGPU_LIMIT_U32_UNDEFINED
+                                               : supportedLimits.maxTextureDimension3D,
         .minUniformBufferOffsetAlignment = supportedLimits.minUniformBufferOffsetAlignment == 0
                                                ? WGPU_LIMIT_U32_UNDEFINED
                                                : supportedLimits.minUniformBufferOffsetAlignment,
