@@ -461,29 +461,28 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
                                const BindGroupRanges& ranges) noexcept {
   const auto layouts = build_bind_group_layouts(info, config);
 
-  std::array<wgpu::BindGroupEntry, GX_VA_MAX_ATTR + 1> uniformEntries{
-      wgpu::BindGroupEntry{
-          .binding = 0,
-          .buffer = g_uniformBuffer,
-          .size = info.uniformSize,
-      },
-  };
+  std::array<wgpu::BindGroupEntry, GX_VA_MAX_ATTR + 1> uniformEntries;
+  memset(&uniformEntries, 0, sizeof(uniformEntries));
+  uniformEntries[0].binding = 0;
+  uniformEntries[0].buffer = g_uniformBuffer;
+  uniformEntries[0].size = info.uniformSize;
   u32 uniformBindIdx = 1;
   for (u32 i = 0; i < GX_VA_MAX_ATTR; ++i) {
     const Range& range = ranges.vaRanges[i];
     if (range.size <= 0) {
       continue;
     }
-    uniformEntries[uniformBindIdx] = wgpu::BindGroupEntry{
-        .binding = uniformBindIdx,
-        .buffer = g_storageBuffer,
-        .size = range.size,
-    };
+    wgpu::BindGroupEntry& entry = uniformEntries[uniformBindIdx];
+    entry.binding = uniformBindIdx;
+    entry.buffer = g_storageBuffer;
+    entry.size = range.size;
     ++uniformBindIdx;
   }
 
   std::array<wgpu::BindGroupEntry, MaxTextures> samplerEntries;
   std::array<wgpu::BindGroupEntry, MaxTextures * 2> textureEntries;
+  memset(&samplerEntries, 0, sizeof(samplerEntries));
+  memset(&textureEntries, 0, sizeof(textureEntries));
   u32 samplerCount = 0;
   u32 textureCount = 0;
   for (u32 i = 0; i < info.sampledTextures.size(); ++i) {
@@ -492,15 +491,15 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
     }
     const auto& tex = g_gxState.textures[i];
     CHECK(tex, "unbound texture {}", i);
-    samplerEntries[samplerCount] = {
-        .binding = samplerCount,
-        .sampler = sampler_ref(tex.get_descriptor()),
-    };
+    wgpu::BindGroupEntry& samplerEntry = samplerEntries[samplerCount];
+    samplerEntry.binding = samplerCount;
+    samplerEntry.size = wgpu::kWholeSize;
+    samplerEntry.sampler = sampler_ref(tex.get_descriptor());
     ++samplerCount;
-    textureEntries[textureCount] = {
-        .binding = textureCount,
-        .textureView = tex.texObj.ref->view,
-    };
+    wgpu::BindGroupEntry& textureEntry = textureEntries[textureCount];
+    textureEntry.binding = textureCount;
+    textureEntry.size = wgpu::kWholeSize;
+    textureEntry.textureView = tex.texObj.ref->view;
     ++textureCount;
     // Load palette
     const auto& texConfig = config.textureConfig[i];
@@ -508,41 +507,48 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
       u32 tlut = tex.texObj.tlut;
       CHECK(tlut >= GX_TLUT0 && tlut <= GX_BIGTLUT3, "tlut out of bounds {}", tlut);
       CHECK(g_gxState.tluts[tlut].ref, "tlut unbound {}", tlut);
-      textureEntries[textureCount] = {
-          .binding = textureCount,
-          .textureView = g_gxState.tluts[tlut].ref->view,
-      };
+      wgpu::BindGroupEntry& tlutEntry = textureEntries[textureCount];
+      tlutEntry.binding = textureCount;
+      tlutEntry.size = wgpu::kWholeSize;
+      tlutEntry.textureView = g_gxState.tluts[tlut].ref->view;
       ++textureCount;
     }
   }
+  const wgpu::BindGroupDescriptor uniformBindGroupDescriptor{
+      .label = "GX Uniform Bind Group",
+      .layout = layouts.uniformLayout,
+      .entryCount = uniformBindIdx,
+      .entries = uniformEntries.data(),
+  };
+  const wgpu::BindGroupDescriptor samplerBindGroupDescriptor{
+      .label = "GX Sampler Bind Group",
+      .layout = layouts.samplerLayout,
+      .entryCount = samplerCount,
+      .entries = samplerEntries.data(),
+  };
+  const wgpu::BindGroupDescriptor textureBindGroupDescriptor{
+      .label = "GX Texture Bind Group",
+      .layout = layouts.textureLayout,
+      .entryCount = textureCount,
+      .entries = textureEntries.data(),
+  };
   return {
-      .uniformBindGroup = bind_group_ref(wgpu::BindGroupDescriptor{
-          .label = "GX Uniform Bind Group",
-          .layout = layouts.uniformLayout,
-          .entryCount = uniformBindIdx,
-          .entries = uniformEntries.data(),
-      }),
-      .samplerBindGroup = bind_group_ref(wgpu::BindGroupDescriptor{
-          .label = "GX Sampler Bind Group",
-          .layout = layouts.samplerLayout,
-          .entryCount = samplerCount,
-          .entries = samplerEntries.data(),
-      }),
-      .textureBindGroup = bind_group_ref(wgpu::BindGroupDescriptor{
-          .label = "GX Texture Bind Group",
-          .layout = layouts.textureLayout,
-          .entryCount = textureCount,
-          .entries = textureEntries.data(),
-      }),
+      .uniformBindGroup = bind_group_ref(uniformBindGroupDescriptor),
+      .samplerBindGroup = bind_group_ref(samplerBindGroupDescriptor),
+      .textureBindGroup = bind_group_ref(textureBindGroupDescriptor),
   };
 }
 
 GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const ShaderConfig& config) noexcept {
   GXBindGroupLayouts out;
-  u32 uniformSizeKey = info.uniformSize + (config.indexedAttributeCount > 0 ? 1 : 0);
-  const auto uniformIt = sUniformBindGroupLayouts.find(uniformSizeKey);
-  if (uniformIt != sUniformBindGroupLayouts.end()) {
-    out.uniformLayout = uniformIt->second;
+
+  Hasher uniformHasher;
+  uniformHasher.update(info.uniformSize);
+  uniformHasher.update(config.attrMapping);
+  const auto uniformLayoutHash = uniformHasher.digest();
+  auto it = sUniformBindGroupLayouts.find(uniformLayoutHash);
+  if (it != sUniformBindGroupLayouts.end()) {
+    out.uniformLayout = it->second;
   } else {
     std::array<wgpu::BindGroupLayoutEntry, GX_VA_MAX_ATTR + 1> uniformLayoutEntries{
         wgpu::BindGroupLayoutEntry{
@@ -577,16 +583,20 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
         .entries = uniformLayoutEntries.data(),
     };
     out.uniformLayout = g_device.CreateBindGroupLayout(&uniformLayoutDescriptor);
-    //    sUniformBindGroupLayouts.try_emplace(uniformSizeKey, out.uniformLayout);
+    sUniformBindGroupLayouts[uniformLayoutHash] = out.uniformLayout;
   }
 
-  //  u32 textureCount = info.sampledTextures.count();
-  //  const auto textureIt = sTextureBindGroupLayouts.find(textureCount);
-  //  if (textureIt != sTextureBindGroupLayouts.end()) {
-  //    const auto& [sl, tl] = textureIt->second;
-  //    out.samplerLayout = sl;
-  //    out.textureLayout = tl;
-  //  } else {
+  Hasher textureHasher;
+  textureHasher.update(info.sampledTextures);
+  textureHasher.update(config.textureConfig);
+  const auto textureLayoutHash = textureHasher.digest();
+  auto it2 = sTextureBindGroupLayouts.find(textureLayoutHash);
+  if (it2 != sTextureBindGroupLayouts.end()) {
+    out.samplerLayout = it2->second.first;
+    out.textureLayout = it2->second.second;
+    return out;
+  }
+
   u32 numSamplers = 0;
   u32 numTextures = 0;
   std::array<wgpu::BindGroupLayoutEntry, MaxTextures> samplerEntries;
@@ -655,8 +665,7 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
     };
     out.textureLayout = g_device.CreateBindGroupLayout(&descriptor);
   }
-  //    sTextureBindGroupLayouts.try_emplace(textureCount, out.samplerLayout, out.textureLayout);
-  //  }
+  sTextureBindGroupLayouts[textureLayoutHash] = {out.samplerLayout, out.textureLayout};
   return out;
 }
 

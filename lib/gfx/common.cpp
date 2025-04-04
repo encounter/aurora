@@ -6,12 +6,14 @@
 #include "stream/shader.hpp"
 #include "texture.hpp"
 
-#include <absl/container/flat_hash_map.h>
 #include <condition_variable>
 #include <deque>
 #include <fstream>
-#include <thread>
 #include <mutex>
+#include <thread>
+#include <variant>
+
+#include <absl/container/flat_hash_map.h>
 #include <magic_enum.hpp>
 
 namespace aurora::gfx {
@@ -50,37 +52,37 @@ enum class CommandType {
   SetScissor,
   Draw,
 };
+struct SetViewportCommand {
+  float left;
+  float top;
+  float width;
+  float height;
+  float znear;
+  float zfar;
+
+  bool operator==(const SetViewportCommand& rhs) const {
+    return left == rhs.left && top == rhs.top && width == rhs.width && height == rhs.height && znear == rhs.znear &&
+           zfar == rhs.zfar;
+  }
+  bool operator!=(const SetViewportCommand& rhs) const { return !(*this == rhs); }
+};
+struct SetScissorCommand {
+  uint32_t x;
+  uint32_t y;
+  uint32_t w;
+  uint32_t h;
+
+  bool operator==(const SetScissorCommand& rhs) const { return x == rhs.x && y == rhs.y && w == rhs.w && h == rhs.h; }
+  bool operator!=(const SetScissorCommand& rhs) const { return !(*this == rhs); }
+};
 struct Command {
   CommandType type;
 #ifdef AURORA_GFX_DEBUG_GROUPS
   std::vector<std::string> debugGroupStack;
 #endif
   union Data {
-    struct SetViewportCommand {
-      float left;
-      float top;
-      float width;
-      float height;
-      float znear;
-      float zfar;
-
-      bool operator==(const SetViewportCommand& rhs) const {
-        return left == rhs.left && top == rhs.top && width == rhs.width && height == rhs.height && znear == rhs.znear &&
-               zfar == rhs.zfar;
-      }
-      bool operator!=(const SetViewportCommand& rhs) const { return !(*this == rhs); }
-    } setViewport;
-    struct SetScissorCommand {
-      uint32_t x;
-      uint32_t y;
-      uint32_t w;
-      uint32_t h;
-
-      bool operator==(const SetScissorCommand& rhs) const {
-        return x == rhs.x && y == rhs.y && w == rhs.w && h == rhs.h;
-      }
-      bool operator!=(const SetScissorCommand& rhs) const { return !(*this == rhs); }
-    } setScissor;
+    SetViewportCommand setViewport;
+    SetScissorCommand setScissor;
     ShaderDrawCommand draw;
   } data;
 };
@@ -92,14 +94,14 @@ namespace aurora {
 // the structure definition, which could easily change with Dawn updates.
 template <>
 inline HashType xxh3_hash(const wgpu::BindGroupDescriptor& input, HashType seed) {
-  constexpr auto offset = sizeof(void*) * 3; // skip nextInChain, label
+  constexpr auto offset = offsetof(wgpu::BindGroupDescriptor, layout); // skip nextInChain, label
   const auto hash = xxh3_hash_s(reinterpret_cast<const u8*>(&input) + offset,
                                 sizeof(wgpu::BindGroupDescriptor) - offset - sizeof(void*) /* skip entries */, seed);
   return xxh3_hash_s(input.entries, sizeof(wgpu::BindGroupEntry) * input.entryCount, hash);
 }
 template <>
 inline HashType xxh3_hash(const wgpu::SamplerDescriptor& input, HashType seed) {
-  constexpr auto offset = sizeof(void*) * 3; // skip nextInChain, label
+  constexpr auto offset = offsetof(wgpu::SamplerDescriptor, addressModeU); // skip nextInChain, label
   return xxh3_hash_s(reinterpret_cast<const u8*>(&input) + offset,
                      sizeof(wgpu::SamplerDescriptor) - offset - 2 /* skip padding */, seed);
 }
@@ -230,6 +232,7 @@ static inline void push_command(CommandType type, const Command::Data& data) {
       .data = data,
   });
 }
+
 static inline Command& get_last_draw_command(ShaderType type) {
   CHECK(g_currentRenderPass != UINT32_MAX, "No last command");
   auto& last = g_renderPasses[g_currentRenderPass].commands.back();
@@ -247,17 +250,18 @@ static void push_draw_command(ShaderDrawCommand data) {
   ++g_drawCallCount;
 }
 
-static Command::Data::SetViewportCommand g_cachedViewport;
+static SetViewportCommand g_cachedViewport;
 void set_viewport(float left, float top, float width, float height, float znear, float zfar) noexcept {
-  Command::Data::SetViewportCommand cmd{left, top, width, height, znear, zfar};
+  SetViewportCommand cmd{left, top, width, height, znear, zfar};
   if (cmd != g_cachedViewport) {
     push_command(CommandType::SetViewport, Command::Data{.setViewport = cmd});
     g_cachedViewport = cmd;
   }
 }
-static Command::Data::SetScissorCommand g_cachedScissor;
+
+static SetScissorCommand g_cachedScissor;
 void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {
-  Command::Data::SetScissorCommand cmd{x, y, w, h};
+  SetScissorCommand cmd{x, y, w, h};
   if (cmd != g_cachedScissor) {
     push_command(CommandType::SetScissor, Command::Data{.setScissor = cmd});
     g_cachedScissor = cmd;
@@ -278,10 +282,12 @@ template <>
 const stream::State& get_state() {
   return g_state.stream;
 }
+
 template <>
 void push_draw_command(stream::DrawData data) {
   push_draw_command(ShaderDrawCommand{.type = ShaderType::Stream, .stream = data});
 }
+
 template <>
 void merge_draw_command(stream::DrawData data) {
   auto& last = get_last_draw_command(ShaderType::Stream).data.draw.stream;
@@ -294,6 +300,7 @@ void merge_draw_command(stream::DrawData data) {
   last.indexCount += data.indexCount;
   ++g_mergedDrawCallCount;
 }
+
 template <>
 PipelineRef pipeline_ref(stream::PipelineConfig config) {
   return find_pipeline(ShaderType::Stream, config, [=]() { return create_pipeline(g_state.stream, config); });
@@ -303,6 +310,7 @@ template <>
 void push_draw_command(model::DrawData data) {
   push_draw_command(ShaderDrawCommand{.type = ShaderType::Model, .model = data});
 }
+
 template <>
 PipelineRef pipeline_ref(model::PipelineConfig config) {
   return find_pipeline(ShaderType::Model, config, [=]() { return create_pipeline(g_state.model, config); });
@@ -792,7 +800,8 @@ BindGroupRef bind_group_ref(const wgpu::BindGroupDescriptor& descriptor) {
 #endif
   return id;
 }
-const wgpu::BindGroup& find_bind_group(BindGroupRef id) {
+
+wgpu::BindGroup find_bind_group(BindGroupRef id) {
 #ifdef EMSCRIPTEN
   return g_cachedBindGroups[id];
 #else
@@ -802,7 +811,7 @@ const wgpu::BindGroup& find_bind_group(BindGroupRef id) {
 #endif
 }
 
-const wgpu::Sampler& sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
+wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
   const auto id = xxh3_hash(descriptor);
   auto it = g_cachedSamplers.find(id);
   if (it == g_cachedSamplers.end()) {

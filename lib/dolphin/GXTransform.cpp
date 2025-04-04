@@ -60,7 +60,7 @@ void GXLoadTexMtxImm(const void* mtx_, u32 id, GXTexMtxType type) {
   CHECK((id >= GX_TEXMTX0 && id <= GX_IDENTITY) || (id >= GX_PTTEXMTX0 && id <= GX_PTIDENTITY), "invalid tex mtx {}",
         static_cast<int>(id));
   if (id >= GX_PTTEXMTX0) {
-    CHECK(type == GX_MTX3x4, "invalid pt mtx type {}", type);
+    CHECK(type == GX_MTX3x4, "invalid pt mtx type {}", static_cast<int>(type));
     const auto idx = (id - GX_PTTEXMTX0) / 3;
 #ifdef AURORA_NATIVE_MATRIX
     const auto& mtx = *reinterpret_cast<const aurora::Mat4x4<float>*>(mtx_);

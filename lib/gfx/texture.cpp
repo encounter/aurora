@@ -1,17 +1,26 @@
 #include "common.hpp"
 
-#include "../webgpu/gpu.hpp"
 #include "../internal.hpp"
+#include "../webgpu/gpu.hpp"
+#include "aurora/aurora.h"
 #include "texture.hpp"
 #include "texture_convert.hpp"
 
+#include <algorithm>
+#include <cstdint>
+#include <memory>
+#include <utility>
+
+#include <fmt/format.h>
 #include <magic_enum.hpp>
+#include <webgpu/webgpu_cpp.h>
 
 namespace aurora::gfx {
-static Module Log("aurora::gfx");
-
 using webgpu::g_device;
 using webgpu::g_queue;
+
+namespace {
+Module Log("aurora::gfx");
 
 struct TextureFormatInfo {
   uint8_t blockWidth;
@@ -19,7 +28,8 @@ struct TextureFormatInfo {
   uint8_t blockSize;
   bool compressed;
 };
-static TextureFormatInfo format_info(wgpu::TextureFormat format) {
+
+TextureFormatInfo format_info(wgpu::TextureFormat format) {
   switch (format) {
     DEFAULT_FATAL("unimplemented texture format {}", magic_enum::enum_name(format));
   case wgpu::TextureFormat::R8Unorm:
@@ -33,11 +43,13 @@ static TextureFormatInfo format_info(wgpu::TextureFormat format) {
     return {4, 4, 8, true};
   }
 }
-static wgpu::Extent3D physical_size(wgpu::Extent3D size, TextureFormatInfo info) {
+
+wgpu::Extent3D physical_size(wgpu::Extent3D size, TextureFormatInfo info) {
   const uint32_t width = ((size.width + info.blockWidth - 1) / info.blockWidth) * info.blockWidth;
   const uint32_t height = ((size.height + info.blockHeight - 1) / info.blockHeight) * info.blockHeight;
-  return {width, height, size.depthOrArrayLayers};
+  return {.width = width, .height = height, .depthOrArrayLayers = size.depthOrArrayLayers};
 }
+} // namespace
 
 TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format, ArrayRef<uint8_t> data,
                                     const char* label) noexcept {
@@ -112,7 +124,6 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
       .format = wgpuFormat,
       .dimension = wgpu::TextureViewDimension::e2D,
       .mipLevelCount = mips,
-      .arrayLayerCount = WGPU_ARRAY_LAYER_COUNT_UNDEFINED,
   };
   auto texture = g_device.CreateTexture(&textureDescriptor);
   auto textureView = texture.CreateView(&textureViewDescriptor);
@@ -141,8 +152,6 @@ TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 fmt, const
       .label = viewLabel.c_str(),
       .format = wgpuFormat,
       .dimension = wgpu::TextureViewDimension::e2D,
-      .mipLevelCount = WGPU_MIP_LEVEL_COUNT_UNDEFINED,
-      .arrayLayerCount = WGPU_ARRAY_LAYER_COUNT_UNDEFINED,
   };
   auto texture = g_device.CreateTexture(&textureDescriptor);
   auto textureView = texture.CreateView(&textureViewDescriptor);

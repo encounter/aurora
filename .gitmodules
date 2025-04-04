@@ -2,6 +2,7 @@
 	path = extern/dawn
 	url = https://dawn.googlesource.com/dawn
 	branch = main
+	update = none
 [submodule "extern/SDL"]
 	path = extern/SDL
 	url = https://github.com/libsdl-org/SDL.git

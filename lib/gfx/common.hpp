@@ -27,6 +27,27 @@ static inline HashType xxh3_hash(const T& input, HashType seed = 0) {
   return xxh3_hash_s(&input, sizeof(T), seed);
 }
 
+class Hasher {
+public:
+  explicit Hasher(XXH64_hash_t seed = 0) {
+    XXH3_INITSTATE(&state);
+    XXH3_64bits_reset_withSeed(&state, seed);
+  }
+
+  void update(const void* data, size_t size) { XXH3_64bits_update(&state, data, size); }
+
+  template <typename T>
+  void update(const T& data) {
+    static_assert(std::has_unique_object_representations_v<T>);
+    update(&data, sizeof(T));
+  }
+
+  XXH64_hash_t digest() { return XXH3_64bits_digest(&state); }
+
+private:
+  XXH3_state_t state;
+};
+
 class ByteBuffer {
 public:
   ByteBuffer() noexcept = default;
@@ -211,9 +232,9 @@ PipelineRef pipeline_ref(PipelineConfig config);
 bool bind_pipeline(PipelineRef ref, const wgpu::RenderPassEncoder& pass);
 
 BindGroupRef bind_group_ref(const wgpu::BindGroupDescriptor& descriptor);
-const wgpu::BindGroup& find_bind_group(BindGroupRef id);
+wgpu::BindGroup find_bind_group(BindGroupRef id);
 
-const wgpu::Sampler& sampler_ref(const wgpu::SamplerDescriptor& descriptor);
+wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor);
 
 uint32_t align_uniform(uint32_t value);
 
