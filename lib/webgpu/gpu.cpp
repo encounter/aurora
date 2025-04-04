@@ -17,6 +17,7 @@
 #ifdef WEBGPU_DAWN
 #include "../dawn/BackendBinding.hpp"
 #include <dawn/native/DawnNative.h>
+#include <dawn/dawn_proc.h>
 #endif
 
 namespace aurora::webgpu {
@@ -287,6 +288,10 @@ static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
 
 bool initialize(AuroraBackend auroraBackend) {
   if (!g_instance) {
+#ifdef WEBGPU_DAWN
+    Log.report(LOG_INFO, "Initializing Dawn");
+    dawnProcSetProcs(&dawn::native::GetProcs());
+#endif
     Log.report(LOG_INFO, "Creating WGPU instance");
     wgpu::InstanceDescriptor instanceDescriptor{
         .capabilities =
