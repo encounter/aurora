@@ -1,6 +1,7 @@
 [submodule "extern/dawn"]
 	path = extern/dawn
-	url = https://github.com/encounter/dawn-cmake.git
+	url = https://dawn.googlesource.com/dawn
+	branch = main
 [submodule "extern/SDL"]
 	path = extern/SDL
 	url = https://github.com/libsdl-org/SDL.git
