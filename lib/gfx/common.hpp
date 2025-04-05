@@ -8,7 +8,8 @@
 #include <cstring>
 
 #include <webgpu/webgpu_cpp.h>
-#include <xxhash_impl.h>
+#define XXH_STATIC_LINKING_ONLY
+#include <xxhash.h>
 
 namespace aurora {
 #if INTPTR_MAX == INT32_MAX

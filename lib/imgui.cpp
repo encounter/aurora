@@ -5,15 +5,16 @@
 #include <vector>
 
 #include <webgpu/webgpu_cpp.h>
+#include <SDL3/SDL_render.h>
 
 #include "internal.hpp"
 #include "webgpu/gpu.hpp"
 #include "window.hpp"
 
 #define IMGUI_IMPL_WEBGPU_BACKEND_DAWN
-#include "../imgui/backends/imgui_impl_sdl3.cpp"         // NOLINT(bugprone-suspicious-include)
-#include "../imgui/backends/imgui_impl_sdlrenderer3.cpp" // NOLINT(bugprone-suspicious-include)
-#include "../imgui/backends/imgui_impl_wgpu.cpp"         // NOLINT(bugprone-suspicious-include)
+#include "backends/imgui_impl_sdl3.h"
+#include "backends/imgui_impl_sdlrenderer3.h"
+#include "backends/imgui_impl_wgpu.h"
 
 namespace aurora::imgui {
 static float g_scale;
@@ -36,7 +37,7 @@ void create_context() noexcept {
 
 void initialize() noexcept {
   SDL_Renderer* renderer = window::get_sdl_renderer();
-  ImGui_ImplSDL3_Init(window::get_sdl_window(), renderer, NULL);
+  ImGui_ImplSDL3_InitForSDLRenderer(window::get_sdl_window(), renderer);
 #ifdef __APPLE__
   // Disable MouseCanUseGlobalState for scaling purposes
   ImGui_ImplSDL3_GetBackendData()->MouseCanUseGlobalState = false;
@@ -110,7 +111,7 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
   // io.DisplayFramebufferScale is informational; we're rendering at full DPI
   data->FramebufferScale = {1.f, 1.f};
   if (g_useSdlRenderer) {
-    SDL_Renderer* renderer = ImGui_ImplSDLRenderer3_GetBackendData()->Renderer;
+    SDL_Renderer* renderer = window::get_sdl_renderer();
     SDL_RenderClear(renderer);
     ImGui_ImplSDLRenderer3_RenderDrawData(data, renderer);
     SDL_RenderPresent(renderer);
@@ -121,7 +122,7 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
 
 ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) noexcept {
   if (g_useSdlRenderer) {
-    SDL_Renderer* renderer = ImGui_ImplSDLRenderer3_GetBackendData()->Renderer;
+    SDL_Renderer* renderer = window::get_sdl_renderer();
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, width, height);
     SDL_UpdateTexture(texture, nullptr, data, width * 4);
     SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR);

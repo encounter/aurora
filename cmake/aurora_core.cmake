@@ -6,15 +6,9 @@ add_library(aurora_core STATIC
         lib/window.cpp
 )
 add_library(aurora::core ALIAS aurora_core)
+
 target_compile_definitions(aurora_core PUBLIC AURORA TARGET_PC)
-if (AURORA_NATIVE_MATRIX)
-    target_compile_definitions(aurora_core PRIVATE AURORA_NATIVE_MATRIX)
-endif ()
 target_include_directories(aurora_core PUBLIC include)
-target_include_directories(aurora_core PRIVATE ../imgui)
-if (NOT TARGET SDL3::SDL3-static)
-    find_package(SDL3 REQUIRED)
-endif ()
 target_link_libraries(aurora_core PUBLIC SDL3::SDL3-static fmt::fmt imgui xxhash)
 if (EMSCRIPTEN)
     target_link_options(aurora_core PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)

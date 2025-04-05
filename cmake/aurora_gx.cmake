@@ -24,15 +24,13 @@ add_library(aurora_gx STATIC
         lib/dolphin/gx/GXTransform.cpp
         lib/dolphin/gx/GXVert.cpp
 )
-
 add_library(aurora::gx ALIAS aurora_gx)
-target_include_directories(aurora_gx PUBLIC include)
-target_compile_definitions(aurora_gx PUBLIC AURORA TARGET_PC)
+
+target_link_libraries(aurora_gx PUBLIC aurora::core xxhash)
+target_link_libraries(aurora_gx PRIVATE absl::btree absl::flat_hash_map)
 if (AURORA_NATIVE_MATRIX)
     target_compile_definitions(aurora_gx PRIVATE AURORA_NATIVE_MATRIX)
 endif ()
-target_include_directories(aurora_gx PUBLIC include)
-target_link_libraries(aurora_gx PUBLIC xxhash)
 if (EMSCRIPTEN)
     target_link_options(aurora_gx PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)
     target_compile_definitions(aurora_gx PRIVATE ENABLE_BACKEND_WEBGPU)
@@ -40,4 +38,3 @@ else ()
     target_link_libraries(aurora_gx PRIVATE dawn::dawn_native dawn::dawn_proc)
     target_compile_definitions(aurora_gx PRIVATE WEBGPU_DAWN)
 endif ()
-target_link_libraries(aurora_gx PRIVATE absl::btree absl::flat_hash_map)

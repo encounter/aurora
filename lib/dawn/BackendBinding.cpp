@@ -15,11 +15,14 @@
 #include <dawn/native/VulkanBackend.h>
 #endif
 #if defined(DAWN_ENABLE_BACKEND_OPENGL)
-#include <SDL3/SDL_video.h>
 #include <dawn/native/OpenGLBackend.h>
 #endif
 #if defined(DAWN_ENABLE_BACKEND_NULL)
 #include <dawn/native/NullBackend.h>
+#endif
+
+#if !defined(SDL_PLATFORM_MACOS)
+#include <SDL3/SDL_video.h>
 #endif
 
 namespace aurora::webgpu::utils {
