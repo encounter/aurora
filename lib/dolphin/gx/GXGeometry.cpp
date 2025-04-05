@@ -2,6 +2,8 @@
 
 #include <optional>
 
+extern "C" {
+
 void GXSetVtxDesc(GXAttr attr, GXAttrType type) { update_gx_state(g_gxState.vtxDesc[attr], type); }
 
 void GXSetVtxDescv(GXVtxDescList* list) {
@@ -53,3 +55,4 @@ void GXSetLineWidth(u8 width, GXTexOffset offs) {
 
 // TODO GXSetPointSize
 // TODO GXEnableTexOffsets
+}

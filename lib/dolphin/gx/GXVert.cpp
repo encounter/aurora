@@ -1,6 +1,6 @@
 #include "gx.hpp"
 
-#include "../gfx/stream/shader.hpp"
+#include "../../gfx/stream/shader.hpp"
 
 #include <algorithm>
 #include <optional>
@@ -40,13 +40,14 @@ struct SStreamState {
     }
 #ifndef NDEBUG
     nextAttr = next_attr(0);
-#endif
+#endif 
   }
 };
 
 static std::optional<SStreamState> sStreamState;
 static u16 lastVertexStart = 0;
 
+extern "C" {
 void GXBegin(GXPrimitive primitive, GXVtxFmt vtxFmt, u16 nVerts) {
   CHECK(!sStreamState, "Stream began twice!");
   uint16_t vertexSize = 0;
@@ -184,4 +185,5 @@ void GXEnd() {
   }
   lastVertexStart = sStreamState->vertexStart + sStreamState->vertexCount;
   sStreamState.reset();
+}
 }

@@ -1,5 +1,6 @@
 #include "gx.hpp"
 
+extern "C" {
 void GXSetNumIndStages(u8 num) { update_gx_state(g_gxState.numIndStages, num); }
 
 void GXSetIndTexOrder(GXIndTexStageID indStage, GXTexCoordID texCoord, GXTexMapID texMap) {
@@ -59,3 +60,4 @@ void GXSetTevIndWarp(GXTevStageID tevStage, GXIndTexStageID indStage, GXBool sig
 // TODO GXSetTevIndBumpST
 // TODO GXSetTevIndBumpXYZ
 // TODO GXSetTevIndRepeat
+}

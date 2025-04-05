@@ -1,5 +1,6 @@
 #include "gx.hpp"
 
+extern "C" {
 void GXInitLightAttn(GXLightObj* light_, float a0, float a1, float a2, float k0, float k1, float k2) {
   auto* light = reinterpret_cast<GXLightObj_*>(light_);
   light->a0 = a0;
@@ -226,4 +227,5 @@ void GXSetChanCtrl(GXChannelID id, bool lightingEnabled, GXColorSrc ambSrc, GXCo
   update_gx_state(chan.diffFn, diffFn);
   update_gx_state(chan.attnFn, attnFn);
   update_gx_state(g_gxState.colorChannelState[id].lightMask, GX::LightMask{lightState});
+}
 }

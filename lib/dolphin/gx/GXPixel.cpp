@@ -1,5 +1,6 @@
 #include "gx.hpp"
 
+extern "C" {
 void GXSetFog(GXFogType type, float startZ, float endZ, float nearZ, float farZ, GXColor color) {
   update_gx_state(g_gxState.fog, {type, startZ, endZ, nearZ, farZ, from_gx_color(color)});
 }
@@ -44,3 +45,4 @@ void GXSetDstAlpha(bool enabled, u8 value) {
 
 // TODO GXSetFieldMask
 // TODO GXSetFieldMode
+}

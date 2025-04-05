@@ -1,5 +1,7 @@
 #include "gx.hpp"
 
+extern "C" {
+
 static GXFifoObj* GPFifo;
 static GXFifoObj* CPUFifo;
 
@@ -45,3 +47,4 @@ void GXSaveCPUFifo(GXFifoObj* fifo) {}
 // TODO GXGetCurrentGXThread
 // TODO GXGetOverflowCount
 // TODO GXResetOverflowCount
+}

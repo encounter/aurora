@@ -1,5 +1,6 @@
 #include "gx.hpp"
 
+extern "C" {
 static GXDrawDoneCallback DrawDoneCB = nullptr;
 
 GXFifoObj* GXInit(void* base, u32 size) { return NULL; }
@@ -33,3 +34,4 @@ void GXTexModeSync() {}
 
 // TODO IsWriteGatherBufferEmpty
 // TODO GXSetMisc
+}

@@ -1,6 +1,8 @@
 #include "gx.hpp"
 
-#include "../gfx/texture.hpp"
+#include "../../gfx/texture.hpp"
+
+extern "C" {
 
 // TODO GXGetVtxDesc
 // TODO GXGetVtxDescv
@@ -104,3 +106,4 @@ GXBool GXGetTexObjMipMap(GXTexObj* tex_obj) { return reinterpret_cast<const GXTe
 // TODO GXGetTlutObjAll
 // TODO GXGetTexRegionAll
 // TODO GXGetTlutRegionAll
+}

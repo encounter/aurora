@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../internal.hpp"
-#include "../gfx/gx.hpp"
+#include "../../internal.hpp"
+#include "../../gfx/gx.hpp"
 
 static aurora::Module Log("aurora::gx");
 

@@ -1,9 +1,10 @@
 #include "gx.hpp"
 
-#include "../gfx/texture.hpp"
+#include "../../gfx/texture.hpp"
 
 #include <absl/container/flat_hash_map.h>
 
+extern "C" {
 void GXInitTexObj(GXTexObj* obj_, const void* data, u16 width, u16 height, u32 format, GXTexWrapMode wrapS,
                   GXTexWrapMode wrapT, GXBool mipmap) {
   memset(obj_, 0, sizeof(GXTexObj));
@@ -235,3 +236,4 @@ void GXInvalidateTexAll() {
 // TODO GXSetTexCoordScaleManually
 // TODO GXSetTexCoordCylWrap
 // TODO GXSetTexCoordBias
+}

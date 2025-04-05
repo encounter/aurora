@@ -2,6 +2,8 @@
 
 #include <cfloat>
 
+extern "C" {
+
 constexpr aurora::Mat4x4<float> DepthCorrect{
     {1.f, 0.f, 0.f, 0.f},
     {0.f, 1.f, 0.f, 0.f},
@@ -109,3 +111,4 @@ void GXSetViewportJitter(float left, float top, float width, float height, float
 // TODO GXSetZScaleOffset
 // TODO GXSetScissorBoxOffset
 // TODO GXSetClipMode
+}

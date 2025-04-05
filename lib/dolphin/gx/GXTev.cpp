@@ -1,5 +1,6 @@
 #include "gx.hpp"
 
+extern "C" {
 void GXSetTevOp(GXTevStageID id, GXTevMode mode) {
   GXTevColorArg inputColor = GX_CC_RASC;
   GXTevAlphaArg inputAlpha = GX_CA_RASA;
@@ -99,4 +100,5 @@ void GXSetTevSwapModeTable(GXTevSwapSel id, GXTevColorChan red, GXTevColorChan g
                            GXTevColorChan alpha) {
   CHECK(id >= GX_TEV_SWAP0 && id < GX_MAX_TEVSWAP, "bad tev swap sel {}", static_cast<int>(id));
   update_gx_state(g_gxState.tevSwapTable[id], {red, green, blue, alpha});
+}
 }

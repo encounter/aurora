@@ -1,7 +1,7 @@
 #include "gx.hpp"
 
-#include "../window.hpp"
-#include "../webgpu/wgpu.hpp"
+#include "../../window.hpp"
+#include "../../webgpu/wgpu.hpp"
 
 extern "C" {
 GXRenderModeObj GXNtsc480IntDf = {
@@ -13,7 +13,7 @@ GXRenderModeObj GXPal528IntDf = {
 GXRenderModeObj GXMpal480IntDf = {
     VI_TVMODE_PAL_INT, 640, 480, 480, 40, 0, 640, 480, VI_XFBMODE_DF, 0, 0,
 };
-}
+
 
 void GXAdjustForOverscan(GXRenderModeObj* rmin, GXRenderModeObj* rmout, u16 hor, u16 ver) {
   *rmout = *rmin;
@@ -69,3 +69,4 @@ void GXCopyTex(void* dest, GXBool clear) {
 // TODO GXGetNumXfbLines
 // TODO GXClearBoundingBox
 // TODO GXReadBoundingBox
+}

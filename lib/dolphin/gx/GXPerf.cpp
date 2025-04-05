@@ -1,5 +1,7 @@
 #include "gx.hpp"
 
+extern "C" {
+
 // TODO GXSetGPMetric
 // TODO GXClearGPMetric
 // TODO GXReadGPMetric
@@ -15,3 +17,4 @@
 // TODO GXReadXfRasMetric
 // TODO GXInitXfRasMetric
 // TODO GXReadClksPerVtx
+}

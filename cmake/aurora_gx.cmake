@@ -1,0 +1,43 @@
+add_library(aurora_gx STATIC
+        lib/gfx/common.cpp
+        lib/gfx/texture.cpp
+        lib/gfx/gx.cpp
+        lib/gfx/gx_shader.cpp
+        lib/gfx/texture_convert.cpp
+        lib/gfx/stream/shader.cpp
+        lib/gfx/model/shader.cpp
+        lib/dolphin/gx/GXBump.cpp
+        lib/dolphin/gx/GXCull.cpp
+        lib/dolphin/gx/GXDispList.cpp
+        lib/dolphin/gx/GXDraw.cpp
+        lib/dolphin/gx/GXExtra.cpp
+        lib/dolphin/gx/GXFifo.cpp
+        lib/dolphin/gx/GXFrameBuffer.cpp
+        lib/dolphin/gx/GXGeometry.cpp
+        lib/dolphin/gx/GXGet.cpp
+        lib/dolphin/gx/GXLighting.cpp
+        lib/dolphin/gx/GXManage.cpp
+        lib/dolphin/gx/GXPerf.cpp
+        lib/dolphin/gx/GXPixel.cpp
+        lib/dolphin/gx/GXTev.cpp
+        lib/dolphin/gx/GXTexture.cpp
+        lib/dolphin/gx/GXTransform.cpp
+        lib/dolphin/gx/GXVert.cpp
+)
+
+add_library(aurora::gx ALIAS aurora_gx)
+target_include_directories(aurora_gx PUBLIC include)
+target_compile_definitions(aurora_gx PUBLIC AURORA TARGET_PC)
+if (AURORA_NATIVE_MATRIX)
+    target_compile_definitions(aurora_gx PRIVATE AURORA_NATIVE_MATRIX)
+endif ()
+target_include_directories(aurora_gx PUBLIC include)
+target_link_libraries(aurora_gx PUBLIC xxhash)
+if (EMSCRIPTEN)
+    target_link_options(aurora_gx PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)
+    target_compile_definitions(aurora_gx PRIVATE ENABLE_BACKEND_WEBGPU)
+else ()
+    target_link_libraries(aurora_gx PRIVATE dawn::dawn_native dawn::dawn_proc)
+    target_compile_definitions(aurora_gx PRIVATE WEBGPU_DAWN)
+endif ()
+target_link_libraries(aurora_gx PRIVATE absl::btree absl::flat_hash_map)

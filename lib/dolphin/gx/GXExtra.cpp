@@ -1,5 +1,7 @@
 #include "gx.hpp"
 
+extern "C" {
+
 void GXDestroyTexObj(GXTexObj* obj_) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
   obj->ref.reset();
@@ -8,4 +10,5 @@ void GXDestroyTexObj(GXTexObj* obj_) {
 void GXDestroyTlutObj(GXTlutObj* obj_) {
   auto* obj = reinterpret_cast<GXTlutObj_*>(obj_);
   obj->ref.reset();
+}
 }
