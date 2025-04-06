@@ -101,13 +101,13 @@ static std::optional<std::string> remap_controller_layout(std::string mapping) {
     idx++;
   }
   if (entries.contains("rightshoulder") && !entries.contains("leftshoulder")) {
-    Log.report(LOG_INFO, "Remapping GameCube controller layout");
+    Log.info("Remapping GameCube controller layout");
     entries.insert_or_assign("back", entries["rightshoulder"]);
     // TODO trigger buttons may differ per platform
     entries.insert_or_assign("leftshoulder", "b11");
     entries.insert_or_assign("rightshoulder", "b10");
   } else if (entries.contains("leftshoulder") && entries.contains("rightshoulder") && entries.contains("back")) {
-    Log.report(LOG_INFO, "Controller has standard layout");
+    Log.info("Controller has standard layout");
 #if 0
     auto a = entries["a"sv];
     entries.insert_or_assign("a"sv, entries["b"sv]);
@@ -117,7 +117,7 @@ static std::optional<std::string> remap_controller_layout(std::string mapping) {
     entries.insert_or_assign("x", entries["y"]);
     entries.insert_or_assign("y", x);
   } else {
-    Log.report(LOG_ERROR, "Controller has unsupported layout: {}", mapping);
+    Log.error("Controller has unsupported layout: {}", mapping);
     return {};
   }
   for (auto [k, v] : entries) {
@@ -139,11 +139,11 @@ SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
         SDL_free(mapping);
         if (newMapping) {
           if (SDL_AddGamepadMapping(newMapping->c_str()) == -1) {
-            Log.report(LOG_ERROR, "Failed to update controller mapping: {}", SDL_GetError());
+            Log.error("Failed to update controller mapping: {}", SDL_GetError());
           }
         }
       } else {
-        Log.report(LOG_ERROR, "Failed to retrieve mapping for controller");
+        Log.error("Failed to retrieve mapping for controller");
       }
     }
     GameController controller;
@@ -339,14 +339,14 @@ void __PADLoadMapping(aurora::input::GameController* controller) {
   uint32_t magic = 0;
   fread(&magic, 1, sizeof(uint32_t), file);
   if (magic != SBIG('CTRL')) {
-    aurora::input::Log.report(LOG_WARNING, "Invalid controller mapping magic!");
+    aurora::input::Log.warn("Invalid controller mapping magic!");
     return;
   }
 
   uint32_t version = 0;
   fread(&version, 1, sizeof(uint32_t), file);
   if (version != 1) {
-    aurora::input::Log.report(LOG_WARNING, "Invalid controller mapping version!");
+    aurora::input::Log.warn("Invalid controller mapping version!");
     return;
   }
 

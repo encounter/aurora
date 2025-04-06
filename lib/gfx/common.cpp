@@ -221,7 +221,7 @@ static PipelineRef find_pipeline(ShaderType type, const PipelineConfig& config, 
 static inline void push_command(CommandType type, const Command::Data& data) {
   if (g_currentRenderPass == UINT32_MAX)
     UNLIKELY {
-      Log.report(LOG_WARNING, "Dropping command {}", magic_enum::enum_name(type));
+      Log.warn("Dropping command {}", magic_enum::enum_name(type));
       return;
     }
   g_renderPasses[g_currentRenderPass].commands.push_back({
@@ -399,7 +399,7 @@ void load_pipeline_cache() {
         find_pipeline(type, config, [=]() { return model::create_pipeline(g_state.model, config); }, true);
       } break;
       default:
-        Log.report(LOG_WARNING, "Unknown pipeline type {}", static_cast<int>(type));
+        Log.warn("Unknown pipeline type {}", static_cast<int>(type));
         break;
       }
       offset += size;

@@ -53,7 +53,7 @@ bool g_initialFrame = false;
 
 AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexcept {
   g_config = config;
-  Log.report(LOG_INFO, "Aurora initializing");
+  Log.info("Aurora initializing");
   if (g_config.appName == nullptr) {
     g_config.appName = "Aurora";
   }
@@ -107,7 +107,7 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
 
   imgui::create_context();
   const auto size = window::get_window_size();
-  Log.report(LOG_INFO, "Using framebuffer size {}x{} scale {}", size.fb_width, size.fb_height, size.scale);
+  Log.info("Using framebuffer size {}x{} scale {}", size.fb_width, size.fb_height, size.scale);
   if (g_config.imGuiInitCallback != nullptr) {
     g_config.imGuiInitCallback(&size);
   }
@@ -149,14 +149,14 @@ bool begin_frame() noexcept {
     g_currentView = surfaceTexture.texture.CreateView();
     break;
   case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal: {
-    Log.report(LOG_WARNING, "Surface texture is suboptimal");
+    Log.warn("Surface texture is suboptimal");
     // Force swapchain recreation
     const auto size = window::get_window_size();
     webgpu::resize_swapchain(size.fb_width, size.fb_height, true);
     return false;
   }
   default:
-    Log.report(LOG_ERROR, "Failed to get surface texture: {}", magic_enum::enum_name(surfaceTexture.status));
+    Log.error("Failed to get surface texture: {}", magic_enum::enum_name(surfaceTexture.status));
     return false;
   }
   imgui::new_frame(window::get_window_size());

@@ -42,7 +42,7 @@ void resize_swapchain() noexcept {
   }
   if (size.scale != g_windowSize.scale) {
     if (g_windowSize.scale > 0.f) {
-      Log.report(LOG_INFO, "Display scale changed to {}", size.scale);
+      Log.info("Display scale changed to {}", size.scale);
     }
   }
   g_windowSize = size;
@@ -207,7 +207,7 @@ bool create_window(AuroraBackend backend) {
       SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_GetError());
   g_window = SDL_CreateWindowWithProperties(props);
   if (g_window == nullptr) {
-    Log.report(LOG_ERROR, "Failed to create window: {}", SDL_GetError());
+    Log.error("Failed to create window: {}", SDL_GetError());
     return false;
   }
   set_window_icon();
@@ -225,7 +225,7 @@ bool create_renderer() {
       "Failed to set {}: {}", SDL_PROP_RENDERER_CREATE_PRESENT_VSYNC_NUMBER, SDL_GetError());
   g_renderer = SDL_CreateRendererWithProperties(props);
   if (g_renderer == nullptr) {
-    Log.report(LOG_ERROR, "Failed to create renderer: {}", SDL_GetError());
+    Log.error("Failed to create renderer: {}", SDL_GetError());
     return false;
   }
   return true;

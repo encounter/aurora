@@ -665,51 +665,50 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   }
 
   if (EnableDebugPrints) {
-    Log.report(LOG_INFO, "Shader config (hash {:x}):", hash);
+    Log.info("Shader config (hash {:x}):", hash);
     {
       for (int i = 0; i < config.tevStageCount; ++i) {
         const auto& stage = config.tevStages[i];
-        Log.report(LOG_INFO, "  tevStages[{}]:", i);
-        Log.report(LOG_INFO, "    color_a: {}", TevColorArgNames[stage.colorPass.a]);
-        Log.report(LOG_INFO, "    color_b: {}", TevColorArgNames[stage.colorPass.b]);
-        Log.report(LOG_INFO, "    color_c: {}", TevColorArgNames[stage.colorPass.c]);
-        Log.report(LOG_INFO, "    color_d: {}", TevColorArgNames[stage.colorPass.d]);
-        Log.report(LOG_INFO, "    alpha_a: {}", TevAlphaArgNames[stage.alphaPass.a]);
-        Log.report(LOG_INFO, "    alpha_b: {}", TevAlphaArgNames[stage.alphaPass.b]);
-        Log.report(LOG_INFO, "    alpha_c: {}", TevAlphaArgNames[stage.alphaPass.c]);
-        Log.report(LOG_INFO, "    alpha_d: {}", TevAlphaArgNames[stage.alphaPass.d]);
-        Log.report(LOG_INFO, "    color_op_clamp: {}", stage.colorOp.clamp);
-        Log.report(LOG_INFO, "    color_op_op: {}", stage.colorOp.op);
-        Log.report(LOG_INFO, "    color_op_bias: {}", stage.colorOp.bias);
-        Log.report(LOG_INFO, "    color_op_scale: {}", stage.colorOp.scale);
-        Log.report(LOG_INFO, "    color_op_reg_id: {}", stage.colorOp.outReg);
-        Log.report(LOG_INFO, "    alpha_op_clamp: {}", stage.alphaOp.clamp);
-        Log.report(LOG_INFO, "    alpha_op_op: {}", stage.alphaOp.op);
-        Log.report(LOG_INFO, "    alpha_op_bias: {}", stage.alphaOp.bias);
-        Log.report(LOG_INFO, "    alpha_op_scale: {}", stage.alphaOp.scale);
-        Log.report(LOG_INFO, "    alpha_op_reg_id: {}", stage.alphaOp.outReg);
-        Log.report(LOG_INFO, "    kc_sel: {}", stage.kcSel);
-        Log.report(LOG_INFO, "    ka_sel: {}", stage.kaSel);
-        Log.report(LOG_INFO, "    texCoordId: {}", stage.texCoordId);
-        Log.report(LOG_INFO, "    texMapId: {}", stage.texMapId);
-        Log.report(LOG_INFO, "    channelId: {}", stage.channelId);
+        Log.info("  tevStages[{}]:", i);
+        Log.info("    color_a: {}", TevColorArgNames[stage.colorPass.a]);
+        Log.info("    color_b: {}", TevColorArgNames[stage.colorPass.b]);
+        Log.info("    color_c: {}", TevColorArgNames[stage.colorPass.c]);
+        Log.info("    color_d: {}", TevColorArgNames[stage.colorPass.d]);
+        Log.info("    alpha_a: {}", TevAlphaArgNames[stage.alphaPass.a]);
+        Log.info("    alpha_b: {}", TevAlphaArgNames[stage.alphaPass.b]);
+        Log.info("    alpha_c: {}", TevAlphaArgNames[stage.alphaPass.c]);
+        Log.info("    alpha_d: {}", TevAlphaArgNames[stage.alphaPass.d]);
+        Log.info("    color_op_clamp: {}", stage.colorOp.clamp);
+        Log.info("    color_op_op: {}", stage.colorOp.op);
+        Log.info("    color_op_bias: {}", stage.colorOp.bias);
+        Log.info("    color_op_scale: {}", stage.colorOp.scale);
+        Log.info("    color_op_reg_id: {}", stage.colorOp.outReg);
+        Log.info("    alpha_op_clamp: {}", stage.alphaOp.clamp);
+        Log.info("    alpha_op_op: {}", stage.alphaOp.op);
+        Log.info("    alpha_op_bias: {}", stage.alphaOp.bias);
+        Log.info("    alpha_op_scale: {}", stage.alphaOp.scale);
+        Log.info("    alpha_op_reg_id: {}", stage.alphaOp.outReg);
+        Log.info("    kc_sel: {}", stage.kcSel);
+        Log.info("    ka_sel: {}", stage.kaSel);
+        Log.info("    texCoordId: {}", stage.texCoordId);
+        Log.info("    texMapId: {}", stage.texMapId);
+        Log.info("    channelId: {}", stage.channelId);
       }
       for (int i = 0; i < config.colorChannels.size(); ++i) {
         const auto& chan = config.colorChannels[i];
-        Log.report(LOG_INFO, "  colorChannels[{}]: enabled {} mat {} amb {}", i, chan.lightingEnabled, chan.matSrc,
-                   chan.ambSrc);
+        Log.info("  colorChannels[{}]: enabled {} mat {} amb {}", i, chan.lightingEnabled, chan.matSrc, chan.ambSrc);
       }
       for (int i = 0; i < config.tcgs.size(); ++i) {
         const auto& tcg = config.tcgs[i];
         if (tcg.src != GX_MAX_TEXGENSRC) {
-          Log.report(LOG_INFO, "  tcg[{}]: src {} mtx {} post {} type {} norm {}", i, tcg.src, tcg.mtx, tcg.postMtx,
-                     tcg.type, tcg.normalize);
+          Log.info("  tcg[{}]: src {} mtx {} post {} type {} norm {}", i, tcg.src, tcg.mtx, tcg.postMtx, tcg.type,
+                   tcg.normalize);
         }
       }
-      Log.report(LOG_INFO, "  alphaCompare: comp0 {} ref0 {} op {} comp1 {} ref1 {}", config.alphaCompare.comp0,
-                 config.alphaCompare.ref0, config.alphaCompare.op, config.alphaCompare.comp1, config.alphaCompare.ref1);
-      Log.report(LOG_INFO, "  indexedAttributeCount: {}", config.indexedAttributeCount);
-      Log.report(LOG_INFO, "  fogType: {}", config.fogType);
+      Log.info("  alphaCompare: comp0 {} ref0 {} op {} comp1 {} ref1 {}", config.alphaCompare.comp0,
+               config.alphaCompare.ref0, config.alphaCompare.op, config.alphaCompare.comp1, config.alphaCompare.ref1);
+      Log.info("  indexedAttributeCount: {}", config.indexedAttributeCount);
+      Log.info("  fogType: {}", config.fogType);
     }
   }
 
@@ -1325,7 +1324,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {{{8}{7}
                                         uniBufAttrs, sampBindings, texBindings, uniformBindings, vtxOutAttrs,
                                         vtxInAttrs, vtxXfrAttrs, fragmentFn, fragmentFnPre, vtxXfrAttrsPre, uniformPre);
   if (EnableDebugPrints) {
-    Log.report(LOG_INFO, "Generated shader: {}", shaderSource);
+    Log.info("Generated shader: {}", shaderSource);
   }
 
   wgpu::ShaderModuleWGSLDescriptor wgslDescriptor{};

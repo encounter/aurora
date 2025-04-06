@@ -95,8 +95,7 @@ TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mi
     offset += dataSize;
   }
   if (data.size() != UINT32_MAX && offset < data.size()) {
-    Log.report(LOG_WARNING, "new_static_texture_2d[{}]: texture used {} bytes, but given {} bytes", label, offset,
-               data.size());
+    Log.warn("new_static_texture_2d[{}]: texture used {} bytes, but given {} bytes", label, offset, data.size());
   }
   return handle;
 }
@@ -205,7 +204,7 @@ void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
     offset += dataSize;
   }
   if (data.size() != UINT32_MAX && offset < data.size()) {
-    Log.report(LOG_WARNING, "write_texture: texture used {} bytes, but given {} bytes", offset, data.size());
+    Log.warn("write_texture: texture used {} bytes, but given {} bytes", offset, data.size());
   }
 }
 } // namespace aurora::gfx
