@@ -4,6 +4,7 @@ add_library(aurora_core STATIC
         lib/imgui.cpp
         lib/input.cpp
         lib/window.cpp
+        lib/logging.cpp
 )
 add_library(aurora::core ALIAS aurora_core)
 

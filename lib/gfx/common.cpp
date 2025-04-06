@@ -502,7 +502,8 @@ void map_staging_buffer() {
   g_stagingBuffers[currentStagingBuffer].MapAsync(
       wgpu::MapMode::Write, 0, StagingBufferSize, wgpu::CallbackMode::AllowSpontaneous,
       [](wgpu::MapAsyncStatus status, wgpu::StringView message) {
-        if (status == wgpu::MapAsyncStatus::CallbackCancelled) {
+        if (status == wgpu::MapAsyncStatus::CallbackCancelled || status == wgpu::MapAsyncStatus::Aborted) {
+          Log.warn("Buffer mapping {}: {}", magic_enum::enum_name(status), message);
           return;
         }
         ASSERT(status == wgpu::MapAsyncStatus::Success, "Buffer mapping failed: {} {}", magic_enum::enum_name(status),

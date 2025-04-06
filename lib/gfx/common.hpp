@@ -2,11 +2,13 @@
 
 #include "../internal.hpp"
 
-#include <aurora/math.hpp>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <type_traits>
 #include <utility>
-#include <cstring>
 
+#include <aurora/math.hpp>
 #include <webgpu/webgpu_cpp.h>
 #define XXH_STATIC_LINKING_ONLY
 #include <xxhash.h>
@@ -30,12 +32,12 @@ static inline HashType xxh3_hash(const T& input, HashType seed = 0) {
 
 class Hasher {
 public:
-  explicit Hasher(XXH64_hash_t seed = 0) {
+  explicit Hasher(const XXH64_hash_t seed = 0) {
     XXH3_INITSTATE(&state);
     XXH3_64bits_reset_withSeed(&state, seed);
   }
 
-  void update(const void* data, size_t size) { XXH3_64bits_update(&state, data, size); }
+  void update(const void* data, const size_t size) { XXH3_64bits_update(&state, data, size); }
 
   template <typename T>
   void update(const T& data) {
@@ -43,7 +45,7 @@ public:
     update(&data, sizeof(T));
   }
 
-  XXH64_hash_t digest() { return XXH3_64bits_digest(&state); }
+  [[nodiscard]] XXH64_hash_t digest() const { return XXH3_64bits_digest(&state); }
 
 private:
   XXH3_state_t state;
@@ -55,7 +57,7 @@ public:
   explicit ByteBuffer(size_t size) noexcept
   : m_data(static_cast<uint8_t*>(calloc(1, size))), m_length(size), m_capacity(size) {}
   explicit ByteBuffer(uint8_t* data, size_t size) noexcept
-  : m_data(data), m_length(0), m_capacity(size), m_owned(false) {}
+  : m_data(data), m_capacity(size), m_owned(false) {}
   ~ByteBuffer() noexcept {
     if (m_data != nullptr && m_owned) {
       free(m_data);
@@ -176,7 +178,7 @@ struct ClipRect {
 struct TextureRef;
 using TextureHandle = std::shared_ptr<TextureRef>;
 
-enum class ShaderType {
+enum class ShaderType : uint8_t {
   Stream,
   Model,
 };
