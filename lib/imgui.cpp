@@ -71,10 +71,11 @@ void shutdown() noexcept {
 void process_event(const SDL_Event& event) noexcept {
   if (event.type == SDL_EVENT_MOUSE_MOTION) {
     SDL_Event scaledEvent = event;
-    scaledEvent.motion.x *= g_scale;
-    scaledEvent.motion.y *= g_scale;
-    scaledEvent.motion.xrel *= g_scale;
-    scaledEvent.motion.yrel *= g_scale;
+    const auto density = SDL_GetWindowPixelDensity(window::get_sdl_window());
+    scaledEvent.motion.x *= density;
+    scaledEvent.motion.y *= density;
+    scaledEvent.motion.xrel *= density;
+    scaledEvent.motion.yrel *= density;
     ImGui_ImplSDL3_ProcessEvent(&scaledEvent);
     return;
   }
