@@ -26,4 +26,5 @@ static wgpu::TextureFormat to_wgpu(u32 format) {
 }
 
 ByteBuffer convert_texture(u32 format, uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data);
+ByteBuffer convert_tlut(u32 format, uint32_t width, ArrayRef<uint8_t> data);
 } // namespace aurora::gfx

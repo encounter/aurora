@@ -11,6 +11,7 @@ struct RGBA8 {
   uint8_t b;
   uint8_t a;
 };
+
 struct DXT1Block {
   uint16_t color1;
   uint16_t color2;
@@ -76,27 +77,39 @@ constexpr T bswap16(T val) noexcept {
 #endif
 }
 
-static ByteBuffer BuildI4FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
+template <typename T>
+concept TextureDecoder = requires(T) {
+  typename T::Source;
+  typename T::Target;
+  { T::Frac } -> std::convertible_to<uint32_t>;
+  { T::BlockWidth } -> std::convertible_to<uint32_t>;
+  { T::BlockHeight } -> std::convertible_to<uint32_t>;
+  { T::decode_texel(std::declval<typename T::Target*>(), std::declval<const typename T::Source*>(), 0u) };
+};
+
+template <TextureDecoder T>
+static ByteBuffer DecodeTiled(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
   const size_t texelCount = ComputeMippedTexelCount(width, height, mips);
-  ByteBuffer buf{texelCount};
+  ByteBuffer buf{texelCount * sizeof(T::Target)};
 
   uint32_t w = width;
   uint32_t h = height;
-  uint8_t* targetMip = buf.data();
-  const uint8_t* in = data.data();
+  auto* targetMip = reinterpret_cast<typename T::Target*>(buf.data());
+  const auto* in = reinterpret_cast<const typename T::Source*>(data.data());
   for (uint32_t mip = 0; mip < mips; ++mip) {
-    const uint32_t bwidth = (w + 7) / 8;
-    const uint32_t bheight = (h + 7) / 8;
+    const uint32_t bwidth = (w + (T::BlockWidth - 1)) / T::BlockWidth;
+    const uint32_t bheight = (h + (T::BlockHeight - 1)) / T::BlockHeight;
     for (uint32_t by = 0; by < bheight; ++by) {
-      const uint32_t baseY = by * 8;
+      const uint32_t baseY = by * T::BlockHeight;
       for (uint32_t bx = 0; bx < bwidth; ++bx) {
-        const uint32_t baseX = bx * 8;
-        for (uint32_t y = 0; y < std::min(h, 8u); ++y) {
-          uint8_t* target = targetMip + (baseY + y) * w + baseX;
-          for (uint32_t x = 0; x < std::min(w, 8u); ++x) {
-            target[x] = ExpandTo8<4>(in[x / 2] >> ((x & 1) ? 0 : 4) & 0xf);
+        const uint32_t baseX = bx * T::BlockWidth;
+        for (uint32_t y = 0; y < std::min(h - baseY, T::BlockHeight); ++y) {
+          auto* target = targetMip + (baseY + y) * w + baseX;
+          const auto n = std::min(w - baseX, T::BlockWidth);
+          for (uint32_t x = 0; x < n; ++x) {
+            T::decode_texel(target, in, x);
           }
-          in += std::min<size_t>(w / 4, 4);
+          in += T::BlockWidth / T::Frac;
         }
       }
     }
@@ -112,287 +125,142 @@ static ByteBuffer BuildI4FromGCN(uint32_t width, uint32_t height, uint32_t mips,
   return buf;
 }
 
-static ByteBuffer BuildI8FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
-  const size_t texelCount = ComputeMippedTexelCount(width, height, mips);
-  ByteBuffer buf{texelCount};
-
-  uint32_t w = width;
-  uint32_t h = height;
-  auto* targetMip = buf.data();
-  const uint8_t* in = data.data();
-  for (uint32_t mip = 0; mip < mips; ++mip) {
-    const uint32_t bwidth = (w + 7) / 8;
-    const uint32_t bheight = (h + 3) / 4;
-    for (uint32_t by = 0; by < bheight; ++by) {
-      const uint32_t baseY = by * 4;
-      for (uint32_t bx = 0; bx < bwidth; ++bx) {
-        const uint32_t baseX = bx * 8;
-        for (uint32_t y = 0; y < 4; ++y) {
-          uint8_t* target = targetMip + (baseY + y) * w + baseX;
-          const auto n = std::min(w, 8u);
-          for (size_t x = 0; x < n; ++x) {
-            target[x] = in[x];
-          }
-          in += n;
-        }
-      }
-    }
-    targetMip += w * h;
-    if (w > 1) {
-      w /= 2;
-    }
-    if (h > 1) {
-      h /= 2;
-    }
+template <TextureDecoder T>
+static ByteBuffer DecodeLinear(uint32_t width, ArrayRef<uint8_t> data) {
+  ByteBuffer buf{width * sizeof(T::Target)};
+  auto* target = reinterpret_cast<typename T::Target*>(buf.data());
+  const auto* in = reinterpret_cast<const typename T::Source*>(data.data());
+  for (uint32_t x = 0; x < width; ++x) {
+    T::decode_texel(target, in, x);
   }
-
   return buf;
 }
 
-ByteBuffer BuildIA4FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
-  const size_t texelCount = ComputeMippedTexelCount(width, height, mips);
-  ByteBuffer buf{sizeof(RGBA8) * texelCount};
+struct TextureDecoderI4 {
+  using Source = uint8_t;
+  using Target = uint8_t;
 
-  uint32_t w = width;
-  uint32_t h = height;
-  RGBA8* targetMip = reinterpret_cast<RGBA8*>(buf.data());
-  const uint8_t* in = data.data();
-  for (uint32_t mip = 0; mip < mips; ++mip) {
-    const uint32_t bwidth = (w + 7) / 8;
-    const uint32_t bheight = (h + 3) / 4;
-    for (uint32_t by = 0; by < bheight; ++by) {
-      const uint32_t baseY = by * 4;
-      for (uint32_t bx = 0; bx < bwidth; ++bx) {
-        const uint32_t baseX = bx * 8;
-        for (uint32_t y = 0; y < 4; ++y) {
-          RGBA8* target = targetMip + (baseY + y) * w + baseX;
-          const auto n = std::min(w, 8u);
-          for (size_t x = 0; x < n; ++x) {
-            const uint8_t intensity = ExpandTo8<4>(in[x] & 0xf);
-            target[x].r = intensity;
-            target[x].g = intensity;
-            target[x].b = intensity;
-            target[x].a = ExpandTo8<4>(in[x] >> 4);
-          }
-          in += n;
-        }
-      }
-    }
-    targetMip += w * h;
-    if (w > 1) {
-      w /= 2;
-    }
-    if (h > 1) {
-      h /= 2;
+  static constexpr uint32_t Frac = 2;
+  static constexpr uint32_t BlockWidth = 8;
+  static constexpr uint32_t BlockHeight = 8;
+
+  static void decode_texel(Target* target, const Source* in, const uint32_t x) {
+    target[x] = ExpandTo8<4>(in[x / 2] >> (x & 1 ? 0 : 4) & 0xf);
+  }
+};
+
+struct TextureDecoderI8 {
+  using Source = uint8_t;
+  using Target = uint8_t;
+
+  static constexpr uint32_t Frac = 1;
+  static constexpr uint32_t BlockWidth = 8;
+  static constexpr uint32_t BlockHeight = 4;
+
+  static void decode_texel(Target* target, const Source* in, const uint32_t x) { target[x] = in[x]; }
+};
+
+struct TextureDecoderIA4 {
+  using Source = uint8_t;
+  using Target = RGBA8;
+
+  static constexpr uint32_t Frac = 1;
+  static constexpr uint32_t BlockWidth = 8;
+  static constexpr uint32_t BlockHeight = 4;
+
+  static void decode_texel(Target* target, const Source* in, const uint32_t x) {
+    const uint8_t intensity = ExpandTo8<4>(in[x] & 0xf);
+    target[x].r = intensity;
+    target[x].g = intensity;
+    target[x].b = intensity;
+    target[x].a = ExpandTo8<4>(in[x] >> 4);
+  }
+};
+
+struct TextureDecoderIA8 {
+  using Source = uint8_t;
+  using Target = RGBA8;
+
+  static constexpr uint32_t Frac = 1;
+  static constexpr uint32_t BlockWidth = 8;
+  static constexpr uint32_t BlockHeight = 4;
+
+  static void decode_texel(Target* target, const Source* in, const uint32_t x) {
+    const auto texel = bswap16(in[x]);
+    const uint8_t intensity = texel >> 8;
+    target[x].r = intensity;
+    target[x].g = intensity;
+    target[x].b = intensity;
+    target[x].a = texel & 0xff;
+  }
+};
+
+struct TextureDecoderC4 {
+  using Source = uint8_t;
+  using Target = uint16_t;
+
+  static constexpr uint32_t Frac = 2;
+  static constexpr uint32_t BlockWidth = 8;
+  static constexpr uint32_t BlockHeight = 8;
+
+  static void decode_texel(Target* target, const Source* in, const uint32_t x) {
+    target[x] = in[x / 2] >> (x & 1 ? 0 : 4) & 0xf;
+  }
+};
+
+struct TextureDecoderC8 {
+  using Source = uint8_t;
+  using Target = uint16_t;
+
+  static constexpr uint32_t Frac = 1;
+  static constexpr uint32_t BlockWidth = 8;
+  static constexpr uint32_t BlockHeight = 4;
+
+  static void decode_texel(Target* target, const Source* in, const uint32_t x) { target[x] = in[x]; }
+};
+
+struct TextureDecoderRGB565 {
+  using Source = uint16_t;
+  using Target = RGBA8;
+
+  static constexpr uint32_t Frac = 1;
+  static constexpr uint32_t BlockWidth = 4;
+  static constexpr uint32_t BlockHeight = 4;
+
+  static void decode_texel(Target* target, const Source* in, const uint32_t x) {
+    const auto texel = bswap16(in[x]);
+    target[x].r = ExpandTo8<5>(texel >> 11 & 0x1f);
+    target[x].g = ExpandTo8<6>(texel >> 5 & 0x3f);
+    target[x].b = ExpandTo8<5>(texel & 0x1f);
+    target[x].a = 0xff;
+  }
+};
+
+struct TextureDecoderRGB5A3 {
+  using Source = uint16_t;
+  using Target = RGBA8;
+
+  static constexpr uint32_t Frac = 1;
+  static constexpr uint32_t BlockWidth = 4;
+  static constexpr uint32_t BlockHeight = 4;
+
+  static void decode_texel(Target* target, const Source* in, const uint32_t x) {
+    const auto texel = bswap16(in[x]);
+    if ((texel & 0x8000) != 0) {
+      target[x].r = ExpandTo8<5>(texel >> 10 & 0x1f);
+      target[x].g = ExpandTo8<5>(texel >> 5 & 0x1f);
+      target[x].b = ExpandTo8<5>(texel & 0x1f);
+      target[x].a = 0xff;
+    } else {
+      target[x].r = ExpandTo8<4>(texel >> 8 & 0xf);
+      target[x].g = ExpandTo8<4>(texel >> 4 & 0xf);
+      target[x].b = ExpandTo8<4>(texel & 0xf);
+      target[x].a = ExpandTo8<3>(texel >> 12 & 0x7);
     }
   }
+};
 
-  return buf;
-}
-
-ByteBuffer BuildIA8FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
-  const size_t texelCount = ComputeMippedTexelCount(width, height, mips);
-  ByteBuffer buf{sizeof(RGBA8) * texelCount};
-
-  uint32_t w = width;
-  uint32_t h = height;
-  auto* targetMip = reinterpret_cast<RGBA8*>(buf.data());
-  const auto* in = reinterpret_cast<const uint16_t*>(data.data());
-  for (uint32_t mip = 0; mip < mips; ++mip) {
-    const uint32_t bwidth = (w + 3) / 4;
-    const uint32_t bheight = (h + 3) / 4;
-    for (uint32_t by = 0; by < bheight; ++by) {
-      const uint32_t baseY = by * 4;
-      for (uint32_t bx = 0; bx < bwidth; ++bx) {
-        const uint32_t baseX = bx * 4;
-        for (uint32_t y = 0; y < 4; ++y) {
-          RGBA8* target = targetMip + (baseY + y) * w + baseX;
-          for (size_t x = 0; x < 4; ++x) {
-            const auto texel = bswap16(in[x]);
-            const uint8_t intensity = texel >> 8;
-            target[x].r = intensity;
-            target[x].g = intensity;
-            target[x].b = intensity;
-            target[x].a = texel & 0xff;
-          }
-          in += 4;
-        }
-      }
-    }
-    targetMip += w * h;
-    if (w > 1) {
-      w /= 2;
-    }
-    if (h > 1) {
-      h /= 2;
-    }
-  }
-
-  return buf;
-}
-
-ByteBuffer BuildC4FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
-  const size_t texelCount = ComputeMippedTexelCount(width, height, mips);
-  ByteBuffer buf{texelCount * 2};
-
-  uint32_t w = width;
-  uint32_t h = height;
-  uint16_t* targetMip = reinterpret_cast<uint16_t*>(buf.data());
-  const uint8_t* in = data.data();
-  for (uint32_t mip = 0; mip < mips; ++mip) {
-    const uint32_t bwidth = (w + 7) / 8;
-    const uint32_t bheight = (h + 7) / 8;
-    for (uint32_t by = 0; by < bheight; ++by) {
-      const uint32_t baseY = by * 8;
-      for (uint32_t bx = 0; bx < bwidth; ++bx) {
-        const uint32_t baseX = bx * 8;
-        for (uint32_t y = 0; y < std::min(8u, h); ++y) {
-          uint16_t* target = targetMip + (baseY + y) * w + baseX;
-          const auto n = std::min(w, 8u);
-          for (size_t x = 0; x < n; ++x) {
-            target[x] = in[x / 2] >> ((x & 1) ? 0 : 4) & 0xf;
-          }
-          in += n / 2;
-        }
-      }
-    }
-    targetMip += w * h;
-    if (w > 1) {
-      w /= 2;
-    }
-    if (h > 1) {
-      h /= 2;
-    }
-  }
-
-  return buf;
-}
-
-ByteBuffer BuildC8FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
-  const size_t texelCount = ComputeMippedTexelCount(width, height, mips);
-  ByteBuffer buf{texelCount * 2};
-
-  uint32_t w = width;
-  uint32_t h = height;
-  uint16_t* targetMip = reinterpret_cast<uint16_t*>(buf.data());
-  const uint8_t* in = data.data();
-  for (uint32_t mip = 0; mip < mips; ++mip) {
-    const uint32_t bwidth = (w + 7) / 8;
-    const uint32_t bheight = (h + 3) / 4;
-    for (uint32_t by = 0; by < bheight; ++by) {
-      const uint32_t baseY = by * 4;
-      for (uint32_t bx = 0; bx < bwidth; ++bx) {
-        const uint32_t baseX = bx * 8;
-        for (uint32_t y = 0; y < 4; ++y) {
-          uint16_t* target = targetMip + (baseY + y) * w + baseX;
-          const auto n = std::min(w, 8u);
-          for (size_t x = 0; x < n; ++x) {
-            target[x] = in[x];
-          }
-          in += n;
-        }
-      }
-    }
-    targetMip += w * h;
-    if (w > 1) {
-      w /= 2;
-    }
-    if (h > 1) {
-      h /= 2;
-    }
-  }
-
-  return buf;
-}
-
-ByteBuffer BuildRGB565FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
-  const size_t texelCount = ComputeMippedTexelCount(width, height, mips);
-  ByteBuffer buf{sizeof(RGBA8) * texelCount};
-
-  uint32_t w = width;
-  uint32_t h = height;
-  auto* targetMip = reinterpret_cast<RGBA8*>(buf.data());
-  const auto* in = reinterpret_cast<const uint16_t*>(data.data());
-  for (uint32_t mip = 0; mip < mips; ++mip) {
-    const uint32_t bwidth = (w + 3) / 4;
-    const uint32_t bheight = (h + 3) / 4;
-    for (uint32_t by = 0; by < bheight; ++by) {
-      const uint32_t baseY = by * 4;
-      for (uint32_t bx = 0; bx < bwidth; ++bx) {
-        const uint32_t baseX = bx * 4;
-        for (uint32_t y = 0; y < std::min(4u, h); ++y) {
-          RGBA8* target = targetMip + (baseY + y) * w + baseX;
-          for (size_t x = 0; x < std::min(4u, w); ++x) {
-            const auto texel = bswap16(in[x]);
-            target[x].r = ExpandTo8<5>(texel >> 11 & 0x1f);
-            target[x].g = ExpandTo8<6>(texel >> 5 & 0x3f);
-            target[x].b = ExpandTo8<5>(texel & 0x1f);
-            target[x].a = 0xff;
-          }
-          in += 4;
-        }
-      }
-    }
-    targetMip += w * h;
-    if (w > 1) {
-      w /= 2;
-    }
-    if (h > 1) {
-      h /= 2;
-    }
-  }
-
-  return buf;
-}
-
-ByteBuffer BuildRGB5A3FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
-  size_t texelCount = ComputeMippedTexelCount(width, height, mips);
-  ByteBuffer buf{sizeof(RGBA8) * texelCount};
-
-  uint32_t w = width;
-  uint32_t h = height;
-  auto* targetMip = reinterpret_cast<RGBA8*>(buf.data());
-  const auto* in = reinterpret_cast<const uint16_t*>(data.data());
-  for (uint32_t mip = 0; mip < mips; ++mip) {
-    const uint32_t bwidth = (w + 3) / 4;
-    const uint32_t bheight = (h + 3) / 4;
-    for (uint32_t by = 0; by < bheight; ++by) {
-      const uint32_t baseY = by * 4;
-      for (uint32_t bx = 0; bx < bwidth; ++bx) {
-        const uint32_t baseX = bx * 4;
-        for (uint32_t y = 0; y < std::min(4u, h); ++y) {
-          RGBA8* target = targetMip + (baseY + y) * w + baseX;
-          for (size_t x = 0; x < std::min(4u, w); ++x) {
-            const auto texel = bswap16(in[x]);
-            if ((texel & 0x8000) != 0) {
-              target[x].r = ExpandTo8<5>(texel >> 10 & 0x1f);
-              target[x].g = ExpandTo8<5>(texel >> 5 & 0x1f);
-              target[x].b = ExpandTo8<5>(texel & 0x1f);
-              target[x].a = 0xff;
-            } else {
-              target[x].r = ExpandTo8<4>(texel >> 8 & 0xf);
-              target[x].g = ExpandTo8<4>(texel >> 4 & 0xf);
-              target[x].b = ExpandTo8<4>(texel & 0xf);
-              target[x].a = ExpandTo8<3>(texel >> 12 & 0x7);
-            }
-          }
-          in += 4;
-        }
-      }
-    }
-    targetMip += w * h;
-    if (w > 1) {
-      w /= 2;
-    }
-    if (h > 1) {
-      h /= 2;
-    }
-  }
-
-  return buf;
-}
-
-ByteBuffer BuildRGBA8FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
+static ByteBuffer BuildRGBA8FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
   const size_t texelCount = ComputeMippedTexelCount(width, height, mips);
   ByteBuffer buf{sizeof(RGBA8) * texelCount};
 
@@ -436,7 +304,7 @@ ByteBuffer BuildRGBA8FromGCN(uint32_t width, uint32_t height, uint32_t mips, Arr
   return buf;
 }
 
-ByteBuffer BuildDXT1FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
+static ByteBuffer BuildDXT1FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
   const size_t blockCount = ComputeMippedBlockCountDXT1(width, height, mips);
   ByteBuffer buf{sizeof(DXT1Block) * blockCount};
 
@@ -483,9 +351,8 @@ ByteBuffer BuildDXT1FromGCN(uint32_t width, uint32_t height, uint32_t mips, Arra
   return buf;
 }
 
-ByteBuffer BuildRGBA8FromCMPR(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
+static ByteBuffer BuildRGBA8FromCMPR(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
   const size_t texelCount = ComputeMippedTexelCount(width, height, mips);
-  const size_t blockCount = ComputeMippedBlockCountDXT1(width, height, mips);
   ByteBuffer buf{sizeof(RGBA8) * texelCount};
 
   uint32_t h = height;
@@ -574,31 +441,43 @@ ByteBuffer convert_texture(u32 format, uint32_t width, uint32_t height, uint32_t
   case GX_TF_RGBA8_PC:
     return {}; // No conversion
   case GX_TF_I4:
-    return BuildI4FromGCN(width, height, mips, data);
+    return DecodeTiled<TextureDecoderI4>(width, height, mips, data);
   case GX_TF_I8:
-    return BuildI8FromGCN(width, height, mips, data);
+    return DecodeTiled<TextureDecoderI8>(width, height, mips, data);
   case GX_TF_IA4:
-    return BuildIA4FromGCN(width, height, mips, data);
+    return DecodeTiled<TextureDecoderIA4>(width, height, mips, data);
   case GX_TF_IA8:
-    return BuildIA8FromGCN(width, height, mips, data);
+    return DecodeTiled<TextureDecoderIA8>(width, height, mips, data);
   case GX_TF_C4:
-    return BuildC4FromGCN(width, height, mips, data);
+    return DecodeTiled<TextureDecoderC4>(width, height, mips, data);
   case GX_TF_C8:
-    return BuildC8FromGCN(width, height, mips, data);
+    return DecodeTiled<TextureDecoderC8>(width, height, mips, data);
   case GX_TF_C14X2:
     FATAL("convert_texture: C14X2 unimplemented");
   case GX_TF_RGB565:
-    return BuildRGB565FromGCN(width, height, mips, data);
+    return DecodeTiled<TextureDecoderRGB565>(width, height, mips, data);
   case GX_TF_RGB5A3:
-    return BuildRGB5A3FromGCN(width, height, mips, data);
+    return DecodeTiled<TextureDecoderRGB5A3>(width, height, mips, data);
   case GX_TF_RGBA8:
     return BuildRGBA8FromGCN(width, height, mips, data);
-  case GX_TF_CMPR:
+  case GX_TF_CMPR: {
     if (webgpu::g_device.HasFeature(wgpu::FeatureName::TextureCompressionBC)) {
       return BuildDXT1FromGCN(width, height, mips, data);
-    } else {
-      return BuildRGBA8FromCMPR(width, height, mips, data);
     }
+    return BuildRGBA8FromCMPR(width, height, mips, data);
+  }
+  }
+}
+
+ByteBuffer convert_tlut(u32 format, uint32_t width, ArrayRef<uint8_t> data) {
+  switch (format) {
+    DEFAULT_FATAL("convert_tlut: unsupported tlut format {}", format);
+  case GX_TF_IA8: // GX_TL_IA8
+    return DecodeLinear<TextureDecoderIA8>(width, data);
+  case GX_TF_RGB565: // GX_TL_RGB565
+    return DecodeLinear<TextureDecoderRGB565>(width, data);
+  case GX_TF_RGB5A3: // GX_TL_RGB5A3
+    return DecodeLinear<TextureDecoderRGB5A3>(width, data);
   }
 }
 } // namespace aurora::gfx

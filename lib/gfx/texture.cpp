@@ -52,13 +52,19 @@ wgpu::Extent3D physical_size(wgpu::Extent3D size, TextureFormatInfo info) {
 } // namespace
 
 TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format, ArrayRef<uint8_t> data,
-                                    const char* label) noexcept {
+                                    bool tlut, const char* label) noexcept {
   auto handle = new_dynamic_texture_2d(width, height, mips, format, label);
   const auto& ref = *handle;
 
   ByteBuffer buffer;
   if (ref.gxFormat != InvalidTextureFormat) {
-    buffer = convert_texture(ref.gxFormat, ref.size.width, ref.size.height, ref.mipCount, data);
+    if (tlut) {
+      CHECK(ref.size.height == 1, "new_static_texture_2d[{}]: expected tlut height 1, got {}", label, ref.size.height);
+      CHECK(ref.mipCount == 1, "new_static_texture_2d[{}]: expected tlut mipCount 1, got {}", label, ref.mipCount);
+      buffer = convert_tlut(ref.gxFormat, ref.size.width, data);
+    } else {
+      buffer = convert_texture(ref.gxFormat, ref.size.width, ref.size.height, ref.mipCount, data);
+    }
     if (!buffer.empty()) {
       data = {buffer.data(), buffer.size()};
     }
