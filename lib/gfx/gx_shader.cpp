@@ -803,7 +803,8 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   vtxXfrAttrsPre += fmt::format(
       "\n    var mv_pos = mul4x3(ubuf.pos_mtx, vec4<f32>({}, 1.0));"
       "\n    var mv_nrm = normalize(mul4x3(ubuf.nrm_mtx, vec4<f32>({}, 0.0)));"
-      "\n    out.pos = mul4x4(ubuf.proj, vec4<f32>(mv_pos, 1.0));",
+      "\n    out.pos = mul4x4(ubuf.proj, vec4<f32>(mv_pos, 1.0));"
+      "\n    out.pos.z += out.pos.w;",
       vtx_attr(config, GX_VA_POS), vtx_attr(config, GX_VA_NRM));
   if constexpr (EnableNormalVisualization) {
     vtxOutAttrs += fmt::format("\n    @location({}) nrm: vec3<f32>,", vtxOutIdx++);

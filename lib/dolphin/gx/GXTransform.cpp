@@ -1,25 +1,18 @@
 #include "gx.hpp"
 
-#include <cfloat>
-
 extern "C" {
-
-constexpr aurora::Mat4x4<float> DepthCorrect{
-    {1.f, 0.f, 0.f, 0.f},
-    {0.f, 1.f, 0.f, 0.f},
-    {0.f, 0.f, 1.f + FLT_EPSILON, 0.f},
-    {0.f, 0.f, 1.f, 1.f},
-};
 
 void GXSetProjection(const void* mtx_, GXProjectionType type) {
   const auto& mtx = *reinterpret_cast<const aurora::Mat4x4<float>*>(mtx_);
   g_gxState.origProj = mtx;
   g_gxState.projType = type;
+  update_gx_state(g_gxState.proj,
 #ifdef AURORA_NATIVE_MATRIX
-  update_gx_state(g_gxState.proj, DepthCorrect * mtx);
+                  mtx
 #else
-  update_gx_state(g_gxState.proj, DepthCorrect * mtx.transpose());
+                  mtx.transpose()
 #endif
+  );
 }
 
 // TODO GXSetProjectionv
