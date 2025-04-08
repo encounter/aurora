@@ -20,6 +20,7 @@ static inline GXAttr next_attr(size_t begin) {
 
 struct SStreamState {
   GXPrimitive primitive;
+  GXVtxFmt vtxFmt;
   u16 vertexCount = 0;
   u16 vertexStart = 0;
   aurora::ByteBuffer vertexBuffer;
@@ -28,8 +29,8 @@ struct SStreamState {
   GXAttr nextAttr;
 #endif
 
-  explicit SStreamState(GXPrimitive primitive, u16 numVerts, u16 vertexSize, u16 vertexStart) noexcept
-  : primitive(primitive), vertexStart(vertexStart) {
+  explicit SStreamState(GXPrimitive primitive, GXVtxFmt vtxFmt, u16 numVerts, u16 vertexSize, u16 vertexStart) noexcept
+  : primitive(primitive), vtxFmt(vtxFmt), vertexStart(vertexStart) {
     vertexBuffer.reserve_extra(size_t(numVerts) * vertexSize);
     if (numVerts > 3 && (primitive == GX_TRIANGLEFAN || primitive == GX_TRIANGLESTRIP)) {
       indices.reserve((u32(numVerts) - 3) * 3 + 3);
@@ -40,7 +41,7 @@ struct SStreamState {
     }
 #ifndef NDEBUG
     nextAttr = next_attr(0);
-#endif 
+#endif
   }
 };
 
@@ -68,7 +69,7 @@ void GXBegin(GXPrimitive primitive, GXVtxFmt vtxFmt, u16 nVerts) {
     attr = GXAttr(attr + 1);
   }
   CHECK(vertexSize > 0, "no vtx attributes enabled?");
-  sStreamState.emplace(primitive, nVerts, vertexSize, g_gxState.stateDirty ? 0 : lastVertexStart);
+  sStreamState.emplace(primitive, vtxFmt, nVerts, vertexSize, g_gxState.stateDirty ? 0 : lastVertexStart);
 }
 
 static inline void check_attr_order(GXAttr attr) noexcept {
@@ -110,9 +111,73 @@ void GXPosition3f32(float x, float y, float z) {
   ++state.vertexCount;
 }
 
+void GXPosition3u16(u16 x, u16 y, u16 z) {
+  const auto& attrFmt = g_gxState.vtxFmts[sStreamState->vtxFmt].attrs[GX_VA_POS];
+  GXPosition3f32(
+    static_cast<float>(x) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(y) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(z) / static_cast<f32>(1 << attrFmt.frac)
+  );
+}
+
 void GXPosition3s16(s16 x, s16 y, s16 z) {
-  // TODO frac
-  GXPosition3f32(x, y, z);
+  const auto& attrFmt = g_gxState.vtxFmts[sStreamState->vtxFmt].attrs[GX_VA_POS];
+  GXPosition3f32(
+    static_cast<float>(x) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(y) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(z) / static_cast<f32>(1 << attrFmt.frac)
+  );
+}
+
+void GXPosition3u8(u8 x, u8 y, u8 z) {
+  const auto& attrFmt = g_gxState.vtxFmts[sStreamState->vtxFmt].attrs[GX_VA_POS];
+  GXPosition3f32(
+    static_cast<float>(x) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(y) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(z) / static_cast<f32>(1 << attrFmt.frac)
+  );
+}
+
+void GXPosition3s8(s8 x, s8 y, s8 z) {
+  const auto& attrFmt = g_gxState.vtxFmts[sStreamState->vtxFmt].attrs[GX_VA_POS];
+  GXPosition3f32(
+    static_cast<float>(x) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(y) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(z) / static_cast<f32>(1 << attrFmt.frac)
+  );
+}
+
+void GXPosition2f32(float x, float y) {
+  GXPosition3f32(x, y, 0.f);
+}
+
+void GXPosition2u16(u16 x, u16 y) {
+  GXPosition3u16(x, y, 0);
+}
+
+void GXPosition2s16(s16 x, s16 y) {
+  GXPosition3s16(x, y, 0);
+}
+
+void GXPosition2u8(u8 x, u8 y) {
+  GXPosition3u8(x, y, 0);
+}
+
+void GXPosition2s8(s8 x, s8 y) {
+  GXPosition3s8(x, y, 0);
+}
+
+void GXPosition1x16(u16 idx) {
+  check_attr_order(GX_VA_POS);
+  // keep aligned
+  if (sStreamState->vertexBuffer.size() % 4 != 0) {
+    sStreamState->vertexBuffer.append_zeroes(4 - (sStreamState->vertexBuffer.size() % 4));
+  }
+  sStreamState->vertexBuffer.append(&idx, 2);
+}
+
+void GXPosition1x8(u8 idx) {
+  GXPosition1x16(idx);
 }
 
 void GXNormal3f32(float x, float y, float z) {
@@ -120,6 +185,37 @@ void GXNormal3f32(float x, float y, float z) {
   sStreamState->vertexBuffer.append(&x, 4);
   sStreamState->vertexBuffer.append(&y, 4);
   sStreamState->vertexBuffer.append(&z, 4);
+}
+
+void GXNormal3s16(s16 x, s16 y, s16 z) {
+  const auto& attrFmt = g_gxState.vtxFmts[sStreamState->vtxFmt].attrs[GX_VA_NRM];
+  GXNormal3f32(
+    static_cast<float>(x) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(y) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(z) / static_cast<f32>(1 << attrFmt.frac)
+  );
+}
+
+void GXNormal3s8(s8 x, s8 y, s8 z) {
+  const auto& attrFmt = g_gxState.vtxFmts[sStreamState->vtxFmt].attrs[GX_VA_NRM];
+  GXNormal3f32(
+    static_cast<float>(x) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(y) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(z) / static_cast<f32>(1 << attrFmt.frac)
+  );
+}
+
+void GXNormal1x16(u16 idx) {
+  check_attr_order(GX_VA_NRM);
+  // keep aligned
+  if (sStreamState->vertexBuffer.size() % 4 != 0) {
+    sStreamState->vertexBuffer.append_zeroes(4 - (sStreamState->vertexBuffer.size() % 4));
+  }
+  sStreamState->vertexBuffer.append(&idx, 2);
+}
+
+void GXNormal1x8(u8 idx) {
+  GXNormal1x16(idx);
 }
 
 void GXColor4f32(float r, float g, float b, float a) {
@@ -135,6 +231,23 @@ void GXColor4u8(u8 r, u8 g, u8 b, u8 a) {
               static_cast<float>(a) / 255.f);
 }
 
+void GXColor3u8(u8 r, u8 g, u8 b) {
+  GXColor4u8(r, g, b, 255);
+}
+
+void GXColor1x16(u16 idx) {
+  check_attr_order(GX_VA_CLR0);
+  // keep aligned
+  if (sStreamState->vertexBuffer.size() % 4 != 0) {
+    sStreamState->vertexBuffer.append_zeroes(4 - (sStreamState->vertexBuffer.size() % 4));
+  }
+  sStreamState->vertexBuffer.append(&idx, 2);
+}
+
+void GXColor1x8(u8 idx) {
+  GXColor1x16(idx);
+}
+
 void GXTexCoord2f32(float u, float v) {
   check_attr_order(GX_VA_TEX0);
   sStreamState->vertexBuffer.append(&u, 4);
@@ -142,17 +255,24 @@ void GXTexCoord2f32(float u, float v) {
 }
 
 void GXTexCoord2s16(s16 s, s16 t) {
-  // TODO frac
-  GXTexCoord2f32(s, t);
+  const auto& attrFmt = g_gxState.vtxFmts[sStreamState->vtxFmt].attrs[GX_VA_TEX0];
+  GXTexCoord2f32(
+    static_cast<float>(s) / static_cast<f32>(1 << attrFmt.frac),
+    static_cast<float>(t) / static_cast<f32>(1 << attrFmt.frac)
+  );
 }
 
-void GXPosition1x16(u16 idx) {
-  check_attr_order(GX_VA_POS);
+void GXTexCoord1x16(u16 idx) {
+  check_attr_order(GX_VA_TEX0);
   // keep aligned
   if (sStreamState->vertexBuffer.size() % 4 != 0) {
     sStreamState->vertexBuffer.append_zeroes(4 - (sStreamState->vertexBuffer.size() % 4));
   }
   sStreamState->vertexBuffer.append(&idx, 2);
+}
+
+void GXTexCoord1x8(u8 idx) {
+  GXTexCoord1x16(idx);
 }
 
 void GXEnd() {
@@ -165,7 +285,7 @@ void GXEnd() {
   if (g_gxState.stateDirty) {
     aurora::gfx::stream::PipelineConfig config{};
     populate_pipeline_config(config, GX_TRIANGLES);
-    const auto info = aurora::gfx::gx::build_shader_info(config.shaderConfig);
+    const auto info = build_shader_info(config.shaderConfig);
     const auto pipeline = aurora::gfx::pipeline_ref(config);
     aurora::gfx::push_draw_command(aurora::gfx::stream::DrawData{
         .pipeline = pipeline,
@@ -173,7 +293,7 @@ void GXEnd() {
         .uniformRange = build_uniform(info),
         .indexRange = indexRange,
         .indexCount = static_cast<uint32_t>(sStreamState->indices.size()),
-        .bindGroups = aurora::gfx::gx::build_bind_groups(info, config.shaderConfig, {}),
+        .bindGroups = build_bind_groups(info, config.shaderConfig, {}),
         .dstAlpha = g_gxState.dstAlpha,
     });
   } else {
