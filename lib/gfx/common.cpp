@@ -517,7 +517,7 @@ void begin_frame() {
     g_instance.ProcessEvents();
   }
   size_t bufferOffset = 0;
-  auto& stagingBuf = g_stagingBuffers[currentStagingBuffer];
+  const auto& stagingBuf = g_stagingBuffers[currentStagingBuffer];
   const auto mapBuffer = [&](ByteBuffer& buf, uint64_t size) {
     if (size <= 0) {
       return;
@@ -684,7 +684,12 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
     } break;
     case CommandType::SetScissor: {
       const auto& sc = cmd.data.setScissor;
-      pass.SetScissorRect(sc.x, sc.y, sc.w, sc.h);
+      const auto& size = webgpu::g_frameBuffer.size;
+      const auto x = std::clamp(sc.x, 0u, size.width);
+      const auto y = std::clamp(sc.y, 0u, size.height);
+      const auto w = std::clamp(sc.w, 0u, size.width - x);
+      const auto h = std::clamp(sc.h, 0u, size.height - y);
+      pass.SetScissorRect(x, y, w, h);
     } break;
     case CommandType::Draw: {
       const auto& draw = cmd.data.draw;
