@@ -90,7 +90,7 @@ concept TextureDecoder = requires(T) {
 template <TextureDecoder T>
 static ByteBuffer DecodeTiled(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
   const size_t texelCount = ComputeMippedTexelCount(width, height, mips);
-  ByteBuffer buf{texelCount * sizeof(T::Target)};
+  ByteBuffer buf{texelCount * sizeof(typename T::Target)};
 
   uint32_t w = width;
   uint32_t h = height;
@@ -127,7 +127,7 @@ static ByteBuffer DecodeTiled(uint32_t width, uint32_t height, uint32_t mips, Ar
 
 template <TextureDecoder T>
 static ByteBuffer DecodeLinear(uint32_t width, ArrayRef<uint8_t> data) {
-  ByteBuffer buf{width * sizeof(T::Target)};
+  ByteBuffer buf{width * sizeof(typename T::Target)};
   auto* target = reinterpret_cast<typename T::Target*>(buf.data());
   const auto* in = reinterpret_cast<const typename T::Source*>(data.data());
   for (uint32_t x = 0; x < width; ++x) {

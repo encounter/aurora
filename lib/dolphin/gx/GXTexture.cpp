@@ -212,7 +212,7 @@ void GXInitTlutObj(GXTlutObj* obj_, const void* data, GXTlutFmt format, u16 entr
   auto* obj = reinterpret_cast<GXTlutObj_*>(obj_);
   obj->ref = aurora::gfx::new_static_texture_2d(
       entries, 1, 1, texFmt, aurora::ArrayRef{static_cast<const u8*>(data), static_cast<size_t>(entries) * 2},
-      "GXInitTlutObj");
+      true, "GXInitTlutObj");
 }
 
 void GXLoadTlut(const GXTlutObj* obj_, GXTlut idx) {
