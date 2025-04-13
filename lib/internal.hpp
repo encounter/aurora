@@ -4,6 +4,7 @@
 
 #include <aurora/aurora.h>
 
+#include <array>
 #include <cassert>
 #include <vector>
 
