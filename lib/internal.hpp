@@ -6,6 +6,8 @@
 
 #include <array>
 #include <cassert>
+#include <cstdint>
+#include <type_traits>
 #include <vector>
 
 using namespace std::string_view_literals;
@@ -21,6 +23,46 @@ using namespace std::string_view_literals;
 #endif
 #endif
 
+template <typename T>
+  requires(sizeof(T) == sizeof(uint16_t) && std::is_arithmetic_v<T>)
+constexpr T bswap(T val) noexcept {
+  union {
+    uint16_t u;
+    T t;
+  } v{.t = val};
+#if __GNUC__
+  v.u = __builtin_bswap16(v.u);
+#elif _WIN32
+  v.u = _byteswap_ushort(v.u);
+#else
+  v.u = (v.u << 8) | ((v.u >> 8) & 0xFF);
+#endif
+  return v.t;
+}
+
+template <typename T>
+  requires(sizeof(T) == sizeof(uint32_t) && std::is_arithmetic_v<T>)
+constexpr T bswap(T val) noexcept {
+  union {
+    uint32_t u;
+    T t;
+  } v{.t = val};
+#if __GNUC__
+  v.u = __builtin_bswap32(v.u);
+#elif _WIN32
+  v.u = _byteswap_ulong(v.u);
+#else
+  v.u = ((v.u & 0x0000FFFF) << 16) | ((v.u & 0xFFFF0000) >> 16) | ((v.u & 0x00FF00FF) << 8) | ((v.u & 0xFF00FF00) >> 8);
+#endif
+  return v.t;
+}
+
+template <typename T>
+  requires(std::is_enum_v<T>)
+auto underlying(T value) -> std::underlying_type_t<T> {
+  return static_cast<std::underlying_type_t<T>>(value);
+}
+
 #ifndef ALIGN
 #define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
 #endif
@@ -33,11 +75,7 @@ using namespace std::string_view_literals;
 #else
 #define UNLIKELY
 #endif
-#define FATAL(msg, ...)                                                                                                \
-  {                                                                                                                    \
-    Log.fatal(msg, ##__VA_ARGS__);                                                                                     \
-    unreachable();                                                                                                     \
-  }
+#define FATAL(msg, ...) Log.fatal(msg, ##__VA_ARGS__);
 #define ASSERT(cond, msg, ...)                                                                                         \
   if (!(cond))                                                                                                         \
   UNLIKELY FATAL(msg, ##__VA_ARGS__)

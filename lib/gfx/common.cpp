@@ -3,7 +3,6 @@
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"
 #include "model/shader.hpp"
-#include "stream/shader.hpp"
 #include "texture.hpp"
 
 #include <condition_variable>
@@ -11,7 +10,6 @@
 #include <fstream>
 #include <mutex>
 #include <thread>
-#include <variant>
 
 #include <absl/container/flat_hash_map.h>
 #include <magic_enum.hpp>
@@ -37,13 +35,11 @@ constexpr uint64_t StagingBufferSize =
     UniformBufferSize + VertexBufferSize + IndexBufferSize + StorageBufferSize + TextureUploadSize;
 
 struct ShaderState {
-  stream::State stream;
   model::State model;
 };
 struct ShaderDrawCommand {
   ShaderType type;
   union {
-    stream::DrawData stream;
     model::DrawData model;
   };
 };
@@ -168,10 +164,9 @@ static u32 g_serializedPipelineCount = 0;
 template <typename PipelineConfig>
 static void serialize_pipeline_config(ShaderType type, const PipelineConfig& config) {
   static_assert(std::has_unique_object_representations_v<PipelineConfig>);
-  g_serializedPipelines.append(&type, sizeof(type));
-  const u32 configSize = sizeof(config);
-  g_serializedPipelines.append(&configSize, sizeof(configSize));
-  g_serializedPipelines.append(&config, configSize);
+  g_serializedPipelines.append(type);
+  g_serializedPipelines.append<u32>(sizeof(config));
+  g_serializedPipelines.append(config);
   ++g_serializedPipelineCount;
 }
 
@@ -278,33 +273,19 @@ void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> 
   ++g_currentRenderPass;
 }
 
-template <>
-const stream::State& get_state() {
-  return g_state.stream;
-}
-
-template <>
-void push_draw_command(stream::DrawData data) {
-  push_draw_command(ShaderDrawCommand{.type = ShaderType::Stream, .stream = data});
-}
-
-template <>
-void merge_draw_command(stream::DrawData data) {
-  auto& last = get_last_draw_command(ShaderType::Stream).data.draw.stream;
-  CHECK(last.vertRange.offset + last.vertRange.size == data.vertRange.offset, "Invalid vertex merge range: {} -> {}",
-        last.vertRange.offset + last.vertRange.size, data.vertRange.offset);
-  CHECK(last.indexRange.offset + last.indexRange.size == data.indexRange.offset, "Invalid index merge range: {} -> {}",
-        last.indexRange.offset + last.indexRange.size, data.indexRange.offset);
-  last.vertRange.size += data.vertRange.size;
-  last.indexRange.size += data.indexRange.size;
-  last.indexCount += data.indexCount;
-  ++g_mergedDrawCallCount;
-}
-
-template <>
-PipelineRef pipeline_ref(stream::PipelineConfig config) {
-  return find_pipeline(ShaderType::Stream, config, [=]() { return create_pipeline(g_state.stream, config); });
-}
+// template <>
+// void merge_draw_command(stream::DrawData data) {
+//   auto& last = get_last_draw_command(ShaderType::Stream).data.draw.stream;
+//   CHECK(last.vertRange.offset + last.vertRange.size == data.vertRange.offset, "Invalid vertex merge range: {} -> {}",
+//         last.vertRange.offset + last.vertRange.size, data.vertRange.offset);
+//   CHECK(last.indexRange.offset + last.indexRange.size == data.indexRange.offset, "Invalid index merge range: {} ->
+//   {}",
+//         last.indexRange.offset + last.indexRange.size, data.indexRange.offset);
+//   last.vertRange.size += data.vertRange.size;
+//   last.indexRange.size += data.indexRange.size;
+//   last.indexCount += data.indexCount;
+//   ++g_mergedDrawCallCount;
+// }
 
 template <>
 void push_draw_command(model::DrawData data) {
@@ -378,16 +359,6 @@ void load_pipeline_cache() {
       u32 size = *reinterpret_cast<const u32*>(pipelineCache.data() + offset);
       offset += sizeof(u32);
       switch (type) {
-      case ShaderType::Stream: {
-        if (size != sizeof(stream::PipelineConfig)) {
-          break;
-        }
-        const auto config = *reinterpret_cast<const stream::PipelineConfig*>(pipelineCache.data() + offset);
-        if (config.version != gx::GXPipelineConfigVersion) {
-          break;
-        }
-        find_pipeline(type, config, [=]() { return stream::create_pipeline(g_state.stream, config); }, true);
-      } break;
       case ShaderType::Model: {
         if (size != sizeof(model::PipelineConfig)) {
           break;
@@ -397,9 +368,10 @@ void load_pipeline_cache() {
           break;
         }
         find_pipeline(type, config, [=]() { return model::create_pipeline(g_state.model, config); }, true);
-      } break;
+        break;
+      }
       default:
-        Log.warn("Unknown pipeline type {}", static_cast<int>(type));
+        Log.warn("Unknown pipeline type {}", underlying(type));
         break;
       }
       offset += size;
@@ -459,7 +431,6 @@ void initialize() {
   }
   map_staging_buffer();
 
-  g_state.stream = stream::construct_state();
   g_state.model = model::construct_state();
 
   load_pipeline_cache();
@@ -581,6 +552,9 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
   currentStagingBuffer = (currentStagingBuffer + 1) % g_stagingBuffers.size();
   map_staging_buffer();
   g_currentRenderPass = UINT32_MAX;
+  for (auto& array : gx::g_gxState.arrays) {
+    array.cachedRange = {};
+  }
 
   if (!g_hasPipelineThread) {
     pipeline_worker();
@@ -612,7 +586,7 @@ void render(wgpu::CommandEncoder& cmd) {
         .view = webgpu::g_depthBuffer.view,
         .depthLoadOp = passInfo.clear ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
         .depthStoreOp = wgpu::StoreOp::Store,
-        .depthClearValue = 1.f,
+        .depthClearValue = gx::UseReversedZ ? 0.f : 1.f,
     };
     const auto label = fmt::format("Render pass {}", i);
     const wgpu::RenderPassDescriptor renderPassDescriptor{
@@ -680,7 +654,9 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
     switch (cmd.type) {
     case CommandType::SetViewport: {
       const auto& vp = cmd.data.setViewport;
-      pass.SetViewport(vp.left, vp.top, vp.width, vp.height, vp.znear, vp.zfar);
+      const float minDepth = gx::UseReversedZ ? 1.f - vp.zfar : vp.znear;
+      const float maxDepth = gx::UseReversedZ ? 1.f - vp.znear : vp.zfar;
+      pass.SetViewport(vp.left, vp.top, vp.width, vp.height, minDepth, maxDepth);
     } break;
     case CommandType::SetScissor: {
       const auto& sc = cmd.data.setScissor;
@@ -694,9 +670,6 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
     case CommandType::Draw: {
       const auto& draw = cmd.data.draw;
       switch (draw.type) {
-      case ShaderType::Stream:
-        stream::render(g_state.stream, draw.stream, pass);
-        break;
       case ShaderType::Model:
         model::render(g_state.model, draw.model, pass);
         break;

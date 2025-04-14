@@ -4,15 +4,9 @@
 
 #include <fmt/base.h>
 #include <fmt/format.h>
-#include <string_view>
 
-#ifdef __GNUC__
-[[noreturn]] inline __attribute__((always_inline)) void unreachable() { __builtin_unreachable(); }
-#elif defined(_MSC_VER)
-[[noreturn]] __forceinline void unreachable() { __assume(false); }
-#else
-#error Unknown compiler
-#endif
+#include <cstdlib>
+#include <string_view>
 
 namespace aurora {
 void log_internal(AuroraLogLevel level, const char* module, const char* message, unsigned int len) noexcept;
@@ -50,7 +44,7 @@ struct Module {
   template <typename... T>
   [[noreturn]] void fatal(fmt::format_string<T...> fmt, T&&... args) noexcept {
     report(LOG_FATAL, fmt, std::forward<T>(args)...);
-    unreachable();
+    std::abort();
   }
 };
 } // namespace aurora

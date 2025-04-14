@@ -68,11 +68,11 @@ void GXTexCoord2s16(s16 s, s16 t);
 void GXTexCoord2u8(u8 s, u8 t);
 void GXTexCoord2s8(s8 s, s8 t);
 
-void GXTexCoord1f32(f32 s, f32 t);
-void GXTexCoord1u16(u16 s, u16 t);
-void GXTexCoord1s16(s16 s, s16 t);
-void GXTexCoord1u8(u8 s, u8 t);
-void GXTexCoord1s8(s8 s, s8 t);
+void GXTexCoord1f32(f32 s);
+void GXTexCoord1u16(u16 s);
+void GXTexCoord1s16(s16 s);
+void GXTexCoord1u8(u8 s);
+void GXTexCoord1s8(s8 s);
 
 void GXTexCoord1x16(u16 index);
 void GXTexCoord1x8(u8 index);

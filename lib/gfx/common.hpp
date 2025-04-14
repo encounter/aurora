@@ -56,8 +56,7 @@ public:
   ByteBuffer() noexcept = default;
   explicit ByteBuffer(size_t size) noexcept
   : m_data(static_cast<uint8_t*>(calloc(1, size))), m_length(size), m_capacity(size) {}
-  explicit ByteBuffer(uint8_t* data, size_t size) noexcept
-  : m_data(data), m_capacity(size), m_owned(false) {}
+  explicit ByteBuffer(uint8_t* data, size_t size) noexcept : m_data(data), m_capacity(size), m_owned(false) {}
   ~ByteBuffer() noexcept {
     if (m_data != nullptr && m_owned) {
       free(m_data);
@@ -96,6 +95,11 @@ public:
     resize(m_length + size, false);
     memcpy(m_data + m_length, data, size);
     m_length += size;
+  }
+
+  template <typename T>
+  void append(const T& obj) {
+    append(&obj, sizeof(T));
   }
 
   void append_zeroes(size_t size) {
@@ -179,8 +183,7 @@ struct TextureRef;
 using TextureHandle = std::shared_ptr<TextureRef>;
 
 enum class ShaderType : uint8_t {
-  Stream,
-  Model,
+  Model = 1,
 };
 
 void initialize();

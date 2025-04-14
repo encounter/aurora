@@ -385,15 +385,12 @@ bool initialize(AuroraBackend auroraBackend) {
     g_adapter.GetLimits(&supportedLimits);
     const wgpu::Limits requiredLimits{
         // Use "best" supported alignments
-        .maxTextureDimension1D = supportedLimits.maxTextureDimension1D == 0
-                                               ? WGPU_LIMIT_U32_UNDEFINED
-                                               : supportedLimits.maxTextureDimension1D,
-        .maxTextureDimension2D = supportedLimits.maxTextureDimension2D == 0
-                                               ? WGPU_LIMIT_U32_UNDEFINED
-                                               : supportedLimits.maxTextureDimension2D,
-        .maxTextureDimension3D = supportedLimits.maxTextureDimension3D == 0
-                                               ? WGPU_LIMIT_U32_UNDEFINED
-                                               : supportedLimits.maxTextureDimension3D,
+        .maxTextureDimension1D = supportedLimits.maxTextureDimension1D == 0 ? WGPU_LIMIT_U32_UNDEFINED
+                                                                            : supportedLimits.maxTextureDimension1D,
+        .maxTextureDimension2D = supportedLimits.maxTextureDimension2D == 0 ? WGPU_LIMIT_U32_UNDEFINED
+                                                                            : supportedLimits.maxTextureDimension2D,
+        .maxTextureDimension3D = supportedLimits.maxTextureDimension3D == 0 ? WGPU_LIMIT_U32_UNDEFINED
+                                                                            : supportedLimits.maxTextureDimension3D,
         .minUniformBufferOffsetAlignment = supportedLimits.minUniformBufferOffsetAlignment == 0
                                                ? WGPU_LIMIT_U32_UNDEFINED
                                                : supportedLimits.minUniformBufferOffsetAlignment,
@@ -401,6 +398,12 @@ bool initialize(AuroraBackend auroraBackend) {
                                                ? WGPU_LIMIT_U32_UNDEFINED
                                                : supportedLimits.minStorageBufferOffsetAlignment,
     };
+    Log.info(
+        "Using limits\n  maxTextureDimension1D: {}\n  maxTextureDimension2D: {}\n  maxTextureDimension3D: {}\n  "
+        "minUniformBufferOffsetAlignment: {}\n  minStorageBufferOffsetAlignment: {}",
+        requiredLimits.maxTextureDimension1D, requiredLimits.maxTextureDimension2D,
+        requiredLimits.maxTextureDimension3D, requiredLimits.minUniformBufferOffsetAlignment,
+        requiredLimits.minStorageBufferOffsetAlignment);
     std::vector<wgpu::FeatureName> requiredFeatures;
     wgpu::SupportedFeatures supportedFeatures;
     g_adapter.GetFeatures(&supportedFeatures);
@@ -442,22 +445,20 @@ bool initialize(AuroraBackend auroraBackend) {
     });
     deviceDescriptor.SetUncapturedErrorCallback(
         [](const wgpu::Device& device, wgpu::ErrorType type, wgpu::StringView message) {
-          FATAL("WebGPU error {}: {}", static_cast<int>(type), message);
+          FATAL("WebGPU error {}: {}", underlying(type), message);
         });
-    deviceDescriptor.SetDeviceLostCallback(
-        wgpu::CallbackMode::AllowSpontaneous,
-        [](const wgpu::Device& device, wgpu::DeviceLostReason reason, wgpu::StringView message) {
-          Log.warn("Device lost: {}", message);
-        });
-    const auto future = g_adapter.RequestDevice(
-        &deviceDescriptor, wgpu::CallbackMode::WaitAnyOnly,
-        [](wgpu::RequestDeviceStatus status, wgpu::Device device, wgpu::StringView message) {
-          if (status == wgpu::RequestDeviceStatus::Success) {
-            g_device = std::move(device);
-          } else {
-            Log.warn("Device request failed: {}", message);
-          }
-        });
+    deviceDescriptor.SetDeviceLostCallback(wgpu::CallbackMode::AllowSpontaneous,
+                                           [](const wgpu::Device& device, wgpu::DeviceLostReason reason,
+                                              wgpu::StringView message) { Log.warn("Device lost: {}", message); });
+    const auto future =
+        g_adapter.RequestDevice(&deviceDescriptor, wgpu::CallbackMode::WaitAnyOnly,
+                                [](wgpu::RequestDeviceStatus status, wgpu::Device device, wgpu::StringView message) {
+                                  if (status == wgpu::RequestDeviceStatus::Success) {
+                                    g_device = std::move(device);
+                                  } else {
+                                    Log.warn("Device request failed: {}", message);
+                                  }
+                                });
     const auto status = g_instance.WaitAny(future, 5000000000);
     if (status != wgpu::WaitStatus::Success) {
       Log.error("Failed to create device: {}", magic_enum::enum_name(status));

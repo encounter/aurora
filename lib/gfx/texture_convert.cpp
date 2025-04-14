@@ -67,17 +67,6 @@ static size_t ComputeMippedBlockCountDXT1(uint32_t w, uint32_t h, uint32_t mips)
 }
 
 template <typename T>
-constexpr T bswap16(T val) noexcept {
-#if __GNUC__
-  return __builtin_bswap16(val);
-#elif _WIN32
-  return _byteswap_ushort(val);
-#else
-  return (val = (val << 8) | ((val >> 8) & 0xFF));
-#endif
-}
-
-template <typename T>
 concept TextureDecoder = requires(T) {
   typename T::Source;
   typename T::Target;
@@ -178,15 +167,15 @@ struct TextureDecoderIA4 {
 };
 
 struct TextureDecoderIA8 {
-  using Source = uint8_t;
+  using Source = uint16_t;
   using Target = RGBA8;
 
   static constexpr uint32_t Frac = 1;
-  static constexpr uint32_t BlockWidth = 8;
+  static constexpr uint32_t BlockWidth = 4;
   static constexpr uint32_t BlockHeight = 4;
 
   static void decode_texel(Target* target, const Source* in, const uint32_t x) {
-    const auto texel = bswap16(in[x]);
+    const auto texel = bswap(in[x]);
     const uint8_t intensity = texel >> 8;
     target[x].r = intensity;
     target[x].g = intensity;
@@ -228,7 +217,7 @@ struct TextureDecoderRGB565 {
   static constexpr uint32_t BlockHeight = 4;
 
   static void decode_texel(Target* target, const Source* in, const uint32_t x) {
-    const auto texel = bswap16(in[x]);
+    const auto texel = bswap(in[x]);
     target[x].r = ExpandTo8<5>(texel >> 11 & 0x1f);
     target[x].g = ExpandTo8<6>(texel >> 5 & 0x3f);
     target[x].b = ExpandTo8<5>(texel & 0x1f);
@@ -245,7 +234,7 @@ struct TextureDecoderRGB5A3 {
   static constexpr uint32_t BlockHeight = 4;
 
   static void decode_texel(Target* target, const Source* in, const uint32_t x) {
-    const auto texel = bswap16(in[x]);
+    const auto texel = bswap(in[x]);
     if ((texel & 0x8000) != 0) {
       target[x].r = ExpandTo8<5>(texel >> 10 & 0x1f);
       target[x].g = ExpandTo8<5>(texel >> 5 & 0x1f);
@@ -322,8 +311,8 @@ static ByteBuffer BuildDXT1FromGCN(uint32_t width, uint32_t height, uint32_t mip
         for (uint32_t y = 0; y < 2; ++y) {
           DXT1Block* target = targetMip + (baseY + y) * w + baseX;
           for (size_t x = 0; x < 2; ++x) {
-            target[x].color1 = bswap16(in[x].color1);
-            target[x].color2 = bswap16(in[x].color2);
+            target[x].color1 = bswap(in[x].color1);
+            target[x].color2 = bswap(in[x].color2);
             for (size_t i = 0; i < 4; ++i) {
               std::array<uint8_t, 4> ind;
               const uint8_t packed = in[x].lines[i];
@@ -365,8 +354,8 @@ static ByteBuffer BuildRGBA8FromCMPR(uint32_t width, uint32_t height, uint32_t m
         for (uint32_t yb = 0; yb < 8; yb += 4) {
           for (uint32_t xb = 0; xb < 8; xb += 4) {
             // CMPR difference: Big-endian color1/2
-            const uint16_t color1 = bswap16(*reinterpret_cast<const uint16_t*>(src));
-            const uint16_t color2 = bswap16(*reinterpret_cast<const uint16_t*>(src + 2));
+            const uint16_t color1 = bswap(*reinterpret_cast<const uint16_t*>(src));
+            const uint16_t color2 = bswap(*reinterpret_cast<const uint16_t*>(src + 2));
             src += 4;
 
             // Fill in first two colors in color table.

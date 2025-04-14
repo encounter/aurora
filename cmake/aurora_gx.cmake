@@ -4,7 +4,6 @@ add_library(aurora_gx STATIC
         lib/gfx/gx.cpp
         lib/gfx/gx_shader.cpp
         lib/gfx/texture_convert.cpp
-        lib/gfx/stream/shader.cpp
         lib/gfx/model/shader.cpp
         lib/dolphin/gx/GXBump.cpp
         lib/dolphin/gx/GXCull.cpp
@@ -28,9 +27,6 @@ add_library(aurora::gx ALIAS aurora_gx)
 
 target_link_libraries(aurora_gx PUBLIC aurora::core xxhash)
 target_link_libraries(aurora_gx PRIVATE absl::btree absl::flat_hash_map)
-if (AURORA_NATIVE_MATRIX)
-    target_compile_definitions(aurora_gx PRIVATE AURORA_NATIVE_MATRIX)
-endif ()
 if (EMSCRIPTEN)
     target_link_options(aurora_gx PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)
     target_compile_definitions(aurora_gx PRIVATE ENABLE_BACKEND_WEBGPU)

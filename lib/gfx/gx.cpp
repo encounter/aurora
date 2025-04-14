@@ -7,7 +7,6 @@
 
 #include <absl/container/flat_hash_map.h>
 #include <cfloat>
-#include <cmath>
 
 using aurora::gfx::gx::g_gxState;
 static aurora::Module Log("aurora::gx");
@@ -25,7 +24,7 @@ const TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textur
 
 static inline wgpu::BlendFactor to_blend_factor(GXBlendFactor fac, bool isDst) {
   switch (fac) {
-    DEFAULT_FATAL("invalid blend factor {}", static_cast<int>(fac));
+    DEFAULT_FATAL("invalid blend factor {}", underlying(fac));
   case GX_BL_ZERO:
     return wgpu::BlendFactor::Zero;
   case GX_BL_ONE:
@@ -55,21 +54,21 @@ static inline wgpu::BlendFactor to_blend_factor(GXBlendFactor fac, bool isDst) {
 
 static inline wgpu::CompareFunction to_compare_function(GXCompare func) {
   switch (func) {
-    DEFAULT_FATAL("invalid depth fn {}", static_cast<int>(func));
+    DEFAULT_FATAL("invalid depth fn {}", underlying(func));
   case GX_NEVER:
     return wgpu::CompareFunction::Never;
   case GX_LESS:
-    return wgpu::CompareFunction::Less;
+    return UseReversedZ ? wgpu::CompareFunction::Greater : wgpu::CompareFunction::Less;
   case GX_EQUAL:
     return wgpu::CompareFunction::Equal;
   case GX_LEQUAL:
-    return wgpu::CompareFunction::LessEqual;
+    return UseReversedZ ? wgpu::CompareFunction::GreaterEqual : wgpu::CompareFunction::LessEqual;
   case GX_GREATER:
-    return wgpu::CompareFunction::Greater;
+    return UseReversedZ ? wgpu::CompareFunction::Less : wgpu::CompareFunction::Greater;
   case GX_NEQUAL:
     return wgpu::CompareFunction::NotEqual;
   case GX_GEQUAL:
-    return wgpu::CompareFunction::GreaterEqual;
+    return UseReversedZ ? wgpu::CompareFunction::LessEqual : wgpu::CompareFunction::GreaterEqual;
   case GX_ALWAYS:
     return wgpu::CompareFunction::Always;
   }
@@ -79,7 +78,7 @@ static inline wgpu::BlendState to_blend_state(GXBlendMode mode, GXBlendFactor sr
                                               GXLogicOp op, u32 dstAlpha) {
   wgpu::BlendComponent colorBlendComponent;
   switch (mode) {
-    DEFAULT_FATAL("unsupported blend mode {}", static_cast<int>(mode));
+    DEFAULT_FATAL("unsupported blend mode {}", underlying(mode));
   case GX_BM_NONE:
     colorBlendComponent = {
         .operation = wgpu::BlendOperation::Add,
@@ -103,7 +102,7 @@ static inline wgpu::BlendState to_blend_state(GXBlendMode mode, GXBlendFactor sr
     break;
   case GX_BM_LOGIC:
     switch (op) {
-      DEFAULT_FATAL("unsupported logic op {}", static_cast<int>(op));
+      DEFAULT_FATAL("unsupported logic op {}", underlying(op));
     case GX_LO_CLEAR:
       colorBlendComponent = {
           .operation = wgpu::BlendOperation::Add,
@@ -160,7 +159,7 @@ static inline wgpu::ColorWriteMask to_write_mask(bool colorUpdate, bool alphaUpd
 static inline wgpu::PrimitiveState to_primitive_state(GXPrimitive gx_prim, GXCullMode gx_cullMode) {
   wgpu::PrimitiveTopology primitive = wgpu::PrimitiveTopology::TriangleList;
   switch (gx_prim) {
-    DEFAULT_FATAL("unsupported primitive type {}", static_cast<int>(gx_prim));
+    DEFAULT_FATAL("unsupported primitive type {}", underlying(gx_prim));
   case GX_TRIANGLES:
     break;
   case GX_TRIANGLESTRIP:
@@ -169,7 +168,7 @@ static inline wgpu::PrimitiveState to_primitive_state(GXPrimitive gx_prim, GXCul
   }
   wgpu::CullMode cullMode = wgpu::CullMode::None;
   switch (gx_cullMode) {
-    DEFAULT_FATAL("unsupported cull mode {}", static_cast<int>(gx_cullMode));
+    DEFAULT_FATAL("unsupported cull mode {}", underlying(gx_cullMode));
   case GX_CULL_FRONT:
     cullMode = wgpu::CullMode::Front;
     break;
@@ -193,14 +192,6 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderIn
       .format = g_graphicsConfig.depthFormat,
       .depthWriteEnabled = config.depthUpdate,
       .depthCompare = to_compare_function(config.depthFunc),
-      .stencilFront =
-          wgpu::StencilFaceState{
-              .compare = wgpu::CompareFunction::Always,
-          },
-      .stencilBack =
-          wgpu::StencilFaceState{
-              .compare = wgpu::CompareFunction::Always,
-          },
   };
   const auto blendState =
       to_blend_state(config.blendMode, config.blendFacSrc, config.blendFacDst, config.blendOp, config.dstAlpha);
@@ -249,25 +240,23 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderIn
   return g_device.CreateRenderPipeline(&descriptor);
 }
 
-void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive) noexcept {
+void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept {
+  const auto& vtxFmt = g_gxState.vtxFmts[fmt];
   config.shaderConfig.fogType = g_gxState.fog.type;
   config.shaderConfig.vtxAttrs = g_gxState.vtxDesc;
-  int lastIndexedAttr = -1;
   for (int i = 0; i < GX_VA_MAX_ATTR; ++i) {
     const auto type = g_gxState.vtxDesc[i];
     if (type != GX_INDEX8 && type != GX_INDEX16) {
-      config.shaderConfig.attrMapping[i] = GX_VA_NULL;
+      config.shaderConfig.attrMapping[i] = {};
       continue;
     }
-    const auto& array = g_gxState.arrays[i];
-    if (lastIndexedAttr >= 0 && array == g_gxState.arrays[lastIndexedAttr]) {
-      // Map attribute to previous attribute
-      config.shaderConfig.attrMapping[i] = config.shaderConfig.attrMapping[lastIndexedAttr];
-    } else {
-      // Map attribute to its own storage
-      config.shaderConfig.attrMapping[i] = static_cast<GXAttr>(i);
-    }
-    lastIndexedAttr = i;
+    // Map attribute to its own storage
+    config.shaderConfig.attrMapping[i] = StorageConfig {
+      .attr = static_cast<GXAttr>(i),
+      .cnt = vtxFmt.attrs[i].cnt,
+      .compType = vtxFmt.attrs[i].type,
+      .frac = vtxFmt.attrs[i].frac,
+    };
   }
   config.shaderConfig.tevSwapTable = g_gxState.tevSwapTable;
   for (u8 i = 0; i < g_gxState.numTevStages; ++i) {
@@ -328,14 +317,14 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive) noe
 Range build_uniform(const ShaderInfo& info) noexcept {
   auto [buf, range] = map_uniform(info.uniformSize);
   {
-    buf.append(&g_gxState.pnMtx[g_gxState.currentPnMtx], 128);
-    buf.append(&g_gxState.proj, 64);
+    buf.append(g_gxState.pnMtx[g_gxState.currentPnMtx]);
+    buf.append(g_gxState.proj);
   }
   for (int i = 0; i < info.loadsTevReg.size(); ++i) {
     if (!info.loadsTevReg.test(i)) {
       continue;
     }
-    buf.append(&g_gxState.colorRegs[i], 16);
+    buf.append(g_gxState.colorRegs[i]);
   }
   bool lightingEnabled = false;
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
@@ -352,11 +341,10 @@ Range build_uniform(const ShaderInfo& info) noexcept {
   if (lightingEnabled) {
     // Lights
     static_assert(sizeof(g_gxState.lights) == 80 * GX::MaxLights);
-    buf.append(&g_gxState.lights, 80 * GX::MaxLights);
+    buf.append(g_gxState.lights);
     // Light state for all channels
     for (int i = 0; i < 4; ++i) {
-      u32 lightState = g_gxState.colorChannelState[i].lightMask.to_ulong();
-      buf.append(&lightState, 4);
+      buf.append<u32>(g_gxState.colorChannelState[i].lightMask.to_ulong());
     }
   }
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
@@ -366,25 +354,25 @@ Range build_uniform(const ShaderInfo& info) noexcept {
     const auto& ccc = g_gxState.colorChannelConfig[i * 2];
     const auto& ccs = g_gxState.colorChannelState[i * 2];
     if (ccc.lightingEnabled && ccc.ambSrc == GX_SRC_REG) {
-      buf.append(&ccs.ambColor, 16);
+      buf.append(ccs.ambColor);
     }
     if (ccc.matSrc == GX_SRC_REG) {
-      buf.append(&ccs.matColor, 16);
+      buf.append(ccs.matColor);
     }
     const auto& ccca = g_gxState.colorChannelConfig[i * 2 + 1];
     const auto& ccsa = g_gxState.colorChannelState[i * 2 + 1];
     if (ccca.lightingEnabled && ccca.ambSrc == GX_SRC_REG) {
-      buf.append(&ccsa.ambColor, 16);
+      buf.append(ccsa.ambColor);
     }
     if (ccca.matSrc == GX_SRC_REG) {
-      buf.append(&ccsa.matColor, 16);
+      buf.append(ccsa.matColor);
     }
   }
   for (int i = 0; i < info.sampledKColors.size(); ++i) {
     if (!info.sampledKColors.test(i)) {
       continue;
     }
-    buf.append(&g_gxState.kcolors[i], 16);
+    buf.append(g_gxState.kcolors[i]);
   }
   for (int i = 0; i < info.usesTexMtx.size(); ++i) {
     if (!info.usesTexMtx.test(i)) {
@@ -392,26 +380,16 @@ Range build_uniform(const ShaderInfo& info) noexcept {
     }
     const auto& state = g_gxState;
     switch (info.texMtxTypes[i]) {
-      DEFAULT_FATAL("unhandled tex mtx type {}", static_cast<int>(info.texMtxTypes[i]));
+      DEFAULT_FATAL("unhandled tex mtx type {}", underlying(info.texMtxTypes[i]));
     case GX_TG_MTX2x4:
-      if (std::holds_alternative<Mat4x2<float>>(state.texMtxs[i])) {
-        buf.append(&std::get<Mat4x2<float>>(state.texMtxs[i]), 32);
-      } else if (std::holds_alternative<Mat4x4<float>>(g_gxState.texMtxs[i])) {
-        // TODO: SMB hits this?
-        Mat4x2<float> mtx{
-            {1.f, 0.f},
-            {0.f, 1.f},
-            {0.f, 0.f},
-            {0.f, 0.f},
-        };
-        buf.append(&mtx, 32);
+      if (std::holds_alternative<Mat2x4<float>>(state.texMtxs[i])) {
+        buf.append(std::get<Mat2x4<float>>(state.texMtxs[i]));
       } else
         UNLIKELY FATAL("expected 2x4 mtx in idx {}", i);
       break;
     case GX_TG_MTX3x4:
-      if (std::holds_alternative<Mat4x4<float>>(g_gxState.texMtxs[i])) {
-        const auto& mat = std::get<Mat4x4<float>>(g_gxState.texMtxs[i]);
-        buf.append(&mat, 64);
+      if (std::holds_alternative<Mat3x4<float>>(g_gxState.texMtxs[i])) {
+        buf.append(std::get<Mat3x4<float>>(g_gxState.texMtxs[i]));
       } else
         UNLIKELY FATAL("expected 3x4 mtx in idx {}", i);
       break;
@@ -421,18 +399,11 @@ Range build_uniform(const ShaderInfo& info) noexcept {
     if (!info.usesPTTexMtx.test(i)) {
       continue;
     }
-    buf.append(&g_gxState.ptTexMtxs[i], 64);
+    buf.append(g_gxState.ptTexMtxs[i]);
   }
   if (info.usesFog) {
     const auto& state = g_gxState.fog;
-    struct Fog {
-      Vec4<float> color = state.color;
-      float a = 0.f;
-      float b = 0.5f;
-      float c = 0.f;
-      float pad = FLT_MAX;
-    } fog{};
-    static_assert(sizeof(Fog) == 32);
+    Fog fog{.color = state.color};
     if (state.nearZ != state.farZ && state.startZ != state.endZ) {
       const float depthRange = state.farZ - state.nearZ;
       const float fogRange = state.endZ - state.startZ;
@@ -440,7 +411,7 @@ Range build_uniform(const ShaderInfo& info) noexcept {
       fog.b = state.farZ / depthRange;
       fog.c = state.startZ / fogRange;
     }
-    buf.append(&fog, 32);
+    buf.append(fog);
   }
   for (int i = 0; i < info.sampledTextures.size(); ++i) {
     if (!info.sampledTextures.test(i)) {
@@ -448,7 +419,7 @@ Range build_uniform(const ShaderInfo& info) noexcept {
     }
     const auto& tex = get_texture(static_cast<GXTexMapID>(i));
     CHECK(tex, "unbound texture {}", i);
-    buf.append(&tex.texObj.lodBias, 4);
+    buf.append(tex.texObj.lodBias);
   }
   g_gxState.stateDirty = false;
   return range;
@@ -564,7 +535,7 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
     };
     u32 bindIdx = 1;
     for (int i = 0; i < GX_VA_MAX_ATTR; ++i) {
-      if (config.attrMapping[i] == static_cast<GXAttr>(i)) {
+      if (config.attrMapping[i].attr == static_cast<GXAttr>(i)) {
         uniformLayoutEntries[bindIdx] = wgpu::BindGroupLayoutEntry{
             .binding = bindIdx,
             .visibility = wgpu::ShaderStage::Vertex,
@@ -688,7 +659,7 @@ void shutdown() noexcept {
 
 static wgpu::AddressMode wgpu_address_mode(GXTexWrapMode mode) {
   switch (mode) {
-    DEFAULT_FATAL("invalid wrap mode {}", static_cast<int>(mode));
+    DEFAULT_FATAL("invalid wrap mode {}", underlying(mode));
   case GX_CLAMP:
     return wgpu::AddressMode::ClampToEdge;
   case GX_REPEAT:
@@ -735,8 +706,6 @@ wgpu::SamplerDescriptor TextureBind::get_descriptor() const noexcept {
         .magFilter = wgpu::FilterMode::Nearest,
         .minFilter = wgpu::FilterMode::Nearest,
         .mipmapFilter = wgpu::MipmapFilterMode::Nearest,
-        .lodMinClamp = 0.f,
-        .lodMaxClamp = 1000.f,
         .maxAnisotropy = 1,
     };
   }
@@ -750,8 +719,6 @@ wgpu::SamplerDescriptor TextureBind::get_descriptor() const noexcept {
       .magFilter = magFilter,
       .minFilter = minFilter,
       .mipmapFilter = mipFilter,
-      .lodMinClamp = 0.f,
-      .lodMaxClamp = 1000.f,
       .maxAnisotropy = wgpu_aniso(texObj.maxAniso),
   };
 }

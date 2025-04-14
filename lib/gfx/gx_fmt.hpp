@@ -1,3 +1,7 @@
+#pragma once
+
+#include "../internal.hpp"
+
 #include <dolphin/gx/GXEnum.h>
 #include <fmt/format.h>
 #include <string>
@@ -25,7 +29,7 @@ inline std::string format_as(const GXTevOp& op) {
   case GX_TEV_COMP_RGB8_EQ:
     return "GX_TEV_COMP_RGB8_EQ";
   default:
-    return fmt::format("GXTevOp({})", static_cast<int>(op));
+    return fmt::format("GXTevOp({})", underlying(op));
   }
 }
 
@@ -64,7 +68,7 @@ inline std::string format_as(const GXTevColorArg& arg) {
   case GX_CC_ZERO:
     return "GX_CC_ZERO";
   default:
-    return fmt::format("GXTevColorArg({})", static_cast<int>(arg));
+    return fmt::format("GXTevColorArg({})", underlying(arg));
   }
 }
 
@@ -87,7 +91,7 @@ inline std::string format_as(const GXTevAlphaArg& arg) {
   case GX_CA_ZERO:
     return "GX_CA_ZERO";
   default:
-    return fmt::format("GXTevAlphaArg({})", static_cast<int>(arg));
+    return fmt::format("GXTevAlphaArg({})", underlying(arg));
   }
 }
 
@@ -118,7 +122,7 @@ inline std::string format_as(const GXTexGenSrc& src) {
   case GX_TG_TEX7:
     return "GX_TG_TEX7";
   default:
-    return fmt::format("GXTexGenSrc({})", static_cast<int>(src));
+    return fmt::format("GXTexGenSrc({})", underlying(src));
   }
 }
 
@@ -133,7 +137,7 @@ inline std::string format_as(const GXTexGenType& type) {
   case GX_TG_BUMP1:
     return "GX_TG_BUMP1";
   default:
-    return fmt::format("GXTexGenType({})", static_cast<int>(type));
+    return fmt::format("GXTexGenType({})", underlying(type));
   }
 }
 
@@ -146,7 +150,7 @@ inline std::string format_as(const GXTevBias& bias) {
   case GX_TB_SUBHALF:
     return "GX_TB_SUBHALF";
   default:
-    return fmt::format("GXTevBias({})", static_cast<int>(bias));
+    return fmt::format("GXTevBias({})", underlying(bias));
   }
 }
 
@@ -161,7 +165,7 @@ inline std::string format_as(const GXTevScale& scale) {
   case GX_CS_DIVIDE_2:
     return "GX_CS_DIVIDE_2";
   default:
-    return fmt::format("GXTevScale({})", static_cast<int>(scale));
+    return fmt::format("GXTevScale({})", underlying(scale));
   }
 }
 
@@ -176,7 +180,7 @@ inline std::string format_as(const GXTevRegID& reg) {
   case GX_TEVREG2:
     return "GX_TEVREG2";
   default:
-    return fmt::format("GXTevRegID({})", static_cast<int>(reg));
+    return fmt::format("GXTevRegID({})", underlying(reg));
   }
 }
 
@@ -231,7 +235,7 @@ inline std::string format_as(const GXTevKColorSel& sel) {
   case GX_TEV_KCSEL_K3_A:
     return "GX_TEV_KCSEL_K3_A";
   default:
-    return fmt::format("GXTevKColorSel({})", static_cast<int>(sel));
+    return fmt::format("GXTevKColorSel({})", underlying(sel));
   }
 }
 
@@ -286,7 +290,7 @@ inline std::string format_as(const GXTevKAlphaSel& sel) {
   case GX_TEV_KASEL_K3_A:
     return "GX_TEV_KASEL_K3_A";
   default:
-    return fmt::format("GXTevKAlphaSel({})", static_cast<int>(sel));
+    return fmt::format("GXTevKAlphaSel({})", underlying(sel));
   }
 }
 
@@ -313,7 +317,7 @@ inline std::string format_as(const GXTexMapID& id) {
   case GX_TEX_DISABLE:
     return "GX_TEX_DISABLE";
   default:
-    return fmt::format("GXTexMapID({})", static_cast<int>(id));
+    return fmt::format("GXTexMapID({})", underlying(id));
   }
 }
 
@@ -340,7 +344,7 @@ inline std::string format_as(const GXChannelID& id) {
   case GX_COLOR_NULL:
     return "GX_COLOR_NULL";
   default:
-    return fmt::format("GXChannelID({})", static_cast<int>(id));
+    return fmt::format("GXChannelID({})", underlying(id));
   }
 }
 
@@ -351,7 +355,7 @@ inline std::string format_as(const GXColorSrc& src) {
   case GX_SRC_VTX:
     return "GX_SRC_VTX";
   default:
-    return fmt::format("GXColorSrc({})", static_cast<int>(src));
+    return fmt::format("GXColorSrc({})", underlying(src));
   }
 }
 
@@ -380,7 +384,7 @@ inline std::string format_as(const GXTexMtx& mtx) {
   case GX_IDENTITY:
     return "GX_IDENTITY";
   default:
-    return fmt::format("GXTexMtx({})", static_cast<int>(mtx));
+    return fmt::format("GXTexMtx({})", underlying(mtx));
   }
 }
 
@@ -429,7 +433,7 @@ inline std::string format_as(const GXPTTexMtx& mtx) {
   case GX_PTIDENTITY:
     return "GX_PTIDENTITY";
   default:
-    return fmt::format("GXPTTexMtx({})", static_cast<int>(mtx));
+    return fmt::format("GXPTTexMtx({})", underlying(mtx));
   }
 }
 
@@ -452,7 +456,7 @@ inline std::string format_as(const GXCompare& comp) {
   case GX_ALWAYS:
     return "GX_ALWAYS";
   default:
-    return fmt::format("GXCompare({})", static_cast<int>(comp));
+    return fmt::format("GXCompare({})", underlying(comp));
   }
 }
 
@@ -467,7 +471,7 @@ inline std::string format_as(const GXAlphaOp& op) {
   case GX_AOP_XNOR:
     return "GX_AOP_XNOR";
   default:
-    return fmt::format("GXAlphaOp({})", static_cast<int>(op));
+    return fmt::format("GXAlphaOp({})", underlying(op));
   }
 }
 
@@ -496,7 +500,7 @@ inline std::string format_as(const GXFogType& type) {
   case GX_FOG_ORTHO_REVEXP2:
     return "GX_FOG_ORTHO_REVEXP2";
   default:
-    return fmt::format("GXFogType({})", static_cast<int>(type));
+    return fmt::format("GXFogType({})", underlying(type));
   }
 }
 
@@ -521,6 +525,158 @@ inline std::string format_as(const GXTexCoordID& id) {
   case GX_TEXCOORD_NULL:
     return "GX_TEXCOORD_NULL";
   default:
-    return fmt::format("GXTexCoordID({})", static_cast<int>(id));
+    return fmt::format("GXTexCoordID({})", underlying(id));
+  }
+}
+
+inline std::string format_as(const GXPrimitive& prim) {
+  switch (prim) {
+  case GX_QUADS:
+    return "GX_QUADS";
+  case GX_TRIANGLES:
+    return "GX_TRIANGLES";
+  case GX_TRIANGLESTRIP:
+    return "GX_TRIANGLESTRIP";
+  case GX_TRIANGLEFAN:
+    return "GX_TRIANGLEFAN";
+  case GX_LINES:
+    return "GX_LINES";
+  case GX_LINESTRIP:
+    return "GX_LINESTRIP";
+  case GX_POINTS:
+    return "GX_POINTS";
+  default:
+    return fmt::format("GXPrimitive({})", underlying(prim));
+  }
+}
+
+inline std::string format_as(const GXAttr& attr) {
+  switch (attr) {
+  case GX_VA_PNMTXIDX:
+    return "GX_VA_PNMTXIDX";
+  case GX_VA_TEX0MTXIDX:
+    return "GX_VA_TEX0MTXIDX";
+  case GX_VA_TEX1MTXIDX:
+    return "GX_VA_TEX1MTXIDX";
+  case GX_VA_TEX2MTXIDX:
+    return "GX_VA_TEX2MTXIDX";
+  case GX_VA_TEX3MTXIDX:
+    return "GX_VA_TEX3MTXIDX";
+  case GX_VA_TEX4MTXIDX:
+    return "GX_VA_TEX4MTXIDX";
+  case GX_VA_TEX5MTXIDX:
+    return "GX_VA_TEX5MTXIDX";
+  case GX_VA_TEX6MTXIDX:
+    return "GX_VA_TEX6MTXIDX";
+  case GX_VA_TEX7MTXIDX:
+    return "GX_VA_TEX7MTXIDX";
+  case GX_VA_POS:
+    return "GX_VA_POS";
+  case GX_VA_NRM:
+    return "GX_VA_NRM";
+  case GX_VA_CLR0:
+    return "GX_VA_CLR0";
+  case GX_VA_CLR1:
+    return "GX_VA_CLR1";
+  case GX_VA_TEX0:
+    return "GX_VA_TEX0";
+  case GX_VA_TEX1:
+    return "GX_VA_TEX1";
+  case GX_VA_TEX2:
+    return "GX_VA_TEX2";
+  case GX_VA_TEX3:
+    return "GX_VA_TEX3";
+  case GX_VA_TEX4:
+    return "GX_VA_TEX4";
+  case GX_VA_TEX5:
+    return "GX_VA_TEX5";
+  case GX_VA_TEX6:
+    return "GX_VA_TEX6";
+  case GX_VA_TEX7:
+    return "GX_VA_TEX7";
+  case GX_POS_MTX_ARRAY:
+    return "GX_POS_MTX_ARRAY";
+  case GX_NRM_MTX_ARRAY:
+    return "GX_NRM_MTX_ARRAY";
+  case GX_TEX_MTX_ARRAY:
+    return "GX_TEX_MTX_ARRAY";
+  case GX_LIGHT_ARRAY:
+    return "GX_LIGHT_ARRAY";
+  case GX_VA_NBT:
+    return "GX_VA_NBT";
+  case GX_VA_NULL:
+    return "GX_VA_NULL";
+  default:
+    return fmt::format("GXAttr({})", underlying(attr));
+  }
+}
+
+inline std::string format_as(const GXCompCnt& cnt) {
+  switch (cnt) {
+  case GX_POS_XY:
+    return "GX_POS_XY|GX_NRM_XYZ|GX_CLR_RGB|GX_TEX_S";
+  case GX_POS_XYZ:
+    return "GX_POS_XYZ|GX_NRM_NBT|GX_CLR_RGBA|GX_TEX_ST";
+  case GX_NRM_NBT3:
+    return "GX_NRM_NBT3";
+  default:
+    return fmt::format("GXCompCnt({})", underlying(cnt));
+  }
+}
+
+inline std::string format_as(const GXCompType& type) {
+  switch (type) {
+  case GX_U8:
+    return "GX_U8|GX_RGB565";
+  case GX_S8:
+    return "GX_S8|GX_RGB8";
+  case GX_U16:
+    return "GX_U16|GX_RGBX8";
+  case GX_S16:
+    return "GX_S16|GX_RGBA4";
+  case GX_F32:
+    return "GX_F32|GX_RGBA6";
+  case GX_RGBA8:
+    return "GX_RGBA8";
+  default:
+    return fmt::format("GXCompType({})", underlying(type));
+  }
+}
+
+inline std::string format_as(const GXAttrType& type) {
+  switch (type) {
+  case GX_NONE:
+    return "GX_NONE";
+  case GX_DIRECT:
+    return "GX_DIRECT";
+  case GX_INDEX8:
+    return "GX_INDEX8";
+  case GX_INDEX16:
+    return "GX_INDEX16";
+  default:
+    return fmt::format("GXAttrType({})", underlying(type));
+  }
+}
+
+inline std::string format_as(const GXVtxFmt& fmt) {
+  switch (fmt) {
+  case GX_VTXFMT0:
+    return "GX_VTXFMT0";
+  case GX_VTXFMT1:
+    return "GX_VTXFMT1";
+  case GX_VTXFMT2:
+    return "GX_VTXFMT2";
+  case GX_VTXFMT3:
+    return "GX_VTXFMT3";
+  case GX_VTXFMT4:
+    return "GX_VTXFMT4";
+  case GX_VTXFMT5:
+    return "GX_VTXFMT5";
+  case GX_VTXFMT6:
+    return "GX_VTXFMT6";
+  case GX_VTXFMT7:
+    return "GX_VTXFMT7";
+  default:
+    return fmt::format("GXVtxFmt({})", underlying(fmt));
   }
 }

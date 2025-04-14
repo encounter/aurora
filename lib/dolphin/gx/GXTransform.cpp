@@ -4,15 +4,8 @@ extern "C" {
 
 void GXSetProjection(const void* mtx_, GXProjectionType type) {
   const auto& mtx = *reinterpret_cast<const aurora::Mat4x4<float>*>(mtx_);
-  g_gxState.origProj = mtx;
   g_gxState.projType = type;
-  update_gx_state(g_gxState.proj,
-#ifdef AURORA_NATIVE_MATRIX
-                  mtx
-#else
-                  mtx.transpose()
-#endif
-  );
+  update_gx_state(g_gxState.proj, mtx);
 }
 
 // TODO GXSetProjectionv
@@ -20,13 +13,8 @@ void GXSetProjection(const void* mtx_, GXProjectionType type) {
 void GXLoadPosMtxImm(const void* mtx_, u32 id) {
   CHECK(id >= GX_PNMTX0 && id <= GX_PNMTX9, "invalid pn mtx {}", static_cast<int>(id));
   auto& state = g_gxState.pnMtx[id / 3];
-#ifdef AURORA_NATIVE_MATRIX
-  const auto& mtx = *reinterpret_cast<const aurora::Mat4x4<float>*>(mtx_);
+  const auto& mtx = *reinterpret_cast<const aurora::Mat3x4<float>*>(mtx_);
   update_gx_state(state.pos, mtx);
-#else
-  const auto* mtx = reinterpret_cast<const aurora::Mat3x4<float>*>(mtx_);
-  update_gx_state(state.pos, mtx->toTransposed4x4());
-#endif
 }
 
 // TODO GXLoadPosMtxIndx
@@ -34,56 +22,37 @@ void GXLoadPosMtxImm(const void* mtx_, u32 id) {
 void GXLoadNrmMtxImm(const void* mtx_, u32 id) {
   CHECK(id >= GX_PNMTX0 && id <= GX_PNMTX9, "invalid pn mtx {}", static_cast<int>(id));
   auto& state = g_gxState.pnMtx[id / 3];
-#ifdef AURORA_NATIVE_MATRIX
-  const auto& mtx = *reinterpret_cast<const aurora::Mat4x4<float>*>(mtx_);
+  const auto& mtx = *reinterpret_cast<const aurora::Mat3x4<float>*>(mtx_);
   update_gx_state(state.nrm, mtx);
-#else
-  const auto* mtx = reinterpret_cast<const aurora::Mat3x4<float>*>(mtx_);
-  update_gx_state(state.nrm, mtx->toTransposed4x4());
-#endif
 }
 
 // TODO GXLoadNrmMtxImm3x3
 // TODO GXLoadNrmMtxIndx3x3
 
 void GXSetCurrentMtx(u32 id) {
-  CHECK(id >= GX_PNMTX0 && id <= GX_PNMTX9, "invalid pn mtx {}", static_cast<int>(id));
+  CHECK(id >= GX_PNMTX0 && id <= GX_PNMTX9, "invalid pn mtx {}", id);
   update_gx_state(g_gxState.currentPnMtx, id / 3);
 }
 
 void GXLoadTexMtxImm(const void* mtx_, u32 id, GXTexMtxType type) {
   CHECK((id >= GX_TEXMTX0 && id <= GX_IDENTITY) || (id >= GX_PTTEXMTX0 && id <= GX_PTIDENTITY), "invalid tex mtx {}",
-        static_cast<int>(id));
+        id);
   if (id >= GX_PTTEXMTX0) {
-    CHECK(type == GX_MTX3x4, "invalid pt mtx type {}", static_cast<int>(type));
+    CHECK(type == GX_MTX3x4, "invalid pt mtx type {}", underlying(type));
     const auto idx = (id - GX_PTTEXMTX0) / 3;
-#ifdef AURORA_NATIVE_MATRIX
-    const auto& mtx = *reinterpret_cast<const aurora::Mat4x4<float>*>(mtx_);
-    update_gx_state<aurora::Mat4x4<float>>(g_gxState.ptTexMtxs[idx], mtx);
-#else
     const auto& mtx = *reinterpret_cast<const aurora::Mat3x4<float>*>(mtx_);
-    update_gx_state<aurora::Mat4x4<float>>(g_gxState.ptTexMtxs[idx], mtx.toTransposed4x4());
-#endif
+    update_gx_state(g_gxState.ptTexMtxs[idx], mtx);
   } else {
     const auto idx = (id - GX_TEXMTX0) / 3;
     switch (type) {
     case GX_MTX3x4: {
-#ifdef AURORA_NATIVE_MATRIX
-      const auto& mtx = *reinterpret_cast<const aurora::Mat4x4<float>*>(mtx_);
-      update_gx_state<aurora::gfx::gx::TexMtxVariant>(g_gxState.texMtxs[idx], mtx);
-#else
       const auto& mtx = *reinterpret_cast<const aurora::Mat3x4<float>*>(mtx_);
-      update_gx_state<aurora::gfx::gx::TexMtxVariant>(g_gxState.texMtxs[idx], mtx.toTransposed4x4());
-#endif
+      update_gx_state<aurora::gfx::gx::TexMtxVariant>(g_gxState.texMtxs[idx], mtx);
       break;
     }
     case GX_MTX2x4: {
-      const auto& mtx = *reinterpret_cast<const aurora::Mat4x2<float>*>(mtx_);
-#ifdef AURORA_NATIVE_MATRIX
+      const auto& mtx = *reinterpret_cast<const aurora::Mat2x4<float>*>(mtx_);
       update_gx_state<aurora::gfx::gx::TexMtxVariant>(g_gxState.texMtxs[idx], mtx);
-#else
-      update_gx_state<aurora::gfx::gx::TexMtxVariant>(g_gxState.texMtxs[idx], mtx.transpose());
-#endif
       break;
     }
     }

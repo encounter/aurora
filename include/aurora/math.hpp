@@ -35,9 +35,6 @@ struct Vec2 {
   constexpr Vec2() = default;
   constexpr Vec2(T x, T y) : x(x), y(y) {}
   AURORA_VEC2_EXTRA
-#ifdef METAFORCE
-  constexpr Vec2(const zeus::CVector2f& vec) : x(vec.x()), y(vec.y()) {}
-#endif
 
   bool operator==(const Vec2& rhs) const { return x == rhs.x && y == rhs.y; }
   bool operator!=(const Vec2& rhs) const { return !(*this == rhs); }
@@ -51,10 +48,6 @@ struct Vec3 {
   constexpr Vec3() = default;
   constexpr Vec3(T x, T y, T z) : x(x), y(y), z(z) {}
   AURORA_VEC3_EXTRA
-#ifdef METAFORCE
-  constexpr Vec3(const zeus::CVector3f& vec) : x(vec.x()), y(vec.y()), z(vec.z()) {}
-  operator zeus::CVector3f() const { return {x, y, z}; }
-#endif
 
   bool operator==(const Vec3& rhs) const { return x == rhs.x && y == rhs.y && z == rhs.z; }
   bool operator!=(const Vec3& rhs) const { return !(*this == rhs); }
@@ -77,10 +70,6 @@ struct Vec4 {
   // For Vec3 -> Vec4
   constexpr Vec4(Vec3<T> v, T w) : m{v.x, v.y, v.z, w} {}
   AURORA_VEC4_EXTRA
-#ifdef METAFORCE
-  constexpr Vec4(const zeus::CVector4f& vec) : x(vec.x()), y(vec.y()), z(vec.z()), w(vec.w()) {}
-  constexpr Vec4(const zeus::CColor& color) : x(color.r()), y(color.g()), z(color.b()), w(color.a()) {}
-#endif
 
   inline Vec4& operator=(const Vec4& other) {
     memcpy(&m, &other.m, sizeof(Vt));
@@ -119,7 +108,7 @@ struct Vec4 {
   bool operator!=(const Vec4& rhs) const { return !(*this == rhs); }
 };
 template <typename T>
-[[nodiscard]] inline Vec4<T> operator+(const Vec4<T>& a, const Vec4<T>& b) {
+[[nodiscard]] Vec4<T> operator+(const Vec4<T>& a, const Vec4<T>& b) {
 #ifdef USE_GCC_VECTOR_EXTENSIONS
   return a.m + b.m;
 #else
@@ -127,7 +116,7 @@ template <typename T>
 #endif
 }
 template <typename T>
-[[nodiscard]] inline Vec4<T> operator*(const Vec4<T>& a, const Vec4<T>& b) {
+[[nodiscard]] Vec4<T> operator*(const Vec4<T>& a, const Vec4<T>& b) {
 #ifdef USE_GCC_VECTOR_EXTENSIONS
   return a.m * b.m;
 #else
@@ -170,6 +159,18 @@ struct Mat4x2 {
   bool operator!=(const Mat4x2& rhs) const { return !(*this == rhs); }
 };
 template <typename T>
+struct Mat2x4 {
+  Vec4<T> m0{};
+  Vec4<T> m1{};
+
+  constexpr Mat2x4() = default;
+  constexpr Mat2x4(const Vec4<T>& m0, const Vec4<T>& m1, const Vec4<T>& m2) : m0(m0), m1(m1) {}
+
+  bool operator==(const Mat2x4& rhs) const { return m0 == rhs.m0 && m1 == rhs.m1; }
+  bool operator!=(const Mat2x4& rhs) const { return !(*this == rhs); }
+};
+static_assert(sizeof(Mat2x4<float>) == 32);
+template <typename T>
 struct Mat4x4;
 template <typename T>
 struct Mat3x4 {
@@ -180,10 +181,13 @@ struct Mat3x4 {
   constexpr Mat3x4() = default;
   constexpr Mat3x4(const Vec4<T>& m0, const Vec4<T>& m1, const Vec4<T>& m2) : m0(m0), m1(m1), m2(m2) {}
 
-  inline Mat4x4<T> to4x4() const;
-  inline Mat4x4<T> toTransposed4x4() const;
+  [[nodiscard]] Mat4x4<T> to4x4() const;
+  [[nodiscard]] Mat4x4<T> toTransposed4x4() const;
+
+  bool operator==(const Mat3x4& rhs) const { return m0 == rhs.m0 && m1 == rhs.m1 && m2 == rhs.m2; }
+  bool operator!=(const Mat3x4& rhs) const { return !(*this == rhs); }
 };
-static_assert(sizeof(Mat3x4<float>) == sizeof(float[3][4]));
+static_assert(sizeof(Mat3x4<float>) == 48);
 template <typename T>
 struct Mat4x4 {
   Vec4<T> m0{};
@@ -195,10 +199,6 @@ struct Mat4x4 {
   constexpr Mat4x4(const Vec4<T>& m0, const Vec4<T>& m1, const Vec4<T>& m2, const Vec4<T>& m3)
   : m0(m0), m1(m1), m2(m2), m3(m3) {}
   AURORA_MAT4X4_EXTRA
-#ifdef METAFORCE
-  constexpr Mat4x4(const zeus::CMatrix4f& m) : m0(m[0]), m1(m[1]), m2(m[2]), m3(m[3]) {}
-  constexpr Mat4x4(const zeus::CTransform& m) : Mat4x4(m.toMatrix4f()) {}
-#endif
 
   [[nodiscard]] Mat4x4 transpose() const {
     return {
@@ -208,23 +208,17 @@ struct Mat4x4 {
         {m0[3], m1[3], m2[3], m3[3]},
     };
   }
-  inline Mat4x4& operator=(const Mat4x4& other) {
-    m0 = other.m0;
-    m1 = other.m1;
-    m2 = other.m2;
-    m3 = other.m3;
-    return *this;
-  }
+  Mat4x4& operator=(const Mat4x4& other) = default;
 
-  inline Vec4<T>& operator[](size_t i) { return *(&m0 + i); }
-  inline const Vec4<T>& operator[](size_t i) const { return *(&m0 + i); }
+  Vec4<T>& operator[](size_t i) { return *(&m0 + i); }
+  const Vec4<T>& operator[](size_t i) const { return *(&m0 + i); }
 
   bool operator==(const Mat4x4& rhs) const { return m0 == rhs.m0 && m1 == rhs.m1 && m2 == rhs.m2 && m3 == rhs.m3; }
   bool operator!=(const Mat4x4& rhs) const { return !(*this == rhs); }
 };
-static_assert(sizeof(Mat4x4<float>) == sizeof(float[4][4]));
+static_assert(sizeof(Mat4x4<float>) == 64);
 template <typename T>
-[[nodiscard]] inline Mat4x4<T> operator*(const Mat4x4<T>& a, const Mat4x4<T>& b) {
+[[nodiscard]] Mat4x4<T> operator*(const Mat4x4<T>& a, const Mat4x4<T>& b) {
   Mat4x4<T> out;
   for (size_t i = 0; i < 4; ++i) {
     *(&out.m0 + i) = a.m0 * b[i].template shuffle<0, 0, 0, 0>() + a.m1 * b[i].template shuffle<1, 1, 1, 1>() +
@@ -233,28 +227,27 @@ template <typename T>
   return out;
 }
 template <typename T>
-[[nodiscard]] inline Mat4x4<T> Mat3x4<T>::to4x4() const {
+[[nodiscard]] Mat4x4<T> Mat3x4<T>::to4x4() const {
   return {
-      {m0.m[0], m0.m[1], m0.m[2], 0.f},
-      {m1.m[0], m1.m[1], m1.m[2], 0.f},
-      {m2.m[0], m2.m[1], m2.m[2], 0.f},
-      {m0.m[3], m1.m[3], m2.m[3], 1.f},
+      {m0[0], m0[1], m0[2], 0.f},
+      {m1[0], m1[1], m1[2], 0.f},
+      {m2[0], m2[1], m2[2], 0.f},
+      {m0[3], m1[3], m2[3], 1.f},
   };
 }
 template <typename T>
-[[nodiscard]] inline Mat4x4<T> Mat3x4<T>::toTransposed4x4() const {
+[[nodiscard]] Mat4x4<T> Mat3x4<T>::toTransposed4x4() const {
   return Mat4x4<T>{
-      m0,
-      m1,
-      m2,
-      {0.f, 0.f, 0.f, 1.f},
-  }
-      .transpose();
+      {m0[0], m1[0], m2[0], 0.f},
+      {m0[1], m1[1], m2[1], 0.f},
+      {m0[2], m1[2], m2[2], 0.f},
+      {m0[3], m1[3], m2[3], 1.f},
+  };
 }
-constexpr Mat4x4<float> Mat4x4_Identity{
-    Vec4<float>{1.f, 0.f, 0.f, 0.f},
-    Vec4<float>{0.f, 1.f, 0.f, 0.f},
-    Vec4<float>{0.f, 0.f, 1.f, 0.f},
-    Vec4<float>{0.f, 0.f, 0.f, 1.f},
+constexpr Mat4x4 Mat4x4_Identity{
+    Vec4{1.f, 0.f, 0.f, 0.f},
+    Vec4{0.f, 1.f, 0.f, 0.f},
+    Vec4{0.f, 0.f, 1.f, 0.f},
+    Vec4{0.f, 0.f, 0.f, 1.f},
 };
 } // namespace aurora

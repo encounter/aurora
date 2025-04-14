@@ -46,6 +46,11 @@ constexpr float GX_LARGE_NUMBER = -1048576.0f;
 #endif
 
 namespace aurora::gfx::gx {
+constexpr bool EnableNormalVisualization = false;
+constexpr bool EnableDebugPrints = false;
+constexpr bool UsePerPixelLighting = true;
+constexpr bool UseReversedZ = true;
+
 constexpr u32 MaxTextures = GX_MAX_TEXMAP;
 constexpr u32 MaxTluts = 20;
 constexpr u32 MaxTevStages = GX_MAX_TEVSTAGE;
@@ -144,8 +149,7 @@ struct ColorChannelState {
   Vec4<float> ambColor;
   GX::LightMask lightMask;
 };
-// Mat4x4 used instead of Mat4x3 for padding purposes
-using TexMtxVariant = std::variant<std::monostate, Mat4x2<float>, Mat4x4<float>>;
+using TexMtxVariant = std::variant<std::monostate, Mat2x4<float>, Mat3x4<float>>;
 struct TcgConfig {
   GXTexGenType type = GX_TG_MTX2x4;
   GXTexGenSrc src = GX_MAX_TEXGENSRC;
@@ -213,10 +217,10 @@ struct VtxFmt {
   std::array<VtxAttrFmt, MaxVtxAttr> attrs;
 };
 struct PnMtx {
-  Mat4x4<float> pos;
-  Mat4x4<float> nrm;
+  Mat3x4<float> pos;
+  Mat3x4<float> nrm;
 };
-static_assert(sizeof(PnMtx) == sizeof(Mat4x4<float>) * 2);
+static_assert(sizeof(PnMtx) == sizeof(Mat3x4<float>) * 2);
 struct Light {
   Vec4<float> pos{0.f, 0.f, 0.f};
   Vec4<float> dir{0.f, 0.f, 0.f};
@@ -230,6 +234,14 @@ struct Light {
   bool operator!=(const Light& rhs) const { return !(*this == rhs); }
 };
 static_assert(sizeof(Light) == 80);
+struct Fog {
+  Vec4<float> color;
+  float a = 0.f;
+  float b = 0.5f;
+  float c = 0.f;
+  float pad = FLT_MAX;
+};
+static_assert(sizeof(Fog) == 32);
 struct AttrArray {
   const void* data;
   u32 size;
@@ -245,7 +257,6 @@ struct GXState {
   std::array<PnMtx, MaxPnMtx> pnMtx;
   u32 currentPnMtx;
   Mat4x4<float> proj;
-  Mat4x4<float> origProj;    // for GXGetProjectionv
   GXProjectionType projType; // for GXGetProjectionv
   FogState fog;
   GXCullMode cullMode = GX_CULL_BACK;
@@ -266,7 +277,7 @@ struct GXState {
   std::array<TextureBind, MaxTextures> textures;
   std::array<GXTlutObj_, MaxTluts> tluts;
   std::array<TexMtxVariant, MaxTexMtx> texMtxs;
-  std::array<Mat4x4<float>, MaxPTTexMtx> ptTexMtxs;
+  std::array<Mat3x4<float>, MaxPTTexMtx> ptTexMtxs;
   std::array<TcgConfig, MaxTexCoord> tcgs;
   std::array<GXAttrType, MaxVtxAttr> vtxDesc;
   std::array<VtxFmt, MaxVtxFmt> vtxFmts;
@@ -345,11 +356,18 @@ struct TextureConfig {
   bool operator==(const TextureConfig& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
 };
 static_assert(std::has_unique_object_representations_v<TextureConfig>);
+struct StorageConfig {
+  GXAttr attr = GX_VA_NULL;
+  GXCompCnt cnt = static_cast<GXCompCnt>(0xFF);
+  GXCompType compType = static_cast<GXCompType>(0xFF);
+  u8 frac = 0;
+  std::array<u8, 3> pad{};
+};
 struct ShaderConfig {
   GXFogType fogType;
   std::array<GXAttrType, MaxVtxAttr> vtxAttrs;
   // Mapping for indexed attributes -> storage buffer
-  std::array<GXAttr, MaxVtxAttr> attrMapping;
+  std::array<StorageConfig, MaxVtxAttr> attrMapping;
   std::array<TevSwap, MaxTevSwap> tevSwapTable;
   std::array<TevStage, MaxTevStages> tevStages;
   u32 tevStageCount = 0;
@@ -363,7 +381,7 @@ struct ShaderConfig {
 };
 static_assert(std::has_unique_object_representations_v<ShaderConfig>);
 
-constexpr u32 GXPipelineConfigVersion = 4;
+constexpr u32 GXPipelineConfigVersion = 5;
 struct PipelineConfig {
   u32 version = GXPipelineConfigVersion;
   ShaderConfig shaderConfig;
@@ -405,7 +423,7 @@ struct ShaderInfo {
 struct BindGroupRanges {
   std::array<Range, GX_VA_MAX_ATTR> vaRanges{};
 };
-void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive) noexcept;
+void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept;
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderInfo& info,
                                     ArrayRef<wgpu::VertexBufferLayout> vtxBuffers, wgpu::ShaderModule shader,
                                     const char* label) noexcept;

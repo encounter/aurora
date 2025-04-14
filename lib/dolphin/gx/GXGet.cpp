@@ -20,7 +20,7 @@ void GXGetVtxAttrFmt(GXVtxFmt idx, GXAttr attr, GXCompCnt* compCnt, GXCompType* 
 // TODO GXGetViewportv
 
 void GXGetProjectionv(f32* p) {
-  const auto& mtx = g_gxState.origProj;
+  const auto& mtx = g_gxState.proj;
   p[0] = static_cast<float>(g_gxState.projType);
   p[1] = mtx.m0[0];
   p[3] = mtx.m1[1];
