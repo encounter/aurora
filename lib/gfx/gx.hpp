@@ -14,6 +14,7 @@
 #include <bitset>
 #include <memory>
 #include <array>
+#include <cfloat>
 
 #define M_PIF 3.14159265358979323846f
 
