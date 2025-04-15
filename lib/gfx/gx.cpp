@@ -180,8 +180,8 @@ static inline wgpu::PrimitiveState to_primitive_state(GXPrimitive gx_prim, GXCul
   }
   return {
       .topology = primitive,
-      .stripIndexFormat = gx_prim == GX_TRIANGLESTRIP || gx_prim == GX_LINESTRIP ? wgpu::IndexFormat::Uint16
-                                                                                 : wgpu::IndexFormat::Undefined,
+      .stripIndexFormat = primitive == wgpu::PrimitiveTopology::TriangleStrip ? wgpu::IndexFormat::Uint16
+                                                                              : wgpu::IndexFormat::Undefined,
       .frontFace = wgpu::FrontFace::CW,
       .cullMode = cullMode,
   };
@@ -328,19 +328,7 @@ Range build_uniform(const ShaderInfo& info) noexcept {
     }
     buf.append(g_gxState.colorRegs[i]);
   }
-  bool lightingEnabled = false;
-  for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
-    if (!info.sampledColorChannels.test(i)) {
-      continue;
-    }
-    const auto& ccc = g_gxState.colorChannelConfig[i * 2];
-    const auto& ccca = g_gxState.colorChannelConfig[i * 2 + 1];
-    if (ccc.lightingEnabled || ccca.lightingEnabled) {
-      lightingEnabled = true;
-      break;
-    }
-  }
-  if (lightingEnabled) {
+  if (info.lightingEnabled) {
     // Lights
     static_assert(sizeof(g_gxState.lights) == 80 * GX::MaxLights);
     buf.append(g_gxState.lights);
@@ -380,12 +368,11 @@ Range build_uniform(const ShaderInfo& info) noexcept {
     if (!info.usesTexMtx.test(i)) {
       continue;
     }
-    const auto& state = g_gxState;
     switch (info.texMtxTypes[i]) {
       DEFAULT_FATAL("unhandled tex mtx type {}", underlying(info.texMtxTypes[i]));
     case GX_TG_MTX2x4:
-      if (std::holds_alternative<Mat2x4<float>>(state.texMtxs[i])) {
-        buf.append(std::get<Mat2x4<float>>(state.texMtxs[i]));
+      if (std::holds_alternative<Mat2x4<float>>(g_gxState.texMtxs[i])) {
+        buf.append(std::get<Mat2x4<float>>(g_gxState.texMtxs[i]));
       } else
         UNLIKELY FATAL("expected 2x4 mtx in idx {}", i);
       break;

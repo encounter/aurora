@@ -581,19 +581,18 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
     }
   }
   info.uniformSize += info.loadsTevReg.count() * sizeof(Vec4<float>);
-  bool lightingEnabled = false;
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
     if (info.sampledColorChannels.test(i)) {
       const auto& cc = config.colorChannels[i * 2];
       const auto& cca = config.colorChannels[i * 2 + 1];
       if (cc.lightingEnabled || cca.lightingEnabled) {
-        lightingEnabled = true;
+        info.lightingEnabled = true;
       }
     }
   }
-  if (lightingEnabled) {
+  if (info.lightingEnabled) {
     // Lights + light state for all channels
-    info.uniformSize += sizeof(Vec4<float>) + sizeof(Light) * GX::MaxLights;
+    info.uniformSize += 16 + sizeof(Light) * GX::MaxLights;
   }
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
     if (info.sampledColorChannels.test(i)) {

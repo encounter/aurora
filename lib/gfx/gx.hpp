@@ -420,6 +420,7 @@ struct ShaderInfo {
   std::array<GXTexGenType, MaxTexMtx> texMtxTypes{};
   u32 uniformSize = 0;
   bool usesFog : 1 = false;
+  bool lightingEnabled : 1 = false;
 };
 struct BindGroupRanges {
   std::array<Range, GX_VA_MAX_ATTR> vaRanges{};
