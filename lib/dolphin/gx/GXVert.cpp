@@ -348,6 +348,16 @@ void GXColor1u16(u16 clr) {
   });
 }
 
+void GXColor1x16(u16 index) {
+  sStreamState->check_indexed(GX_VA_CLR0, GX_INDEX16);
+  sStreamState->append<u16>(index);
+}
+
+void GXColor1x8(u8 index) {
+  sStreamState->check_indexed(GX_VA_CLR0, GX_INDEX8);
+  sStreamState->append<u16>(index);
+}
+
 void GXTexCoord2f32(f32 s, f32 t) {
   sStreamState->check_direct(GX_VA_TEX0, GX_TEX_ST, GX_F32);
   sStreamState->append(aurora::Vec2{s, t});
