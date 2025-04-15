@@ -264,22 +264,6 @@ void PADControlAllMotors(const uint32_t* commands) {
   }
 }
 
-uint32_t SIProbe(int32_t chan) {
-  auto* const controller = aurora::input::get_controller_for_player(chan);
-  if (controller == nullptr) {
-    return SI_ERROR_NO_RESPONSE;
-  }
-
-  if (controller->m_isGameCube) {
-    auto level = SDL_GetJoystickPowerInfo(SDL_GetGamepadJoystick(controller->m_controller), nullptr);
-    if (level == SDL_POWERSTATE_UNKNOWN) {
-      return SI_GC_WAVEBIRD;
-    }
-  }
-
-  return SI_GC_CONTROLLER;
-}
-
 struct PADCLampRegion {
   uint8_t minTrigger;
   uint8_t maxTrigger;
