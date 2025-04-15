@@ -391,6 +391,20 @@ bool initialize(AuroraBackend auroraBackend) {
                                                                             : supportedLimits.maxTextureDimension2D,
         .maxTextureDimension3D = supportedLimits.maxTextureDimension3D == 0 ? WGPU_LIMIT_U32_UNDEFINED
                                                                             : supportedLimits.maxTextureDimension3D,
+        .maxTextureArrayLayers = supportedLimits.maxTextureArrayLayers == 0 ? WGPU_LIMIT_U32_UNDEFINED
+                                                                            : supportedLimits.maxTextureArrayLayers,
+        .maxBindGroupsPlusVertexBuffers = supportedLimits.maxBindGroupsPlusVertexBuffers == 0
+                                              ? WGPU_LIMIT_U32_UNDEFINED
+                                              : supportedLimits.maxBindGroupsPlusVertexBuffers,
+        .maxBindingsPerBindGroup = supportedLimits.maxBindGroupsPlusVertexBuffers == 0
+                                       ? WGPU_LIMIT_U32_UNDEFINED
+                                       : supportedLimits.maxBindGroupsPlusVertexBuffers,
+        .maxDynamicUniformBuffersPerPipelineLayout = supportedLimits.maxDynamicUniformBuffersPerPipelineLayout == 0
+                                                         ? WGPU_LIMIT_U32_UNDEFINED
+                                                         : supportedLimits.maxDynamicUniformBuffersPerPipelineLayout,
+        .maxDynamicStorageBuffersPerPipelineLayout = supportedLimits.maxDynamicStorageBuffersPerPipelineLayout == 0
+                                                         ? WGPU_LIMIT_U32_UNDEFINED
+                                                         : supportedLimits.maxDynamicStorageBuffersPerPipelineLayout,
         .minUniformBufferOffsetAlignment = supportedLimits.minUniformBufferOffsetAlignment == 0
                                                ? WGPU_LIMIT_U32_UNDEFINED
                                                : supportedLimits.minUniformBufferOffsetAlignment,

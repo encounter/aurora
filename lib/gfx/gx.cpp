@@ -180,6 +180,8 @@ static inline wgpu::PrimitiveState to_primitive_state(GXPrimitive gx_prim, GXCul
   }
   return {
       .topology = primitive,
+      .stripIndexFormat = gx_prim == GX_TRIANGLESTRIP || gx_prim == GX_LINESTRIP ? wgpu::IndexFormat::Uint16
+                                                                                 : wgpu::IndexFormat::Undefined,
       .frontFace = wgpu::FrontFace::CW,
       .cullMode = cullMode,
   };
@@ -251,11 +253,11 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
       continue;
     }
     // Map attribute to its own storage
-    config.shaderConfig.attrMapping[i] = StorageConfig {
-      .attr = static_cast<GXAttr>(i),
-      .cnt = vtxFmt.attrs[i].cnt,
-      .compType = vtxFmt.attrs[i].type,
-      .frac = vtxFmt.attrs[i].frac,
+    config.shaderConfig.attrMapping[i] = StorageConfig{
+        .attr = static_cast<GXAttr>(i),
+        .cnt = vtxFmt.attrs[i].cnt,
+        .compType = vtxFmt.attrs[i].type,
+        .frac = vtxFmt.attrs[i].frac,
     };
   }
   config.shaderConfig.tevSwapTable = g_gxState.tevSwapTable;
