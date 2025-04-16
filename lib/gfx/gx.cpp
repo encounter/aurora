@@ -341,16 +341,16 @@ Range build_uniform(const ShaderInfo& info) noexcept {
     if (!info.sampledColorChannels.test(i)) {
       continue;
     }
-    const auto& ccc = g_gxState.colorChannelConfig[i * 2];
-    const auto& ccs = g_gxState.colorChannelState[i * 2];
+    const auto& ccc = g_gxState.colorChannelConfig[i];
+    const auto& ccs = g_gxState.colorChannelState[i];
     if (ccc.lightingEnabled && ccc.ambSrc == GX_SRC_REG) {
       buf.append(ccs.ambColor);
     }
     if (ccc.matSrc == GX_SRC_REG) {
       buf.append(ccs.matColor);
     }
-    const auto& ccca = g_gxState.colorChannelConfig[i * 2 + 1];
-    const auto& ccsa = g_gxState.colorChannelState[i * 2 + 1];
+    const auto& ccca = g_gxState.colorChannelConfig[i + GX_ALPHA0];
+    const auto& ccsa = g_gxState.colorChannelState[i + GX_ALPHA0];
     if (ccca.lightingEnabled && ccca.ambSrc == GX_SRC_REG) {
       buf.append(ccsa.ambColor);
     }

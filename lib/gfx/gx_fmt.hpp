@@ -202,6 +202,14 @@ inline std::string format_as(const GXTevKColorSel& sel) {
     return "GX_TEV_KCSEL_2_8";
   case GX_TEV_KCSEL_1_8:
     return "GX_TEV_KCSEL_1_8";
+  case GX_TEV_KCSEL_K0:
+    return "GX_TEV_KCSEL_K0";
+  case GX_TEV_KCSEL_K1:
+    return "GX_TEV_KCSEL_K1";
+  case GX_TEV_KCSEL_K2:
+    return "GX_TEV_KCSEL_K2";
+  case GX_TEV_KCSEL_K3:
+    return "GX_TEV_KCSEL_K3";
   case GX_TEV_KCSEL_K0_R:
     return "GX_TEV_KCSEL_K0_R";
   case GX_TEV_KCSEL_K1_R:

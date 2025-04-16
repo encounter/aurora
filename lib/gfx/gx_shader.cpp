@@ -583,8 +583,8 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   info.uniformSize += info.loadsTevReg.count() * sizeof(Vec4<float>);
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
     if (info.sampledColorChannels.test(i)) {
-      const auto& cc = config.colorChannels[i * 2];
-      const auto& cca = config.colorChannels[i * 2 + 1];
+      const auto& cc = config.colorChannels[i];
+      const auto& cca = config.colorChannels[i + GX_ALPHA0];
       if (cc.lightingEnabled || cca.lightingEnabled) {
         info.lightingEnabled = true;
       }
@@ -596,14 +596,14 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   }
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
     if (info.sampledColorChannels.test(i)) {
-      const auto& cc = config.colorChannels[i * 2];
+      const auto& cc = config.colorChannels[i];
       if (cc.lightingEnabled && cc.ambSrc == GX_SRC_REG) {
         info.uniformSize += sizeof(Vec4<float>);
       }
       if (cc.matSrc == GX_SRC_REG) {
         info.uniformSize += sizeof(Vec4<float>);
       }
-      const auto& cca = config.colorChannels[i * 2 + 1];
+      const auto& cca = config.colorChannels[i + GX_ALPHA0];
       if (cca.lightingEnabled && cca.ambSrc == GX_SRC_REG) {
         info.uniformSize += sizeof(Vec4<float>);
       }
@@ -858,7 +858,8 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       }
       for (int i = 0; i < config.colorChannels.size(); ++i) {
         const auto& chan = config.colorChannels[i];
-        Log.info("  colorChannels[{}]: enabled {} mat {} amb {}", i, chan.lightingEnabled, chan.matSrc, chan.ambSrc);
+        Log.info("  colorChannels[{}]: enabled {} mat {} amb {}", static_cast<GXChannelID>(i), chan.lightingEnabled,
+                 chan.matSrc, chan.ambSrc);
       }
       for (int i = 0; i < config.tcgs.size(); ++i) {
         const auto& tcg = config.tcgs[i];
@@ -1036,41 +1037,41 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       fragmentFnPre += fmt::format("\n    var tevreg{0}: vec4f;", i - 1);
     }
   }
-  bool addedLightStruct = false;
+
+  if (info.lightingEnabled) {
+    uniBufAttrs += fmt::format(FMT_STRING(R"""(
+    lights: array<Light, {}>,
+    lightState0: u32,
+    lightState1: u32,
+    lightState0a: u32,
+    lightState1a: u32,)"""),
+                               GX::MaxLights);
+    uniformPre +=
+        "\n"
+        "struct Light {\n"
+        "    pos: vec3f,\n"
+        "    dir: vec3f,\n"
+        "    color: vec4f,\n"
+        "    cos_att: vec3f,\n"
+        "    dist_att: vec3f,\n"
+        "};";
+    if (UsePerPixelLighting) {
+      vtxOutAttrs += fmt::format("\n    @location({}) mv_pos: vec3f,", vtxOutIdx++);
+      vtxOutAttrs += fmt::format("\n    @location({}) mv_nrm: vec3f,", vtxOutIdx++);
+      vtxXfrAttrs += fmt::format(FMT_STRING(R"""(
+    out.mv_pos = mv_pos;
+    out.mv_nrm = mv_nrm;)"""));
+    }
+  }
+
   int vtxColorIdx = 0;
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
     if (!info.sampledColorChannels.test(i)) {
       continue;
     }
-    const auto& cc = config.colorChannels[i * 2];
-    const auto& cca = config.colorChannels[i * 2 + 1];
 
-    if (!addedLightStruct && (cc.lightingEnabled || cca.lightingEnabled)) {
-      uniBufAttrs += fmt::format(FMT_STRING("\n    lights: array<Light, {}>,"
-                                            "\n    lightState0: u32,"
-                                            "\n    lightState0a: u32,"
-                                            "\n    lightState1: u32,"
-                                            "\n    lightState1a: u32,"),
-                                 GX::MaxLights);
-      uniformPre +=
-          "\n"
-          "struct Light {\n"
-          "    pos: vec3f,\n"
-          "    dir: vec3f,\n"
-          "    color: vec4f,\n"
-          "    cos_att: vec3f,\n"
-          "    dist_att: vec3f,\n"
-          "};";
-      if (UsePerPixelLighting) {
-        vtxOutAttrs += fmt::format("\n    @location({}) mv_pos: vec3f,", vtxOutIdx++);
-        vtxOutAttrs += fmt::format("\n    @location({}) mv_nrm: vec3f,", vtxOutIdx++);
-        vtxXfrAttrs += fmt::format(FMT_STRING(R"""(
-    out.mv_pos = mv_pos;
-    out.mv_nrm = mv_nrm;)"""));
-      }
-      addedLightStruct = true;
-    }
-
+    const auto& cc = config.colorChannels[i];
+    const auto& cca = config.colorChannels[i + GX_ALPHA0];
     if (cc.lightingEnabled && cc.ambSrc == GX_SRC_REG) {
       uniBufAttrs += fmt::format("\n    cc{0}_amb: vec4f,", i);
     }
@@ -1390,31 +1391,21 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
 
   const auto shaderSource = fmt::format(R"""(
 fn fetch_f32_3(p: ptr<storage, array<f32>>, idx: u32) -> vec3<f32> {{
-  var start = idx * 3;
-  return vec3<f32>(
-    p[start],
-    p[start + 1],
-    p[start + 2],
-  );
+  var n = idx * 3;
+  return vec3<f32>(p[n], p[n + 1], p[n + 2]);
 }}
 fn fetch_u8_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32) -> vec2<f32> {{
   var v0 = p[idx / 2];
   var r = (idx % 2) != 0;
   var o0 = select(extractBits(v0, 0, 8), extractBits(v0, 16, 8), r);
   var o1 = select(extractBits(v0, 8, 8), extractBits(v0, 24, 8), r);
-  return vec2<f32>(
-    f32(o0) / f32(1 << frac),
-    f32(o1) / f32(1 << frac),
-  );
+  return vec2<f32>(f32(o0), f32(o1)) / f32(1u << frac);
 }}
 fn fetch_u16_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32) -> vec2<f32> {{
   var v0 = p[idx];
   var o0 = extractBits(v0, 0, 16);
   var o1 = extractBits(v0, 16, 16);
-  return vec2<f32>(
-    f32(o0) / f32(1 << frac),
-    f32(o1) / f32(1 << frac),
-  );
+  return vec2<f32>(f32(o0), f32(o1)) / f32(1u << frac);
 }}
 fn fetch_i16_3(p: ptr<storage, array<i32>>, idx: u32, frac: u32) -> vec3<f32> {{
   var n = idx * 3;
@@ -1425,11 +1416,7 @@ fn fetch_i16_3(p: ptr<storage, array<i32>>, idx: u32, frac: u32) -> vec3<f32> {{
   var o0 = select(extractBits(v0, 0, 16), extractBits(v0, 16, 16), r);
   var o1 = select(extractBits(v0, 16, 16), extractBits(v1, 0, 16), r);
   var o2 = select(extractBits(v1, 0, 16), extractBits(v1, 16, 16), r);
-  return vec3<f32>(
-    f32(o0) / f32(1 << frac),
-    f32(o1) / f32(1 << frac),
-    f32(o2) / f32(1 << frac),
-  );
+  return vec3<f32>(f32(o0), f32(o1), f32(o2)) / f32(1 << frac);
 }}
 {10}
 struct Uniform {{

@@ -30,7 +30,7 @@ void GXSetTexCopySrc(u16 left, u16 top, u16 wd, u16 ht) { g_gxState.texCopySrc =
 void GXSetDispCopyDst(u16 wd, u16 ht) {}
 
 void GXSetTexCopyDst(u16 wd, u16 ht, GXTexFmt fmt, GXBool mipmap) {
-  CHECK(wd == g_gxState.texCopySrc.width && ht == g_gxState.texCopySrc.height, "Texture copy scaling unimplemented");
+  // TODO texture copy scaling (mipmap)
   g_gxState.texCopyFmt = fmt;
 }
 

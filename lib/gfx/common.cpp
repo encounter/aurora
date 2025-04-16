@@ -624,6 +624,7 @@ void render(wgpu::CommandEncoder& cmd) {
     }
   }
   g_renderPasses.clear();
+  g_cachedBindGroups.clear();
 }
 
 void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
