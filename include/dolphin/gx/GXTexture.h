@@ -8,6 +8,8 @@
 extern "C" {
 #endif
 
+typedef GXTexRegion* (*GXTexRegionCallback)(const GXTexObj* obj, GXTexMapID id);
+
 void GXInitTexObj(GXTexObj* obj, const void* data, u16 width, u16 height, u32 format, GXTexWrapMode wrapS,
                   GXTexWrapMode wrapT, GXBool mipmap);
 void GXInitTexObjCI(GXTexObj* obj, const void* data, u16 width, u16 height, GXCITexFmt format, GXTexWrapMode wrapS,
@@ -21,6 +23,11 @@ void GXInvalidateTexAll();
 void GXInitTexObjWrapMode(GXTexObj* obj, GXTexWrapMode s, GXTexWrapMode t);
 void GXInitTlutObj(GXTlutObj* obj, const void* data, GXTlutFmt format, u16 entries);
 void GXLoadTlut(const GXTlutObj* obj, GXTlut idx);
+void GXSetTexCoordScaleManually(GXTexCoordID coord, GXBool enable, u16 ss, u16 ts);
+void GXInitTexCacheRegion(GXTexRegion* region, GXBool is_32b_mipmap, u32 tmem_even, GXTexCacheSize size_even,
+                          u32 tmem_odd, GXTexCacheSize size_odd);
+GXTexRegionCallback GXSetTexRegionCallback(GXTexRegionCallback callback);
+void GXInvalidateTexRegion(const GXTexRegion* region);
 
 #ifdef __cplusplus
 }

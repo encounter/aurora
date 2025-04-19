@@ -77,7 +77,9 @@ void GXSetTevOrder(GXTevStageID id, GXTexCoordID tcid, GXTexMapID tmid, GXChanne
   update_gx_state(stage.channelId, cid);
 }
 
-// TODO GXSetZTexture
+void GXSetZTexture(GXZTexOp op, GXTexFmt fmt, u32 bias) {
+  // TODO
+}
 
 void GXSetNumTevStages(u8 num) { update_gx_state(g_gxState.numTevStages, num); }
 

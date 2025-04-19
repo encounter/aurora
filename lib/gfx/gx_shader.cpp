@@ -38,102 +38,6 @@ static inline std::string_view chan_comp(GXTevColorChan chan) noexcept {
   }
 }
 
-static void color_arg_reg_info(GXTevColorArg arg, const TevStage& stage, ShaderInfo& info) {
-  switch (arg) {
-  case GX_CC_CPREV:
-  case GX_CC_APREV:
-    if (!info.writesTevReg.test(GX_TEVPREV)) {
-      info.loadsTevReg.set(GX_TEVPREV);
-    }
-    break;
-  case GX_CC_C0:
-  case GX_CC_A0:
-    if (!info.writesTevReg.test(GX_TEVREG0)) {
-      info.loadsTevReg.set(GX_TEVREG0);
-    }
-    break;
-  case GX_CC_C1:
-  case GX_CC_A1:
-    if (!info.writesTevReg.test(GX_TEVREG1)) {
-      info.loadsTevReg.set(GX_TEVREG1);
-    }
-    break;
-  case GX_CC_C2:
-  case GX_CC_A2:
-    if (!info.writesTevReg.test(GX_TEVREG2)) {
-      info.loadsTevReg.set(GX_TEVREG2);
-    }
-    break;
-  case GX_CC_TEXC:
-  case GX_CC_TEXA:
-    CHECK(stage.texCoordId != GX_TEXCOORD_NULL, "tex coord not bound");
-    CHECK(stage.texMapId != GX_TEXMAP_NULL, "tex map not bound");
-    info.sampledTexCoords.set(stage.texCoordId);
-    info.sampledTextures.set(stage.texMapId);
-    break;
-  case GX_CC_RASC:
-  case GX_CC_RASA:
-    if (stage.channelId >= GX_COLOR0A0 && stage.channelId <= GX_COLOR1A1) {
-      info.sampledColorChannels.set(stage.channelId - GX_COLOR0A0);
-    }
-    break;
-  case GX_CC_KONST:
-    switch (stage.kcSel) {
-    case GX_TEV_KCSEL_K0:
-    case GX_TEV_KCSEL_K0_R:
-    case GX_TEV_KCSEL_K0_G:
-    case GX_TEV_KCSEL_K0_B:
-    case GX_TEV_KCSEL_K0_A:
-      info.sampledKColors.set(0);
-      break;
-    case GX_TEV_KCSEL_K1:
-    case GX_TEV_KCSEL_K1_R:
-    case GX_TEV_KCSEL_K1_G:
-    case GX_TEV_KCSEL_K1_B:
-    case GX_TEV_KCSEL_K1_A:
-      info.sampledKColors.set(1);
-      break;
-    case GX_TEV_KCSEL_K2:
-    case GX_TEV_KCSEL_K2_R:
-    case GX_TEV_KCSEL_K2_G:
-    case GX_TEV_KCSEL_K2_B:
-    case GX_TEV_KCSEL_K2_A:
-      info.sampledKColors.set(2);
-      break;
-    case GX_TEV_KCSEL_K3:
-    case GX_TEV_KCSEL_K3_R:
-    case GX_TEV_KCSEL_K3_G:
-    case GX_TEV_KCSEL_K3_B:
-    case GX_TEV_KCSEL_K3_A:
-      info.sampledKColors.set(3);
-      break;
-    default:
-      break;
-    }
-    break;
-  default:
-    break;
-  }
-}
-
-static bool formatHasAlpha(u32 format) {
-  switch (format) {
-  case GX_TF_IA4:
-  case GX_TF_IA8:
-  case GX_TF_RGB5A3:
-  case GX_TF_RGBA8:
-  case GX_TF_CMPR:
-  case GX_CTF_RA4:
-  case GX_CTF_RA8:
-  case GX_CTF_YUVA8:
-  case GX_CTF_A8:
-  case GX_TF_RGBA8_PC:
-    return true;
-  default:
-    return false;
-  }
-}
-
 static std::string color_arg_reg(GXTevColorArg arg, size_t stageIdx, const ShaderConfig& config,
                                  const TevStage& stage) {
   switch (arg) {
@@ -257,74 +161,6 @@ static std::string color_arg_reg(GXTevColorArg arg, size_t stageIdx, const Shade
   }
   case GX_CC_ZERO:
     return "vec3f(0.0)";
-  }
-}
-
-static void alpha_arg_reg_info(GXTevAlphaArg arg, const TevStage& stage, ShaderInfo& info) {
-  switch (arg) {
-  case GX_CA_APREV:
-    if (!info.writesTevReg.test(GX_TEVPREV)) {
-      info.loadsTevReg.set(GX_TEVPREV);
-    }
-    break;
-  case GX_CA_A0:
-    if (!info.writesTevReg.test(GX_TEVREG0)) {
-      info.loadsTevReg.set(GX_TEVREG0);
-    }
-    break;
-  case GX_CA_A1:
-    if (!info.writesTevReg.test(GX_TEVREG1)) {
-      info.loadsTevReg.set(GX_TEVREG1);
-    }
-    break;
-  case GX_CA_A2:
-    if (!info.writesTevReg.test(GX_TEVREG2)) {
-      info.loadsTevReg.set(GX_TEVREG2);
-    }
-    break;
-  case GX_CA_TEXA:
-    CHECK(stage.texCoordId != GX_TEXCOORD_NULL, "tex coord not bound");
-    CHECK(stage.texMapId != GX_TEXMAP_NULL, "tex map not bound");
-    info.sampledTexCoords.set(stage.texCoordId);
-    info.sampledTextures.set(stage.texMapId);
-    break;
-  case GX_CA_RASA:
-    if (stage.channelId >= GX_COLOR0A0 && stage.channelId <= GX_COLOR1A1) {
-      info.sampledColorChannels.set(stage.channelId - GX_COLOR0A0);
-    }
-    break;
-  case GX_CA_KONST:
-    switch (stage.kaSel) {
-    case GX_TEV_KASEL_K0_R:
-    case GX_TEV_KASEL_K0_G:
-    case GX_TEV_KASEL_K0_B:
-    case GX_TEV_KASEL_K0_A:
-      info.sampledKColors.set(0);
-      break;
-    case GX_TEV_KASEL_K1_R:
-    case GX_TEV_KASEL_K1_G:
-    case GX_TEV_KASEL_K1_B:
-    case GX_TEV_KASEL_K1_A:
-      info.sampledKColors.set(1);
-      break;
-    case GX_TEV_KASEL_K2_R:
-    case GX_TEV_KASEL_K2_G:
-    case GX_TEV_KASEL_K2_B:
-    case GX_TEV_KASEL_K2_A:
-      info.sampledKColors.set(2);
-      break;
-    case GX_TEV_KASEL_K3_R:
-    case GX_TEV_KASEL_K3_G:
-    case GX_TEV_KASEL_K3_B:
-    case GX_TEV_KASEL_K3_A:
-      info.sampledKColors.set(3);
-      break;
-    default:
-      break;
-    }
-    break;
-  default:
-    break;
   }
 }
 
@@ -548,109 +384,6 @@ constexpr std::array<std::string_view, MaxVtxAttr> VtxAttributeNames{
     "tex1_uv",       "tex2_uv",       "tex3_uv",       "tex4_uv",     "tex5_uv",  "tex6_uv",  "tex7_uv",
     "pos_mtx_array", "nrm_mtx_array", "tex_mtx_array", "light_array", "nbt",
 };
-
-ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
-  //  const auto hash = xxh3_hash(config);
-  //  const auto it = g_gxCachedShaders.find(hash);
-  //  if (it != g_gxCachedShaders.end()) {
-  //    return it->second.second;
-  //  }
-
-  ShaderInfo info{
-      .uniformSize = sizeof(PnMtx) + sizeof(Mat4x4<float>), // pos_mtx, nrm_mtx, proj
-  };
-  for (int i = 0; i < config.tevStageCount; ++i) {
-    const auto& stage = config.tevStages[i];
-    // Color pass
-    color_arg_reg_info(stage.colorPass.a, stage, info);
-    color_arg_reg_info(stage.colorPass.b, stage, info);
-    color_arg_reg_info(stage.colorPass.c, stage, info);
-    color_arg_reg_info(stage.colorPass.d, stage, info);
-    info.writesTevReg.set(stage.colorOp.outReg);
-
-    // Alpha pass
-    alpha_arg_reg_info(stage.alphaPass.a, stage, info);
-    alpha_arg_reg_info(stage.alphaPass.b, stage, info);
-    alpha_arg_reg_info(stage.alphaPass.c, stage, info);
-    alpha_arg_reg_info(stage.alphaPass.d, stage, info);
-    if (!info.writesTevReg.test(stage.alphaOp.outReg)) {
-      // If we're writing alpha to a register that's not been
-      // written to in the shader, load from uniform buffer
-      info.loadsTevReg.set(stage.alphaOp.outReg);
-      info.writesTevReg.set(stage.alphaOp.outReg);
-    }
-  }
-  info.uniformSize += info.loadsTevReg.count() * sizeof(Vec4<float>);
-  for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
-    if (info.sampledColorChannels.test(i)) {
-      const auto& cc = config.colorChannels[i];
-      const auto& cca = config.colorChannels[i + GX_ALPHA0];
-      if (cc.lightingEnabled || cca.lightingEnabled) {
-        info.lightingEnabled = true;
-      }
-    }
-  }
-  if (info.lightingEnabled) {
-    // Lights + light state for all channels
-    info.uniformSize += 16 + sizeof(Light) * GX::MaxLights;
-  }
-  for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
-    if (info.sampledColorChannels.test(i)) {
-      const auto& cc = config.colorChannels[i];
-      if (cc.lightingEnabled && cc.ambSrc == GX_SRC_REG) {
-        info.uniformSize += sizeof(Vec4<float>);
-      }
-      if (cc.matSrc == GX_SRC_REG) {
-        info.uniformSize += sizeof(Vec4<float>);
-      }
-      const auto& cca = config.colorChannels[i + GX_ALPHA0];
-      if (cca.lightingEnabled && cca.ambSrc == GX_SRC_REG) {
-        info.uniformSize += sizeof(Vec4<float>);
-      }
-      if (cca.matSrc == GX_SRC_REG) {
-        info.uniformSize += sizeof(Vec4<float>);
-      }
-    }
-  }
-  info.uniformSize += info.sampledKColors.count() * sizeof(Vec4<float>);
-  for (int i = 0; i < info.sampledTexCoords.size(); ++i) {
-    if (!info.sampledTexCoords.test(i)) {
-      continue;
-    }
-    const auto& tcg = config.tcgs[i];
-    if (tcg.mtx != GX_IDENTITY) {
-      u32 texMtxIdx = (tcg.mtx - GX_TEXMTX0) / 3;
-      info.usesTexMtx.set(texMtxIdx);
-      info.texMtxTypes[texMtxIdx] = tcg.type;
-    }
-    if (tcg.postMtx != GX_PTIDENTITY) {
-      u32 postMtxIdx = (tcg.postMtx - GX_PTTEXMTX0) / 3;
-      info.usesPTTexMtx.set(postMtxIdx);
-    }
-  }
-  for (int i = 0; i < info.usesTexMtx.size(); ++i) {
-    if (info.usesTexMtx.test(i)) {
-      switch (info.texMtxTypes[i]) {
-      case GX_TG_MTX2x4:
-        info.uniformSize += sizeof(Mat2x4<float>);
-        break;
-      case GX_TG_MTX3x4:
-        info.uniformSize += sizeof(Mat3x4<float>);
-        break;
-      default:
-        break;
-      }
-    }
-  }
-  info.uniformSize += info.usesPTTexMtx.count() * sizeof(Mat3x4<float>);
-  if (config.fogType != GX_FOG_NONE) {
-    info.usesFog = true;
-    info.uniformSize += sizeof(Fog);
-  }
-  info.uniformSize += info.sampledTextures.count() * sizeof(u32);
-  info.uniformSize = align_uniform(info.uniformSize);
-  return info;
-}
 
 struct StorageLoadResult {
   std::string attrLoad;
@@ -947,6 +680,8 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       vtxInAttrs += fmt::format("@location({}) in_clr{}: vec4f", locIdx++, attr - GX_VA_CLR0);
     } else if (attr >= GX_VA_TEX0 && attr <= GX_VA_TEX7) {
       vtxInAttrs += fmt::format("@location({}) in_tex{}_uv: vec2f", locIdx++, attr - GX_VA_TEX0);
+    } else {
+      FATAL("unhandled vtx attr {}", underlying(attr));
     }
   }
   vtxXfrAttrsPre += fmt::format(
@@ -1416,7 +1151,7 @@ fn fetch_i16_3(p: ptr<storage, array<i32>>, idx: u32, frac: u32) -> vec3<f32> {{
   var o0 = select(extractBits(v0, 0, 16), extractBits(v0, 16, 16), r);
   var o1 = select(extractBits(v0, 16, 16), extractBits(v1, 0, 16), r);
   var o2 = select(extractBits(v1, 0, 16), extractBits(v1, 16, 16), r);
-  return vec3<f32>(f32(o0), f32(o1), f32(o2)) / f32(1 << frac);
+  return vec3<f32>(f32(o0), f32(o1), f32(o2)) / f32(1u << frac);
 }}
 {10}
 struct Uniform {{

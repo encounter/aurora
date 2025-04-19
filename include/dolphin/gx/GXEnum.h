@@ -751,6 +751,13 @@ typedef enum {
   GX_MAX_TLUTFMT,
 } GXTlutFmt;
 
+typedef enum _GXTexCacheSize {
+  GX_TEXCACHE_32K,
+  GX_TEXCACHE_128K,
+  GX_TEXCACHE_512K,
+  GX_TEXCACHE_NONE
+} GXTexCacheSize;
+
 #ifdef __cplusplus
 }
 #endif

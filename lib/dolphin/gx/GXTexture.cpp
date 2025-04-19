@@ -233,7 +233,9 @@ void GXInvalidateTexAll() {
 // TODO GXSetTexRegionCallback
 // TODO GXSetTlutRegionCallback
 // TODO GXLoadTexObjPreLoaded
-// TODO GXSetTexCoordScaleManually
+void GXSetTexCoordScaleManually(GXTexCoordID coord, GXBool enable, u16 ss, u16 ts) {
+  // TODO
+}
 // TODO GXSetTexCoordCylWrap
 // TODO GXSetTexCoordBias
 }

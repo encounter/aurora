@@ -384,7 +384,7 @@ bool initialize(AuroraBackend auroraBackend) {
     wgpu::Limits supportedLimits{};
     g_adapter.GetLimits(&supportedLimits);
     const wgpu::Limits requiredLimits{
-        // Use "best" supported alignments
+        // Use "best" supported limits
         .maxTextureDimension1D = supportedLimits.maxTextureDimension1D == 0 ? WGPU_LIMIT_U32_UNDEFINED
                                                                             : supportedLimits.maxTextureDimension1D,
         .maxTextureDimension2D = supportedLimits.maxTextureDimension2D == 0 ? WGPU_LIMIT_U32_UNDEFINED
@@ -393,18 +393,12 @@ bool initialize(AuroraBackend auroraBackend) {
                                                                             : supportedLimits.maxTextureDimension3D,
         .maxTextureArrayLayers = supportedLimits.maxTextureArrayLayers == 0 ? WGPU_LIMIT_U32_UNDEFINED
                                                                             : supportedLimits.maxTextureArrayLayers,
-        .maxBindGroupsPlusVertexBuffers = supportedLimits.maxBindGroupsPlusVertexBuffers == 0
-                                              ? WGPU_LIMIT_U32_UNDEFINED
-                                              : supportedLimits.maxBindGroupsPlusVertexBuffers,
-        .maxBindingsPerBindGroup = supportedLimits.maxBindGroupsPlusVertexBuffers == 0
-                                       ? WGPU_LIMIT_U32_UNDEFINED
-                                       : supportedLimits.maxBindGroupsPlusVertexBuffers,
-        .maxDynamicUniformBuffersPerPipelineLayout = supportedLimits.maxDynamicUniformBuffersPerPipelineLayout == 0
-                                                         ? WGPU_LIMIT_U32_UNDEFINED
-                                                         : supportedLimits.maxDynamicUniformBuffersPerPipelineLayout,
         .maxDynamicStorageBuffersPerPipelineLayout = supportedLimits.maxDynamicStorageBuffersPerPipelineLayout == 0
                                                          ? WGPU_LIMIT_U32_UNDEFINED
                                                          : supportedLimits.maxDynamicStorageBuffersPerPipelineLayout,
+        .maxStorageBuffersPerShaderStage = supportedLimits.maxStorageBuffersPerShaderStage == 0
+                                               ? WGPU_LIMIT_U32_UNDEFINED
+                                               : supportedLimits.maxStorageBuffersPerShaderStage,
         .minUniformBufferOffsetAlignment = supportedLimits.minUniformBufferOffsetAlignment == 0
                                                ? WGPU_LIMIT_U32_UNDEFINED
                                                : supportedLimits.minUniformBufferOffsetAlignment,
@@ -413,11 +407,19 @@ bool initialize(AuroraBackend auroraBackend) {
                                                : supportedLimits.minStorageBufferOffsetAlignment,
     };
     Log.info(
-        "Using limits\n  maxTextureDimension1D: {}\n  maxTextureDimension2D: {}\n  maxTextureDimension3D: {}\n  "
-        "minUniformBufferOffsetAlignment: {}\n  minStorageBufferOffsetAlignment: {}",
+        "Using limits:"
+        "\n  maxTextureDimension1D: {}"
+        "\n  maxTextureDimension2D: {}"
+        "\n  maxTextureDimension3D: {}"
+        "\n  maxTextureArrayLayers: {}"
+        "\n  maxDynamicStorageBuffersPerPipelineLayout: {}"
+        "\n  maxStorageBuffersPerShaderStage: {}"
+        "\n  minUniformBufferOffsetAlignment: {}"
+        "\n  minStorageBufferOffsetAlignment: {}",
         requiredLimits.maxTextureDimension1D, requiredLimits.maxTextureDimension2D,
-        requiredLimits.maxTextureDimension3D, requiredLimits.minUniformBufferOffsetAlignment,
-        requiredLimits.minStorageBufferOffsetAlignment);
+        requiredLimits.maxTextureDimension3D, requiredLimits.maxTextureArrayLayers,
+        requiredLimits.maxDynamicStorageBuffersPerPipelineLayout, requiredLimits.maxStorageBuffersPerShaderStage,
+        requiredLimits.minUniformBufferOffsetAlignment, requiredLimits.minStorageBufferOffsetAlignment);
     std::vector<wgpu::FeatureName> requiredFeatures;
     wgpu::SupportedFeatures supportedFeatures;
     g_adapter.GetFeatures(&supportedFeatures);
@@ -432,6 +434,9 @@ bool initialize(AuroraBackend auroraBackend) {
     /* clang-format off */
 #if _WIN32
       "use_dxc",
+#ifdef NDEBUG
+      "emit_hlsl_debug_symbols",
+#endif
 #endif
 #ifdef NDEBUG
       "skip_validation",
@@ -453,9 +458,7 @@ bool initialize(AuroraBackend auroraBackend) {
 #endif
         .requiredFeatureCount = requiredFeatures.size(),
         .requiredFeatures = requiredFeatures.data(),
-#ifdef WEBGPU_DAWN
         .requiredLimits = &requiredLimits,
-#endif
     });
     deviceDescriptor.SetUncapturedErrorCallback(
         [](const wgpu::Device& device, wgpu::ErrorType type, wgpu::StringView message) {

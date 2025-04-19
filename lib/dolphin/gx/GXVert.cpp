@@ -3,6 +3,7 @@
 #include "aurora/math.hpp"
 #include "../../gfx/model/shader.hpp"
 #include "../../gfx/gx_fmt.hpp"
+#include "../../gfx/shader_info.hpp"
 
 #include <cstring>
 #include <optional>

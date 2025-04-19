@@ -429,10 +429,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderInfo& info,
                                     ArrayRef<wgpu::VertexBufferLayout> vtxBuffers, wgpu::ShaderModule shader,
                                     const char* label) noexcept;
-ShaderInfo build_shader_info(const ShaderConfig& config) noexcept;
 wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& info) noexcept;
-// Range build_vertex_buffer(const GXShaderInfo& info) noexcept;
-Range build_uniform(const ShaderInfo& info) noexcept;
 GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const ShaderConfig& config) noexcept;
 GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& config,
                                const BindGroupRanges& ranges) noexcept;
