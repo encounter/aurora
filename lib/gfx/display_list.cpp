@@ -17,7 +17,7 @@ struct DisplayListCache {
 
 static absl::flat_hash_map<HashType, DisplayListCache> sCachedDisplayLists;
 
-static u32 prepare_vtx_buffer(ByteBuffer& buf, GXVtxFmt vtxfmt, const u8* ptr, u16 vtxCount) {
+static u32 prepare_vtx_buffer(ByteBuffer& buf, GXVtxFmt vtxfmt, const u8* ptr, u16 vtxCount, bool bigEndian) {
   using gx::g_gxState;
   struct {
     u8 count;
@@ -114,7 +114,8 @@ static u32 prepare_vtx_buffer(ByteBuffer& buf, GXVtxFmt vtxfmt, const u8* ptr, u
         buf.append(static_cast<u16>(*ptr));
         ++ptr;
       } else if (g_gxState.vtxDesc[attr] == GX_INDEX16) {
-        buf.append(bswap(*reinterpret_cast<const u16*>(ptr)));
+        const auto value = *reinterpret_cast<const u16*>(ptr);
+        buf.append(bigEndian ? bswap(value) : value);
         ptr += 2;
       }
       if (g_gxState.vtxDesc[attr] != GX_DIRECT) {
@@ -141,23 +142,24 @@ static u32 prepare_vtx_buffer(ByteBuffer& buf, GXVtxFmt vtxfmt, const u8* ptr, u
         break;
       case GX_U16:
         for (int i = 0; i < count; ++i) {
-          const auto value = bswap(reinterpret_cast<const u16*>(ptr)[i]);
-          out[i] = static_cast<f32>(value) / static_cast<f32>(1 << attrFmt.frac);
+          auto value = reinterpret_cast<const u16*>(ptr)[i];
+          out[i] = static_cast<f32>(bigEndian ? bswap(value) : value) / static_cast<f32>(1 << attrFmt.frac);
         }
         buf.append(out.data(), sizeof(f32) * count);
         ptr += count * sizeof(u16);
         break;
       case GX_S16:
         for (int i = 0; i < count; ++i) {
-          const auto value = bswap(reinterpret_cast<const s16*>(ptr)[i]);
-          out[i] = static_cast<f32>(value) / static_cast<f32>(1 << attrFmt.frac);
+          const auto value = reinterpret_cast<const s16*>(ptr)[i];
+          out[i] = static_cast<f32>(bigEndian ? bswap(value) : value) / static_cast<f32>(1 << attrFmt.frac);
         }
         buf.append(out.data(), sizeof(f32) * count);
         ptr += count * sizeof(s16);
         break;
       case GX_F32:
         for (int i = 0; i < count; ++i) {
-          out[i] = bswap(reinterpret_cast<const f32*>(ptr)[i]);
+          const auto value = reinterpret_cast<const f32*>(ptr)[i];
+          out[i] = bigEndian ? bswap(value) : value;
         }
         buf.append(out.data(), sizeof(f32) * count);
         ptr += count * sizeof(f32);
@@ -182,7 +184,27 @@ static u32 prepare_vtx_buffer(ByteBuffer& buf, GXVtxFmt vtxfmt, const u8* ptr, u
 
 static u16 prepare_idx_buffer(ByteBuffer& buf, GXPrimitive prim, u16 vtxStart, u16 vtxCount) {
   u16 numIndices = 0;
-  if (prim == GX_TRIANGLES) {
+  if (prim == GX_QUADS) {
+    // We can represent each quad as a degenerate triangle strip with 6 indices.
+    buf.reserve_extra((vtxCount / 4) * 6 * sizeof(u16));
+
+    for (u16 v = 0; v < vtxCount; v += 4) {
+      u16 idx0 = vtxStart + v;
+      u16 idx1 = vtxStart + v + 1;
+      u16 idx2 = vtxStart + v + 2;
+      u16 idx3 = vtxStart + v + 3;
+
+      buf.append(idx0);
+      buf.append(idx1);
+      buf.append(idx2);
+      numIndices += 3;
+
+      buf.append(idx2);
+      buf.append(idx3);
+      buf.append(idx0);
+      numIndices += 3;
+    }
+  } else if (prim == GX_TRIANGLES) {
     buf.reserve_extra(vtxCount * sizeof(u16));
     for (u16 v = 0; v < vtxCount; ++v) {
       const u16 idx = vtxStart + v;
@@ -222,7 +244,7 @@ static u16 prepare_idx_buffer(ByteBuffer& buf, GXPrimitive prim, u16 vtxStart, u
   return numIndices;
 }
 
-auto process_display_list(const u8* dlStart, u32 dlSize) -> DisplayListResult {
+auto process_display_list(const u8* dlStart, u32 dlSize, bool bigEndian) -> DisplayListResult {
   const auto hash = xxh3_hash_s(dlStart, dlSize, 0);
   Range vertRange, idxRange;
   u32 numIndices = 0;
@@ -259,9 +281,11 @@ auto process_display_list(const u8* dlStart, u32 dlSize) -> DisplayListResult {
           FATAL("Vertex format changed mid-display list: {} -> {}", fmt, newFmt);
         }
         fmt = newFmt;
-        u16 vtxCount = bswap(*reinterpret_cast<const u16*>(data + pos));
+        u16 vtxCount = *reinterpret_cast<const u16*>(data + pos);
+        if (bigEndian)
+          vtxCount = bswap(vtxCount);
         pos += 2;
-        pos += vtxCount * prepare_vtx_buffer(vtxBuf, fmt, data + pos, vtxCount);
+        pos += vtxCount * prepare_vtx_buffer(vtxBuf, fmt, data + pos, vtxCount, bigEndian);
         numIndices += prepare_idx_buffer(idxBuf, prim, vtxStart, vtxCount);
         vtxStart += vtxCount;
         break;

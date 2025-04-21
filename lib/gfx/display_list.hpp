@@ -10,5 +10,5 @@ struct DisplayListResult {
   GXVtxFmt fmt;
 };
 
-auto process_display_list(const u8* dlStart, u32 dlSize) -> DisplayListResult;
+auto process_display_list(const u8* dlStart, u32 dlSize, bool bigEndian) -> DisplayListResult;
 }; // namespace aurora::gfx::gx
