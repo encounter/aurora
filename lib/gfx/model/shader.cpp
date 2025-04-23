@@ -10,8 +10,8 @@
 namespace aurora::gfx::model {
 static Module Log("aurora::gfx::model");
 
-void queue_surface(const u8* dlStart, u32 dlSize) noexcept {
-  const auto result = aurora::gfx::gx::process_display_list(dlStart, dlSize);
+void queue_surface(const u8* dlStart, u32 dlSize, bool bigEndian) noexcept {
+  const auto result = aurora::gfx::gx::process_display_list(dlStart, dlSize, bigEndian);
 
   gx::BindGroupRanges ranges{};
   for (int i = 0; i < GX_VA_MAX_ATTR; ++i) {

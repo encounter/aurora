@@ -39,9 +39,7 @@ void color_arg_reg_info(GXTevColorArg arg, const TevStage& stage, ShaderInfo& in
     break;
   case GX_CC_RASC:
   case GX_CC_RASA:
-    if (stage.channelId >= GX_COLOR0A0 && stage.channelId <= GX_COLOR1A1) {
-      info.sampledColorChannels.set(stage.channelId - GX_COLOR0A0);
-    }
+      info.sampledColorChannels.set(color_channel(stage.channelId));
     break;
   case GX_CC_KONST:
     switch (stage.kcSel) {
@@ -111,9 +109,7 @@ void alpha_arg_reg_info(GXTevAlphaArg arg, const TevStage& stage, ShaderInfo& in
     info.sampledTextures.set(stage.texMapId);
     break;
   case GX_CA_RASA:
-    if (stage.channelId >= GX_COLOR0A0 && stage.channelId <= GX_COLOR1A1) {
-      info.sampledColorChannels.set(stage.channelId - GX_COLOR0A0);
-    }
+    info.sampledColorChannels.set(color_channel(stage.channelId));
     break;
   case GX_CA_KONST:
     switch (stage.kaSel) {

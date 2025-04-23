@@ -38,6 +38,20 @@ static inline std::string_view chan_comp(GXTevColorChan chan) noexcept {
   }
 }
 
+u8 color_channel(GXChannelID id) {
+  switch (id) {
+    DEFAULT_FATAL("unimplemented color channel {}", id);
+  case GX_COLOR0:
+  case GX_ALPHA0:
+  case GX_COLOR0A0:
+    return 0;
+  case GX_COLOR1:
+  case GX_ALPHA1:
+  case GX_COLOR1A1:
+    return 1;
+  }
+}
+
 static std::string color_arg_reg(GXTevColorArg arg, size_t stageIdx, const ShaderConfig& config,
                                  const TevStage& stage) {
   switch (arg) {
@@ -77,9 +91,7 @@ static std::string color_arg_reg(GXTevColorArg arg, size_t stageIdx, const Shade
     if (stage.channelId == GX_COLOR_ZERO) {
       return "vec3f(0.0)";
     }
-    CHECK(stage.channelId >= GX_COLOR0A0 && stage.channelId <= GX_COLOR1A1, "invalid color channel {} for stage {}",
-          underlying(stage.channelId), stageIdx);
-    u32 idx = stage.channelId - GX_COLOR0A0;
+    u32 idx = color_channel(stage.channelId);
     const auto& swap = config.tevSwapTable[stage.tevSwapRas];
     return fmt::format("rast{}.{}{}{}", idx, chan_comp(swap.red), chan_comp(swap.green), chan_comp(swap.blue));
   }
@@ -88,9 +100,7 @@ static std::string color_arg_reg(GXTevColorArg arg, size_t stageIdx, const Shade
     if (stage.channelId == GX_COLOR_ZERO) {
       return "vec3f(0.0)";
     }
-    CHECK(stage.channelId >= GX_COLOR0A0 && stage.channelId <= GX_COLOR1A1, "invalid color channel {} for stage {}",
-          underlying(stage.channelId), stageIdx);
-    u32 idx = stage.channelId - GX_COLOR0A0;
+    u32 idx = color_channel(stage.channelId);
     const auto& swap = config.tevSwapTable[stage.tevSwapRas];
     return fmt::format("vec3f(rast{}.{})", idx, chan_comp(swap.alpha));
   }
@@ -188,9 +198,7 @@ static std::string alpha_arg_reg(GXTevAlphaArg arg, size_t stageIdx, const Shade
     if (stage.channelId == GX_COLOR_ZERO) {
       return "0.0";
     }
-    CHECK(stage.channelId >= GX_COLOR0A0 && stage.channelId <= GX_COLOR1A1, "invalid color channel {} for stage {}",
-          underlying(stage.channelId), stageIdx);
-    u32 idx = stage.channelId - GX_COLOR0A0;
+    u32 idx = color_channel(stage.channelId);
     const auto& swap = config.tevSwapTable[stage.tevSwapRas];
     return fmt::format("rast{}.{}", idx, chan_comp(swap.alpha));
   }
@@ -318,6 +326,9 @@ static inline std::string vtx_attr(const ShaderConfig& config, GXAttr attr) {
     if (attr == GX_VA_NRM) {
       // Default normal
       return "vec3f(1.0, 0.0, 0.0)"s;
+    }
+    if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
+      return "vec4f(0.0, 0.0, 0.0, 0.0)"s;
     }
     UNLIKELY FATAL("unmapped vtx attr {}", underlying(attr));
   }
@@ -499,6 +510,16 @@ auto storage_load(const StorageConfig& mapping, u32 attrIdx) -> StorageLoadResul
   std::string attrLoad;
 
   switch (compType) {
+  case GX_S8:
+    switch (compCnt) {
+    case 3:
+      arrType = "i32";
+      attrLoad = fmt::format("fetch_i8_3(&v_arr_{}, {}, {})", attrName, idxFetch, mapping.frac);
+      break;
+    default:
+      Log.fatal("storage_load: Unsupported {} count {}", compType, compCnt);
+    }
+    break;
   case GX_U16:
     switch (compCnt) {
     case 2:
@@ -540,6 +561,10 @@ auto storage_load(const StorageConfig& mapping, u32 attrIdx) -> StorageLoadResul
     default:
       Log.fatal("storage_load: Unsupported {} count {}", compType, compCnt);
     }
+    break;
+  case GX_RGBA8:
+    arrType = "u32";
+    attrLoad = fmt::format("unpack4x8unorm(v_arr_{}[{}])", attrName, idxFetch);
     break;
   default:
     Log.fatal("storage_load: Unimplemented {}", compType);
@@ -1135,6 +1160,22 @@ fn fetch_u8_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32) -> vec2<f32> {{
   var o0 = select(extractBits(v0, 0, 8), extractBits(v0, 16, 8), r);
   var o1 = select(extractBits(v0, 8, 8), extractBits(v0, 24, 8), r);
   return vec2<f32>(f32(o0), f32(o1)) / f32(1u << frac);
+}}
+fn fetch_i8_3(p: ptr<storage, array<i32>>, idx: u32, frac: u32) -> vec3<f32> {{
+  let byte_idx = idx * 3u;
+  let word0 = p[byte_idx / 4u];
+  let word1 = p[(byte_idx + 1u) / 4u];
+  let word2 = p[(byte_idx + 2u) / 4u];
+
+  let shift0 = (byte_idx % 4u) * 8u;
+  let shift1 = ((byte_idx + 1u) % 4u) * 8u;
+  let shift2 = ((byte_idx + 2u) % 4u) * 8u;
+
+  let o0 = extractBits(word0, shift0, 8);
+  let o1 = extractBits(word1, shift1, 8);
+  let o2 = extractBits(word2, shift2, 8);
+
+  return vec3<f32>(f32(o0), f32(o1), f32(o2)) / f32(1u << frac);
 }}
 fn fetch_u16_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32) -> vec2<f32> {{
   var v0 = p[idx];

@@ -294,6 +294,7 @@ struct GXState {
   ClipRect texCopySrc;
   GXTexFmt texCopyFmt;
   absl::flat_hash_map<void*, TextureHandle> copyTextures;
+  std::optional<ByteBuffer> dynamicDlBuf;
   bool depthCompare = true;
   bool depthUpdate = true;
   bool colorUpdate = true;
