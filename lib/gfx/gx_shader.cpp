@@ -328,7 +328,6 @@ static inline std::string vtx_attr(const ShaderConfig& config, GXAttr attr) {
       return "vec3f(1.0, 0.0, 0.0)"s;
     }
     if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
-      // TODO maybe return the last known value?
       return "vec4f(0.0, 0.0, 0.0, 0.0)"s;
     }
     UNLIKELY FATAL("unmapped vtx attr {}", underlying(attr));

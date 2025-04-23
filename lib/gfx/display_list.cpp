@@ -185,7 +185,6 @@ static u32 prepare_vtx_buffer(ByteBuffer& buf, GXVtxFmt vtxfmt, const u8* ptr, u
 static u16 prepare_idx_buffer(ByteBuffer& buf, GXPrimitive prim, u16 vtxStart, u16 vtxCount) {
   u16 numIndices = 0;
   if (prim == GX_QUADS) {
-    // We can represent each quad as a degenerate triangle strip with 6 indices.
     buf.reserve_extra((vtxCount / 4) * 6 * sizeof(u16));
 
     for (u16 v = 0; v < vtxCount; v += 4) {
