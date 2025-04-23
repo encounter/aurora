@@ -864,17 +864,15 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
           attn = max(0.0, cos_attn / dist_attn);)""");
       } else if (cc.attnFn == GX_AF_SPEC) {
         std::string normal = UsePerPixelLighting ? "in.mv_nrm" : "mv_nrm";
+        std::string dist_attn = diffFn != GX_DF_NONE
+                      ? "max(0.0, dot(normalize(light.dist_att), vec3f(1.0, attn, attn * attn)));"
+                      : "max(0.0, dot(light.dist_att, vec3f(1.0, attn, attn * attn)));";
         lightAttnFn = fmt::format(R"""(
           var cosine = select(0.0, max(0.0, dot({0}, light.dir)), dot({0}, ldir) >= 0.0);
           var cos_attn = dot(light.cos_att, vec3f(1.0, attn, attn * attn));
-          var dist_attn = 0.0;
-          if ({1}) {{
-            dist_attn = max(0.0, dot(normalize(light.dist_att), vec3f(1.0, attn, attn * attn)));
-          }} else {{
-            dist_attn = max(0.0, dot(light.dist_att, vec3f(1.0, attn, attn * attn)));
-          }}
+          var dist_attn = {1};
           attn = cosine;
-          attn = max(0.0, cos_attn / dist_attn);)""", normal, diffFn != GX_DF_NONE);
+          attn = max(0.0, cos_attn / dist_attn);)""", normal, dist_attn);
       }
       if (diffFn == GX_DF_NONE) {
         lightDiffFn = "1.0";
