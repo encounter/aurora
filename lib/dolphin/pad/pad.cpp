@@ -147,7 +147,7 @@ uint32_t PADRead(PADStatus* status) {
   }
 
   uint32_t rumbleSupport = 0;
-  for (uint32_t i = 0; i < 4; ++i) {
+  for (uint32_t i = 0; i < PAD_CHANMAX; ++i) {
     memset(&status[i], 0, sizeof(PADStatus));
     auto controller = aurora::input::get_controller_for_player(i);
     if (controller == nullptr) {
@@ -259,7 +259,7 @@ void PADControlMotor(int32_t chan, uint32_t command) {
 }
 
 void PADControlAllMotors(const uint32_t* commands) {
-  for (uint32_t i = 0; i < 4; ++i) {
+  for (uint32_t i = 0; i < PAD_CHANMAX; ++i) {
     PADControlMotor(i, commands[i]);
   }
 }
@@ -394,7 +394,7 @@ void ClampStick(int8_t* px, int8_t* py, int8_t max, int8_t xy, int8_t min) {
 }
 
 void PADClamp(PADStatus* status) {
-  for (uint32_t i = 0; i < 4; ++i) {
+  for (uint32_t i = 0; i < PAD_CHANMAX; ++i) {
     if (status[i].err != PAD_ERR_NONE) {
       continue;
     }
@@ -408,7 +408,7 @@ void PADClamp(PADStatus* status) {
 }
 
 void PADClampCircle(PADStatus* status) {
-  for (uint32_t i = 0; i < 4; ++i) {
+  for (uint32_t i = 0; i < PAD_CHANMAX; ++i) {
     if (status[i].err != PAD_ERR_NONE) {
       continue;
     }
@@ -507,6 +507,7 @@ void PADSerializeMappings() {
              file);
     } else {
       if (!wroteGameCubeAlready) {
+        /* This needs to remain at 4 since the adapter only has 4 ports */
         for (uint32_t i = 0; i < 4; ++i) {
           /* Just use the current controller's configs for this */
           __PADWriteDeadZones(file, controller.second);
