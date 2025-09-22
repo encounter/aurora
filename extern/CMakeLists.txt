@@ -4,13 +4,14 @@ if (NOT EMSCRIPTEN)
   if (NOT TARGET dawn_native)
     message(STATUS "aurora: Building Dawn")
 
+    set(DAWN_BUILD_MONOLITHIC_LIBRARY STATIC CACHE INTERNAL "Bundle all dawn components into a single shared library.")
     set(DAWN_ENABLE_DESKTOP_GL OFF CACHE INTERNAL "Enable compilation of the OpenGL backend")
     set(DAWN_ENABLE_OPENGLES OFF CACHE INTERNAL "Enable compilation of the OpenGL ES backend")
     set(DAWN_FETCH_DEPENDENCIES ON CACHE INTERNAL "Use fetch_dawn_dependencies.py as an alternative to using depot_tools")
 
     FetchContent_Declare(dawn
-      URL https://github.com/google/dawn/archive/65ce958ed0019a860238703efa0087660c4247d4.tar.gz
-      URL_HASH SHA256=bd7df417fffd9c3efa390ce09b7e943887d76807e0b7307e192c835c38882ec1
+      URL http://github.com/google/dawn/archive/dfe3855e5d0b5367a598e60674766ffa1c894c71.tar.gz
+      URL_HASH SHA256=4e3365d812eef73015a59dcee4a9ffd29a1490fa6a5c05595017b378c927dc63
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE
       EXCLUDE_FROM_ALL
     )
