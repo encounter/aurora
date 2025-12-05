@@ -203,7 +203,7 @@
   - [x] GXSetTevColorS10
   - [x] GXSetAlphaCompare
   - [x] GXSetTevOrder
-  - [ ] GXSetZTexture
+  - [x] GXSetZTexture
   - [x] GXSetNumTevStages
   - [x] GXSetTevKColor
   - [x] GXSetTevKColorSel

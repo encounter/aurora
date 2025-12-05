@@ -269,6 +269,9 @@ struct GXState {
   Vec4<float> clearColor{0.f, 0.f, 0.f, 1.f};
   u32 dstAlpha; // u8; UINT32_MAX = disabled
   AlphaCompare alphaCompare;
+  GXZTexOp zTexOp = GX_ZT_DISABLE;
+  GXTexFmt zTexFmt = GX_TF_Z8;
+  u32 zTexBias = 0;
   std::array<Vec4<float>, MaxTevRegs> colorRegs;
   std::array<Vec4<float>, GX_MAX_KCOLOR> kcolors;
   std::array<ColorChannelConfig, MaxColorChannels> colorChannelConfig;
@@ -376,6 +379,9 @@ struct ShaderConfig {
   std::array<ColorChannelConfig, MaxColorChannels> colorChannels;
   std::array<TcgConfig, MaxTexCoord> tcgs;
   AlphaCompare alphaCompare;
+  GXZTexOp zTexOp = GX_ZT_DISABLE;
+  GXTexFmt zTexFmt = GX_TF_Z8;
+  u32 zTexBias = 0;
   u32 indexedAttributeCount = 0;
   std::array<TextureConfig, MaxTextures> textureConfig;
 

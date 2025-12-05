@@ -78,7 +78,25 @@ void GXSetTevOrder(GXTevStageID id, GXTexCoordID tcid, GXTexMapID tmid, GXChanne
 }
 
 void GXSetZTexture(GXZTexOp op, GXTexFmt fmt, u32 bias) {
-  // TODO
+  u32 type;
+  switch (fmt) {
+  case GX_TF_Z8:
+    type = 0;
+    break;
+  case GX_TF_Z16:
+    type = 1;
+    break;
+  case GX_TF_Z24X8:
+    type = 2;
+    break;
+  default:
+    CHECK(false, "GXSetZTexture: Invalid z-texture format");
+    type = 2;
+    break;
+  }
+  update_gx_state(g_gxState.zTexOp, op);
+  update_gx_state(g_gxState.zTexFmt, type);
+  update_gx_state(g_gxState.zTexBias, bias);
 }
 
 void GXSetNumTevStages(u8 num) { update_gx_state(g_gxState.numTevStages, num); }
