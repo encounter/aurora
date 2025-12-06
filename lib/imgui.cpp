@@ -38,10 +38,6 @@ void create_context() noexcept {
 void initialize() noexcept {
   SDL_Renderer* renderer = window::get_sdl_renderer();
   ImGui_ImplSDL3_InitForSDLRenderer(window::get_sdl_window(), renderer);
-#ifdef __APPLE__
-  // Disable MouseCanUseGlobalState for scaling purposes
-  ImGui_ImplSDL3_GetBackendData()->MouseCanUseGlobalState = false;
-#endif
   g_useSdlRenderer = renderer != nullptr;
   if (g_useSdlRenderer) {
     ImGui_ImplSDLRenderer3_Init(renderer);
