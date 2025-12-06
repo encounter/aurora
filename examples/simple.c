@@ -7,7 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-static void log_callback(AuroraLogLevel level, const char* message, unsigned int len) {
+static void log_callback(AuroraLogLevel level, const char* module, const char* message, unsigned int len) {
   const char* levelStr;
   FILE* out = stdout;
   switch (level) {
@@ -29,7 +29,7 @@ static void log_callback(AuroraLogLevel level, const char* message, unsigned int
     out = stderr;
     break;
   }
-  fprintf(out, "[%s: %s]\n", levelStr, message);
+  fprintf(out, "[%s: %s;%s]\n", levelStr, module, message);
   if (level == LOG_FATAL) {
     fflush(out);
     abort();
