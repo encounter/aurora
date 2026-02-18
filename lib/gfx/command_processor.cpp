@@ -25,7 +25,7 @@ struct DisplayListCache {
 
 static absl::flat_hash_map<HashType, DisplayListCache> sCachedDisplayLists;
 
-static u32 prepare_vtx_buffer(ByteBuffer& buf, GXVtxFmt vtxfmt, const u8* ptr, u16 vtxCount, bool bigEndian) {
+static u32 prepare_vtx_buffer(ByteBuffer* outBuf, GXVtxFmt vtxfmt, const u8* ptr, u16 vtxCount, bool bigEndian) {
   struct {
     u8 count;
     GXCompType type;
@@ -138,7 +138,13 @@ static u32 prepare_vtx_buffer(ByteBuffer& buf, GXVtxFmt vtxfmt, const u8* ptr, u
     outVtxSize += padding;
   }
 
+  // Just checking size
+  if (outBuf == nullptr || ptr == nullptr) {
+    return vtxSize;
+  }
+
   // Build vertex buffer
+  ByteBuffer& buf = *outBuf;
   buf.reserve_extra(vtxCount * outVtxSize);
   std::array<f32, 4> out{};
   for (u32 v = 0; v < vtxCount; ++v) {
@@ -376,7 +382,7 @@ void process(const u8* data, u32 size, bool bigEndian) {
     case CP_CMD_CALL_DL: {
       // Call display list: 8 bytes (address + size)
       CHECK(pos + 8 <= size, "call DL read overrun");
-      // Not expected inside a display list being processed
+      Log.warn("Ignoring nested GX_CMD_CALL_DL");
       pos += 8;
       break;
     }
@@ -1303,55 +1309,10 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   u16 vtxCount = read_u16(data + pos, bigEndian);
   pos += 2;
 
-  // Hash the draw command data (cmd byte + vtxCount + vertex data) for caching.
-  // We need to figure out vtxSize first via prepare_vtx_buffer, but we also need
-  // it for hashing. Use the cmd byte as the hash start point: data + pos - 3
-  // points to [cmd, vtxCountHi, vtxCountLo, vtxData...].
-  // However we don't know totalVtxBytes yet without parsing. Instead, we hash
-  // after prepare_vtx_buffer tells us vtxSize.
-
   // Temporarily save the vertex data start position
   const u8* vtxDataStart = data + pos;
 
-  // We need to compute the raw vertex size to know how much data to hash and skip.
-  // prepare_vtx_buffer returns this as a side effect, but we need it before calling
-  // it to compute the hash. Rather than duplicate the size calc, hash after parsing.
-
-  // First compute the hash key over cmd + vtxCount + raw vertex data.
-  // To do that, we need vtxSize. Run prepare_vtx_buffer which returns it.
-  // But prepare_vtx_buffer also consumes the data. So we hash cmd+vtxCount first,
-  // then extend the hash with vertex data after we know the size.
-
-  // Actually, we can just do a two-pass approach: prepare_vtx_buffer returns vtxSize,
-  // so we hash [cmd, vtxCount_bytes, vtxData] and look up the cache.
-  // We need vtxSize to know how many bytes of vtxData to include in the hash.
-  // The clean approach: hash first, call prepare on miss.
-
-  // Compute raw vertex size from the descriptor (same logic as prepare_vtx_buffer)
-  // by calling prepare_vtx_buffer with a temporary buffer, or by using the vtxSize
-  // returned. Let's just hash after we know the size.
-
-  // For efficiency: try cache first using a hash of (cmd, vtxCount, vtxData).
-  // We need the vtxSize to compute this. prepare_vtx_buffer returns it.
-  // Call prepare_vtx_buffer into a temp buffer, get vtxSize, then hash.
-
-  ByteBuffer vtxBuf;
-  ByteBuffer idxBuf;
-
-  // Log VCD state used for vertex size calculation
-  // {
-  //   std::string vcdStr;
-  //   for (int a = 0; a < GX_VA_MAX_ATTR; a++) {
-  //     if (g_gxState.vtxDesc[a] != GX_NONE) {
-  //       const auto& af = g_gxState.vtxFmts[fmt].attrs[a];
-  //       vcdStr += fmt::format(" {}:t{}(cnt={},typ={},frac={})", a, static_cast<int>(g_gxState.vtxDesc[a]),
-  //                             static_cast<int>(af.cnt), static_cast<int>(af.type), af.frac);
-  //     }
-  //   }
-  //   Log.warn("  draw vcd:{}", vcdStr);
-  // }
-
-  u32 vtxSize = prepare_vtx_buffer(vtxBuf, fmt, vtxDataStart, vtxCount, bigEndian);
+  u32 vtxSize = prepare_vtx_buffer(nullptr, fmt, nullptr, vtxCount, bigEndian);
   u32 totalVtxBytes = vtxCount * vtxSize;
   // Log.warn("  draw: prim {:02x} fmt {} vtxCount {} vtxSize {} totalBytes {} pos {} -> {}",
   //          static_cast<u32>(prim), static_cast<u32>(fmt), vtxCount, vtxSize, totalVtxBytes, pos, pos + totalVtxBytes);
@@ -1381,13 +1342,16 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
 
   auto it = sCachedDisplayLists.find(hash);
   if (it != sCachedDisplayLists.end()) {
-    // Cache hit - use cached buffers (discard the vtxBuf we just built)
+    // Cache hit - use cached buffers
     const auto& cache = it->second;
     numIndices = cache.idxBuf.size() / 2;
     vertRange = push_verts(cache.vtxBuf.data(), cache.vtxBuf.size());
     idxRange = push_indices(cache.idxBuf.data(), cache.idxBuf.size());
   } else {
     // Cache miss - build index buffer and cache both
+    ByteBuffer vtxBuf;
+    ByteBuffer idxBuf;
+    prepare_vtx_buffer(&vtxBuf, fmt, vtxDataStart, vtxCount, bigEndian);
     numIndices = prepare_idx_buffer(idxBuf, prim, 0, vtxCount);
     vertRange = push_verts(vtxBuf.data(), vtxBuf.size());
     idxRange = push_indices(idxBuf.data(), idxBuf.size());

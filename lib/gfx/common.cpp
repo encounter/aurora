@@ -25,7 +25,7 @@ using webgpu::g_queue;
 std::vector<std::string> g_debugGroupStack;
 #endif
 
-constexpr uint64_t UniformBufferSize = 5242880;  // 3mb
+constexpr uint64_t UniformBufferSize = 25165824; // 24mb
 constexpr uint64_t VertexBufferSize = 3145728;   // 3mb
 constexpr uint64_t IndexBufferSize = 1048576;    // 1mb
 constexpr uint64_t StorageBufferSize = 8388608;  // 8mb

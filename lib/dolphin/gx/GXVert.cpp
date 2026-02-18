@@ -154,15 +154,9 @@ void GXColor3u8(u8 r, u8 g, u8 b) {
   GX_WRITE_U8(b);
 }
 
-void GXColor1u32(u32 clr) {
-  // TODO: should I expect LE or BE ordering here?
-  GX_WRITE_U32(bswap(clr));
-}
+void GXColor1u32(u32 clr) { GX_WRITE_U32(clr); }
 
-void GXColor1u16(u16 clr) {
-  // TODO: should I expect LE or BE ordering here?
-  GX_WRITE_U16(bswap(clr));
-}
+void GXColor1u16(u16 clr) { GX_WRITE_U16(clr); }
 
 void GXColor1x16(u16 index) { GX_WRITE_U16(index); }
 
