@@ -250,8 +250,12 @@ static void __SetSURegs(u32 tmap, u32 tcoord) {
 
 void __GXSetSUTexRegs() {
   // Write SU texture size/bias registers for each active TEV stage and indirect stage.
-  // tcsManEnab == 0xFF means all coords are manually managed (skip auto-setup).
-  // Aurora doesn't use tcsManEnab, so we always auto-setup (tcsManEnab = 0).
+  // Skip coords that have manual scale enabled (tcsManEnab bit set).
+  // If all coords are manual (0xFF), skip entirely.
+  if (__gx->tcsManEnab == 0xFF) {
+    return;
+  }
+
   u32 nStages = GET_REG_FIELD(__gx->genMode, 4, 10) + 1;
   u32 nIndStages = GET_REG_FIELD(__gx->genMode, 3, 16);
 
@@ -276,7 +280,9 @@ void __GXSetSUTexRegs() {
       coord = GET_REG_FIELD(__gx->iref, 3, 21);
       break;
     }
-    __SetSURegs(tmap, coord);
+    if (!(__gx->tcsManEnab & (1 << coord))) {
+      __SetSURegs(tmap, coord);
+    }
   }
 
   // Direct TEV stages
@@ -290,7 +296,7 @@ void __GXSetSUTexRegs() {
     } else {
       coord = GET_REG_FIELD(*ptref, 3, 3);
     }
-    if (tmap != 0xFF) {
+    if (tmap != 0xFF && !(__gx->tcsManEnab & (1 << coord))) {
       __SetSURegs(tmap, coord);
     }
   }

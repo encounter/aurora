@@ -8,6 +8,9 @@
 
 #include <absl/container/flat_hash_map.h>
 
+#include <cmath>
+#include <cstring>
+
 static aurora::Module Log("aurora::gfx::cp");
 
 using aurora::gfx::gx::g_gxState;
@@ -333,17 +336,11 @@ void process(const u8* data, u32 size, bool bigEndian) {
 
   while (pos < size) {
     u8 cmd = data[pos++];
-
-    if (cmd == CP_CMD_NOP) {
-      continue;
-    }
-
     u8 opcode = cmd & CP_OPCODE_MASK;
     // Log.warn("Processing opcode {:02x} at pos {} (size {})", opcode, pos - 1, size);
 
     switch (opcode) {
     case CP_CMD_NOP:
-      // Already handled above, but could be 0x00 with VAT bits set
       continue;
 
     case CP_CMD_LOAD_BP_REG: {
@@ -374,7 +371,7 @@ void process(const u8* data, u32 size, bool bigEndian) {
     case CP_CMD_LOAD_INDX_D: {
       // Indexed XF load: 4 bytes of data
       CHECK(pos + 4 <= size, "indexed XF read overrun");
-      // TODO: handle indexed XF loads
+      Log.warn("Unimplemented indexed XF load (opcode 0x{:02X})", opcode);
       pos += 4;
       break;
     }
@@ -388,7 +385,7 @@ void process(const u8* data, u32 size, bool bigEndian) {
     }
 
     case CP_CMD_INVAL_VTX: {
-      // Invalidate vertex cache - no data
+      // Invalidate vertex cache
       break;
     }
 
@@ -533,7 +530,7 @@ static void handle_bp(u32 value, bool bigEndian) {
   // BP mask (0x0F) - internal, applies to next BP write
   case 0x0F:
     // The BP mask is used by the hardware to selectively update fields.
-    // For our purposes, we don't need to implement masking.
+    // TODO implement
     break;
 
   // TEV indirect stages (0x10-0x1F)
@@ -559,21 +556,16 @@ static void handle_bp(u32 value, bool bigEndian) {
   }
 
   // Scissor registers (0x20, 0x21)
-  case 0x20: {
-    u32 top = bp_get(value, 11, 0) - 340;
-    u32 left = bp_get(value, 11, 12) - 340;
-    aurora::gfx::set_scissor(left, top, 1, 1); // Width/height set by 0x21
-    break;
-  }
-  case 0x21: {
-    // Need both 0x20 and 0x21 to reconstruct full scissor rect.
-    // For now, just consume - the GX function already called set_scissor.
+  case 0x20: case 0x21: {
+    Log.warn("Unimplemented: BP register {:x} (scissor)", regId);
     break;
   }
 
-  // Line/point size (0x22) - informational, not used for rendering
-  case 0x22:
+  // Line/point size (0x22)
+  case 0x22: {
+    Log.warn("Unimplemented: BP register {:x} (line/point size)", regId);
     break;
+  }
 
   // Indirect texture scale (0x25, 0x26)
   case 0x25: {
@@ -690,8 +682,10 @@ static void handle_bp(u32 value, bool bigEndian) {
   }
 
   // PE control (0x43) - zcomp location
-  case 0x43:
+  case 0x43: {
+    // Log.warn("Unimplemented: BP register {:x} (zcomp loc)", regId);
     break;
+  }
 
   // Alpha compare (0xF3)
   case 0xF3: {
@@ -734,10 +728,62 @@ static void handle_bp(u32 value, bool bigEndian) {
     break;
   }
 
-  // Fog type from FOG3 (0xF1) - decode fog type for display list playback
+  // Fog A/B parameters (0xEE-0xF0)
+  // FOG0 (0xEE): A parameter - sign(1)|exp(8)|mantissa(11) partial IEEE 754 float
+  case 0xEE: {
+    g_gxState.fog.fog0Raw = value;
+    // Reconstruct A = a_encoded * 2^b_s
+    u32 a_mant = bp_get(value, 11, 0);
+    u32 a_exp = bp_get(value, 8, 11);
+    u32 a_sign = bp_get(value, 1, 19);
+    u32 a_bits = (a_sign << 31) | (a_exp << 23) | (a_mant << 12);
+    float a_encoded;
+    std::memcpy(&a_encoded, &a_bits, sizeof(a_encoded));
+    u32 b_s = g_gxState.fog.fog2Raw & 0x1F;
+    g_gxState.fog.a = std::ldexp(a_encoded, static_cast<int>(b_s));
+    g_gxState.stateDirty = true;
+    break;
+  }
+  // FOG1 (0xEF): B mantissa (24-bit)
+  case 0xEF: {
+    g_gxState.fog.fog1Raw = value;
+    u32 b_m = bp_get(value, 24, 0);
+    u32 b_s = g_gxState.fog.fog2Raw & 0x1F;
+    float B_mant = static_cast<float>(b_m) / 8388638.0f;
+    g_gxState.fog.b = std::ldexp(B_mant, static_cast<int>(b_s) - 1);
+    g_gxState.stateDirty = true;
+    break;
+  }
+  // FOG2 (0xF0): B shift/exponent (5-bit)
+  case 0xF0: {
+    g_gxState.fog.fog2Raw = value;
+    u32 b_s = bp_get(value, 5, 0);
+    // Recompute A with updated b_s
+    u32 a_mant = bp_get(g_gxState.fog.fog0Raw, 11, 0);
+    u32 a_exp = bp_get(g_gxState.fog.fog0Raw, 8, 11);
+    u32 a_sign = bp_get(g_gxState.fog.fog0Raw, 1, 19);
+    u32 a_bits = (a_sign << 31) | (a_exp << 23) | (a_mant << 12);
+    float a_encoded;
+    std::memcpy(&a_encoded, &a_bits, sizeof(a_encoded));
+    g_gxState.fog.a = std::ldexp(a_encoded, static_cast<int>(b_s));
+    // Recompute B with updated b_s
+    u32 b_m = bp_get(g_gxState.fog.fog1Raw, 24, 0);
+    float B_mant = static_cast<float>(b_m) / 8388638.0f;
+    g_gxState.fog.b = std::ldexp(B_mant, static_cast<int>(b_s) - 1);
+    g_gxState.stateDirty = true;
+    break;
+  }
+
+  // Fog type + C parameter from FOG3 (0xF1)
   case 0xF1: {
     GXFogType fogType = static_cast<GXFogType>(bp_get(value, 3, 21));
     g_gxState.fog.type = fogType;
+    // Decode C parameter (same partial float encoding as A)
+    u32 c_mant = bp_get(value, 11, 0);
+    u32 c_exp = bp_get(value, 8, 11);
+    u32 c_sign = bp_get(value, 1, 19);
+    u32 c_bits = (c_sign << 31) | (c_exp << 23) | (c_mant << 12);
+    std::memcpy(&g_gxState.fog.c, &c_bits, sizeof(g_gxState.fog.c));
     g_gxState.stateDirty = true;
     break;
   }
@@ -756,12 +802,6 @@ static void handle_bp(u32 value, bool bigEndian) {
     g_gxState.stateDirty = true;
     break;
   }
-
-  // Fog A/B parameters (0xEE-0xF0) - these carry encoded float coefficients.
-  // Aurora uses the high-level fog params (startZ/endZ/nearZ/farZ) from the side channel,
-  // so we only need the type and color from the FIFO for DL playback.
-  case 0xEE: case 0xEF: case 0xF0:
-    break;
 
   // TEV color registers / K color registers (0xE0-0xE7)
   // RA registers: 0xE0, 0xE2, 0xE4, 0xE6 (even)
@@ -813,20 +853,91 @@ static void handle_bp(u32 value, bool bigEndian) {
   }
 
   // Indirect texture matrices (0x06-0x0E)
+  // Each matrix uses 3 consecutive registers (one per row of the 3x2 matrix).
+  // Matrix 0: 0x06-0x08, Matrix 1: 0x09-0x0B, Matrix 2: 0x0C-0x0E
   case 0x06: case 0x07: case 0x08:
   case 0x09: case 0x0A: case 0x0B:
-  case 0x0C: case 0x0D: case 0x0E:
-    // These carry 2x3 matrix values packed into BP registers.
-    // The matrix data is already applied via GXSetIndTexMtx which updates g_gxState directly.
+  case 0x0C: case 0x0D: case 0x0E: {
+    u32 idx = (regId - 0x06) / 3; // matrix index (0-2)
+    u32 row = (regId - 0x06) % 3; // row index (0-2)
+    auto& info = g_gxState.indTexMtxs[idx];
+
+    // Decode 11-bit signed matrix elements (scaled by 1024)
+    s32 col0 = bp_get(value, 11, 0);
+    if (col0 & 0x400) col0 |= ~0x7FF; // sign-extend from 11 bits
+    s32 col1 = bp_get(value, 11, 11);
+    if (col1 & 0x400) col1 |= ~0x7FF;
+
+    auto& r = row == 0 ? info.mtx.m0 : (row == 1 ? info.mtx.m1 : info.mtx.m2);
+    r.x = static_cast<float>(col0) / 1024.0f;
+    r.y = static_cast<float>(col1) / 1024.0f;
+
+    // Accumulate 2-bit scale exponent part (adjScale = scaleExp + 17, split across 3 registers)
+    u32 scaleBits = bp_get(value, 2, 22);
+    u32 shift = row * 2;
+    info.adjScaleRaw = (info.adjScaleRaw & ~(3u << shift)) | (scaleBits << shift);
+    info.scaleExp = static_cast<s8>(info.adjScaleRaw) - 17;
+
+    g_gxState.stateDirty = true;
     break;
+  }
+
+  // SU texture coordinate scale registers (0x30-0x3F)
+  // Even registers (suTs0): S-axis scale, bias, cyl wrap, line/point offset
+  // Odd registers (suTs1): T-axis scale, bias, cyl wrap
+  case 0x30: case 0x31: case 0x32: case 0x33:
+  case 0x34: case 0x35: case 0x36: case 0x37:
+  case 0x38: case 0x39: case 0x3A: case 0x3B:
+  case 0x3C: case 0x3D: case 0x3E: case 0x3F: {
+    u32 coordIdx = (regId - 0x30) / 2;
+    bool isT = (regId & 1) != 0;
+    auto& tcs = g_gxState.texCoordScales[coordIdx];
+    if (isT) {
+      tcs.scaleT = static_cast<u16>(bp_get(value, 16, 0));
+      tcs.biasT = bp_get(value, 1, 16) != 0;
+      tcs.cylWrapT = bp_get(value, 1, 17) != 0;
+    } else {
+      tcs.scaleS = static_cast<u16>(bp_get(value, 16, 0));
+      tcs.biasS = bp_get(value, 1, 16) != 0;
+      tcs.cylWrapS = bp_get(value, 1, 17) != 0;
+      tcs.lineOffset = bp_get(value, 1, 18) != 0;
+      tcs.pointOffset = bp_get(value, 1, 19) != 0;
+    }
+    g_gxState.stateDirty = true;
+    break;
+  }
+
+  // Copy clear color (0x4F-0x50) and depth (0x51)
+  case 0x4F: {
+    u8 r = bp_get(value, 8, 0);
+    u8 a = bp_get(value, 8, 8);
+    g_gxState.clearColor[0] = static_cast<float>(r) / 255.f;
+    g_gxState.clearColor[3] = static_cast<float>(a) / 255.f;
+    g_gxState.stateDirty = true;
+    break;
+  }
+  case 0x50: {
+    u8 b = bp_get(value, 8, 0);
+    u8 g = bp_get(value, 8, 8);
+    g_gxState.clearColor[2] = static_cast<float>(b) / 255.f;
+    g_gxState.clearColor[1] = static_cast<float>(g) / 255.f;
+    g_gxState.stateDirty = true;
+    break;
+  }
+  case 0x51: {
+    g_gxState.clearDepth = bp_get(value, 24, 0);
+    g_gxState.stateDirty = true;
+    break;
+  }
 
   // Texture mode/image registers (0x80-0xBB) - texture config
   default:
     if (regId >= 0x80 && regId <= 0xBB) {
       // Texture format/wrap/filter configuration.
       // These are handled pragmatically - GXLoadTexObj sets texture handles directly.
+    } else {
+      Log.warn("Unhandled BP register 0x{:02X} (value 0x{:06X})", regId, value & 0xFFFFFF);
     }
-    // Silently ignore unknown BP registers
     break;
   }
 }

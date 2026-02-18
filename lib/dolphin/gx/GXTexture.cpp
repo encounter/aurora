@@ -1,4 +1,5 @@
 #include "gx.hpp"
+#include "__gx.h"
 
 #include "../../gfx/texture.hpp"
 
@@ -234,8 +235,33 @@ void GXInvalidateTexAll() {
 // TODO GXSetTlutRegionCallback
 // TODO GXLoadTexObjPreLoaded
 void GXSetTexCoordScaleManually(GXTexCoordID coord, GXBool enable, u16 ss, u16 ts) {
-  // TODO
+  __gx->tcsManEnab = (__gx->tcsManEnab & ~(1 << coord)) | (enable << coord);
+  if (enable) {
+    SET_REG_FIELD(0, __gx->suTs0[coord], 16, 0, static_cast<u16>(ss - 1));
+    SET_REG_FIELD(0, __gx->suTs1[coord], 16, 0, static_cast<u16>(ts - 1));
+    GX_WRITE_RAS_REG(__gx->suTs0[coord]);
+    GX_WRITE_RAS_REG(__gx->suTs1[coord]);
+    __gx->bpSent = 1;
+  }
 }
-// TODO GXSetTexCoordCylWrap
-// TODO GXSetTexCoordBias
+
+void GXSetTexCoordCylWrap(GXTexCoordID coord, GXBool s_enable, GXBool t_enable) {
+  SET_REG_FIELD(0, __gx->suTs0[coord], 1, 17, s_enable);
+  SET_REG_FIELD(0, __gx->suTs1[coord], 1, 17, t_enable);
+  if (__gx->tcsManEnab & (1 << coord)) {
+    GX_WRITE_RAS_REG(__gx->suTs0[coord]);
+    GX_WRITE_RAS_REG(__gx->suTs1[coord]);
+    __gx->bpSent = 1;
+  }
+}
+
+void GXSetTexCoordBias(GXTexCoordID coord, GXBool s_enable, GXBool t_enable) {
+  SET_REG_FIELD(0, __gx->suTs0[coord], 1, 16, s_enable);
+  SET_REG_FIELD(0, __gx->suTs1[coord], 1, 16, t_enable);
+  if (__gx->tcsManEnab & (1 << coord)) {
+    GX_WRITE_RAS_REG(__gx->suTs0[coord]);
+    GX_WRITE_RAS_REG(__gx->suTs1[coord]);
+    __gx->bpSent = 1;
+  }
+}
 }

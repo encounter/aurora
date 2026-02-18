@@ -99,6 +99,7 @@ struct __GXData_struct {
 
   u32 suTs0[8];     // SU texture S0 registers
   u32 suTs1[8];     // SU texture S1 registers
+  u8 tcsManEnab;    // bitmask: manual tex coord scale enabled per coord
   u32 suScis0;      // scissor top-left
   u32 suScis1;      // scissor bottom-right
 

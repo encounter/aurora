@@ -24,6 +24,8 @@ void GXInitTexObjWrapMode(GXTexObj* obj, GXTexWrapMode s, GXTexWrapMode t);
 void GXInitTlutObj(GXTlutObj* obj, const void* data, GXTlutFmt format, u16 entries);
 void GXLoadTlut(const GXTlutObj* obj, GXTlut idx);
 void GXSetTexCoordScaleManually(GXTexCoordID coord, GXBool enable, u16 ss, u16 ts);
+void GXSetTexCoordCylWrap(GXTexCoordID coord, GXBool s_enable, GXBool t_enable);
+void GXSetTexCoordBias(GXTexCoordID coord, GXBool s_enable, GXBool t_enable);
 void GXInitTexCacheRegion(GXTexRegion* region, GXBool is_32b_mipmap, u32 tmem_even, GXTexCacheSize size_even,
                           u32 tmem_odd, GXTexCacheSize size_odd);
 GXTexRegionCallback GXSetTexRegionCallback(GXTexRegionCallback callback);

@@ -1,4 +1,5 @@
 #include "gx.hpp"
+#include "__gx.h"
 
 #include "../../window.hpp"
 #include "../../webgpu/wgpu.hpp"
@@ -39,7 +40,28 @@ void GXSetTexCopyDst(u16 wd, u16 ht, GXTexFmt fmt, GXBool mipmap) {
 
 u32 GXSetDispCopyYScale(f32 vscale) { return 0; }
 
-void GXSetCopyClear(GXColor color, u32 depth) { update_gx_state(g_gxState.clearColor, from_gx_color(color)); }
+void GXSetCopyClear(GXColor color, u32 depth) {
+  // BP 0x4F: clear color R + A
+  u32 reg0 = 0;
+  SET_REG_FIELD(0, reg0, 8, 0, color.r);
+  SET_REG_FIELD(0, reg0, 8, 8, color.a);
+  SET_REG_FIELD(0, reg0, 8, 24, 0x4F);
+  GX_WRITE_RAS_REG(reg0);
+
+  // BP 0x50: clear color B + G
+  u32 reg1 = 0;
+  SET_REG_FIELD(0, reg1, 8, 0, color.b);
+  SET_REG_FIELD(0, reg1, 8, 8, color.g);
+  SET_REG_FIELD(0, reg1, 8, 24, 0x50);
+  GX_WRITE_RAS_REG(reg1);
+
+  // BP 0x51: clear Z (24-bit)
+  u32 reg2 = 0;
+  SET_REG_FIELD(0, reg2, 24, 0, depth);
+  SET_REG_FIELD(0, reg2, 8, 24, 0x51);
+  GX_WRITE_RAS_REG(reg2);
+  __gx->bpSent = 1;
+}
 
 void GXSetCopyFilter(GXBool aa, u8 sample_pattern[12][2], GXBool vf, u8 vfilter[7]) {}
 

@@ -1532,6 +1532,385 @@ TEST_F(GXFifoTest, ChanMatColor_Color1A1_Compound) {
 }
 
 // ============================================================================
+// GXSetFog (BP 0xEE-0xF2) - Fog A/B/C parameters, type, and color
+// ============================================================================
+
+// --- Fog with perspective linear fog, typical parameters ---
+TEST_F(GXFifoTest, Fog_PerspLin_Typical) {
+  GXColor fogColor = {128, 200, 255, 255};
+  GXSetFog(GX_FOG_PERSP_LIN, 100.f, 900.f, 0.1f, 1000.f, fogColor);
+  auto bytes = capture_fifo();
+
+  // Should produce 5 BP writes (0xEE-0xF2): 5 * 5 = 25 bytes
+  ASSERT_EQ(bytes.size(), 25u);
+  // Verify BP opcodes and register IDs
+  EXPECT_EQ(bytes[0], 0x61);
+  EXPECT_EQ(bytes[1], 0xEE);
+  EXPECT_EQ(bytes[5], 0x61);
+  EXPECT_EQ(bytes[6], 0xEF);
+  EXPECT_EQ(bytes[10], 0x61);
+  EXPECT_EQ(bytes[11], 0xF0);
+  EXPECT_EQ(bytes[15], 0x61);
+  EXPECT_EQ(bytes[16], 0xF1);
+  EXPECT_EQ(bytes[20], 0x61);
+  EXPECT_EQ(bytes[21], 0xF2);
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  // Compute expected A, B, C from the SDK formula
+  float nearZ = 0.1f, farZ = 1000.f, startZ = 100.f, endZ = 900.f;
+  float A = (farZ * nearZ) / ((farZ - nearZ) * (endZ - startZ));
+  float B = farZ / (farZ - nearZ);
+  float C = startZ / (endZ - startZ);
+
+  // Allow tolerance for encoding precision loss (11-bit mantissa)
+  EXPECT_NEAR(g_gxState.fog.a, A, std::abs(A) * 1e-3f);
+  EXPECT_NEAR(g_gxState.fog.b, B, std::abs(B) * 1e-3f);
+  EXPECT_NEAR(g_gxState.fog.c, C, std::abs(C) * 1e-3f);
+  EXPECT_EQ(g_gxState.fog.type, GX_FOG_PERSP_LIN);
+  EXPECT_NEAR(g_gxState.fog.color[0], 128.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.fog.color[1], 200.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.fog.color[2], 255.f / 255.f, 1.f / 255.f);
+}
+
+// --- Fog with degenerate parameters (nearZ == farZ) ---
+TEST_F(GXFifoTest, Fog_Degenerate_EqualDepths) {
+  GXColor fogColor = {0, 0, 0, 255};
+  GXSetFog(GX_FOG_PERSP_EXP, 0.f, 100.f, 10.f, 10.f, fogColor);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  // When nearZ == farZ, SDK sets A=0, B=0.5, C=0
+  EXPECT_FLOAT_EQ(g_gxState.fog.a, 0.f);
+  EXPECT_NEAR(g_gxState.fog.b, 0.5f, 1e-3f);
+  EXPECT_FLOAT_EQ(g_gxState.fog.c, 0.f);
+  EXPECT_EQ(g_gxState.fog.type, GX_FOG_PERSP_EXP);
+}
+
+// --- Fog type: none ---
+TEST_F(GXFifoTest, Fog_None) {
+  GXColor fogColor = {64, 64, 64, 255};
+  GXSetFog(GX_FOG_NONE, 0.f, 0.f, 0.f, 0.f, fogColor);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_EQ(g_gxState.fog.type, GX_FOG_NONE);
+  EXPECT_FLOAT_EQ(g_gxState.fog.a, 0.f);
+  EXPECT_NEAR(g_gxState.fog.b, 0.5f, 1e-3f);
+  EXPECT_FLOAT_EQ(g_gxState.fog.c, 0.f);
+  EXPECT_NEAR(g_gxState.fog.color[0], 64.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.fog.color[1], 64.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.fog.color[2], 64.f / 255.f, 1.f / 255.f);
+}
+
+// --- Fog with perspective reverse exponential squared type ---
+TEST_F(GXFifoTest, Fog_PerspRevExp2) {
+  GXColor fogColor = {255, 0, 0, 255};
+  GXSetFog(GX_FOG_PERSP_REVEXP2, 50.f, 500.f, 1.f, 1000.f, fogColor);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  float nearZ = 1.f, farZ = 1000.f, startZ = 50.f, endZ = 500.f;
+  float A = (farZ * nearZ) / ((farZ - nearZ) * (endZ - startZ));
+  float B = farZ / (farZ - nearZ);
+  float C = startZ / (endZ - startZ);
+
+  EXPECT_NEAR(g_gxState.fog.a, A, std::abs(A) * 1e-3f);
+  EXPECT_NEAR(g_gxState.fog.b, B, std::abs(B) * 1e-3f);
+  EXPECT_NEAR(g_gxState.fog.c, C, std::abs(C) * 1e-3f);
+  EXPECT_EQ(g_gxState.fog.type, GX_FOG_PERSP_REVEXP2);
+  EXPECT_NEAR(g_gxState.fog.color[0], 1.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.fog.color[1], 0.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.fog.color[2], 0.f, 1.f / 255.f);
+}
+
+// ============================================================================
+// GXSetIndTexMtx (BP 0x06-0x0E) - Indirect texture matrix parameters
+// ============================================================================
+
+// --- IndTexMtx 0 with half-scale diagonal matrix ---
+// Note: 11-bit signed range limits values to [-1.0, 0.999], so 1.0 is not representable.
+TEST_F(GXFifoTest, IndTexMtx0_HalfScale) {
+  f32 mtx[2][3] = {
+      {0.5f, 0.0f, 0.0f},
+      {0.0f, 0.5f, 0.0f},
+  };
+  GXSetIndTexMtx(GX_ITM_0, mtx, 0);
+  auto bytes = capture_fifo();
+
+  // Should produce 3 BP writes: 3 * 5 = 15 bytes
+  ASSERT_EQ(bytes.size(), 15u);
+  // Verify BP opcodes and register IDs (0x06, 0x07, 0x08 for matrix 0)
+  EXPECT_EQ(bytes[0], 0x61);
+  EXPECT_EQ(bytes[1], 0x06);
+  EXPECT_EQ(bytes[5], 0x61);
+  EXPECT_EQ(bytes[6], 0x07);
+  EXPECT_EQ(bytes[10], 0x61);
+  EXPECT_EQ(bytes[11], 0x08);
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& info = g_gxState.indTexMtxs[0];
+  // 11-bit fixed-point (1/1024) precision
+  float tol = 1.0f / 1024.0f;
+  EXPECT_NEAR(info.mtx.m0.x, 0.5f, tol);
+  EXPECT_NEAR(info.mtx.m0.y, 0.0f, tol);
+  EXPECT_NEAR(info.mtx.m1.x, 0.0f, tol);
+  EXPECT_NEAR(info.mtx.m1.y, 0.5f, tol);
+  EXPECT_NEAR(info.mtx.m2.x, 0.0f, tol);
+  EXPECT_NEAR(info.mtx.m2.y, 0.0f, tol);
+  EXPECT_EQ(info.scaleExp, 0);
+}
+
+// --- IndTexMtx 1 with fractional values and positive scale ---
+TEST_F(GXFifoTest, IndTexMtx1_FractionalWithScale) {
+  f32 mtx[2][3] = {
+      {0.5f, 0.25f, -0.125f},
+      {-0.5f, 0.75f, 0.0f},
+  };
+  GXSetIndTexMtx(GX_ITM_1, mtx, 3);
+  auto bytes = capture_fifo();
+
+  // Register IDs for matrix 1: 0x09, 0x0A, 0x0B
+  ASSERT_EQ(bytes.size(), 15u);
+  EXPECT_EQ(bytes[1], 0x09);
+  EXPECT_EQ(bytes[6], 0x0A);
+  EXPECT_EQ(bytes[11], 0x0B);
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& info = g_gxState.indTexMtxs[1];
+  float tol = 1.0f / 1024.0f;
+  EXPECT_NEAR(info.mtx.m0.x, 0.5f, tol);
+  EXPECT_NEAR(info.mtx.m0.y, -0.5f, tol);
+  EXPECT_NEAR(info.mtx.m1.x, 0.25f, tol);
+  EXPECT_NEAR(info.mtx.m1.y, 0.75f, tol);
+  EXPECT_NEAR(info.mtx.m2.x, -0.125f, tol);
+  EXPECT_NEAR(info.mtx.m2.y, 0.0f, tol);
+  EXPECT_EQ(info.scaleExp, 3);
+}
+
+// --- IndTexMtx 2 with negative scale exponent ---
+TEST_F(GXFifoTest, IndTexMtx2_NegativeScale) {
+  f32 mtx[2][3] = {
+      {0.0f, 0.0f, 0.0f},
+      {0.0f, 0.0f, 0.0f},
+  };
+  GXSetIndTexMtx(GX_ITM_2, mtx, -5);
+  auto bytes = capture_fifo();
+
+  // Register IDs for matrix 2: 0x0C, 0x0D, 0x0E
+  ASSERT_EQ(bytes.size(), 15u);
+  EXPECT_EQ(bytes[1], 0x0C);
+  EXPECT_EQ(bytes[6], 0x0D);
+  EXPECT_EQ(bytes[11], 0x0E);
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& info = g_gxState.indTexMtxs[2];
+  EXPECT_EQ(info.scaleExp, -5);
+}
+
+// --- IndTexMtx 0 does not affect matrix 1 ---
+TEST_F(GXFifoTest, IndTexMtx0_Isolation) {
+  f32 mtx0[2][3] = {
+      {0.5f, 0.0f, 0.0f},
+      {0.0f, 0.5f, 0.0f},
+  };
+  f32 mtx1[2][3] = {
+      {-1.0f, 0.0f, 0.0f},
+      {0.0f, -1.0f, 0.0f},
+  };
+  GXSetIndTexMtx(GX_ITM_0, mtx0, 1);
+  GXSetIndTexMtx(GX_ITM_1, mtx1, -2);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  float tol = 1.0f / 1024.0f;
+  // Matrix 0
+  EXPECT_NEAR(g_gxState.indTexMtxs[0].mtx.m0.x, 0.5f, tol);
+  EXPECT_NEAR(g_gxState.indTexMtxs[0].mtx.m1.y, 0.5f, tol);
+  EXPECT_EQ(g_gxState.indTexMtxs[0].scaleExp, 1);
+  // Matrix 1
+  EXPECT_NEAR(g_gxState.indTexMtxs[1].mtx.m0.x, -1.0f, tol);
+  EXPECT_NEAR(g_gxState.indTexMtxs[1].mtx.m1.y, -1.0f, tol);
+  EXPECT_EQ(g_gxState.indTexMtxs[1].scaleExp, -2);
+}
+
+// ============================================================================
+// SU Texture Coordinate Scale (BP 0x30-0x3F)
+// ============================================================================
+
+// --- GXSetTexCoordScaleManually sets width/height ---
+TEST_F(GXFifoTest, TexCoordScale_Manual_Coord0) {
+  GXSetTexCoordScaleManually(GX_TEXCOORD0, GX_TRUE, 256, 128);
+  auto bytes = capture_fifo();
+
+  // Two BP writes (suTs0 + suTs1): 2 * 5 = 10 bytes
+  ASSERT_EQ(bytes.size(), 10u);
+  EXPECT_EQ(bytes[0], 0x61);
+  EXPECT_EQ(bytes[1], 0x30); // suTs0[0]
+  EXPECT_EQ(bytes[5], 0x61);
+  EXPECT_EQ(bytes[6], 0x31); // suTs1[0]
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& tcs = g_gxState.texCoordScales[0];
+  EXPECT_EQ(tcs.scaleS, 255u); // width - 1
+  EXPECT_EQ(tcs.scaleT, 127u); // height - 1
+}
+
+// --- GXSetTexCoordScaleManually for coord 3 ---
+TEST_F(GXFifoTest, TexCoordScale_Manual_Coord3) {
+  GXSetTexCoordScaleManually(GX_TEXCOORD3, GX_TRUE, 512, 512);
+  auto bytes = capture_fifo();
+
+  ASSERT_EQ(bytes.size(), 10u);
+  EXPECT_EQ(bytes[1], 0x36); // suTs0[3] = 0x30 + 3*2
+  EXPECT_EQ(bytes[6], 0x37); // suTs1[3] = 0x31 + 3*2
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& tcs = g_gxState.texCoordScales[3];
+  EXPECT_EQ(tcs.scaleS, 511u);
+  EXPECT_EQ(tcs.scaleT, 511u);
+}
+
+// --- GXSetTexCoordScaleManually with bias and cyl wrap ---
+TEST_F(GXFifoTest, TexCoordScale_BiasAndCylWrap) {
+  // Enable manual mode first, then set bias and cyl wrap
+  GXSetTexCoordScaleManually(GX_TEXCOORD0, GX_TRUE, 64, 64);
+  capture_fifo(); // discard
+
+  GXSetTexCoordBias(GX_TEXCOORD0, GX_TRUE, GX_FALSE);
+  auto biasBytes = capture_fifo();
+
+  GXSetTexCoordCylWrap(GX_TEXCOORD0, GX_FALSE, GX_TRUE);
+  auto cylBytes = capture_fifo();
+
+  // Each writes 2 BP regs
+  ASSERT_EQ(biasBytes.size(), 10u);
+  ASSERT_EQ(cylBytes.size(), 10u);
+
+  reset_gx_state();
+  decode_fifo(biasBytes);
+  decode_fifo(cylBytes);
+
+  const auto& tcs = g_gxState.texCoordScales[0];
+  EXPECT_TRUE(tcs.biasS);
+  EXPECT_FALSE(tcs.biasT);
+  EXPECT_FALSE(tcs.cylWrapS);
+  EXPECT_TRUE(tcs.cylWrapT);
+}
+
+// --- GXEnableTexOffsets ---
+TEST_F(GXFifoTest, TexCoordScale_TexOffsets) {
+  GXEnableTexOffsets(GX_TEXCOORD2, GX_TRUE, GX_TRUE);
+  auto bytes = capture_fifo();
+
+  // One BP write (suTs0 only): 5 bytes
+  ASSERT_EQ(bytes.size(), 5u);
+  EXPECT_EQ(bytes[1], 0x34); // suTs0[2] = 0x30 + 2*2
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& tcs = g_gxState.texCoordScales[2];
+  EXPECT_TRUE(tcs.lineOffset);
+  EXPECT_TRUE(tcs.pointOffset);
+}
+
+// --- Coord isolation: writing coord 0 doesn't affect coord 1 ---
+TEST_F(GXFifoTest, TexCoordScale_Isolation) {
+  GXSetTexCoordScaleManually(GX_TEXCOORD0, GX_TRUE, 100, 200);
+  GXSetTexCoordScaleManually(GX_TEXCOORD1, GX_TRUE, 300, 400);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_EQ(g_gxState.texCoordScales[0].scaleS, 99u);
+  EXPECT_EQ(g_gxState.texCoordScales[0].scaleT, 199u);
+  EXPECT_EQ(g_gxState.texCoordScales[1].scaleS, 299u);
+  EXPECT_EQ(g_gxState.texCoordScales[1].scaleT, 399u);
+}
+
+// ============================================================================
+// GXSetCopyClear (BP 0x4F-0x51) - Clear color and depth
+// ============================================================================
+
+// --- Clear color and depth round-trip ---
+TEST_F(GXFifoTest, CopyClear_ColorAndDepth) {
+  GXColor color = {64, 128, 192, 255};
+  GXSetCopyClear(color, 0x00ABCDEF);
+  auto bytes = capture_fifo();
+
+  // 3 BP writes: 3 * 5 = 15 bytes
+  ASSERT_EQ(bytes.size(), 15u);
+  EXPECT_EQ(bytes[0], 0x61);
+  EXPECT_EQ(bytes[1], 0x4F); // R + A
+  EXPECT_EQ(bytes[5], 0x61);
+  EXPECT_EQ(bytes[6], 0x50); // B + G
+  EXPECT_EQ(bytes[10], 0x61);
+  EXPECT_EQ(bytes[11], 0x51); // Z
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_NEAR(g_gxState.clearColor[0], 64.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.clearColor[1], 128.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.clearColor[2], 192.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.clearColor[3], 255.f / 255.f, 1.f / 255.f);
+  EXPECT_EQ(g_gxState.clearDepth, 0x00ABCDEFu);
+}
+
+// --- Clear with black and zero depth ---
+TEST_F(GXFifoTest, CopyClear_BlackZeroDepth) {
+  GXColor color = {0, 0, 0, 0};
+  GXSetCopyClear(color, 0);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_NEAR(g_gxState.clearColor[0], 0.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.clearColor[1], 0.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.clearColor[2], 0.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.clearColor[3], 0.f, 1.f / 255.f);
+  EXPECT_EQ(g_gxState.clearDepth, 0u);
+}
+
+// --- Clear with max depth ---
+TEST_F(GXFifoTest, CopyClear_MaxDepth) {
+  GXColor color = {255, 255, 255, 128};
+  GXSetCopyClear(color, 0xFFFFFF);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_NEAR(g_gxState.clearColor[0], 1.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.clearColor[1], 1.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.clearColor[2], 1.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.clearColor[3], 128.f / 255.f, 1.f / 255.f);
+  EXPECT_EQ(g_gxState.clearDepth, 0xFFFFFFu);
+}
+
+// ============================================================================
 // Composite tests (multiple state changes in a single FIFO stream)
 // ============================================================================
 

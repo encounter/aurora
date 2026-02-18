@@ -167,15 +167,17 @@ struct TcgConfig {
 static_assert(std::has_unique_object_representations_v<TcgConfig>);
 struct FogState {
   GXFogType type = GX_FOG_NONE;
-  float startZ = 0.f;
-  float endZ = 0.f;
-  float nearZ = 0.f;
-  float farZ = 0.f;
+  float a = 0.f;
+  float b = 0.5f;
+  float c = 0.f;
   Vec4<float> color;
+  // Raw encoded register values for A/B reconstruction across separate BP writes
+  u32 fog0Raw = 0; // 0xEE: encoded A parameter
+  u32 fog1Raw = 0; // 0xEF: B mantissa
+  u32 fog2Raw = 0; // 0xF0: B shift
 
   bool operator==(const FogState& rhs) const {
-    return type == rhs.type && startZ == rhs.startZ && endZ == rhs.endZ && nearZ == rhs.nearZ && farZ == rhs.farZ &&
-           color == rhs.color;
+    return type == rhs.type && a == rhs.a && b == rhs.b && c == rhs.c && color == rhs.color;
   }
   bool operator!=(const FogState& rhs) const { return !(*this == rhs); }
 };
@@ -204,10 +206,29 @@ struct AlphaCompare {
 static_assert(std::has_unique_object_representations_v<AlphaCompare>);
 struct IndTexMtxInfo {
   aurora::Mat3x2<float> mtx;
-  s8 scaleExp;
+  s8 scaleExp = 0;
+  // Accumulated adjScale bits from BP registers (2 bits per row, 3 rows)
+  u8 adjScaleRaw = 0;
 
   bool operator==(const IndTexMtxInfo& rhs) const { return mtx == rhs.mtx && scaleExp == rhs.scaleExp; }
   bool operator!=(const IndTexMtxInfo& rhs) const { return !(*this == rhs); }
+};
+struct TexCoordScale {
+  u16 scaleS = 0; // texture width - 1
+  u16 scaleT = 0; // texture height - 1
+  bool biasS = false;
+  bool biasT = false;
+  bool cylWrapS = false;
+  bool cylWrapT = false;
+  bool lineOffset = false;
+  bool pointOffset = false;
+
+  bool operator==(const TexCoordScale& rhs) const {
+    return scaleS == rhs.scaleS && scaleT == rhs.scaleT && biasS == rhs.biasS && biasT == rhs.biasT &&
+           cylWrapS == rhs.cylWrapS && cylWrapT == rhs.cylWrapT && lineOffset == rhs.lineOffset &&
+           pointOffset == rhs.pointOffset;
+  }
+  bool operator!=(const TexCoordScale& rhs) const { return !(*this == rhs); }
 };
 struct VtxAttrFmt {
   GXCompCnt cnt;
@@ -267,6 +288,7 @@ struct GXState {
   GXLogicOp blendOp = GX_LO_CLEAR;
   GXCompare depthFunc = GX_LEQUAL;
   Vec4<float> clearColor{0.f, 0.f, 0.f, 1.f};
+  u32 clearDepth = 0xFFFFFF;
   u32 dstAlpha; // u8; UINT32_MAX = disabled
   AlphaCompare alphaCompare;
   std::array<Vec4<float>, MaxTevRegs> colorRegs;
@@ -280,6 +302,7 @@ struct GXState {
   std::array<TexMtxVariant, MaxTexMtx> texMtxs;
   std::array<Mat3x4<float>, MaxPTTexMtx> ptTexMtxs;
   std::array<TcgConfig, MaxTexCoord> tcgs;
+  std::array<TexCoordScale, MaxTexCoord> texCoordScales;
   std::array<GXAttrType, MaxVtxAttr> vtxDesc;
   std::array<VtxFmt, MaxVtxFmt> vtxFmts;
   std::array<TevSwap, MaxTevSwap> tevSwapTable{

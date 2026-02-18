@@ -76,9 +76,6 @@ void GXSetFog(GXFogType type, float startZ, float endZ, float nearZ, float farZ,
   GX_WRITE_RAS_REG(fog3);
   GX_WRITE_RAS_REG(fogclr);
   __gx->bpSent = 1;
-
-  // Side channel: direct update for inline rendering (full precision)
-  update_gx_state(g_gxState.fog, {type, startZ, endZ, nearZ, farZ, from_gx_color(color)});
 }
 
 void GXSetFogColor(GXColor color) {
@@ -90,9 +87,6 @@ void GXSetFogColor(GXColor color) {
   SET_REG_FIELD(0, fogclr, 8, 24, 0xF2);
   GX_WRITE_RAS_REG(fogclr);
   __gx->bpSent = 1;
-
-  // Side channel: direct update for inline rendering
-  update_gx_state(g_gxState.fog.color, from_gx_color(color));
 }
 
 void GXSetBlendMode(GXBlendMode mode, GXBlendFactor src, GXBlendFactor dst, GXLogicOp op) {

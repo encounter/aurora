@@ -364,5 +364,11 @@ void GXSetLineWidth(u8 width, GXTexOffset offs) {
 }
 
 // TODO GXSetPointSize
-// TODO GXEnableTexOffsets
+
+void GXEnableTexOffsets(GXTexCoordID coord, GXBool line_enable, GXBool point_enable) {
+  SET_REG_FIELD(0, __gx->suTs0[coord], 1, 18, line_enable);
+  SET_REG_FIELD(0, __gx->suTs0[coord], 1, 19, point_enable);
+  GX_WRITE_RAS_REG(__gx->suTs0[coord]);
+  __gx->bpSent = 1;
+}
 }

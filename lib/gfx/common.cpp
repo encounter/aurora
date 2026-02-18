@@ -151,6 +151,7 @@ struct RenderPass {
   TextureHandle resolveTarget;
   ClipRect resolveRect;
   Vec4<float> clearColor{0.f, 0.f, 0.f, 0.f};
+  float clearDepth = gx::UseReversedZ ? 0.f : 1.f;
   CommandList commands;
   bool clear = true;
 };
@@ -269,6 +270,7 @@ void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> 
   currentPass.resolveRect = rect;
   auto& newPass = g_renderPasses.emplace_back();
   newPass.clearColor = clearColor;
+  newPass.clearDepth = g_renderPasses[g_currentRenderPass].clearDepth;
   newPass.clear = clear;
   ++g_currentRenderPass;
 }
@@ -507,6 +509,10 @@ void begin_frame() {
 
   g_renderPasses.emplace_back();
   g_renderPasses[0].clearColor = gx::g_gxState.clearColor;
+  {
+    float normalizedDepth = static_cast<float>(gx::g_gxState.clearDepth) / 16777215.f;
+    g_renderPasses[0].clearDepth = gx::UseReversedZ ? (1.f - normalizedDepth) : normalizedDepth;
+  }
   g_currentRenderPass = 0;
   // push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   // push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
@@ -586,7 +592,7 @@ void render(wgpu::CommandEncoder& cmd) {
         .view = webgpu::g_depthBuffer.view,
         .depthLoadOp = passInfo.clear ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
         .depthStoreOp = wgpu::StoreOp::Store,
-        .depthClearValue = gx::UseReversedZ ? 0.f : 1.f,
+        .depthClearValue = passInfo.clearDepth,
     };
     const auto label = fmt::format("Render pass {}", i);
     const wgpu::RenderPassDescriptor renderPassDescriptor{

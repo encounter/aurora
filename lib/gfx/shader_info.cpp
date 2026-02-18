@@ -317,14 +317,7 @@ Range build_uniform(const ShaderInfo& info) noexcept {
   }
   if (info.usesFog) {
     const auto& state = g_gxState.fog;
-    Fog fog{.color = state.color};
-    if (state.nearZ != state.farZ && state.startZ != state.endZ) {
-      const float depthRange = state.farZ - state.nearZ;
-      const float fogRange = state.endZ - state.startZ;
-      fog.a = (state.farZ * state.nearZ) / (depthRange * fogRange);
-      fog.b = state.farZ / depthRange;
-      fog.c = state.startZ / fogRange;
-    }
+    Fog fog{.color = state.color, .a = state.a, .b = state.b, .c = state.c};
     buf.append(fog);
   }
   for (int i = 0; i < info.sampledTextures.size(); ++i) {

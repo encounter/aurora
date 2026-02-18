@@ -107,9 +107,6 @@ void GXSetTevColor(GXTevRegID id, GXColor color) {
   // We omit the redundant writes since they don't change the register value and
   // our software command processor doesn't need the sync delay.
   __gx->bpSent = 1;
-
-  // Side channel: direct update for inline rendering (full precision)
-  update_gx_state(g_gxState.colorRegs[id], from_gx_color(color));
 }
 
 void GXSetTevColorS10(GXTevRegID id, GXColorS10 color) {
@@ -128,14 +125,6 @@ void GXSetTevColorS10(GXTevRegID id, GXColorS10 color) {
   // We omit the redundant writes since they don't change the register value and
   // our software command processor doesn't need the sync delay.
   __gx->bpSent = 1;
-
-  // Side channel: direct update for inline rendering (full precision)
-  update_gx_state(g_gxState.colorRegs[id], aurora::Vec4<float>{
-                                               static_cast<float>(color.r) / 255.f,
-                                               static_cast<float>(color.g) / 255.f,
-                                               static_cast<float>(color.b) / 255.f,
-                                               static_cast<float>(color.a) / 255.f,
-                                           });
 }
 
 void GXSetAlphaCompare(GXCompare comp0, u8 ref0, GXAlphaOp op, GXCompare comp1, u8 ref1) {
@@ -204,9 +193,6 @@ void GXSetTevKColor(GXTevKColorID id, GXColor color) {
   GX_WRITE_RAS_REG(regRA);
   GX_WRITE_RAS_REG(regBG);
   __gx->bpSent = 1;
-
-  // Side channel: direct update for inline rendering (full precision)
-  update_gx_state(g_gxState.kcolors[id], from_gx_color(color));
 }
 
 void GXSetTevKColorSel(GXTevStageID id, GXTevKColorSel sel) {
