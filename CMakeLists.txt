@@ -15,4 +15,5 @@ include(cmake/aurora_vi.cmake)
 
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_subdirectory(examples)
+  add_subdirectory(tests)
 endif ()

@@ -20,9 +20,8 @@ void GXSetProjection(const void* mtx_, GXProjectionType type) {
   }
 
   // XF bulk write: 6 params + projection type at 0x1020-0x1026
-  u32 reg = 0x00061020;
   GX_WRITE_U8(0x10);
-  GX_WRITE_U32(reg);
+  GX_WRITE_U32(0x00061020);
   GX_WRITE_XF_REG_F(32, __gx->projMtx[0]);
   GX_WRITE_XF_REG_F(33, __gx->projMtx[1]);
   GX_WRITE_XF_REG_F(34, __gx->projMtx[2]);
@@ -40,11 +39,8 @@ void GXLoadPosMtxImm(const void* mtx_, u32 id) {
   CHECK(id >= GX_PNMTX0 && id <= GX_PNMTX9, "invalid pn mtx {}", static_cast<int>(id));
   const auto* mtx = reinterpret_cast<const f32*>(mtx_);
 
-  u32 addr = id * 4;
-  u32 reg = addr | 0xB0000; // 12-1=11 values, addr
-
   GX_WRITE_U8(0x10);
-  GX_WRITE_U32(reg);
+  GX_WRITE_U32((id * 4) | 0xB0000);
   for (int i = 0; i < 12; i++) {
     GX_WRITE_F32(mtx[i]);
   }
@@ -54,11 +50,8 @@ void GXLoadNrmMtxImm(const void* mtx_, u32 id) {
   CHECK(id >= GX_PNMTX0 && id <= GX_PNMTX9, "invalid pn mtx {}", static_cast<int>(id));
   const auto* mtx = reinterpret_cast<const f32*>(mtx_);
 
-  u32 addr = id * 3 + 0x400;
-  u32 reg = addr | 0x80000; // 9-1=8 values
-
   GX_WRITE_U8(0x10);
-  GX_WRITE_U32(reg);
+  GX_WRITE_U32((id * 3 + 0x400) | 0x80000);
   // Write 3x3 from 3x4 matrix (skip translation column)
   GX_WRITE_F32(mtx[0]);
   GX_WRITE_F32(mtx[1]);

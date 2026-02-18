@@ -97,6 +97,19 @@ static u32 prepare_vtx_buffer(ByteBuffer& buf, GXVtxFmt vtxfmt, const u8* ptr, u
         vtxSize += 4;
         outVtxSize += 8;
         break;
+      case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_S8):
+      case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_S8):
+      case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_S8):
+      case COMBINE(GX_VA_TEX3, GX_TEX_ST, GX_S8):
+      case COMBINE(GX_VA_TEX4, GX_TEX_ST, GX_S8):
+      case COMBINE(GX_VA_TEX5, GX_TEX_ST, GX_S8):
+      case COMBINE(GX_VA_TEX6, GX_TEX_ST, GX_S8):
+      case COMBINE(GX_VA_TEX7, GX_TEX_ST, GX_S8):
+        attrArrays[attr].count = 2;
+        attrArrays[attr].type = GX_S8;
+        vtxSize += 2;
+        outVtxSize += 8;
+        break;
       case COMBINE(GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8):
       case COMBINE(GX_VA_CLR1, GX_CLR_RGBA, GX_RGBA8):
         attrArrays[attr].count = 4;
@@ -320,7 +333,7 @@ void process(const u8* data, u32 size, bool bigEndian) {
     }
 
     u8 opcode = cmd & CP_OPCODE_MASK;
-    Log.warn("Processing opcode {:x}", opcode);
+    // Log.warn("Processing opcode {:02x} at pos {} (size {})", opcode, pos - 1, size);
 
     switch (opcode) {
     case CP_CMD_NOP:
@@ -390,6 +403,19 @@ void process(const u8* data, u32 size, bool bigEndian) {
       if (cmd >= 0x80) {
         handle_draw(cmd, data, pos, size, bigEndian);
       } else {
+        // Hex dump surrounding bytes for debugging
+        {
+          u32 dumpStart = (pos > 17) ? pos - 17 : 0;
+          u32 dumpEnd = (pos + 16 < size) ? pos + 16 : size;
+          std::string hex;
+          for (u32 i = dumpStart; i < dumpEnd; i++) {
+            if (i == pos - 1)
+              hex += fmt::format("[{:02x}]", data[i]);
+            else
+              hex += fmt::format(" {:02x}", data[i]);
+          }
+          Log.error("  hex dump (pos {}-{}):{}",dumpStart, dumpEnd - 1, hex);
+        }
         FATAL("command_processor: unknown opcode 0x{:02X} at pos {}", cmd, pos - 1);
       }
       break;
@@ -427,17 +453,19 @@ static void handle_bp(u32 value, bool bigEndian) {
       s.colorPass.c = static_cast<GXTevColorArg>(bp_get(value, 4, 4));
       s.colorPass.b = static_cast<GXTevColorArg>(bp_get(value, 4, 8));
       s.colorPass.a = static_cast<GXTevColorArg>(bp_get(value, 4, 12));
-      s.colorOp.bias = static_cast<GXTevBias>(bp_get(value, 2, 16));
-      s.colorOp.op = static_cast<GXTevOp>((bp_get(value, 1, 18)) | (bp_get(value, 2, 20) << 1));
       s.colorOp.clamp = bp_get(value, 1, 19) != 0;
-      s.colorOp.scale = static_cast<GXTevScale>(bp_get(value, 2, 20));
       s.colorOp.outReg = static_cast<GXTevRegID>(bp_get(value, 2, 22));
-      // For compare ops (op > 1), scale encodes the compare mode
       if (bp_get(value, 2, 16) == 3) {
-        // Bias==3 means compare mode
-        s.colorOp.op = static_cast<GXTevOp>((bp_get(value, 1, 18)) | (bp_get(value, 2, 20) << 1));
+        // Bias==3 means compare mode: reconstruct GXTevOp enum (8 + 3-bit hw value)
+        u32 hwOp = bp_get(value, 1, 18) | (bp_get(value, 2, 20) << 1);
+        s.colorOp.op = static_cast<GXTevOp>(hwOp + 8);
         s.colorOp.bias = GX_TB_ZERO;
         s.colorOp.scale = GX_CS_SCALE_1;
+      } else {
+        // Normal mode: bit18 is op (0=ADD, 1=SUB), bits16-17 is bias, bits20-21 is scale
+        s.colorOp.op = static_cast<GXTevOp>(bp_get(value, 1, 18));
+        s.colorOp.bias = static_cast<GXTevBias>(bp_get(value, 2, 16));
+        s.colorOp.scale = static_cast<GXTevScale>(bp_get(value, 2, 20));
       }
       g_gxState.stateDirty = true;
     }
@@ -455,15 +483,17 @@ static void handle_bp(u32 value, bool bigEndian) {
       s.alphaPass.c = static_cast<GXTevAlphaArg>(bp_get(value, 3, 7));
       s.alphaPass.b = static_cast<GXTevAlphaArg>(bp_get(value, 3, 10));
       s.alphaPass.a = static_cast<GXTevAlphaArg>(bp_get(value, 3, 13));
-      s.alphaOp.bias = static_cast<GXTevBias>(bp_get(value, 2, 16));
-      s.alphaOp.op = static_cast<GXTevOp>((bp_get(value, 1, 18)) | (bp_get(value, 2, 20) << 1));
       s.alphaOp.clamp = bp_get(value, 1, 19) != 0;
-      s.alphaOp.scale = static_cast<GXTevScale>(bp_get(value, 2, 20));
       s.alphaOp.outReg = static_cast<GXTevRegID>(bp_get(value, 2, 22));
       if (bp_get(value, 2, 16) == 3) {
-        s.alphaOp.op = static_cast<GXTevOp>((bp_get(value, 1, 18)) | (bp_get(value, 2, 20) << 1));
+        u32 hwOp = bp_get(value, 1, 18) | (bp_get(value, 2, 20) << 1);
+        s.alphaOp.op = static_cast<GXTevOp>(hwOp + 8);
         s.alphaOp.bias = GX_TB_ZERO;
         s.alphaOp.scale = GX_CS_SCALE_1;
+      } else {
+        s.alphaOp.op = static_cast<GXTevOp>(bp_get(value, 1, 18));
+        s.alphaOp.bias = static_cast<GXTevBias>(bp_get(value, 2, 16));
+        s.alphaOp.scale = static_cast<GXTevScale>(bp_get(value, 2, 20));
       }
       g_gxState.stateDirty = true;
     }
@@ -660,10 +690,10 @@ static void handle_bp(u32 value, bool bigEndian) {
   // Alpha compare (0xF3)
   case 0xF3: {
     g_gxState.alphaCompare.ref0 = bp_get(value, 8, 0);
-    g_gxState.alphaCompare.comp0 = static_cast<GXCompare>(bp_get(value, 3, 8));
-    g_gxState.alphaCompare.op = static_cast<GXAlphaOp>(bp_get(value, 2, 11));
-    g_gxState.alphaCompare.ref1 = bp_get(value, 8, 13);
-    g_gxState.alphaCompare.comp1 = static_cast<GXCompare>(bp_get(value, 3, 21));
+    g_gxState.alphaCompare.ref1 = bp_get(value, 8, 8);
+    g_gxState.alphaCompare.comp0 = static_cast<GXCompare>(bp_get(value, 3, 16));
+    g_gxState.alphaCompare.comp1 = static_cast<GXCompare>(bp_get(value, 3, 19));
+    g_gxState.alphaCompare.op = static_cast<GXAlphaOp>(bp_get(value, 2, 22));
     g_gxState.stateDirty = true;
     break;
   }
@@ -904,8 +934,9 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
     else if (addr >= 0xA0 && addr <= 0xAF) {
       u32 attrIdx = addr - 0xA0 + GX_VA_POS;
       if (attrIdx < GX_VA_MAX_ATTR) {
-        // On TARGET_PC, array base is a host pointer stored directly
-        g_gxState.arrays[attrIdx].data = reinterpret_cast<const void*>(static_cast<uintptr_t>(value));
+        // On TARGET_PC, the array base pointer is set by GXSetArray's side-channel.
+        // The FIFO value is a truncated 32-bit pointer (unusable on 64-bit hosts),
+        // so we only invalidate the cached range here.
         g_gxState.arrays[attrIdx].cachedRange = {};
       }
     }
@@ -930,6 +961,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
   u32 count = ((header >> 16) & 0xFFFF) + 1;
   u32 addr = header & 0xFFFF;
   u32 dataBytes = count * 4;
+  // Log.warn("  xf: addr {:04x} count {} dataBytes {} pos {} -> {}", addr, count, dataBytes, pos, pos + dataBytes);
   CHECK(pos + dataBytes <= size, "XF data read overrun: need {} bytes at pos {}", dataBytes, pos);
 
   const u8* xfData = data + pos;
@@ -1119,17 +1151,18 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
         u32 chanId = reg - 0x0E;
         if (chanId < gx::MaxColorChannels) {
           auto& chan = g_gxState.colorChannelConfig[chanId];
-          chan.lightingEnabled = bp_get(val, 1, 0) != 0;
-          chan.matSrc = static_cast<GXColorSrc>(bp_get(val, 1, 1));
+          chan.matSrc = static_cast<GXColorSrc>(bp_get(val, 1, 0));
+          chan.lightingEnabled = bp_get(val, 1, 1) != 0;
           u32 lightsLo = bp_get(val, 4, 2);
           chan.ambSrc = static_cast<GXColorSrc>(bp_get(val, 1, 6));
           chan.diffFn = static_cast<GXDiffuseFn>(bp_get(val, 2, 7));
-          bool attnEn = bp_get(val, 1, 9) != 0;
-          bool attnSel = bp_get(val, 1, 10) != 0;
+          // Encoding: bit 9 = (attnFn != GX_AF_SPEC), bit 10 = (attnFn != GX_AF_NONE)
+          bool bit9 = bp_get(val, 1, 9) != 0;
+          bool bit10 = bp_get(val, 1, 10) != 0;
           u32 lightsHi = bp_get(val, 4, 11);
-          if (!attnEn) {
+          if (!bit10) {
             chan.attnFn = GX_AF_NONE;
-          } else if (!attnSel) {
+          } else if (!bit9) {
             chan.attnFn = GX_AF_SPEC;
           } else {
             chan.attnFn = GX_AF_SPOT;
@@ -1304,10 +1337,39 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
 
   ByteBuffer vtxBuf;
   ByteBuffer idxBuf;
+
+  // Log VCD state used for vertex size calculation
+  // {
+  //   std::string vcdStr;
+  //   for (int a = 0; a < GX_VA_MAX_ATTR; a++) {
+  //     if (g_gxState.vtxDesc[a] != GX_NONE) {
+  //       const auto& af = g_gxState.vtxFmts[fmt].attrs[a];
+  //       vcdStr += fmt::format(" {}:t{}(cnt={},typ={},frac={})", a, static_cast<int>(g_gxState.vtxDesc[a]),
+  //                             static_cast<int>(af.cnt), static_cast<int>(af.type), af.frac);
+  //     }
+  //   }
+  //   Log.warn("  draw vcd:{}", vcdStr);
+  // }
+
   u32 vtxSize = prepare_vtx_buffer(vtxBuf, fmt, vtxDataStart, vtxCount, bigEndian);
   u32 totalVtxBytes = vtxCount * vtxSize;
-  CHECK(pos + totalVtxBytes <= size, "draw vertex data overrun: need {} bytes at pos {}, have {}", totalVtxBytes, pos,
-        size);
+  // Log.warn("  draw: prim {:02x} fmt {} vtxCount {} vtxSize {} totalBytes {} pos {} -> {}",
+  //          static_cast<u32>(prim), static_cast<u32>(fmt), vtxCount, vtxSize, totalVtxBytes, pos, pos + totalVtxBytes);
+  if (pos + totalVtxBytes > size) {
+    // Hex dump around the draw command for debugging
+    u32 cmdPos = pos - 2 - 1; // opcode byte position (before vtxCount and pos++)
+    u32 dumpStart = (cmdPos > 16) ? cmdPos - 16 : 0;
+    u32 dumpEnd = (cmdPos + 32 < size) ? cmdPos + 32 : size;
+    std::string hex;
+    for (u32 i = dumpStart; i < dumpEnd; i++) {
+      if (i == cmdPos)
+        hex += fmt::format("[{:02x}]", data[i]);
+      else
+        hex += fmt::format(" {:02x}", data[i]);
+    }
+    Log.error("  hex dump around draw cmd (pos {}-{}):{}",dumpStart, dumpEnd - 1, hex);
+    FATAL("draw vertex data overrun: need {} bytes at pos {}, have {}", totalVtxBytes, pos, size);
+  }
 
   // Hash over the raw command data: cmd byte + vtxCount (2 bytes) + vertex data
   const u8* hashStart = data + pos - 3; // cmd byte + vtxCount + vtxData

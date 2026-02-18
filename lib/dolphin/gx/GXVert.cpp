@@ -2,9 +2,16 @@
 #include "__gx.h"
 #include "../../gfx/fifo.hpp"
 
+// Track vertex count between GXBegin/GXEnd for mismatch detection
+static u16 sBeginNVerts = 0;
+static u32 sBeginFifoSize = 0;
+static bool sInBegin = false;
+
 extern "C" {
 
 void GXBegin(GXPrimitive primitive, GXVtxFmt vtxFmt, u16 nVerts) {
+  CHECK(!sInBegin, "GXBegin: called without matching GXEnd");
+
   // Flush dirty state before starting a draw
   if (__gx->dirtyState != 0) {
     __GXSetDirtyState();
@@ -17,9 +24,30 @@ void GXBegin(GXPrimitive primitive, GXVtxFmt vtxFmt, u16 nVerts) {
 
   GX_WRITE_U8(vtxFmt | primitive);
   GX_WRITE_U16(nVerts);
+
+  // Record state for vertex count validation in GXEnd
+  sBeginNVerts = nVerts;
+  sBeginFifoSize = aurora::gfx::fifo::get_buffer_size();
+  sInBegin = true;
 }
 
 void GXEnd() {
+  if (sInBegin) {
+    u32 bytesWritten = aurora::gfx::fifo::get_buffer_size() - sBeginFifoSize;
+    if (sBeginNVerts > 0 && bytesWritten > 0) {
+      u32 vtxSize = bytesWritten / sBeginNVerts;
+      u32 remainder = bytesWritten % sBeginNVerts;
+      if (remainder != 0) {
+        Log.warn("GXEnd: vertex data not evenly divisible: {} bytes for {} vertices", bytesWritten, sBeginNVerts);
+      }
+      u32 actualVerts = (vtxSize > 0) ? bytesWritten / vtxSize : 0;
+      CHECK(actualVerts == sBeginNVerts,
+            "GXEnd: vertex count mismatch: GXBegin declared {} vertices ({}B each, {}B total) "
+            "but {} bytes were written ({} vertices)",
+            sBeginNVerts, vtxSize, sBeginNVerts * vtxSize, bytesWritten, actualVerts);
+    }
+    sInBegin = false;
+  }
   if (!aurora::gfx::fifo::in_display_list()) {
     aurora::gfx::fifo::drain();
   }

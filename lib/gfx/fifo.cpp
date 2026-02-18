@@ -95,4 +95,8 @@ void process(const u8* data, u32 size, bool bigEndian) {
   command_processor::process(data, size, bigEndian);
 }
 
+const u8* get_buffer_data() { return sInternalBuffer.data(); }
+u32 get_buffer_size() { return static_cast<u32>(sInternalBuffer.size()); }
+void clear_buffer() { sInternalBuffer.clear(); }
+
 } // namespace aurora::gfx::fifo

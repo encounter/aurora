@@ -16,8 +16,6 @@ GXFifoObj* GXInit(void* base, u32 size) {
   // Zero-initialize shadow registers
   std::memset(&sGXData, 0, sizeof(sGXData));
   __gx = &sGXData;
-
-  // Set defaults matching the SDK
   __gx->dlSaveContext = 1;
 
   // Initialize VCD: position is always GX_DIRECT by default
@@ -125,13 +123,19 @@ void __GXSetGenMode() {
 }
 
 void __GXSendFlushPrim() {
-  u32 numD = __gx->vNum * __gx->vLim;
+  // On real GC hardware, this writes a dummy triangle strip draw to force the GP
+  // to process the FIFO up to this point, flushing pending BP register changes.
+  // The SDK uses worst-case per-attribute sizes (vLim) for the dummy vertex data,
+  // which differs from the actual VAT sizes that prepare_vtx_buffer computes.
+  // Aurora's software command processor doesn't need this GPU sync mechanism,
+  // so we skip the FIFO writes and just clear the bpSent flag.
 
-  GX_WRITE_U8(0x98);
-  GX_WRITE_U16(__gx->vNum);
-  for (u32 i = 0; i < numD; i += 4) {
-    GX_WRITE_U32(0);
-  }
+  // GX_WRITE_U8(0x98);
+  // GX_WRITE_U16(__gx->vNum);
+  // for (u32 i = 0; i < __gx->vNum * __gx->vLim; i += 4) {
+  //   GX_WRITE_U32(0);
+  // }
+
   __gx->bpSent = 0;
 }
 

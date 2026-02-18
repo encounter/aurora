@@ -103,6 +103,9 @@ void GXSetTevColor(GXTevRegID id, GXColor color) {
   SET_REG_FIELD(0, regBG, 8, 24, 0xE1 + id * 2);
   GX_WRITE_RAS_REG(regRA);
   GX_WRITE_RAS_REG(regBG);
+  // NOTE: The SDK writes regBG three additional times here for hardware timing.
+  // We omit the redundant writes since they don't change the register value and
+  // our software command processor doesn't need the sync delay.
   __gx->bpSent = 1;
 
   // Side channel: direct update for inline rendering (full precision)
@@ -121,6 +124,9 @@ void GXSetTevColorS10(GXTevRegID id, GXColorS10 color) {
   SET_REG_FIELD(0, regBG, 8, 24, 0xE1 + id * 2);
   GX_WRITE_RAS_REG(regRA);
   GX_WRITE_RAS_REG(regBG);
+  // NOTE: The SDK writes regBG three additional times here for hardware timing.
+  // We omit the redundant writes since they don't change the register value and
+  // our software command processor doesn't need the sync delay.
   __gx->bpSent = 1;
 
   // Side channel: direct update for inline rendering (full precision)
@@ -136,10 +142,10 @@ void GXSetAlphaCompare(GXCompare comp0, u8 ref0, GXAlphaOp op, GXCompare comp1, 
   // BP register 0xF3
   u32 reg = 0;
   SET_REG_FIELD(0, reg, 8, 0, ref0);
-  SET_REG_FIELD(0, reg, 3, 8, comp0);
-  SET_REG_FIELD(0, reg, 2, 11, op);
-  SET_REG_FIELD(0, reg, 8, 13, ref1);
-  SET_REG_FIELD(0, reg, 3, 21, comp1);
+  SET_REG_FIELD(0, reg, 8, 8, ref1);
+  SET_REG_FIELD(0, reg, 3, 16, comp0);
+  SET_REG_FIELD(0, reg, 3, 19, comp1);
+  SET_REG_FIELD(0, reg, 2, 22, op);
   SET_REG_FIELD(0, reg, 8, 24, 0xF3);
   GX_WRITE_RAS_REG(reg);
   __gx->bpSent = 1;

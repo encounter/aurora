@@ -27,4 +27,9 @@ void drain();
 // Process external data (e.g. display list playback) through the command processor
 void process(const u8* data, u32 size, bool bigEndian = true);
 
+// Internal buffer inspection (useful for testing and debug)
+const u8* get_buffer_data();
+u32 get_buffer_size();
+void clear_buffer();
+
 } // namespace aurora::gfx::fifo

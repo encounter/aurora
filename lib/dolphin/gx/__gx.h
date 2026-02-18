@@ -68,7 +68,6 @@ void write_f32(f32 val);
     GX_WRITE_U32(c);                                                                                                   \
   } while (0)
 
-// Bit field manipulation macros (ported from dolsdk2001)
 #define GET_REG_FIELD(reg, size, shift) (static_cast<int>(((reg) >> (shift)) & ((1 << (size)) - 1)))
 
 #define SET_REG_FIELD(line, reg, size, shift, val)                                                                     \
