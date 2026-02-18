@@ -4,9 +4,10 @@ add_library(aurora_gx STATIC
         lib/gfx/gx.cpp
         lib/gfx/gx_shader.cpp
         lib/gfx/texture_convert.cpp
-        lib/gfx/display_list.cpp
         lib/gfx/shader_info.cpp
         lib/gfx/model/shader.cpp
+        lib/gfx/fifo.cpp
+        lib/gfx/command_processor.cpp
         lib/dolphin/gx/GXBump.cpp
         lib/dolphin/gx/GXCull.cpp
         lib/dolphin/gx/GXDispList.cpp

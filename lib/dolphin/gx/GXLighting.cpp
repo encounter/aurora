@@ -1,4 +1,5 @@
 #include "gx.hpp"
+#include "__gx.h"
 
 extern "C" {
 void GXInitLightAttn(GXLightObj* light_, float a0, float a1, float a2, float k0, float k1, float k2) {
@@ -131,17 +132,42 @@ void GXInitLightColor(GXLightObj* light_, GXColor col) {
 
 void GXLoadLightObjImm(GXLightObj* light_, GXLightID id) {
   u32 idx = std::log2<u32>(id);
-  aurora::gfx::gx::Light realLight;
   auto* light = reinterpret_cast<const GXLightObj_*>(light_);
-  realLight.pos = {light->px, light->py, light->pz};
-  realLight.dir = {light->nx, light->ny, light->nz};
-  realLight.color = from_gx_color(light->color);
-  realLight.cosAtt = {light->a0, light->a1, light->a2};
-  realLight.distAtt = {light->k0, light->k1, light->k2};
-  update_gx_state(g_gxState.lights[idx], realLight);
-}
 
-// TODO GXLoadLightObjIndx
+  // XF bulk write: 16 values at light base address
+  // Light addresses: 0x600 + idx * 0x10
+  u32 addr = 0x600 + idx * 0x10;
+  u32 reg = addr | (0xF << 16); // 16-1=15 values
+
+  // Convert color to packed u32 for XF
+  u32 colorPacked = (static_cast<u32>(light->color.r) << 24) | (static_cast<u32>(light->color.g) << 16) |
+                    (static_cast<u32>(light->color.b) << 8) | static_cast<u32>(light->color.a);
+
+  GX_WRITE_U8(0x10);
+  GX_WRITE_U32(reg);
+  // Padding (3 u32s)
+  GX_WRITE_U32(0);
+  GX_WRITE_U32(0);
+  GX_WRITE_U32(0);
+  // Color
+  GX_WRITE_U32(colorPacked);
+  // Cosine attenuation (a0, a1, a2)
+  GX_WRITE_F32(light->a0);
+  GX_WRITE_F32(light->a1);
+  GX_WRITE_F32(light->a2);
+  // Distance attenuation (k0, k1, k2)
+  GX_WRITE_F32(light->k0);
+  GX_WRITE_F32(light->k1);
+  GX_WRITE_F32(light->k2);
+  // Position (px, py, pz)
+  GX_WRITE_F32(light->px);
+  GX_WRITE_F32(light->py);
+  GX_WRITE_F32(light->pz);
+  // Direction (nx, ny, nz)
+  GX_WRITE_F32(light->nx);
+  GX_WRITE_F32(light->ny);
+  GX_WRITE_F32(light->nz);
+}
 
 void GXSetChanAmbColor(GXChannelID id, GXColor color) {
   if (id == GX_COLOR0A0) {
@@ -154,7 +180,18 @@ void GXSetChanAmbColor(GXChannelID id, GXColor color) {
     return;
   }
   CHECK(id >= GX_COLOR0 && id <= GX_ALPHA1, "bad channel {}", static_cast<int>(id));
-  update_gx_state(g_gxState.colorChannelState[id].ambColor, from_gx_color(color));
+
+  // XF ambient color registers: 0x100A (chan 0), 0x100B (chan 1)
+  u32 packed = (static_cast<u32>(color.r) << 24) | (static_cast<u32>(color.g) << 16) |
+               (static_cast<u32>(color.b) << 8) | static_cast<u32>(color.a);
+  if (id == GX_COLOR0 || id == GX_ALPHA0) {
+    __gx->ambColor[0] = packed;
+    GX_WRITE_XF_REG(0xA, packed);
+  } else {
+    __gx->ambColor[1] = packed;
+    GX_WRITE_XF_REG(0xB, packed);
+  }
+  __gx->bpSent = 0;
 }
 
 void GXSetChanMatColor(GXChannelID id, GXColor color) {
@@ -168,10 +205,25 @@ void GXSetChanMatColor(GXChannelID id, GXColor color) {
     return;
   }
   CHECK(id >= GX_COLOR0 && id <= GX_ALPHA1, "bad channel {}", static_cast<int>(id));
-  update_gx_state(g_gxState.colorChannelState[id].matColor, from_gx_color(color));
+
+  // XF material color registers: 0x100C (chan 0), 0x100D (chan 1)
+  u32 packed = (static_cast<u32>(color.r) << 24) | (static_cast<u32>(color.g) << 16) |
+               (static_cast<u32>(color.b) << 8) | static_cast<u32>(color.a);
+  if (id == GX_COLOR0 || id == GX_ALPHA0) {
+    __gx->matColor[0] = packed;
+    GX_WRITE_XF_REG(0xC, packed);
+  } else {
+    __gx->matColor[1] = packed;
+    GX_WRITE_XF_REG(0xD, packed);
+  }
+  __gx->bpSent = 0;
 }
 
-void GXSetNumChans(u8 num) { update_gx_state(g_gxState.numChans, num); }
+void GXSetNumChans(u8 num) {
+  SET_REG_FIELD(0, __gx->genMode, 3, 4, num);
+  GX_WRITE_XF_REG(9, num);
+  __gx->dirtyState |= 4;
+}
 
 void GXInitLightDir(GXLightObj* light_, float nx, float ny, float nz) {
   auto* light = reinterpret_cast<GXLightObj_*>(light_);
@@ -220,12 +272,20 @@ void GXSetChanCtrl(GXChannelID id, bool lightingEnabled, GXColorSrc ambSrc, GXCo
     return;
   }
   CHECK(id >= GX_COLOR0 && id <= GX_ALPHA1, "bad channel {}", static_cast<int>(id));
-  auto& chan = g_gxState.colorChannelConfig[id];
-  update_gx_state(chan.lightingEnabled, lightingEnabled);
-  update_gx_state(chan.ambSrc, ambSrc);
-  update_gx_state(chan.matSrc, matSrc);
-  update_gx_state(chan.diffFn, diffFn);
-  update_gx_state(chan.attnFn, attnFn);
-  update_gx_state(g_gxState.colorChannelState[id].lightMask, GX::LightMask{lightState});
+
+  // Build XF channel control register
+  u32 reg = 0;
+  SET_REG_FIELD(0, reg, 1, 0, lightingEnabled);
+  SET_REG_FIELD(0, reg, 1, 1, matSrc);
+  SET_REG_FIELD(0, reg, 4, 2, lightState & 0xF);        // lights 0-3
+  SET_REG_FIELD(0, reg, 1, 6, ambSrc);
+  SET_REG_FIELD(0, reg, 2, 7, diffFn);
+  SET_REG_FIELD(0, reg, 1, 9, (attnFn != GX_AF_NONE));  // attn enable
+  SET_REG_FIELD(0, reg, 1, 10, (attnFn != GX_AF_SPEC)); // attn select (0=spec, 1=spot)
+  SET_REG_FIELD(0, reg, 4, 11, (lightState >> 4) & 0xF); // lights 4-7
+
+  // XF channel control registers: 0x100E-0x1011
+  GX_WRITE_XF_REG(0xE + id, reg);
+  __gx->bpSent = 0;
 }
 }

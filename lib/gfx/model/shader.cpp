@@ -2,7 +2,7 @@
 
 #include "../../webgpu/gpu.hpp"
 #include "../gx_fmt.hpp"
-#include "../display_list.hpp"
+#include "../command_processor.hpp"
 #include "../shader_info.hpp"
 
 #include <absl/container/flat_hash_map.h>
@@ -11,41 +11,9 @@ namespace aurora::gfx::model {
 static Module Log("aurora::gfx::model");
 
 void queue_surface(const u8* dlStart, u32 dlSize, bool bigEndian) noexcept {
-  const auto result = aurora::gfx::gx::process_display_list(dlStart, dlSize, bigEndian);
-
-  gx::BindGroupRanges ranges{};
-  for (int i = 0; i < GX_VA_MAX_ATTR; ++i) {
-    if (gx::g_gxState.vtxDesc[i] != GX_INDEX8 && gx::g_gxState.vtxDesc[i] != GX_INDEX16) {
-      continue;
-    }
-    auto& array = gx::g_gxState.arrays[i];
-    if (array.cachedRange.size > 0) {
-      // Use the currently cached range
-      ranges.vaRanges[i] = array.cachedRange;
-    } else {
-      // Push array data to storage and cache range
-      const auto range = push_storage(static_cast<const uint8_t*>(array.data), array.size);
-      ranges.vaRanges[i] = range;
-      array.cachedRange = range;
-    }
-  }
-
-  model::PipelineConfig config{};
-  populate_pipeline_config(config, GX_TRIANGLES, result.fmt);
-  const auto info = gx::build_shader_info(config.shaderConfig);
-  const auto bindGroups = gx::build_bind_groups(info, config.shaderConfig, ranges);
-  const auto pipeline = pipeline_ref(config);
-
-  push_draw_command(model::DrawData{
-      .pipeline = pipeline,
-      .vertRange = result.vertRange,
-      .idxRange = result.idxRange,
-      .dataRanges = ranges,
-      .uniformRange = build_uniform(info),
-      .indexCount = result.numIndices,
-      .bindGroups = bindGroups,
-      .dstAlpha = gx::g_gxState.dstAlpha,
-  });
+  // Process the display list through the command processor, which handles
+  // state changes (BP/CP/XF registers) and draw commands
+  aurora::gfx::command_processor::process(dlStart, dlSize, bigEndian);
 }
 
 State construct_state() { return {}; }

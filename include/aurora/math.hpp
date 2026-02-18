@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #ifndef AURORA_VEC2_EXTRA
 #define AURORA_VEC2_EXTRA
