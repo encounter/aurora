@@ -190,7 +190,7 @@ void GXSetNumTevStages(u8 num) {
 void GXSetTevKColor(GXTevKColorID id, GXColor color) {
   CHECK(id >= GX_KCOLOR0 && id < GX_MAX_KCOLOR, "bad kcolor {}", static_cast<int>(id));
 
-  // Write BP registers (RA + BG pairs with bit 23 set for K color) - needed for DL capture
+  // Write BP registers (RA + BG pairs with bit 23 set for K color)
   u32 regRA = 0;
   SET_REG_FIELD(0, regRA, 8, 0, color.r);
   SET_REG_FIELD(0, regRA, 8, 12, color.a);

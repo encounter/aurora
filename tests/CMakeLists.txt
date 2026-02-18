@@ -16,32 +16,32 @@ add_executable(gx_fifo_tests
   gx_fifo_test.cpp
   gx_test_stubs.cpp
   # GX API implementations (encoders)
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXBump.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXCull.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXDispList.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXDraw.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXExtra.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXFifo.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXFrameBuffer.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXGeometry.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXGet.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXLighting.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXManage.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXPerf.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXPixel.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXTev.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXTexture.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXTransform.cpp
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx/GXVert.cpp
+  ../lib/dolphin/gx/GXBump.cpp
+  ../lib/dolphin/gx/GXCull.cpp
+  ../lib/dolphin/gx/GXDispList.cpp
+  ../lib/dolphin/gx/GXDraw.cpp
+  ../lib/dolphin/gx/GXExtra.cpp
+  ../lib/dolphin/gx/GXFifo.cpp
+  ../lib/dolphin/gx/GXFrameBuffer.cpp
+  ../lib/dolphin/gx/GXGeometry.cpp
+  ../lib/dolphin/gx/GXGet.cpp
+  ../lib/dolphin/gx/GXLighting.cpp
+  ../lib/dolphin/gx/GXManage.cpp
+  ../lib/dolphin/gx/GXPerf.cpp
+  ../lib/dolphin/gx/GXPixel.cpp
+  ../lib/dolphin/gx/GXTev.cpp
+  ../lib/dolphin/gx/GXTexture.cpp
+  ../lib/dolphin/gx/GXTransform.cpp
+  ../lib/dolphin/gx/GXVert.cpp
   # FIFO/command processor (encoder + decoder)
-  ${CMAKE_SOURCE_DIR}/lib/gfx/fifo.cpp
-  ${CMAKE_SOURCE_DIR}/lib/gfx/command_processor.cpp
+  ../lib/gfx/fifo.cpp
+  ../lib/gfx/command_processor.cpp
 )
 
 target_include_directories(gx_fifo_tests PRIVATE
-  ${CMAKE_SOURCE_DIR}/include
-  ${CMAKE_SOURCE_DIR}/lib
-  ${CMAKE_SOURCE_DIR}/lib/dolphin/gx
+  ../include
+  ../lib
+  ../lib/dolphin/gx
 )
 
 target_compile_definitions(gx_fifo_tests PRIVATE AURORA TARGET_PC)
@@ -54,6 +54,7 @@ target_link_libraries(gx_fifo_tests PRIVATE
   absl::flat_hash_map
   absl::btree
   dawn::dawncpp_headers
+  SDL3::SDL3-static
 )
 
 include(GoogleTest)

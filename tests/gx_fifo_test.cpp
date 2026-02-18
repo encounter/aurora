@@ -6,6 +6,8 @@
 
 #include "gx_test_common.hpp"
 
+#include <cmath>
+
 using aurora::gfx::gx::g_gxState;
 
 // ============================================================================
@@ -229,6 +231,25 @@ TEST_F(GXFifoTest, TevAlphaIn_Stage0) {
   EXPECT_EQ(s.alphaPass.a, GX_CA_ZERO);
   EXPECT_EQ(s.alphaPass.b, GX_CA_TEXA);
   EXPECT_EQ(s.alphaPass.c, GX_CA_RASA);
+  EXPECT_EQ(s.alphaPass.d, GX_CA_ZERO);
+}
+
+TEST_F(GXFifoTest, TevAlphaIn_Stage5) {
+  GXSetTevAlphaIn(GX_TEVSTAGE5, GX_CA_APREV, GX_CA_A0, GX_CA_KONST, GX_CA_ZERO);
+  auto bytes = capture_fifo();
+
+  // Stage 5 alpha register = 0xC1 + 5*2 = 0xCB
+  ASSERT_GE(bytes.size(), 5u);
+  EXPECT_EQ(bytes[0], 0x61);
+  EXPECT_EQ(bytes[1], 0xCB);
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& s = g_gxState.tevStages[5];
+  EXPECT_EQ(s.alphaPass.a, GX_CA_APREV);
+  EXPECT_EQ(s.alphaPass.b, GX_CA_A0);
+  EXPECT_EQ(s.alphaPass.c, GX_CA_KONST);
   EXPECT_EQ(s.alphaPass.d, GX_CA_ZERO);
 }
 
@@ -458,6 +479,45 @@ TEST_F(GXFifoTest, TevAlphaOp_CompareRGB8GT) {
   EXPECT_EQ(s.alphaOp.scale, GX_CS_SCALE_1);
 }
 
+TEST_F(GXFifoTest, TevColorOp_CompareBGR24GT) {
+  GXSetTevColorOp(GX_TEVSTAGE2, GX_TEV_COMP_BGR24_GT, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVREG1);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& s = g_gxState.tevStages[2];
+  EXPECT_EQ(s.colorOp.op, GX_TEV_COMP_BGR24_GT);
+  EXPECT_EQ(s.colorOp.bias, GX_TB_ZERO);
+  EXPECT_EQ(s.colorOp.scale, GX_CS_SCALE_1);
+  EXPECT_EQ(s.colorOp.outReg, GX_TEVREG1);
+}
+
+TEST_F(GXFifoTest, TevColorOp_CompareRGB8EQ) {
+  GXSetTevColorOp(GX_TEVSTAGE0, GX_TEV_COMP_RGB8_EQ, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& s = g_gxState.tevStages[0];
+  EXPECT_EQ(s.colorOp.op, GX_TEV_COMP_RGB8_EQ);
+  EXPECT_EQ(s.colorOp.outReg, GX_TEVPREV);
+}
+
+TEST_F(GXFifoTest, TevAlphaOp_CompareA8EQ) {
+  GXSetTevAlphaOp(GX_TEVSTAGE1, GX_TEV_COMP_RGB8_EQ, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVREG2);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& s = g_gxState.tevStages[1];
+  // For alpha, GX_TEV_COMP_RGB8_EQ maps to A8_EQ
+  EXPECT_EQ(s.alphaOp.op, GX_TEV_COMP_RGB8_EQ);
+  EXPECT_EQ(s.alphaOp.outReg, GX_TEVREG2);
+}
+
 // --- GXSetTevColorS10 ---
 
 TEST_F(GXFifoTest, TevColorS10_Positive) {
@@ -529,6 +589,24 @@ TEST_F(GXFifoTest, TevKAlphaSel_Stage3_K3_B) {
   decode_fifo(bytes);
 
   EXPECT_EQ(g_gxState.tevStages[3].kaSel, GX_TEV_KASEL_K3_B);
+}
+
+TEST_F(GXFifoTest, TevKColorSel_DoesNotCorruptSwapTable) {
+  // Regression: tevKsel shadow registers share bits with swap table entries.
+  // Setting K color selection must not zero out the swap table bits.
+  GXSetTevKColorSel(GX_TEVSTAGE0, GX_TEV_KCSEL_K0);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  // Swap table 0 should remain identity (initialized in GXInit)
+  EXPECT_EQ(g_gxState.tevSwapTable[0].red, GX_CH_RED);
+  EXPECT_EQ(g_gxState.tevSwapTable[0].green, GX_CH_GREEN);
+  EXPECT_EQ(g_gxState.tevSwapTable[0].blue, GX_CH_BLUE);
+  EXPECT_EQ(g_gxState.tevSwapTable[0].alpha, GX_CH_ALPHA);
+  // K color selection should still be set
+  EXPECT_EQ(g_gxState.tevStages[0].kcSel, GX_TEV_KCSEL_K0);
 }
 
 // --- GXSetTevSwapMode ---
@@ -641,6 +719,48 @@ TEST_F(GXFifoTest, TevKColor_K0) {
   EXPECT_NEAR(g_gxState.kcolors[0][3], 32.f / 255.f, 1.f / 255.f);  // A
 }
 
+TEST_F(GXFifoTest, TevKColor_K1) {
+  GXColor kc = {0, 255, 0, 128};
+  GXSetTevKColor(GX_KCOLOR1, kc);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_NEAR(g_gxState.kcolors[1][0], 0.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.kcolors[1][1], 255.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.kcolors[1][2], 0.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.kcolors[1][3], 128.f / 255.f, 1.f / 255.f);
+}
+
+TEST_F(GXFifoTest, TevKColor_K2) {
+  GXColor kc = {10, 20, 30, 40};
+  GXSetTevKColor(GX_KCOLOR2, kc);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_NEAR(g_gxState.kcolors[2][0], 10.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.kcolors[2][1], 20.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.kcolors[2][2], 30.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.kcolors[2][3], 40.f / 255.f, 1.f / 255.f);
+}
+
+TEST_F(GXFifoTest, TevKColor_K3) {
+  GXColor kc = {200, 150, 100, 50};
+  GXSetTevKColor(GX_KCOLOR3, kc);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_NEAR(g_gxState.kcolors[3][0], 200.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.kcolors[3][1], 150.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.kcolors[3][2], 100.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.kcolors[3][3], 50.f / 255.f, 1.f / 255.f);
+}
+
 // --- GXSetTevColor (BP 0xE0-0xE7, TEV color register) ---
 // Note: side channel stores as float, FIFO encodes as 11-bit signed.
 // Decoded value will have reduced precision.
@@ -658,6 +778,76 @@ TEST_F(GXFifoTest, TevColor_Reg0) {
   EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG0][1], 100.f / 255.f, 1.f / 255.f); // G
   EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG0][2], 50.f / 255.f, 1.f / 255.f);  // B
   EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG0][3], 255.f / 255.f, 1.f / 255.f); // A
+}
+
+TEST_F(GXFifoTest, TevColor_Prev) {
+  GXColor col = {128, 64, 32, 16};
+  GXSetTevColor(GX_TEVPREV, col);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVPREV][0], 128.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVPREV][1], 64.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVPREV][2], 32.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVPREV][3], 16.f / 255.f, 1.f / 255.f);
+}
+
+TEST_F(GXFifoTest, TevColor_Reg1) {
+  GXColor col = {0, 128, 255, 192};
+  GXSetTevColor(GX_TEVREG1, col);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG1][0], 0.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG1][1], 128.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG1][2], 255.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG1][3], 192.f / 255.f, 1.f / 255.f);
+}
+
+TEST_F(GXFifoTest, TevColor_Reg2) {
+  GXColor col = {1, 2, 3, 4};
+  GXSetTevColor(GX_TEVREG2, col);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG2][0], 1.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG2][1], 2.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG2][2], 3.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG2][3], 4.f / 255.f, 1.f / 255.f);
+}
+
+TEST_F(GXFifoTest, TevColorS10_Reg1) {
+  GXColorS10 col = {300, -50, 0, 255};
+  GXSetTevColorS10(GX_TEVREG1, col);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG1][0], 300.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG1][1], -50.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG1][2], 0.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG1][3], 255.f / 255.f, 1.f / 255.f);
+}
+
+TEST_F(GXFifoTest, TevColorS10_Reg2) {
+  GXColorS10 col = {-1024, 1023, 128, -256};
+  GXSetTevColorS10(GX_TEVREG2, col);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG2][0], -1024.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG2][1], 1023.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG2][2], 128.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(g_gxState.colorRegs[GX_TEVREG2][3], -256.f / 255.f, 1.f / 255.f);
 }
 
 // ============================================================================
@@ -962,6 +1152,141 @@ TEST_F(GXFifoTest, Projection_Orthographic) {
   EXPECT_FLOAT_EQ(g_gxState.proj.m3[3], 1.0f);
 }
 
+// --- GXLoadLightObjImm (XF 0x600-0x67F) ---
+
+TEST_F(GXFifoTest, LoadLightObjImm_Light0_BasicColor) {
+  GXLightObj lightObj;
+  GXInitLightPos(&lightObj, 100.0f, 200.0f, 300.0f);
+  GXInitLightDir(&lightObj, 0.0f, -1.0f, 0.0f);
+  GXInitLightColor(&lightObj, {255, 128, 64, 255});
+  GXInitLightAttn(&lightObj, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+
+  GXLoadLightObjImm(&lightObj, GX_LIGHT0);
+  auto bytes = capture_fifo();
+
+  // XF bulk write: opcode 0x10
+  ASSERT_GE(bytes.size(), 5u);
+  EXPECT_EQ(bytes[0], 0x10);
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& light = g_gxState.lights[0];
+  // Color
+  EXPECT_NEAR(light.color[0], 255.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(light.color[1], 128.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(light.color[2], 64.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(light.color[3], 255.f / 255.f, 1.f / 255.f);
+  // Position
+  EXPECT_FLOAT_EQ(light.pos[0], 100.0f);
+  EXPECT_FLOAT_EQ(light.pos[1], 200.0f);
+  EXPECT_FLOAT_EQ(light.pos[2], 300.0f);
+  // Direction (GXInitLightDir negates)
+  EXPECT_FLOAT_EQ(light.dir[0], 0.0f);
+  EXPECT_FLOAT_EQ(light.dir[1], 1.0f);
+  EXPECT_FLOAT_EQ(light.dir[2], 0.0f);
+  // Cosine attenuation
+  EXPECT_FLOAT_EQ(light.cosAtt[0], 1.0f);
+  EXPECT_FLOAT_EQ(light.cosAtt[1], 0.0f);
+  EXPECT_FLOAT_EQ(light.cosAtt[2], 0.0f);
+  // Distance attenuation
+  EXPECT_FLOAT_EQ(light.distAtt[0], 1.0f);
+  EXPECT_FLOAT_EQ(light.distAtt[1], 0.0f);
+  EXPECT_FLOAT_EQ(light.distAtt[2], 0.0f);
+}
+
+TEST_F(GXFifoTest, LoadLightObjImm_Light3_Attenuation) {
+  GXLightObj lightObj;
+  GXInitLightPos(&lightObj, -50.0f, 0.0f, 75.0f);
+  GXInitLightDir(&lightObj, 1.0f, 0.0f, 0.0f);
+  GXInitLightColor(&lightObj, {0, 255, 0, 128});
+  GXInitLightAttn(&lightObj, 0.5f, 0.3f, 0.2f, 1.0f, 0.01f, 0.001f);
+
+  GXLoadLightObjImm(&lightObj, GX_LIGHT3);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& light = g_gxState.lights[3];
+  EXPECT_NEAR(light.color[0], 0.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(light.color[1], 255.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(light.color[2], 0.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(light.color[3], 128.f / 255.f, 1.f / 255.f);
+  EXPECT_FLOAT_EQ(light.pos[0], -50.0f);
+  EXPECT_FLOAT_EQ(light.pos[1], 0.0f);
+  EXPECT_FLOAT_EQ(light.pos[2], 75.0f);
+  EXPECT_FLOAT_EQ(light.dir[0], -1.0f);
+  EXPECT_FLOAT_EQ(light.dir[1], 0.0f);
+  EXPECT_FLOAT_EQ(light.dir[2], 0.0f);
+  EXPECT_FLOAT_EQ(light.cosAtt[0], 0.5f);
+  EXPECT_FLOAT_EQ(light.cosAtt[1], 0.3f);
+  EXPECT_FLOAT_EQ(light.cosAtt[2], 0.2f);
+  EXPECT_FLOAT_EQ(light.distAtt[0], 1.0f);
+  EXPECT_FLOAT_EQ(light.distAtt[1], 0.01f);
+  EXPECT_FLOAT_EQ(light.distAtt[2], 0.001f);
+}
+
+TEST_F(GXFifoTest, LoadLightObjImm_Light7_LastLight) {
+  GXLightObj lightObj;
+  GXInitLightPos(&lightObj, 0.0f, 1000.0f, 0.0f);
+  GXInitLightDir(&lightObj, 0.0f, 0.0f, -1.0f);
+  GXInitLightColor(&lightObj, {128, 128, 128, 255});
+  GXInitLightAttn(&lightObj, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+
+  GXLoadLightObjImm(&lightObj, GX_LIGHT7);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& light = g_gxState.lights[7];
+  EXPECT_NEAR(light.color[0], 128.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(light.color[1], 128.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(light.color[2], 128.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(light.color[3], 255.f / 255.f, 1.f / 255.f);
+  EXPECT_FLOAT_EQ(light.pos[0], 0.0f);
+  EXPECT_FLOAT_EQ(light.pos[1], 1000.0f);
+  EXPECT_FLOAT_EQ(light.pos[2], 0.0f);
+  EXPECT_FLOAT_EQ(light.dir[0], 0.0f);
+  EXPECT_FLOAT_EQ(light.dir[1], 0.0f);
+  EXPECT_FLOAT_EQ(light.dir[2], 1.0f);
+}
+
+TEST_F(GXFifoTest, LoadLightObjImm_SpotLight) {
+  GXLightObj lightObj;
+  GXInitLightPos(&lightObj, 10.0f, 20.0f, 30.0f);
+  GXInitLightDir(&lightObj, 0.0f, -1.0f, 0.0f);
+  GXInitLightSpot(&lightObj, 45.0f, GX_SP_COS);
+  GXInitLightDistAttn(&lightObj, 100.0f, 0.5f, GX_DA_MEDIUM);
+  GXInitLightColor(&lightObj, {255, 255, 255, 255});
+
+  GXLoadLightObjImm(&lightObj, GX_LIGHT1);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& light = g_gxState.lights[1];
+  EXPECT_NEAR(light.color[0], 1.0f, 1.f / 255.f);
+  EXPECT_NEAR(light.color[1], 1.0f, 1.f / 255.f);
+  EXPECT_NEAR(light.color[2], 1.0f, 1.f / 255.f);
+  EXPECT_FLOAT_EQ(light.pos[0], 10.0f);
+  EXPECT_FLOAT_EQ(light.pos[1], 20.0f);
+  EXPECT_FLOAT_EQ(light.pos[2], 30.0f);
+  // GX_SP_COS with cutoff=45: cr = cos(45 * pi / 180)
+  // a0 = -cr/(1-cr), a1 = 1/(1-cr), a2 = 0
+  float cr = std::cos(45.0f * M_PIF / 180.0f);
+  EXPECT_FLOAT_EQ(light.cosAtt[0], -cr / (1.0f - cr));
+  EXPECT_FLOAT_EQ(light.cosAtt[1], 1.0f / (1.0f - cr));
+  EXPECT_FLOAT_EQ(light.cosAtt[2], 0.0f);
+  // GX_DA_MEDIUM with refDist=100, refBright=0.5:
+  // k0 = 1, k1 = 0.5*(1-b)/(b*d), k2 = 0.5*(1-b)/(b*d*d)
+  EXPECT_FLOAT_EQ(light.distAtt[0], 1.0f);
+  EXPECT_FLOAT_EQ(light.distAtt[1], 0.5f * 0.5f / (0.5f * 100.0f));
+  EXPECT_FLOAT_EQ(light.distAtt[2], 0.5f * 0.5f / (0.5f * 100.0f * 100.0f));
+}
+
 // --- GXSetChanCtrl (XF 0x100E-0x1011) ---
 
 TEST_F(GXFifoTest, ChanCtrl_Color0_LightingEnabled) {
@@ -997,6 +1322,73 @@ TEST_F(GXFifoTest, ChanCtrl_Alpha0_NoLighting) {
   EXPECT_EQ(cfg.matSrc, GX_SRC_REG);
   EXPECT_EQ(cfg.ambSrc, GX_SRC_VTX);
   EXPECT_EQ(cfg.attnFn, GX_AF_NONE);
+}
+
+TEST_F(GXFifoTest, ChanCtrl_Color1_SpecularLighting) {
+  GXSetChanCtrl(GX_COLOR1, true, GX_SRC_REG, GX_SRC_REG, GX_LIGHT2 | GX_LIGHT5, GX_DF_SIGN, GX_AF_SPEC);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& cfg = g_gxState.colorChannelConfig[GX_COLOR1];
+  EXPECT_TRUE(cfg.lightingEnabled);
+  EXPECT_EQ(cfg.matSrc, GX_SRC_REG);
+  EXPECT_EQ(cfg.ambSrc, GX_SRC_REG);
+  EXPECT_EQ(cfg.diffFn, GX_DF_SIGN);
+  EXPECT_EQ(cfg.attnFn, GX_AF_SPEC);
+
+  auto& state = g_gxState.colorChannelState[GX_COLOR1];
+  EXPECT_FALSE(state.lightMask[0]);
+  EXPECT_FALSE(state.lightMask[1]);
+  EXPECT_TRUE(state.lightMask[2]);
+  EXPECT_FALSE(state.lightMask[3]);
+  EXPECT_FALSE(state.lightMask[4]);
+  EXPECT_TRUE(state.lightMask[5]);
+}
+
+TEST_F(GXFifoTest, ChanCtrl_Color0A0_Compound) {
+  // GX_COLOR0A0 should set both GX_COLOR0 and GX_ALPHA0
+  GXSetChanCtrl(GX_COLOR0A0, true, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT0, GX_DF_CLAMP, GX_AF_SPOT);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  // Both COLOR0 and ALPHA0 should be configured identically
+  auto& cfgC = g_gxState.colorChannelConfig[GX_COLOR0];
+  EXPECT_TRUE(cfgC.lightingEnabled);
+  EXPECT_EQ(cfgC.matSrc, GX_SRC_VTX);
+  EXPECT_EQ(cfgC.ambSrc, GX_SRC_REG);
+  EXPECT_EQ(cfgC.diffFn, GX_DF_CLAMP);
+  EXPECT_EQ(cfgC.attnFn, GX_AF_SPOT);
+
+  auto& cfgA = g_gxState.colorChannelConfig[GX_ALPHA0];
+  EXPECT_TRUE(cfgA.lightingEnabled);
+  EXPECT_EQ(cfgA.matSrc, GX_SRC_VTX);
+  EXPECT_EQ(cfgA.ambSrc, GX_SRC_REG);
+  EXPECT_EQ(cfgA.attnFn, GX_AF_SPOT);
+
+  EXPECT_TRUE(g_gxState.colorChannelState[GX_COLOR0].lightMask[0]);
+  EXPECT_TRUE(g_gxState.colorChannelState[GX_ALPHA0].lightMask[0]);
+}
+
+TEST_F(GXFifoTest, ChanCtrl_Color1A1_Compound) {
+  GXSetChanCtrl(GX_COLOR1A1, false, GX_SRC_VTX, GX_SRC_VTX, 0, GX_DF_NONE, GX_AF_NONE);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& cfgC = g_gxState.colorChannelConfig[GX_COLOR1];
+  EXPECT_FALSE(cfgC.lightingEnabled);
+  EXPECT_EQ(cfgC.ambSrc, GX_SRC_VTX);
+  EXPECT_EQ(cfgC.matSrc, GX_SRC_VTX);
+
+  auto& cfgA = g_gxState.colorChannelConfig[GX_ALPHA1];
+  EXPECT_FALSE(cfgA.lightingEnabled);
+  EXPECT_EQ(cfgA.ambSrc, GX_SRC_VTX);
+  EXPECT_EQ(cfgA.matSrc, GX_SRC_VTX);
 }
 
 // --- GXSetTexCoordGen2 (XF 0x1040-0x105F) ---
@@ -1068,6 +1460,75 @@ TEST_F(GXFifoTest, ChanMatColor_Color0) {
   EXPECT_NEAR(state.matColor[1], 0.f / 255.f, 1.f / 255.f);
   EXPECT_NEAR(state.matColor[2], 128.f / 255.f, 1.f / 255.f);
   EXPECT_NEAR(state.matColor[3], 64.f / 255.f, 1.f / 255.f);
+}
+
+TEST_F(GXFifoTest, ChanAmbColor_Color1) {
+  GXColor amb = {10, 20, 30, 40};
+  GXSetChanAmbColor(GX_COLOR1, amb);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& state = g_gxState.colorChannelState[GX_COLOR1];
+  EXPECT_NEAR(state.ambColor[0], 10.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(state.ambColor[1], 20.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(state.ambColor[2], 30.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(state.ambColor[3], 40.f / 255.f, 1.f / 255.f);
+}
+
+TEST_F(GXFifoTest, ChanMatColor_Color1) {
+  GXColor mat = {100, 150, 200, 250};
+  GXSetChanMatColor(GX_COLOR1, mat);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& state = g_gxState.colorChannelState[GX_COLOR1];
+  EXPECT_NEAR(state.matColor[0], 100.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(state.matColor[1], 150.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(state.matColor[2], 200.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(state.matColor[3], 250.f / 255.f, 1.f / 255.f);
+}
+
+TEST_F(GXFifoTest, ChanAmbColor_Color0A0_Compound) {
+  // GX_COLOR0A0 should write to both COLOR0 and ALPHA0 XF registers
+  GXColor amb = {80, 160, 240, 128};
+  GXSetChanAmbColor(GX_COLOR0A0, amb);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& stateC = g_gxState.colorChannelState[GX_COLOR0];
+  EXPECT_NEAR(stateC.ambColor[0], 80.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(stateC.ambColor[1], 160.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(stateC.ambColor[2], 240.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(stateC.ambColor[3], 128.f / 255.f, 1.f / 255.f);
+  // ALPHA0 shares the same XF register as COLOR0, so should match
+  auto& stateA = g_gxState.colorChannelState[GX_ALPHA0];
+  EXPECT_NEAR(stateA.ambColor[0], 80.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(stateA.ambColor[3], 128.f / 255.f, 1.f / 255.f);
+}
+
+TEST_F(GXFifoTest, ChanMatColor_Color1A1_Compound) {
+  GXColor mat = {32, 64, 96, 128};
+  GXSetChanMatColor(GX_COLOR1A1, mat);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& stateC = g_gxState.colorChannelState[GX_COLOR1];
+  EXPECT_NEAR(stateC.matColor[0], 32.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(stateC.matColor[1], 64.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(stateC.matColor[2], 96.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(stateC.matColor[3], 128.f / 255.f, 1.f / 255.f);
+
+  auto& stateA = g_gxState.colorChannelState[GX_ALPHA1];
+  EXPECT_NEAR(stateA.matColor[0], 32.f / 255.f, 1.f / 255.f);
+  EXPECT_NEAR(stateA.matColor[3], 128.f / 255.f, 1.f / 255.f);
 }
 
 // ============================================================================

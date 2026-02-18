@@ -108,13 +108,9 @@ void GXPosition2s8(s8 x, s8 y) {
   GX_WRITE_U8(static_cast<u8>(y));
 }
 
-void GXPosition1x16(u16 idx) {
-  GX_WRITE_U16(idx);
-}
+void GXPosition1x16(u16 idx) { GX_WRITE_U16(idx); }
 
-void GXPosition1x8(u8 idx) {
-  GX_WRITE_U8(idx);
-}
+void GXPosition1x8(u8 idx) { GX_WRITE_U8(idx); }
 
 void GXNormal3f32(f32 x, f32 y, f32 z) {
   GX_WRITE_F32(x);
@@ -134,26 +130,15 @@ void GXNormal3s8(s8 x, s8 y, s8 z) {
   GX_WRITE_U8(static_cast<u8>(z));
 }
 
-void GXNormal1x16(u16 index) {
-  GX_WRITE_U16(index);
-}
+void GXNormal1x16(u16 index) { GX_WRITE_U16(index); }
 
-void GXNormal1x8(u8 index) {
-  GX_WRITE_U8(index);
-}
+void GXNormal1x8(u8 index) { GX_WRITE_U8(index); }
 
 void GXColor4f32(f32 r, f32 g, f32 b, f32 a) {
-  // TODO
-  // GX_WRITE_F32(r);
-  // GX_WRITE_F32(g);
-  // GX_WRITE_F32(b);
-  // GX_WRITE_F32(a);
-  GXColor4u8(
-    static_cast<u8>(r / 255.0),
-    static_cast<u8>(g / 255.0),
-    static_cast<u8>(b / 255.0),
-    static_cast<u8>(a / 255.0)
-  );
+  GX_WRITE_U8(static_cast<u8>(r * 255.0));
+  GX_WRITE_U8(static_cast<u8>(g * 255.0));
+  GX_WRITE_U8(static_cast<u8>(b * 255.0));
+  GX_WRITE_U8(static_cast<u8>(a * 255.0));
 }
 
 void GXColor4u8(u8 r, u8 g, u8 b, u8 a) {
@@ -170,20 +155,18 @@ void GXColor3u8(u8 r, u8 g, u8 b) {
 }
 
 void GXColor1u32(u32 clr) {
-  GX_WRITE_U32(clr);
+  // TODO: should I expect LE or BE ordering here?
+  GX_WRITE_U32(bswap(clr));
 }
 
 void GXColor1u16(u16 clr) {
-  GX_WRITE_U16(clr);
+  // TODO: should I expect LE or BE ordering here?
+  GX_WRITE_U16(bswap(clr));
 }
 
-void GXColor1x16(u16 index) {
-  GX_WRITE_U16(index);
-}
+void GXColor1x16(u16 index) { GX_WRITE_U16(index); }
 
-void GXColor1x8(u8 index) {
-  GX_WRITE_U8(index);
-}
+void GXColor1x8(u8 index) { GX_WRITE_U8(index); }
 
 void GXTexCoord2f32(f32 s, f32 t) {
   GX_WRITE_F32(s);
@@ -210,32 +193,18 @@ void GXTexCoord2s8(s8 s, s8 t) {
   GX_WRITE_U8(static_cast<u8>(t));
 }
 
-void GXTexCoord1f32(f32 s) {
-  GX_WRITE_F32(s);
-}
+void GXTexCoord1f32(f32 s) { GX_WRITE_F32(s); }
 
-void GXTexCoord1u16(u16 s) {
-  GX_WRITE_U16(s);
-}
+void GXTexCoord1u16(u16 s) { GX_WRITE_U16(s); }
 
-void GXTexCoord1s16(s16 s) {
-  GX_WRITE_U16(static_cast<u16>(s));
-}
+void GXTexCoord1s16(s16 s) { GX_WRITE_U16(static_cast<u16>(s)); }
 
-void GXTexCoord1u8(u8 s) {
-  GX_WRITE_U8(s);
-}
+void GXTexCoord1u8(u8 s) { GX_WRITE_U8(s); }
 
-void GXTexCoord1s8(s8 s) {
-  GX_WRITE_U8(static_cast<u8>(s));
-}
+void GXTexCoord1s8(s8 s) { GX_WRITE_U8(static_cast<u8>(s)); }
 
-void GXTexCoord1x16(u16 index) {
-  GX_WRITE_U16(index);
-}
+void GXTexCoord1x16(u16 index) { GX_WRITE_U16(index); }
 
-void GXTexCoord1x8(u8 index) {
-  GX_WRITE_U8(index);
-}
+void GXTexCoord1x8(u8 index) { GX_WRITE_U8(index); }
 
 } // extern "C"

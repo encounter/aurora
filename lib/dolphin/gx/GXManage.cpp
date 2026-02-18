@@ -37,6 +37,30 @@ GXFifoObj* GXInit(void* base, u32 size) {
   for (int i = 0; i < 8; i++) {
     SET_REG_FIELD(0, __gx->tevKsel[i], 8, 24, 0xF6 + i); // TEV Ksel
   }
+
+  // Initialize swap table bits in tevKsel shadow registers to match GXState defaults.
+  // Each swap table entry spans two consecutive ksel registers (even = red/green, odd = blue/alpha).
+  // Swap 0: identity {R,G,B,A}
+  SET_REG_FIELD(0, __gx->tevKsel[0], 2, 0, GX_CH_RED);
+  SET_REG_FIELD(0, __gx->tevKsel[0], 2, 2, GX_CH_GREEN);
+  SET_REG_FIELD(0, __gx->tevKsel[1], 2, 0, GX_CH_BLUE);
+  SET_REG_FIELD(0, __gx->tevKsel[1], 2, 2, GX_CH_ALPHA);
+  // Swap 1: {R,R,R,A}
+  SET_REG_FIELD(0, __gx->tevKsel[2], 2, 0, GX_CH_RED);
+  SET_REG_FIELD(0, __gx->tevKsel[2], 2, 2, GX_CH_RED);
+  SET_REG_FIELD(0, __gx->tevKsel[3], 2, 0, GX_CH_RED);
+  SET_REG_FIELD(0, __gx->tevKsel[3], 2, 2, GX_CH_ALPHA);
+  // Swap 2: {G,G,G,A}
+  SET_REG_FIELD(0, __gx->tevKsel[4], 2, 0, GX_CH_GREEN);
+  SET_REG_FIELD(0, __gx->tevKsel[4], 2, 2, GX_CH_GREEN);
+  SET_REG_FIELD(0, __gx->tevKsel[5], 2, 0, GX_CH_GREEN);
+  SET_REG_FIELD(0, __gx->tevKsel[5], 2, 2, GX_CH_ALPHA);
+  // Swap 3: {B,B,B,A}
+  SET_REG_FIELD(0, __gx->tevKsel[6], 2, 0, GX_CH_BLUE);
+  SET_REG_FIELD(0, __gx->tevKsel[6], 2, 2, GX_CH_BLUE);
+  SET_REG_FIELD(0, __gx->tevKsel[7], 2, 0, GX_CH_BLUE);
+  SET_REG_FIELD(0, __gx->tevKsel[7], 2, 2, GX_CH_ALPHA);
+
   SET_REG_FIELD(0, __gx->cmode0, 8, 24, 0x41);       // blend mode
   SET_REG_FIELD(0, __gx->cmode1, 8, 24, 0x42);       // dst alpha
   SET_REG_FIELD(0, __gx->zmode, 8, 24, 0x40);        // z mode

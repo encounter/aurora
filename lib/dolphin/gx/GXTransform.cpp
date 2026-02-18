@@ -95,33 +95,33 @@ void GXLoadTexMtxImm(const void* mtx_, u32 id, GXTexMtxType type) {
 }
 
 void GXSetViewport(float left, float top, float width, float height, float nearZ, float farZ) {
-  __gx->vpLeft = left;
-  __gx->vpTop = top;
-  __gx->vpWd = width;
-  __gx->vpHt = height;
-  __gx->vpNearz = nearZ;
-  __gx->vpFarz = farZ;
+  // __gx->vpLeft = left;
+  // __gx->vpTop = top;
+  // __gx->vpWd = width;
+  // __gx->vpHt = height;
+  // __gx->vpNearz = nearZ;
+  // __gx->vpFarz = farZ;
 
-  f32 sx = width / 2.0f;
-  f32 sy = -height / 2.0f;
-  f32 ox = 340.0f + (left + (width / 2.0f));
-  f32 oy = 340.0f + (top + (height / 2.0f));
-  f32 zmax = 1.6777215e7f * farZ;
-  f32 zmin = 1.6777215e7f * nearZ;
-  f32 sz = zmax - zmin;
-  f32 oz = zmax;
+  // f32 sx = width / 2.0f;
+  // f32 sy = -height / 2.0f;
+  // f32 ox = 340.0f + (left + (width / 2.0f));
+  // f32 oy = 340.0f + (top + (height / 2.0f));
+  // f32 zmax = 1.6777215e7f * farZ;
+  // f32 zmin = 1.6777215e7f * nearZ;
+  // f32 sz = zmax - zmin;
+  // f32 oz = zmax;
 
-  // XF bulk write: viewport params at 0x101A-0x101F
-  u32 reg = 0x5101A;
-  GX_WRITE_U8(0x10);
-  GX_WRITE_U32(reg);
-  GX_WRITE_XF_REG_F(26, sx);
-  GX_WRITE_XF_REG_F(27, sy);
-  GX_WRITE_XF_REG_F(28, sz);
-  GX_WRITE_XF_REG_F(29, ox);
-  GX_WRITE_XF_REG_F(30, oy);
-  GX_WRITE_XF_REG_F(31, oz);
-  __gx->bpSent = 0;
+  // // XF bulk write: viewport params at 0x101A-0x101F
+  // u32 reg = 0x5101A;
+  // GX_WRITE_U8(0x10);
+  // GX_WRITE_U32(reg);
+  // GX_WRITE_XF_REG_F(26, sx);
+  // GX_WRITE_XF_REG_F(27, sy);
+  // GX_WRITE_XF_REG_F(28, sz);
+  // GX_WRITE_XF_REG_F(29, ox);
+  // GX_WRITE_XF_REG_F(30, oy);
+  // GX_WRITE_XF_REG_F(31, oz);
+  // __gx->bpSent = 0;
 
   aurora::gfx::set_viewport(left, top, width, height, nearZ, farZ);
 }

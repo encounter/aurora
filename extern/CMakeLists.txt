@@ -1,5 +1,8 @@
 include(FetchContent)
 
+# Don't build tests for third party dependencies
+set(BUILD_TESTING OFF CACHE INTERNAL "Build tests")
+
 if (NOT EMSCRIPTEN)
   if (NOT TARGET dawn_native)
     message(STATUS "aurora: Building Dawn")
@@ -8,6 +11,13 @@ if (NOT EMSCRIPTEN)
     set(DAWN_ENABLE_DESKTOP_GL OFF CACHE INTERNAL "Enable compilation of the OpenGL backend")
     set(DAWN_ENABLE_OPENGLES OFF CACHE INTERNAL "Enable compilation of the OpenGL ES backend")
     set(DAWN_FETCH_DEPENDENCIES ON CACHE INTERNAL "Use fetch_dawn_dependencies.py as an alternative to using depot_tools")
+    set(TINT_BUILD_TESTS OFF CACHE INTERNAL "Build tests")
+    set(TINT_BUILD_CMD_TOOLS OFF CACHE INTERNAL "Build the Tint command line tools")
+    if(CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "DLL$")
+      set(ABSL_MSVC_STATIC_RUNTIME OFF CACHE INTERNAL "Link static runtime libraries")
+    else()
+      set(ABSL_MSVC_STATIC_RUNTIME ON CACHE INTERNAL "Link static runtime libraries")
+    endif()
 
     FetchContent_Declare(dawn
       URL http://github.com/google/dawn/archive/dfe3855e5d0b5367a598e60674766ffa1c894c71.tar.gz
