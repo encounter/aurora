@@ -398,11 +398,11 @@ bool initialize(AuroraBackend auroraBackend) {
         .maxStorageBuffersPerShaderStage = supportedLimits.maxStorageBuffersPerShaderStage == 0
                                                ? WGPU_LIMIT_U32_UNDEFINED
                                                : supportedLimits.maxStorageBuffersPerShaderStage,
-        .minUniformBufferOffsetAlignment = supportedLimits.minUniformBufferOffsetAlignment == 0
-                                               ? WGPU_LIMIT_U32_UNDEFINED
+        .minUniformBufferOffsetAlignment = supportedLimits.minUniformBufferOffsetAlignment < 64
+                                               ? 64
                                                : supportedLimits.minUniformBufferOffsetAlignment,
-        .minStorageBufferOffsetAlignment = supportedLimits.minStorageBufferOffsetAlignment == 0
-                                               ? WGPU_LIMIT_U32_UNDEFINED
+        .minStorageBufferOffsetAlignment = supportedLimits.minStorageBufferOffsetAlignment < 16
+                                               ? 16
                                                : supportedLimits.minStorageBufferOffsetAlignment,
     };
     Log.info(
