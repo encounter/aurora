@@ -149,16 +149,17 @@ void GXSetTevOrder(GXTevStageID id, GXTexCoordID tcid, GXTexMapID tmid, GXChanne
   u32 tmap = tmid & ~0x100u;
   tmap = (tmap >= GX_MAX_TEXMAP) ? GX_TEXMAP0 : tmap;
   u32 tcoord = (tcid >= GX_MAX_TEXCOORD) ? GX_TEXCOORD0 : tcid;
+  u32 chanHw = (cid == GX_COLOR_NULL) ? 7 : c2r[cid];
 
   if (id & 1) {
     SET_REG_FIELD(0, *ptref, 3, 12, tmap);
     SET_REG_FIELD(0, *ptref, 3, 15, tcoord);
-    SET_REG_FIELD(0, *ptref, 3, 19, c2r[cid]);
+    SET_REG_FIELD(0, *ptref, 3, 19, chanHw);
     SET_REG_FIELD(0, *ptref, 1, 18, (tmid != GX_TEXMAP_NULL && !(tmid & 0x100)));
   } else {
     SET_REG_FIELD(0, *ptref, 3, 0, tmap);
     SET_REG_FIELD(0, *ptref, 3, 3, tcoord);
-    SET_REG_FIELD(0, *ptref, 3, 7, c2r[cid]);
+    SET_REG_FIELD(0, *ptref, 3, 7, chanHw);
     SET_REG_FIELD(0, *ptref, 1, 6, (tmid != GX_TEXMAP_NULL && !(tmid & 0x100)));
   }
 

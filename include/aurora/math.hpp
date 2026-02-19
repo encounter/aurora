@@ -23,7 +23,7 @@
 #ifndef __has_builtin
 #define __has_builtin(x) 0
 #endif
-#if __has_attribute(vector_size)
+#if __has_attribute(vector_size) && !defined(__clang__)
 #define USE_GCC_VECTOR_EXTENSIONS
 #endif
 

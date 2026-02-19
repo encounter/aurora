@@ -854,6 +854,69 @@ TEST_F(GXFifoTest, TevColorS10_Reg2) {
 // CP registers (require __GXSetDirtyState() flush)
 // ============================================================================
 
+// --- GXClearVtxDesc ---
+
+TEST_F(GXFifoTest, ClearVtxDesc_ClearsAll) {
+  // Set every attribute to something non-default
+  GXSetVtxDesc(GX_VA_PNMTXIDX, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_TEX0MTXIDX, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_TEX1MTXIDX, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_TEX2MTXIDX, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_TEX3MTXIDX, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_TEX4MTXIDX, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_TEX5MTXIDX, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_TEX6MTXIDX, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_TEX7MTXIDX, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_POS, GX_INDEX16);
+  GXSetVtxDesc(GX_VA_NRM, GX_INDEX8);
+  GXSetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_CLR1, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_TEX0, GX_INDEX16);
+  GXSetVtxDesc(GX_VA_TEX1, GX_INDEX8);
+  GXSetVtxDesc(GX_VA_TEX2, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_TEX3, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_TEX4, GX_INDEX16);
+  GXSetVtxDesc(GX_VA_TEX5, GX_INDEX8);
+  GXSetVtxDesc(GX_VA_TEX6, GX_DIRECT);
+  GXSetVtxDesc(GX_VA_TEX7, GX_DIRECT);
+  // Discard the dirty state from above
+  aurora::gfx::fifo::clear_buffer();
+
+  // Now clear and flush
+  GXClearVtxDesc();
+  auto bytes = flush_and_capture();
+
+  reset_gx_state();
+  // Pre-fill g_gxState with non-zero to prove decode clears them
+  for (int i = 0; i < GX_VA_MAX_ATTR; ++i) {
+    g_gxState.vtxDesc[i] = GX_INDEX16;
+  }
+  decode_fifo(bytes);
+
+  // After GXClearVtxDesc: POS = GX_DIRECT, everything else = GX_NONE
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_PNMTXIDX], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX0MTXIDX], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX1MTXIDX], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX2MTXIDX], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX3MTXIDX], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX4MTXIDX], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX5MTXIDX], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX6MTXIDX], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX7MTXIDX], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_POS], GX_DIRECT);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_NRM], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_CLR0], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_CLR1], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX0], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX1], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX2], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX3], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX4], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX5], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX6], GX_NONE);
+  EXPECT_EQ(g_gxState.vtxDesc[GX_VA_TEX7], GX_NONE);
+}
+
 // --- GXSetVtxDesc / GXClearVtxDesc ---
 
 TEST_F(GXFifoTest, VtxDesc_PosAndNrm_Direct) {

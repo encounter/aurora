@@ -4,7 +4,7 @@ include(FetchContent)
 set(BUILD_TESTING OFF CACHE INTERNAL "Build tests")
 
 if (NOT EMSCRIPTEN)
-  if (NOT TARGET dawn_native)
+  if (NOT TARGET webgpu_dawn)
     message(STATUS "aurora: Building Dawn")
 
     set(DAWN_BUILD_MONOLITHIC_LIBRARY STATIC CACHE INTERNAL "Bundle all dawn components into a single shared library.")
@@ -20,13 +20,13 @@ if (NOT EMSCRIPTEN)
     endif()
 
     FetchContent_Declare(dawn
-      URL http://github.com/google/dawn/archive/dfe3855e5d0b5367a598e60674766ffa1c894c71.tar.gz
-      URL_HASH SHA256=4e3365d812eef73015a59dcee4a9ffd29a1490fa6a5c05595017b378c927dc63
+      URL https://github.com/google/dawn/archive/refs/tags/v20260214.164635.tar.gz
+      URL_HASH SHA256=1bfa3dcd7b787ca2e3b6444e8ed839b75eeb514db922cc9ea8de7b29820f2d25
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE
       EXCLUDE_FROM_ALL
     )
     FetchContent_MakeAvailable(dawn)
-    if (NOT TARGET dawn_native)
+    if (NOT TARGET webgpu_dawn)
       message(FATAL_ERROR "Failed to make dawn available")
     endif ()
   else ()
@@ -41,8 +41,8 @@ if (NOT EMSCRIPTEN)
     endif ()
 
     FetchContent_Declare(SDL
-      URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.10.tar.gz
-      URL_HASH SHA256=8a6ddc3e70de897f7921da275ac71e375de89dad802aa2932649d1fea9068478
+      URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.4.0.tar.gz
+      URL_HASH SHA256=9614b9696abc4597ffce6b888829dc6537ae500423474c342ac4a67222c5654c
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE
       EXCLUDE_FROM_ALL
     )
@@ -118,7 +118,7 @@ if (NOT TARGET imgui)
     ${imgui_SOURCE_DIR}/backends/imgui_impl_wgpu.cpp
   )
   target_compile_definitions(imgui_backends PRIVATE IMGUI_IMPL_WEBGPU_BACKEND_DAWN)
-  target_link_libraries(imgui_backends PRIVATE imgui SDL3::SDL3-static dawn::dawn_native)
+  target_link_libraries(imgui_backends PRIVATE imgui SDL3::SDL3-static dawn::webgpu_dawn)
   target_link_libraries(imgui PUBLIC imgui_backends)
 
   # Optional, replaces stb_freetype if available

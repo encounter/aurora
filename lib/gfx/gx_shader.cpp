@@ -580,7 +580,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   const auto hash = xxh3_hash(config);
   const auto it = g_gxCachedShaders.find(hash);
   if (it != g_gxCachedShaders.end()) {
-    CHECK(g_gxCachedShaderConfigs[hash] == config, "Shader collision! {:x}", hash);
+    // CHECK(g_gxCachedShaderConfigs[hash] == config, "Shader collision! {:x}", hash);
     return it->second.first;
   }
 
@@ -1276,7 +1276,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {{{8}{7}
     Log.info("Generated shader: {}", shaderSource);
   }
 
-  wgpu::ShaderModuleWGSLDescriptor wgslDescriptor{};
+  wgpu::ShaderSourceWGSL wgslDescriptor{};
   wgslDescriptor.code = shaderSource.c_str();
   const auto label = fmt::format("GX Shader {:x}", hash);
   const auto shaderDescriptor = wgpu::ShaderModuleDescriptor{

@@ -17,7 +17,6 @@
 #ifdef WEBGPU_DAWN
 #include "../dawn/BackendBinding.hpp"
 #include <dawn/native/DawnNative.h>
-#include <dawn/dawn_proc.h>
 #endif
 
 namespace aurora::webgpu {
@@ -145,7 +144,7 @@ static TextureWithSampler create_depth_texture() {
 }
 
 void create_copy_pipeline() {
-  wgpu::ShaderModuleWGSLDescriptor sourceDescriptor{};
+  wgpu::ShaderSourceWGSL sourceDescriptor{};
   sourceDescriptor.code = R"""(
 @group(0) @binding(0)
 var efb_sampler: sampler;
@@ -290,14 +289,14 @@ bool initialize(AuroraBackend auroraBackend) {
   if (!g_instance) {
 #ifdef WEBGPU_DAWN
     Log.info("Initializing Dawn");
-    dawnProcSetProcs(&dawn::native::GetProcs());
 #endif
     Log.info("Creating WGPU instance");
+    const std::array requiredInstanceFeatures{
+        wgpu::InstanceFeatureName::TimedWaitAny,
+    };
     wgpu::InstanceDescriptor instanceDescriptor{
-        .capabilities =
-            {
-                .timedWaitAnyEnable = true,
-            },
+        .requiredFeatureCount = requiredInstanceFeatures.size(),
+        .requiredFeatures = requiredInstanceFeatures.data(),
     };
 #ifdef WEBGPU_DAWN
     dawn::native::DawnInstanceDescriptor dawnInstanceDescriptor;
