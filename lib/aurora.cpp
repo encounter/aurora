@@ -142,19 +142,31 @@ const AuroraEvent* update() noexcept {
 }
 
 bool begin_frame() noexcept {
+  if (!g_surface) {
+    webgpu::refresh_surface(true);
+    if (!g_surface) {
+      return false;
+    }
+  }
   wgpu::SurfaceTexture surfaceTexture;
   g_surface.GetCurrentTexture(&surfaceTexture);
   switch (surfaceTexture.status) {
   case wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal:
     g_currentView = surfaceTexture.texture.CreateView();
     break;
-  case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal: {
-    Log.warn("Surface texture is suboptimal");
-    // Force swapchain recreation
-    const auto size = window::get_window_size();
-    webgpu::resize_swapchain(size.fb_width, size.fb_height, true);
+  case wgpu::SurfaceGetCurrentTextureStatus::Timeout:
+    Log.warn("Surface texture acquisition timed out");
     return false;
-  }
+  case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal:
+  case wgpu::SurfaceGetCurrentTextureStatus::Outdated:
+    Log.info("Surface texture is {}, reconfiguring swapchain", magic_enum::enum_name(surfaceTexture.status));
+    webgpu::refresh_surface(false);
+    return false;
+  case wgpu::SurfaceGetCurrentTextureStatus::Lost:
+  case wgpu::SurfaceGetCurrentTextureStatus::Error:
+    Log.warn("Surface texture is {}, recreating surface", magic_enum::enum_name(surfaceTexture.status));
+    webgpu::refresh_surface(true);
+    return false;
   default:
     Log.error("Failed to get surface texture: {}", magic_enum::enum_name(surfaceTexture.status));
     return false;

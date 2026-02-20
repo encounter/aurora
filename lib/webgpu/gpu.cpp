@@ -285,6 +285,40 @@ static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
   }
 }
 
+static bool create_surface() {
+#ifdef EMSCRIPTEN
+  const WGPUSurfaceDescriptorFromCanvasHTMLSelector canvasDescriptor{
+      .chain = {.sType = WGPUSType_SurfaceDescriptorFromCanvasHTMLSelector},
+      .selector = "#canvas",
+  };
+  const wgpu::SurfaceDescriptor surfaceDescriptor{
+      .nextInChain = reinterpret_cast<const wgpu::ChainedStruct*>(&canvasDescriptor.chain),
+      .label = "Surface",
+  };
+#else
+  SDL_Window* window = window::get_sdl_window();
+  if (window == nullptr) {
+    Log.error("Failed to create surface: no window");
+    return false;
+  }
+  const auto chainedDescriptor = utils::SetupWindowAndGetSurfaceDescriptor(window);
+  if (!chainedDescriptor) {
+    Log.error("Failed to create surface descriptor for current window");
+    return false;
+  }
+  const wgpu::SurfaceDescriptor surfaceDescriptor{
+      .nextInChain = chainedDescriptor.get(),
+      .label = "Surface",
+  };
+#endif
+  g_surface = g_instance.CreateSurface(&surfaceDescriptor);
+  if (!g_surface) {
+    Log.error("Failed to create surface");
+    return false;
+  }
+  return true;
+}
+
 bool initialize(AuroraBackend auroraBackend) {
   if (!g_instance) {
 #ifdef WEBGPU_DAWN
@@ -322,22 +356,7 @@ bool initialize(AuroraBackend auroraBackend) {
   g_dawnInstance->EnableBackendValidation(backend != WGPUBackendType::D3D12);
 #endif
 
-#ifdef EMSCRIPTEN
-  const WGPUSurfaceDescriptorFromCanvasHTMLSelector canvasDescriptor{
-      .chain = {.sType = WGPUSType_SurfaceDescriptorFromCanvasHTMLSelector},
-      .selector = "#canvas",
-  };
-#else
-  SDL_Window* window = window::get_sdl_window();
-  const auto chainedDescriptor = utils::SetupWindowAndGetSurfaceDescriptor(window);
-#endif
-  const wgpu::SurfaceDescriptor surfaceDescriptor{
-      .nextInChain = chainedDescriptor.get(),
-      .label = "Surface",
-  };
-  g_surface = g_instance.CreateSurface(&surfaceDescriptor);
-  if (!g_surface) {
-    Log.error("Failed to create surface");
+  if (!create_surface()) {
     return false;
   }
   {
@@ -441,7 +460,9 @@ bool initialize(AuroraBackend auroraBackend) {
       "skip_validation",
       "disable_robustness",
 #endif
+#ifndef ANDROID
       "use_user_defined_labels_in_backend",
+#endif
       "disable_symbol_renaming",
       "enable_immediate_error_handling",
         /* clang-format on */
@@ -562,7 +583,30 @@ void shutdown() {
   g_instance = {};
 }
 
+bool refresh_surface(bool recreate) {
+  if (!g_instance || !g_device) {
+    return false;
+  }
+  if ((!g_surface || recreate) && !create_surface()) {
+    return false;
+  }
+  uint32_t width = g_graphicsConfig.surfaceConfiguration.width;
+  uint32_t height = g_graphicsConfig.surfaceConfiguration.height;
+  if (window::get_sdl_window() != nullptr) {
+    const auto size = window::get_window_size();
+    width = size.fb_width;
+    height = size.fb_height;
+  }
+  if (width != 0 && height != 0) {
+    resize_swapchain(width, height, true);
+  }
+  return true;
+}
+
 void resize_swapchain(uint32_t width, uint32_t height, bool force) {
+  if (!g_surface || !g_device || width == 0 || height == 0) {
+    return;
+  }
   if (!force && g_graphicsConfig.surfaceConfiguration.width == width &&
       g_graphicsConfig.surfaceConfiguration.height == height) {
     return;

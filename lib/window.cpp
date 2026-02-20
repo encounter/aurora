@@ -85,6 +85,25 @@ const AuroraEvent* poll_events() {
       });
       break;
     }
+    case SDL_EVENT_RENDER_DEVICE_RESET: {
+      Log.info("Render device reset, recreating surface");
+      webgpu::refresh_surface(true);
+      break;
+    }
+#if defined(ANDROID)
+    case SDL_EVENT_WINDOW_FOCUS_LOST: {
+      g_events.push_back(AuroraEvent{
+          .type = AURORA_PAUSED,
+      });
+      break;
+    }
+    case SDL_EVENT_WINDOW_FOCUS_GAINED: {
+      g_events.push_back(AuroraEvent{
+          .type = AURORA_UNPAUSED,
+      });
+      break;
+    }
+#endif
     case SDL_EVENT_WINDOW_MOVED: {
       g_events.push_back(AuroraEvent{
           .type = AURORA_WINDOW_MOVED,
