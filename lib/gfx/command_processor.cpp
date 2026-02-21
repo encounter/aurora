@@ -61,6 +61,18 @@ static u32 prepare_vtx_buffer(ByteBuffer* outBuf, GXVtxFmt vtxfmt, const u8* ptr
         vtxSize += 6;
         outVtxSize += 12;
         break;
+      case COMBINE(GX_VA_POS, GX_POS_XYZ, GX_U8):
+        attrArrays[attr].count = 3;
+        attrArrays[attr].type = GX_U8;
+        vtxSize += 3;
+        outVtxSize += 12;
+        break;
+	  case COMBINE(GX_VA_POS, GX_POS_XY, GX_U16):
+        attrArrays[attr].count = 3;
+        attrArrays[attr].type = GX_U8;
+        vtxSize += 4;
+        outVtxSize += 12;
+        break;
       case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_F32):
       case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_F32):
       case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_F32):
@@ -214,6 +226,11 @@ static u32 prepare_vtx_buffer(ByteBuffer* outBuf, GXVtxFmt vtxfmt, const u8* ptr
         buf.append(out.data(), sizeof(f32) * 4);
         ptr += sizeof(u32);
         break;
+      }
+      if (attr == GX_VA_POS) {
+        for (int i = count; i < 3; ++i) {
+          buf.append(0.0f);
+        }
       }
     }
     if (padding > 0) {
