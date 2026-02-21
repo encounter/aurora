@@ -15,6 +15,7 @@ void GXDrawDone(void);
 void GXSetDrawDone(void);
 void GXFlush(void);
 void GXPixModeSync(void);
+void GXTexModeSync(void);
 
 #ifdef __cplusplus
 }

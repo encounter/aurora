@@ -913,6 +913,17 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
           lightDiffFn = "max(0.0, dot(ldir, mv_nrm))";
         }
       }
+      std::string alphaSrc;
+      if (cca.matSrc == GX_SRC_VTX) {
+        if (UsePerPixelLighting) {
+          alphaSrc = fmt::format("in.clr{}", vtxColorIdx);
+        } else {
+          alphaSrc = vtx_attr(config, static_cast<GXAttr>(GX_VA_CLR0 + vtxColorIdx));
+        }
+      } else {
+        alphaSrc = fmt::format("ubuf.cc{0}a_mat", i);
+      }
+
       std::string outVar, posVar;
       if (UsePerPixelLighting) {
         outVar = fmt::format("rast{}", i);
@@ -935,10 +946,9 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
           var diff = {3};
           lighting = lighting + (attn * diff * light.color);
       }}
-      // TODO alpha lighting
-      {6} = vec4f(({4} * clamp(lighting, vec4f(0.0), vec4f(1.0))).xyz, {4}.a);
+      {6} = vec4f(({4} * clamp(lighting, vec4f(0.0), vec4f(1.0))).xyz, {8}.a);
     }})""",
-                                   i, GX::MaxLights, lightAttnFn, lightDiffFn, matSrc, ambSrc, outVar, posVar);
+                                   i, GX::MaxLights, lightAttnFn, lightDiffFn, matSrc, ambSrc, outVar, posVar, alphaSrc);
       if (UsePerPixelLighting) {
         fragmentFnPre += fmt::format("\n    var rast{}: vec4f;", i);
         fragmentFnPre += lightFunc;

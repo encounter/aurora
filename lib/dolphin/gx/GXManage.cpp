@@ -8,80 +8,257 @@
 // Global shadow register instance
 static __GXData_struct sGXData;
 __GXData_struct* __gx = &sGXData;
+static GXFifoObj sFifoObj;
 
 extern "C" {
 static GXDrawDoneCallback DrawDoneCB = nullptr;
 
 GXFifoObj* GXInit(void* base, u32 size) {
-  // Zero-initialize shadow registers
+  GXRenderModeObj* rmode;
+  f32 identity_mtx[3][4];
+  GXColor clear = {64, 64, 64, 255};
+  GXColor black = {0, 0, 0, 0};
+  GXColor white = {255, 255, 255, 255};
+  u32 i;
+
   std::memset(&sGXData, 0, sizeof(sGXData));
   __gx = &sGXData;
+  __gx->inDispList = 0;
   __gx->dlSaveContext = 1;
-
-  // Initialize VCD: position is always GX_DIRECT by default
-  SET_REG_FIELD(0, __gx->vcdLo, 2, 9, 1); // GX_VA_POS = GX_DIRECT
-
-  // Initialize genMode with command byte
-  SET_REG_FIELD(0, __gx->genMode, 8, 24, 0x00); // BP reg 0x00
-
-  // Initialize BP register command bytes in shadow registers
-  for (int i = 0; i < 16; i++) {
-    SET_REG_FIELD(0, __gx->tevc[i], 8, 24, 0xC0 + i * 2); // TEV color stages
-    SET_REG_FIELD(0, __gx->teva[i], 8, 24, 0xC1 + i * 2); // TEV alpha stages
-  }
-  for (int i = 0; i < 8; i++) {
-    SET_REG_FIELD(0, __gx->tref[i], 8, 24, 0x28 + i);      // TEV order
-    SET_REG_FIELD(0, __gx->suTs0[i], 8, 24, 0x30 + i * 2); // SU TS0
-    SET_REG_FIELD(0, __gx->suTs1[i], 8, 24, 0x31 + i * 2); // SU TS1
-  }
-  for (int i = 0; i < 8; i++) {
-    SET_REG_FIELD(0, __gx->tevKsel[i], 8, 24, 0xF6 + i); // TEV Ksel
-  }
-
-  // Initialize swap table bits in tevKsel shadow registers to match GXState defaults.
-  // Each swap table entry spans two consecutive ksel registers (even = red/green, odd = blue/alpha).
-  // Swap 0: identity {R,G,B,A}
-  SET_REG_FIELD(0, __gx->tevKsel[0], 2, 0, GX_CH_RED);
-  SET_REG_FIELD(0, __gx->tevKsel[0], 2, 2, GX_CH_GREEN);
-  SET_REG_FIELD(0, __gx->tevKsel[1], 2, 0, GX_CH_BLUE);
-  SET_REG_FIELD(0, __gx->tevKsel[1], 2, 2, GX_CH_ALPHA);
-  // Swap 1: {R,R,R,A}
-  SET_REG_FIELD(0, __gx->tevKsel[2], 2, 0, GX_CH_RED);
-  SET_REG_FIELD(0, __gx->tevKsel[2], 2, 2, GX_CH_RED);
-  SET_REG_FIELD(0, __gx->tevKsel[3], 2, 0, GX_CH_RED);
-  SET_REG_FIELD(0, __gx->tevKsel[3], 2, 2, GX_CH_ALPHA);
-  // Swap 2: {G,G,G,A}
-  SET_REG_FIELD(0, __gx->tevKsel[4], 2, 0, GX_CH_GREEN);
-  SET_REG_FIELD(0, __gx->tevKsel[4], 2, 2, GX_CH_GREEN);
-  SET_REG_FIELD(0, __gx->tevKsel[5], 2, 0, GX_CH_GREEN);
-  SET_REG_FIELD(0, __gx->tevKsel[5], 2, 2, GX_CH_ALPHA);
-  // Swap 3: {B,B,B,A}
-  SET_REG_FIELD(0, __gx->tevKsel[6], 2, 0, GX_CH_BLUE);
-  SET_REG_FIELD(0, __gx->tevKsel[6], 2, 2, GX_CH_BLUE);
-  SET_REG_FIELD(0, __gx->tevKsel[7], 2, 0, GX_CH_BLUE);
-  SET_REG_FIELD(0, __gx->tevKsel[7], 2, 2, GX_CH_ALPHA);
-
-  SET_REG_FIELD(0, __gx->cmode0, 8, 24, 0x41);       // blend mode
-  SET_REG_FIELD(0, __gx->cmode1, 8, 24, 0x42);       // dst alpha
-  SET_REG_FIELD(0, __gx->zmode, 8, 24, 0x40);        // z mode
-  SET_REG_FIELD(0, __gx->peCtrl, 8, 24, 0x43);       // PE control
-  SET_REG_FIELD(0, __gx->lpSize, 8, 24, 0x22);       // line/point size
-  SET_REG_FIELD(0, __gx->suScis0, 8, 24, 0x20);      // scissor 0
-  SET_REG_FIELD(0, __gx->suScis1, 8, 24, 0x21);      // scissor 1
-  SET_REG_FIELD(0, __gx->iref, 8, 24, 0x27);         // indirect ref
-  SET_REG_FIELD(0, __gx->bpMask, 8, 24, 0x0F);       // BP mask
-  SET_REG_FIELD(0, __gx->IndTexScale0, 8, 24, 0x25); // ind tex scale 0
-  SET_REG_FIELD(0, __gx->IndTexScale1, 8, 24, 0x26); // ind tex scale 1
-
-  // Initialize default z mode: compare enabled, LEQUAL, update enabled
-  SET_REG_FIELD(0, __gx->zmode, 1, 0, 1);         // compare enable
-  SET_REG_FIELD(0, __gx->zmode, 3, 1, GX_LEQUAL); // z func
-  SET_REG_FIELD(0, __gx->zmode, 1, 4, 1);         // update enable
+  __gx->tcsManEnab = 0;
+  __gx->vNum = 0;
 
   // Initialize FIFO subsystem
   aurora::gfx::fifo::init();
+  GXInitFifoBase(&sFifoObj, base, size);
+  GXSetCPUFifo(&sFifoObj);
+  GXSetGPFifo(&sFifoObj);
 
-  return NULL;
+  // Initialize shadow registers: genMode, bpMask, lpSize
+  __gx->genMode = 0;
+  SET_REG_FIELD(0, __gx->genMode, 8, 24, 0x00);
+  __gx->bpMask = 0xFF;
+  SET_REG_FIELD(0, __gx->bpMask, 8, 24, 0x0F);
+  __gx->lpSize = 0;
+  SET_REG_FIELD(0, __gx->lpSize, 8, 24, 0x22);
+
+  // TEV / tref / ksel shadow registers
+  for (i = 0; i < 16; i++) {
+    __gx->tevc[i] = 0;
+    __gx->teva[i] = 0;
+    __gx->tref[i / 2] = 0;
+    __gx->texmapId[i] = GX_TEXMAP_NULL;
+    SET_REG_FIELD(0, __gx->tevc[i], 8, 24, 0xC0 + i * 2);
+    SET_REG_FIELD(0, __gx->teva[i], 8, 24, 0xC1 + i * 2);
+    SET_REG_FIELD(0, __gx->tevKsel[i / 2], 8, 24, 0xF6 + i / 2);
+    SET_REG_FIELD(0, __gx->tref[i / 2], 8, 24, 0x28 + i / 2);
+  }
+
+  // iref and SU texture scale registers
+  __gx->iref = 0;
+  SET_REG_FIELD(0, __gx->iref, 8, 24, 0x27);
+  for (i = 0; i < 8; i++) {
+    __gx->suTs0[i] = 0;
+    __gx->suTs1[i] = 0;
+    SET_REG_FIELD(0, __gx->suTs0[i], 8, 24, 0x30 + i * 2);
+    SET_REG_FIELD(0, __gx->suTs1[i], 8, 24, 0x31 + i * 2);
+  }
+
+  // Other BP command byte init
+  SET_REG_FIELD(0, __gx->suScis0, 8, 24, 0x20);
+  SET_REG_FIELD(0, __gx->suScis1, 8, 24, 0x21);
+  SET_REG_FIELD(0, __gx->cmode0, 8, 24, 0x41);
+  SET_REG_FIELD(0, __gx->cmode1, 8, 24, 0x42);
+  SET_REG_FIELD(0, __gx->zmode, 8, 24, 0x40);
+  SET_REG_FIELD(0, __gx->peCtrl, 8, 24, 0x43);
+  SET_REG_FIELD(0, __gx->IndTexScale0, 8, 24, 0x25);
+  SET_REG_FIELD(0, __gx->IndTexScale1, 8, 24, 0x26);
+
+  __gx->dirtyState = 0;
+  __gx->dirtyVAT = 0;
+
+  // VAT initialization: set default bits and write vatB to CP
+  for (i = 0; i < GX_MAX_VTXFMT; i++) {
+    SET_REG_FIELD(0, __gx->vatA[i], 1, 30, 1);
+    SET_REG_FIELD(0, __gx->vatB[i], 1, 31, 1);
+    GX_WRITE_U8(8);
+    GX_WRITE_U8(i | 0x80);
+    GX_WRITE_U32(__gx->vatB[i]);
+  }
+
+  // XF register init: error/mode control + dual-tex transform
+  {
+    u32 reg1 = 0;
+    u32 reg2 = 0;
+    SET_REG_FIELD(0, reg1, 1, 0, 1);
+    SET_REG_FIELD(0, reg1, 1, 1, 1);
+    SET_REG_FIELD(0, reg1, 1, 2, 1);
+    SET_REG_FIELD(0, reg1, 1, 3, 1);
+    SET_REG_FIELD(0, reg1, 1, 4, 1);
+    SET_REG_FIELD(0, reg1, 1, 5, 1);
+    GX_WRITE_XF_REG(0, reg1);
+    SET_REG_FIELD(0, reg2, 1, 0, 1);
+    GX_WRITE_XF_REG(0x12, reg2);
+  }
+
+  // BP 0x58 register init
+  {
+    u32 reg = 0;
+    SET_REG_FIELD(0, reg, 1, 0, 1);
+    SET_REG_FIELD(0, reg, 1, 1, 1);
+    SET_REG_FIELD(0, reg, 1, 2, 1);
+    SET_REG_FIELD(0, reg, 1, 3, 1);
+    SET_REG_FIELD(0, reg, 8, 24, 0x58);
+    GX_WRITE_RAS_REG(reg);
+  }
+
+  // Default render mode (NTSC)
+  rmode = &GXNtsc480IntDf;
+
+  // Default state initialization via API calls
+  GXSetCopyClear(clear, 0xFFFFFF);
+  GXSetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, 0x3C);
+  GXSetTexCoordGen(GX_TEXCOORD1, GX_TG_MTX2x4, GX_TG_TEX1, 0x3C);
+  GXSetTexCoordGen(GX_TEXCOORD2, GX_TG_MTX2x4, GX_TG_TEX2, 0x3C);
+  GXSetTexCoordGen(GX_TEXCOORD3, GX_TG_MTX2x4, GX_TG_TEX3, 0x3C);
+  GXSetTexCoordGen(GX_TEXCOORD4, GX_TG_MTX2x4, GX_TG_TEX4, 0x3C);
+  GXSetTexCoordGen(GX_TEXCOORD5, GX_TG_MTX2x4, GX_TG_TEX5, 0x3C);
+  GXSetTexCoordGen(GX_TEXCOORD6, GX_TG_MTX2x4, GX_TG_TEX6, 0x3C);
+  GXSetTexCoordGen(GX_TEXCOORD7, GX_TG_MTX2x4, GX_TG_TEX7, 0x3C);
+  GXSetNumTexGens(1);
+  GXClearVtxDesc();
+  GXInvalidateVtxCache();
+  GXSetLineWidth(6, GX_TO_ZERO);
+  // GXSetPointSize(6, GX_TO_ZERO);
+  GXEnableTexOffsets(GX_TEXCOORD0, GX_DISABLE, GX_DISABLE);
+  GXEnableTexOffsets(GX_TEXCOORD1, GX_DISABLE, GX_DISABLE);
+  GXEnableTexOffsets(GX_TEXCOORD2, GX_DISABLE, GX_DISABLE);
+  GXEnableTexOffsets(GX_TEXCOORD3, GX_DISABLE, GX_DISABLE);
+  GXEnableTexOffsets(GX_TEXCOORD4, GX_DISABLE, GX_DISABLE);
+  GXEnableTexOffsets(GX_TEXCOORD5, GX_DISABLE, GX_DISABLE);
+  GXEnableTexOffsets(GX_TEXCOORD6, GX_DISABLE, GX_DISABLE);
+  GXEnableTexOffsets(GX_TEXCOORD7, GX_DISABLE, GX_DISABLE);
+
+  // Identity matrix
+  identity_mtx[0][0] = 1.0f;
+  identity_mtx[0][1] = 0.0f;
+  identity_mtx[0][2] = 0.0f;
+  identity_mtx[0][3] = 0.0f;
+  identity_mtx[1][0] = 0.0f;
+  identity_mtx[1][1] = 1.0f;
+  identity_mtx[1][2] = 0.0f;
+  identity_mtx[1][3] = 0.0f;
+  identity_mtx[2][0] = 0.0f;
+  identity_mtx[2][1] = 0.0f;
+  identity_mtx[2][2] = 1.0f;
+  identity_mtx[2][3] = 0.0f;
+  GXLoadPosMtxImm(identity_mtx, GX_PNMTX0);
+  GXLoadNrmMtxImm(identity_mtx, GX_PNMTX0);
+  GXSetCurrentMtx(GX_PNMTX0);
+  GXLoadTexMtxImm(identity_mtx, GX_IDENTITY, GX_MTX3x4);
+  GXLoadTexMtxImm(identity_mtx, GX_PTIDENTITY, GX_MTX3x4);
+
+  GXSetViewport(0.0f, 0.0f, rmode->fbWidth, rmode->xfbHeight, 0.0f, 1.0f);
+  // GXSetCoPlanar(GX_DISABLE);
+  GXSetCullMode(GX_CULL_BACK);
+  // GXSetClipMode(GX_CLIP_ENABLE);
+  GXSetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+  // GXSetScissorBoxOffset(0, 0);
+
+  GXSetNumChans(0);
+  GXSetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE);
+  GXSetChanAmbColor(GX_COLOR0A0, black);
+  GXSetChanMatColor(GX_COLOR0A0, white);
+  GXSetChanCtrl(GX_COLOR1A1, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE);
+  GXSetChanAmbColor(GX_COLOR1A1, black);
+  GXSetChanMatColor(GX_COLOR1A1, white);
+
+  GXInvalidateTexAll();
+  // __gx->nextTexRgn = 0;
+  // for (i = 0; i < 8; i++)
+  //   GXInitTexCacheRegion(&__gx->TexRegions[i], 0, i * 0x8000, 0, 0x80000 + i * 0x8000, 0);
+  // __gx->nextTexRgnCI = 0;
+  // for (i = 0; i < 4; i++)
+  //   GXInitTexCacheRegion(&__gx->TexRegionsCI[i], 0, (i * 2 + 8) * 0x8000, 0, (i * 2 + 9) * 0x8000, 0);
+  // for (i = 0; i < 16; i++)
+  //   GXInitTlutRegion(&__gx->TlutRegions[i], 0xC0000 + i * 0x2000, 16);
+  // for (i = 0; i < 4; i++)
+  //   GXInitTlutRegion(&__gx->TlutRegions[i + 16], 0xE0000 + i * 0x8000, 64);
+  // GXSetTexRegionCallback(__GXDefaultTexRegionCallback);
+  // GXSetTlutRegionCallback(__GXDefaultTlutRegionCallback);
+
+  GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
+  GXSetTevOrder(GX_TEVSTAGE1, GX_TEXCOORD1, GX_TEXMAP1, GX_COLOR0A0);
+  GXSetTevOrder(GX_TEVSTAGE2, GX_TEXCOORD2, GX_TEXMAP2, GX_COLOR0A0);
+  GXSetTevOrder(GX_TEVSTAGE3, GX_TEXCOORD3, GX_TEXMAP3, GX_COLOR0A0);
+  GXSetTevOrder(GX_TEVSTAGE4, GX_TEXCOORD4, GX_TEXMAP4, GX_COLOR0A0);
+  GXSetTevOrder(GX_TEVSTAGE5, GX_TEXCOORD5, GX_TEXMAP5, GX_COLOR0A0);
+  GXSetTevOrder(GX_TEVSTAGE6, GX_TEXCOORD6, GX_TEXMAP6, GX_COLOR0A0);
+  GXSetTevOrder(GX_TEVSTAGE7, GX_TEXCOORD7, GX_TEXMAP7, GX_COLOR0A0);
+  GXSetTevOrder(GX_TEVSTAGE8, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR_NULL);
+  GXSetTevOrder(GX_TEVSTAGE9, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR_NULL);
+  GXSetTevOrder(GX_TEVSTAGE10, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR_NULL);
+  GXSetTevOrder(GX_TEVSTAGE11, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR_NULL);
+  GXSetTevOrder(GX_TEVSTAGE12, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR_NULL);
+  GXSetTevOrder(GX_TEVSTAGE13, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR_NULL);
+  GXSetTevOrder(GX_TEVSTAGE14, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR_NULL);
+  GXSetTevOrder(GX_TEVSTAGE15, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR_NULL);
+
+  GXSetNumTevStages(1);
+  GXSetTevOp(GX_TEVSTAGE0, GX_REPLACE);
+  GXSetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+  GXSetZTexture(GX_ZT_DISABLE, GX_TF_Z8, 0);
+
+  for (i = GX_TEVSTAGE0; i < GX_MAX_TEVSTAGE; i++) {
+    GXSetTevKColorSel(static_cast<GXTevStageID>(i), GX_TEV_KCSEL_1_4);
+    GXSetTevKAlphaSel(static_cast<GXTevStageID>(i), GX_TEV_KASEL_1);
+    GXSetTevSwapMode(static_cast<GXTevStageID>(i), GX_TEV_SWAP0, GX_TEV_SWAP0);
+  }
+  GXSetTevSwapModeTable(GX_TEV_SWAP0, GX_CH_RED, GX_CH_GREEN, GX_CH_BLUE, GX_CH_ALPHA);
+  GXSetTevSwapModeTable(GX_TEV_SWAP1, GX_CH_RED, GX_CH_RED, GX_CH_RED, GX_CH_ALPHA);
+  GXSetTevSwapModeTable(GX_TEV_SWAP2, GX_CH_GREEN, GX_CH_GREEN, GX_CH_GREEN, GX_CH_ALPHA);
+  GXSetTevSwapModeTable(GX_TEV_SWAP3, GX_CH_BLUE, GX_CH_BLUE, GX_CH_BLUE, GX_CH_ALPHA);
+
+  for (i = GX_TEVSTAGE0; i < GX_MAX_TEVSTAGE; i++)
+    GXSetTevDirect(static_cast<GXTevStageID>(i));
+  GXSetNumIndStages(0);
+  GXSetIndTexCoordScale(GX_INDTEXSTAGE0, GX_ITS_1, GX_ITS_1);
+  GXSetIndTexCoordScale(GX_INDTEXSTAGE1, GX_ITS_1, GX_ITS_1);
+  GXSetIndTexCoordScale(GX_INDTEXSTAGE2, GX_ITS_1, GX_ITS_1);
+  GXSetIndTexCoordScale(GX_INDTEXSTAGE3, GX_ITS_1, GX_ITS_1);
+
+  GXSetFog(GX_FOG_NONE, 0.0f, 1.0f, 0.1f, 1.0f, black);
+  // GXSetFogRangeAdj(GX_DISABLE, 0, nullptr);
+  GXSetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+  GXSetColorUpdate(GX_ENABLE);
+  GXSetAlphaUpdate(GX_ENABLE);
+  GXSetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
+  GXSetZCompLoc(GX_TRUE);
+  GXSetDither(GX_ENABLE);
+  GXSetDstAlpha(GX_DISABLE, 0);
+  GXSetPixelFmt(GX_PF_RGB8_Z24, GX_ZC_LINEAR);
+  // GXSetFieldMask(GX_ENABLE, GX_ENABLE);
+  // GXSetFieldMode(rmode->field_rendering, ((rmode->viHeight == 2 * rmode->xfbHeight) ? GX_ENABLE : GX_DISABLE));
+
+  GXSetDispCopySrc(0, 0, rmode->fbWidth, rmode->efbHeight);
+  GXSetDispCopyDst(rmode->fbWidth, rmode->efbHeight);
+  GXSetDispCopyYScale(static_cast<f32>(rmode->xfbHeight) / static_cast<f32>(rmode->efbHeight));
+  // GXSetCopyClamp(static_cast<GXFBClamp>(GX_CLAMP_TOP | GX_CLAMP_BOTTOM));
+  GXSetCopyFilter(rmode->aa, rmode->sample_pattern, GX_TRUE, rmode->vfilter);
+  GXSetDispCopyGamma(GX_GM_1_0);
+  // GXSetDispCopyFrame2Field(GX_COPY_PROGRESSIVE);
+  // GXClearBoundingBox();
+
+  // GXPokeColorUpdate(GX_TRUE);
+  // GXPokeAlphaUpdate(GX_TRUE);
+  // GXPokeDither(GX_FALSE);
+  // GXPokeBlendMode(GX_BM_NONE, GX_BL_ZERO, GX_BL_ONE, GX_LO_SET);
+  // GXPokeAlphaMode(GX_ALWAYS, 0);
+  // GXPokeAlphaRead(GX_READ_FF);
+  // GXPokeDstAlpha(GX_DISABLE, 0);
+  // GXPokeZMode(GX_TRUE, GX_ALWAYS, GX_TRUE);
+
+  return &sFifoObj;
 }
 
 void GXDrawDone() {
@@ -147,12 +324,9 @@ void __GXSetGenMode() {
 }
 
 void __GXSendFlushPrim() {
-  // On real GC hardware, this writes a dummy triangle strip draw to force the GP
+  // Originally, this writes a dummy triangle strip draw to force the GP
   // to process the FIFO up to this point, flushing pending BP register changes.
-  // The SDK uses worst-case per-attribute sizes (vLim) for the dummy vertex data,
-  // which differs from the actual VAT sizes that prepare_vtx_buffer computes.
-  // Aurora's software command processor doesn't need this GPU sync mechanism,
-  // so we skip the FIFO writes and just clear the bpSent flag.
+  // We can skip the FIFO writes and just clear the bpSent flag.
 
   // GX_WRITE_U8(0x98);
   // GX_WRITE_U16(__gx->vNum);
@@ -329,5 +503,4 @@ void __GXSetMatrixIndex(GXAttr matIdxAttr) {
   }
   __gx->bpSent = 0;
 }
-
 };

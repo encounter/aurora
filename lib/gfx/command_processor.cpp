@@ -547,7 +547,7 @@ static void handle_bp(u32 value, bool bigEndian) {
   // BP mask (0x0F) - internal, applies to next BP write
   case 0x0F:
     // The BP mask is used by the hardware to selectively update fields.
-    // TODO implement
+    Log.warn("BP mask set to {:06x}, but selective updates are not implemented", value & 0xFFFFFF);
     break;
 
   // TEV indirect stages (0x10-0x1F)
@@ -1415,6 +1415,8 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
             g_gxState.tcgs[tcIdx].normalize = bp_get(val, 1, 8) != 0;
             g_gxState.stateDirty = true;
           }
+        } else {
+          Log.warn("Unhandled XF register 0x{:04X} (value 0x{:08X})", reg, val);
         }
         break;
       }

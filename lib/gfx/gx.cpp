@@ -265,7 +265,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     config.shaderConfig.tevStages[i] = g_gxState.tevStages[i];
   }
   config.shaderConfig.tevStageCount = g_gxState.numTevStages;
-  for (u8 i = 0; i < g_gxState.numChans * 2; ++i) {
+  for (u8 i = 0; i < gx::MaxColorChannels; ++i) {
     const auto& cc = g_gxState.colorChannelConfig[i];
     if (cc.lightingEnabled) {
       config.shaderConfig.colorChannels[i] = cc;
