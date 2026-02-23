@@ -136,6 +136,4 @@ void GXSetViewportJitter(float left, float top, float width, float height, float
 // TODO GXLoadTexMtxIndx
 // TODO GXProject
 // TODO GXSetZScaleOffset
-// TODO GXSetScissorBoxOffset
-// TODO GXSetClipMode
 }

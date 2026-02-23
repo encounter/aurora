@@ -38,16 +38,8 @@ typedef double f64;
 typedef volatile f32 vf32;
 typedef volatile f64 vf64;
 
-#if defined(TARGET_PC) && !defined(_WIN32)
+#if defined(TARGET_PC)
 #include <stdbool.h>
-typedef bool BOOL;
-#ifndef FALSE
-#define FALSE false
-#endif
-#ifndef TRUE
-#define TRUE true
-#endif
-#else
 typedef int BOOL;
 #ifndef FALSE
 #define FALSE 0

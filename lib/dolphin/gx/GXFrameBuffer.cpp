@@ -6,15 +6,65 @@
 
 extern "C" {
 GXRenderModeObj GXNtsc480IntDf = {
-    VI_TVMODE_NTSC_INT, 640, 480, 480, 40, 0, 640, 480, VI_XFBMODE_DF, 0, 0,
+    VI_TVMODE_NTSC_INT,
+    640,
+    480,
+    480,
+    40,
+    0,
+    640,
+    480,
+    VI_XFBMODE_DF,
+    0,
+    0,
+    {6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6},
+    {8, 8, 10, 12, 10, 8, 8},
+};
+GXRenderModeObj GXNtsc480Int = {
+    VI_TVMODE_NTSC_INT,
+    640,
+    480,
+    480,
+    40,
+    0,
+    640,
+    480,
+    VI_XFBMODE_DF,
+    0,
+    0,
+    {6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6},
+    {0, 0, 21, 22, 21, 0, 0},
 };
 GXRenderModeObj GXPal528IntDf = {
-    VI_TVMODE_PAL_INT, 704, 528, 480, 40, 0, 640, 480, VI_XFBMODE_DF, 0, 0,
+    VI_TVMODE_PAL_INT,
+    704,
+    528,
+    480,
+    40,
+    0,
+    640,
+    480,
+    VI_XFBMODE_DF,
+    0,
+    0,
+    {6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6},
+    {8, 8, 10, 12, 10, 8, 8},
 };
 GXRenderModeObj GXMpal480IntDf = {
-    VI_TVMODE_PAL_INT, 640, 480, 480, 40, 0, 640, 480, VI_XFBMODE_DF, 0, 0,
+    VI_TVMODE_PAL_INT,
+    640,
+    480,
+    480,
+    40,
+    0,
+    640,
+    480,
+    VI_XFBMODE_DF,
+    0,
+    0,
+    {6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6},
+    {8, 8, 10, 12, 10, 8, 8},
 };
-
 
 void GXAdjustForOverscan(GXRenderModeObj* rmin, GXRenderModeObj* rmout, u16 hor, u16 ver) {
   *rmout = *rmin;
