@@ -11,4 +11,5 @@ static void* MEM1Start = nullptr;
 static void* MEM1End = nullptr;
 
 void AuroraOSInitMemory();
+void AuroraFillBootInfo();
 void AuroraInitClock();
