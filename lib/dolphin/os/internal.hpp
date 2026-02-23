@@ -7,8 +7,8 @@ static aurora::Module Log("aurora::os");
 
 constexpr s32 OS_REAL_TIMER_CLOCK = 50'000'000;
 
-static void* MEM1Start = nullptr;
-static void* MEM1End = nullptr;
+extern void* MEM1Start;
+extern void* MEM1End;
 
 void AuroraOSInitMemory();
 void AuroraFillBootInfo();
