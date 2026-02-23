@@ -1,0 +1,7 @@
+add_library(aurora_os STATIC lib/dolphin/os/OSInit.cpp
+        ../lib/dolphin/os/OSMemory.cpp
+        ../lib/dolphin/os/internal.hpp)
+add_library(aurora::os ALIAS aurora_os)
+
+target_include_directories(aurora_os PUBLIC include)
+target_link_libraries(aurora_os PRIVATE aurora::core)

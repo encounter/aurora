@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD 20)
 add_subdirectory(extern)
 
 include(cmake/aurora_core.cmake)
+include(cmake/aurora_os.cmake)
 include(cmake/aurora_gx.cmake)
 include(cmake/aurora_pad.cmake)
 include(cmake/aurora_si.cmake)
