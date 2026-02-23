@@ -205,7 +205,7 @@ u32 OSUncachedToPhysical(void* ucaddr);
 void* OSCachedToUncached(void* caddr);
 void* OSUncachedToCached(void* ucaddr);
 
-#if !DEBUG
+#if NDEBUG
 #define OSPhysicalToCached(paddr)    ((void*) ((uintptr_t)(OS_BASE_CACHED   + (uintptr_t)(paddr))))
 #define OSPhysicalToUncached(paddr)  ((void*) ((uintptr_t)(OS_BASE_UNCACHED + (uintptr_t)(paddr))))
 #define OSCachedToPhysical(caddr)    ((u32)   ((u32)(caddr)  - OS_BASE_CACHED))
@@ -233,7 +233,7 @@ extern int __OSInIPL;
 #endif
 
 
-#ifdef DEBUG
+#if !NDEBUG
 #define ASSERTLINE(line, cond) \
     ((cond) || (OSPanic(__FILE__, line, "Failed assertion " #cond), 0))
 
