@@ -19,7 +19,7 @@ MtxPtr MTXPush(MTXStack* sPtr, const Mtx m) {
         sPtr->stackPtr = sPtr->stackBase;
         MTXCopy(m, sPtr->stackPtr);
     } else {
-        assert(((((s32)sPtr->stackPtr - (s32)sPtr->stackBase) / 16) / 3) < (sPtr->numMtx - 1) && "MTXPush():  stack overflow ");
+        assert(((((uintptr_t)sPtr->stackPtr - (uintptr_t)sPtr->stackBase) / 16) / 3) < (sPtr->numMtx - 1) && "MTXPush():  stack overflow ");
         MTXCopy(m, sPtr->stackPtr + 3);
         sPtr->stackPtr += 3;
     }
@@ -36,7 +36,7 @@ MtxPtr MTXPushFwd(MTXStack* sPtr, const Mtx m) {
         sPtr->stackPtr = sPtr->stackBase;
         MTXCopy(m, sPtr->stackPtr);
     } else {
-        assert(((((s32)sPtr->stackPtr - (s32)sPtr->stackBase) / 16) / 3) < (sPtr->numMtx - 1) && "MTXPushFwd():  stack overflow");
+        assert(((((uintptr_t)sPtr->stackPtr - (uintptr_t)sPtr->stackBase) / 16) / 3) < (sPtr->numMtx - 1) && "MTXPushFwd():  stack overflow");
         MTXConcat(sPtr->stackPtr, m, sPtr->stackPtr + 3);
         sPtr->stackPtr += 3;
     }
@@ -55,7 +55,7 @@ MtxPtr MTXPushInv(MTXStack* sPtr, const Mtx m) {
         sPtr->stackPtr = sPtr->stackBase;
         MTXCopy(mInv, sPtr->stackPtr);
     } else {
-        assert(((((s32)sPtr->stackPtr - (s32)sPtr->stackBase) / 16) / 3) < (sPtr->numMtx - 1) && "MTXPushInv():  stack overflow");
+        assert(((((uintptr_t)sPtr->stackPtr - (uintptr_t)sPtr->stackBase) / 16) / 3) < (sPtr->numMtx - 1) && "MTXPushInv():  stack overflow");
         MTXConcat(mInv, sPtr->stackPtr, sPtr->stackPtr + 3);
         sPtr->stackPtr += 3;
     }
@@ -75,7 +75,7 @@ MtxPtr MTXPushInvXpose(MTXStack* sPtr, const Mtx m) {
         sPtr->stackPtr = sPtr->stackBase;
         MTXCopy(mIT, sPtr->stackPtr);
     } else {
-        assert(((((s32)sPtr->stackPtr - (s32)sPtr->stackBase) / 16) / 3) < (sPtr->numMtx - 1) && "MTXPushInvXpose():  stack overflow ");
+        assert(((((uintptr_t)sPtr->stackPtr - (uintptr_t)sPtr->stackBase) / 16) / 3) < (sPtr->numMtx - 1) && "MTXPushInvXpose():  stack overflow ");
         MTXConcat(sPtr->stackPtr, mIT, sPtr->stackPtr + 3);
         sPtr->stackPtr += 3;
     }
