@@ -27,7 +27,7 @@ typedef struct {
   u32 numMtx;
   MtxPtr stackBase;
   MtxPtr stackPtr;
-} MtxStack, *MtxStackPtr;
+} MTXStack, MtxStack, *MtxStackPtr;
 
 #define MTXDegToRad(a) ((a)*0.01745329252f)
 #define MTXRadToDeg(a) ((a)*57.29577951f)
@@ -237,8 +237,7 @@ f32 PSVECDistance(const Vec* a, const Vec* b);
 #define PSVECDistance VECDistance
 #endif
 
-// TODO
-#if defined( MTX_USE_PS) && 0
+#if defined(MTX_USE_PS)
 #define VECAdd PSVECAdd
 #define VECSubtract PSVECSubtract
 #define VECScale PSVECScale
