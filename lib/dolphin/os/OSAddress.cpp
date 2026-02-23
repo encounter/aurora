@@ -1,6 +1,5 @@
 #include "internal.hpp"
-#include "../../internal.hpp"
-#include "dolphin/types.h"
+#include <dolphin/os.h>
 
 #include <cassert>
 

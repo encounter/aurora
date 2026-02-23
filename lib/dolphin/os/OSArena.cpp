@@ -2,6 +2,8 @@
 
 #include "internal.hpp"
 
+#include <dolphin/os.h>
+
 #define ROUND64(n, a) (((u64)(n) + (a)-1) & ~(u64)((a)-1))
 #define TRUNC64(n, a) (((u64)(n)) & ~(u64)((a)-1))
 
