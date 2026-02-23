@@ -1,20 +1,15 @@
+#include <assert.h>
 #include <math.h>
 #include <dolphin/mtx/mtx44ext.h>
-
-#define ASSERTLINE(line, cond) (void)0
-#define ASSERTMSGLINE(line, cond, msg) (void)0
-#define ASSERTMSG1LINE(line, cond, msg, arg1) (void)0
-#define ASSERTMSG2LINE(line, cond, msg, arg1, arg2) (void)0
-#define ASSERTMSGLINEV(line, cond, ...) (void)0
 
 void C_MTXPerspective(Mtx44 m, f32 fovY, f32 aspect, f32 n, f32 f) {
   f32 angle;
   f32 cot;
   f32 tmp;
 
-  ASSERTMSGLINE(179, m, "MTXPerspective():  NULL Mtx44Ptr 'm' ");
-  ASSERTMSGLINE(180, (fovY > 0.0) && (fovY < 180.0), "MTXPerspective():  'fovY' out of range ");
-  ASSERTMSGLINE(181, 0.0f != aspect, "MTXPerspective():  'aspect' is 0 ");
+  assert(m && "MTXPerspective():  NULL Mtx44Ptr 'm' ");
+  assert((fovY > 0.0) && (fovY < 180.0) && "MTXPerspective():  'fovY' out of range ");
+  assert(0.0f != aspect && "MTXPerspective():  'aspect' is 0 ");
 
   angle = (0.5f * fovY);
   angle = MTXDegToRad(angle);

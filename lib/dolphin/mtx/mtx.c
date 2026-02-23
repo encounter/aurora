@@ -1,15 +1,10 @@
 #include <dolphin/mtx.h>
 
+#include <assert.h>
 #include <math.h>
 
-#define ASSERTLINE(line, cond) (void)0
-#define ASSERTMSGLINE(line, cond, msg) (void)0
-#define ASSERTMSG1LINE(line, cond, msg, arg1) (void)0
-#define ASSERTMSG2LINE(line, cond, msg, arg1, arg2) (void)0
-#define ASSERTMSGLINEV(line, cond, ...) (void)0
-
 void C_MTXIdentity(Mtx m) {
-  ASSERTMSGLINE(189, m, "MtxIdentity():  NULL Mtx 'm' ");
+  assert(m && "MtxIdentity():  NULL Mtx 'm' ");
   m[0][0] = 1;
   m[0][1] = 0;
   m[0][2] = 0;
@@ -25,8 +20,8 @@ void C_MTXIdentity(Mtx m) {
 }
 
 void C_MTXCopy(const Mtx src, Mtx dst) {
-  ASSERTMSGLINE(250, src, "MTXCopy():  NULL MtxPtr 'src' ");
-  ASSERTMSGLINE(251, dst, "MTXCopy():  NULL MtxPtr 'dst' ");
+  assert(src && "MTXCopy():  NULL MtxPtr 'src' ");
+  assert(dst && "MTXCopy():  NULL MtxPtr 'dst' ");
   if (src != dst) {
     dst[0][0] = src[0][0];
     dst[0][1] = src[0][1];
@@ -47,9 +42,9 @@ void C_MTXConcat(const Mtx a, const Mtx b, Mtx ab) {
   Mtx mTmp;
   MtxPtr m;
 
-  ASSERTMSGLINE(324, a, "MTXConcat():  NULL MtxPtr 'a'  ");
-  ASSERTMSGLINE(325, b, "MTXConcat():  NULL MtxPtr 'b'  ");
-  ASSERTMSGLINE(326, ab, "MTXConcat():  NULL MtxPtr 'ab' ");
+  assert(a && "MTXConcat():  NULL MtxPtr 'a'  ");
+  assert(b && "MTXConcat():  NULL MtxPtr 'b'  ");
+  assert(ab && "MTXConcat():  NULL MtxPtr 'ab' ");
 
   if (ab == a || ab == b) {
     m = mTmp;
@@ -80,10 +75,10 @@ void C_MTXConcat(const Mtx a, const Mtx b, Mtx ab) {
 void C_MTXConcatArray(const Mtx a, const Mtx* srcBase, Mtx* dstBase, u32 count) {
   u32 i;
 
-  ASSERTMSGLINE(580, a != 0, "MTXConcatArray(): NULL MtxPtr 'a' ");
-  ASSERTMSGLINE(581, srcBase != 0, "MTXConcatArray(): NULL MtxPtr 'srcBase' ");
-  ASSERTMSGLINE(582, dstBase != 0, "MTXConcatArray(): NULL MtxPtr 'dstBase' ");
-  ASSERTMSGLINE(583, count > 1, "MTXConcatArray(): count must be greater than 1.");
+  assert(a != 0 && "MTXConcatArray(): NULL MtxPtr 'a' ");
+  assert(srcBase != 0 && "MTXConcatArray(): NULL MtxPtr 'srcBase' ");
+  assert(dstBase != 0 && "MTXConcatArray(): NULL MtxPtr 'dstBase' ");
+  assert(count > 1 && "MTXConcatArray(): count must be greater than 1.");
 
   for (i = 0; i < count; i++) {
     C_MTXConcat(a, *srcBase, *dstBase);
@@ -96,8 +91,8 @@ void C_MTXTranspose(const Mtx src, Mtx xPose) {
   Mtx mTmp;
   MtxPtr m;
 
-  ASSERTMSGLINE(851, src, "MTXTranspose():  NULL MtxPtr 'src' ");
-  ASSERTMSGLINE(852, xPose, "MTXTranspose():  NULL MtxPtr 'xPose' ");
+  assert(src && "MTXTranspose():  NULL MtxPtr 'src' ");
+  assert(xPose && "MTXTranspose():  NULL MtxPtr 'xPose' ");
 
   if (src == xPose) {
     m = mTmp;
@@ -127,8 +122,8 @@ u32 C_MTXInverse(const Mtx src, Mtx inv) {
   MtxPtr m;
   f32 det;
 
-  ASSERTMSGLINE(950, src, "MTXInverse():  NULL MtxPtr 'src' ");
-  ASSERTMSGLINE(951, inv, "MTXInverse():  NULL MtxPtr 'inv' ");
+  assert(src && "MTXInverse():  NULL MtxPtr 'src' ");
+  assert(inv && "MTXInverse():  NULL MtxPtr 'inv' ");
 
   if (src == inv) {
     m = mTmp;
@@ -172,8 +167,8 @@ u32 C_MTXInvXpose(const Mtx src, Mtx invX) {
   MtxPtr m;
   f32 det;
 
-  ASSERTMSGLINE(1185, src, "MTXInvXpose(): NULL MtxPtr 'src' ");
-  ASSERTMSGLINE(1186, invX, "MTXInvXpose(): NULL MtxPtr 'invX' ");
+  assert(src && "MTXInvXpose(): NULL MtxPtr 'src' ");
+  assert(invX && "MTXInvXpose(): NULL MtxPtr 'invX' ");
 
   if (src == invX) {
     m = mTmp;
@@ -213,7 +208,7 @@ u32 C_MTXInvXpose(const Mtx src, Mtx invX) {
 }
 
 void C_MTXTrans(Mtx m, f32 xT, f32 yT, f32 zT) {
-  ASSERTMSGLINE(1866, m, "MTXTrans():  NULL MtxPtr 'm' ");
+  assert(m && "MTXTrans():  NULL MtxPtr 'm' ");
   m[0][0] = 1;
   m[0][1] = 0;
   m[0][2] = 0;
@@ -231,10 +226,10 @@ void C_MTXTrans(Mtx m, f32 xT, f32 yT, f32 zT) {
 void C_MTXFrustum(Mtx44 m, f32 t, f32 b, f32 l, f32 r, f32 n, f32 f) {
   f32 tmp;
 
-  ASSERTMSGLINE(105, m, "MTXFrustum():  NULL Mtx44Ptr 'm' ");
-  ASSERTMSGLINE(106, t != b, "MTXFrustum():  't' and 'b' clipping planes are equal ");
-  ASSERTMSGLINE(107, l != r, "MTXFrustum():  'l' and 'r' clipping planes are equal ");
-  ASSERTMSGLINE(108, n != f, "MTXFrustum():  'n' and 'f' clipping planes are equal ");
+  assert(m && "MTXFrustum():  NULL Mtx44Ptr 'm' ");
+  assert(t != b && "MTXFrustum():  't' and 'b' clipping planes are equal ");
+  assert(l != r && "MTXFrustum():  'l' and 'r' clipping planes are equal ");
+  assert(n != f && "MTXFrustum():  'n' and 'f' clipping planes are equal ");
   tmp = 1 / (r - l);
   m[0][0] = (2 * n * tmp);
   m[0][1] = 0;
@@ -259,10 +254,10 @@ void C_MTXFrustum(Mtx44 m, f32 t, f32 b, f32 l, f32 r, f32 n, f32 f) {
 void C_MTXOrtho(Mtx44 m, f32 t, f32 b, f32 l, f32 r, f32 n, f32 f) {
   f32 tmp;
 
-  ASSERTMSGLINE(254, m, "MTXOrtho():  NULL Mtx44Ptr 'm' ");
-  ASSERTMSGLINE(255, t != b, "MTXOrtho():  't' and 'b' clipping planes are equal ");
-  ASSERTMSGLINE(256, l != r, "MTXOrtho():  'l' and 'r' clipping planes are equal ");
-  ASSERTMSGLINE(257, n != f, "MTXOrtho():  'n' and 'f' clipping planes are equal ");
+  assert(m && "MTXOrtho():  NULL Mtx44Ptr 'm' ");
+  assert(t != b && "MTXOrtho():  't' and 'b' clipping planes are equal ");
+  assert(l != r && "MTXOrtho():  'l' and 'r' clipping planes are equal ");
+  assert(n != f && "MTXOrtho():  'n' and 'f' clipping planes are equal ");
   tmp = 1 / (r - l);
   m[0][0] = 2 * tmp;
   m[0][1] = 0;
@@ -299,9 +294,9 @@ void C_MTXQuat(Mtx m, const Quaternion* q) {
   f32 yz;
   f32 zz;
 
-  ASSERTMSGLINE(2145, m, "MTXQuat():  NULL MtxPtr 'm' ");
-  ASSERTMSGLINE(2146, q, "MTXQuat():  NULL QuaternionPtr 'q' ");
-  ASSERTMSGLINE(2147, q->x || q->y || q->z || q->w, "MTXQuat():  zero-value quaternion ");
+  assert(m && "MTXQuat():  NULL MtxPtr 'm' ");
+  assert(q && "MTXQuat():  NULL QuaternionPtr 'q' ");
+  assert(q->x || q->y || q->z || q->w && "MTXQuat():  zero-value quaternion ");
   s = 2 / ((q->w * q->w) + ((q->z * q->z) + ((q->x * q->x) + (q->y * q->y))));
   xs = q->x * s;
   ys = q->y * s;
@@ -354,8 +349,8 @@ void C_MTXReflect(Mtx m, const Vec* p, const Vec* n) {
 }
 
 void C_MTXTransApply(const Mtx src, Mtx dst, f32 xT, f32 yT, f32 zT) {
-  ASSERTMSGLINE(1933, src, "MTXTransApply(): NULL MtxPtr 'src' ");
-  ASSERTMSGLINE(1934, dst, "MTXTransApply(): NULL MtxPtr 'src' "); //! wrong assert string
+  assert(src && "MTXTransApply(): NULL MtxPtr 'src' ");
+  assert(dst && "MTXTransApply(): NULL MtxPtr 'src' "); //! wrong assert string
 
   if (src != dst) {
     dst[0][0] = src[0][0];
@@ -375,7 +370,7 @@ void C_MTXTransApply(const Mtx src, Mtx dst, f32 xT, f32 yT, f32 zT) {
 }
 
 void C_MTXScale(Mtx m, f32 xS, f32 yS, f32 zS) {
-  ASSERTMSGLINE(2008, m, "MTXScale():  NULL MtxPtr 'm' ");
+  assert(m && "MTXScale():  NULL MtxPtr 'm' ");
   m[0][0] = xS;
   m[0][1] = 0;
   m[0][2] = 0;
@@ -391,8 +386,8 @@ void C_MTXScale(Mtx m, f32 xS, f32 yS, f32 zS) {
 }
 
 void C_MTXScaleApply(const Mtx src, Mtx dst, f32 xS, f32 yS, f32 zS) {
-  ASSERTMSGLINE(2070, src, "MTXScaleApply(): NULL MtxPtr 'src' ");
-  ASSERTMSGLINE(2071, dst, "MTXScaleApply(): NULL MtxPtr 'dst' ");
+  assert(src && "MTXScaleApply(): NULL MtxPtr 'src' ");
+  assert(dst && "MTXScaleApply(): NULL MtxPtr 'dst' ");
   dst[0][0] = (src[0][0] * xS);
   dst[0][1] = (src[0][1] * xS);
   dst[0][2] = (src[0][2] * xS);
@@ -411,14 +406,14 @@ void C_MTXRotRad(Mtx m, char axis, f32 rad) {
   f32 sinA;
   f32 cosA;
 
-  ASSERTMSGLINE(1447, m, "MTXRotRad():  NULL MtxPtr 'm' ");
+  assert(m && "MTXRotRad():  NULL MtxPtr 'm' ");
   sinA = sinf(rad);
   cosA = cosf(rad);
   C_MTXRotTrig(m, axis, sinA, cosA);
 }
 
 void C_MTXRotTrig(Mtx m, char axis, f32 sinA, f32 cosA) {
-  ASSERTMSGLINE(1502, m, "MTXRotTrig():  NULL MtxPtr 'm' ");
+  assert(m && "MTXRotTrig():  NULL MtxPtr 'm' ");
   switch(axis) {
   case 'x':
   case 'X':
@@ -466,7 +461,7 @@ void C_MTXRotTrig(Mtx m, char axis, f32 sinA, f32 cosA) {
     m[2][3] = 0;
     break;
   default:
-    ASSERTMSGLINE(1529, FALSE, "MTXRotTrig():  invalid 'axis' value ");
+    assert(FALSE && "MTXRotTrig():  invalid 'axis' value ");
     break;
   }
 }
@@ -483,8 +478,8 @@ void C_MTXRotAxisRad(Mtx m, const Vec* axis, f32 rad) {
   f32 ySq;
   f32 zSq;
 
-  ASSERTMSGLINE(1677, m, "MTXRotAxisRad():  NULL MtxPtr 'm' ");
-  ASSERTMSGLINE(1678, axis, "MTXRotAxisRad():  NULL VecPtr 'axis' ");
+  assert(m && "MTXRotAxisRad():  NULL MtxPtr 'm' ");
+  assert(axis && "MTXRotAxisRad():  NULL VecPtr 'axis' ");
 
   s = sinf(rad);
   c = cosf(rad);
@@ -515,10 +510,10 @@ void C_MTXLookAt(Mtx m, const Point3d* camPos, const Vec* camUp, const Point3d* 
   Vec vRight;
   Vec vUp;
 
-  ASSERTMSGLINE(2438, m, "MTXLookAt():  NULL MtxPtr 'm' ");
-  ASSERTMSGLINE(2439, camPos, "MTXLookAt():  NULL VecPtr 'camPos' ");
-  ASSERTMSGLINE(2440, camUp, "MTXLookAt():  NULL VecPtr 'camUp' ");
-  ASSERTMSGLINE(2441, target, "MTXLookAt():  NULL Point3dPtr 'target' ");
+  assert(m && "MTXLookAt():  NULL MtxPtr 'm' ");
+  assert(camPos && "MTXLookAt():  NULL VecPtr 'camPos' ");
+  assert(camUp && "MTXLookAt():  NULL VecPtr 'camUp' ");
+  assert(target && "MTXLookAt():  NULL Point3dPtr 'target' ");
 
   vLook.x = camPos->x - target->x;
   vLook.y = camPos->y - target->y;
@@ -544,9 +539,9 @@ void C_MTXLookAt(Mtx m, const Point3d* camPos, const Vec* camUp, const Point3d* 
 void C_MTXLightFrustum(Mtx m, f32 t, f32 b, f32 l, f32 r, f32 n, f32 scaleS, f32 scaleT, f32 transS, f32 transT) {
   f32 tmp;
 
-  ASSERTMSGLINE(2541, m, "MTXLightFrustum():  NULL MtxPtr 'm' ");
-  ASSERTMSGLINE(2542, (t != b), "MTXLightFrustum():  't' and 'b' clipping planes are equal ");
-  ASSERTMSGLINE(2543, (l != r), "MTXLightFrustum():  'l' and 'r' clipping planes are equal ");
+  assert(m && "MTXLightFrustum():  NULL MtxPtr 'm' ");
+  assert((t != b) && "MTXLightFrustum():  't' and 'b' clipping planes are equal ");
+  assert((l != r) && "MTXLightFrustum():  'l' and 'r' clipping planes are equal ");
 
   tmp = 1 / (r - l);
   m[0][0] = (scaleS * (2 * n * tmp));
@@ -568,9 +563,9 @@ void C_MTXLightPerspective(Mtx m, f32 fovY, f32 aspect, f32 scaleS, f32 scaleT, 
   f32 angle;
   f32 cot;
 
-  ASSERTMSGLINE(2605, m, "MTXLightPerspective():  NULL MtxPtr 'm' ");
-  ASSERTMSGLINE(2606, (fovY > 0.0) && (fovY < 180.0), "MTXLightPerspective():  'fovY' out of range ");
-  ASSERTMSGLINE(2607, 0 != aspect, "MTXLightPerspective():  'aspect' is 0 ");
+  assert(m && "MTXLightPerspective():  NULL MtxPtr 'm' ");
+  assert((fovY > 0.0) && (fovY < 180.0) && "MTXLightPerspective():  'fovY' out of range ");
+  assert(0 != aspect && "MTXLightPerspective():  'aspect' is 0 ");
 
   angle = (0.5f * fovY);
   angle = MTXDegToRad(angle);
@@ -592,9 +587,9 @@ void C_MTXLightPerspective(Mtx m, f32 fovY, f32 aspect, f32 scaleS, f32 scaleT, 
 void C_MTXLightOrtho(Mtx m, f32 t, f32 b, f32 l, f32 r, f32 scaleS, f32 scaleT, f32 transS, f32 transT) {
   f32 tmp;
 
-  ASSERTMSGLINE(2673, m, "MTXLightOrtho():  NULL MtxPtr 'm' ");
-  ASSERTMSGLINE(2674, (t != b), "MTXLightOrtho():  't' and 'b' clipping planes are equal ");
-  ASSERTMSGLINE(2675, (l != r), "MTXLightOrtho():  'l' and 'r' clipping planes are equal ");
+  assert(m && "MTXLightOrtho():  NULL MtxPtr 'm' ");
+  assert((t != b) && "MTXLightOrtho():  't' and 'b' clipping planes are equal ");
+  assert((l != r) && "MTXLightOrtho():  'l' and 'r' clipping planes are equal ");
   tmp = 1 / (r - l);
   m[0][0] = (2 * tmp * scaleS);
   m[0][1] = 0;
