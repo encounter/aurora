@@ -27,7 +27,7 @@ typedef struct {
   u32 numMtx;
   MtxPtr stackBase;
   MtxPtr stackPtr;
-} MtxStack, *MtxStackPtr;
+} MTXStack, MtxStack, *MtxStackPtr;
 
 #define MTXDegToRad(a) ((a)*0.01745329252f)
 #define MTXRadToDeg(a) ((a)*57.29577951f)
@@ -49,6 +49,14 @@ void PSMTXConcatArray(const Mtx a, const Mtx* srcBase, Mtx* dstBase, u32 count);
 void PSMTXTranspose(const Mtx src, Mtx xPose);
 u32 PSMTXInverse(const Mtx src, Mtx inv);
 u32 PSMTXInvXpose(const Mtx src, Mtx invX);
+#else
+#define PSMTXIdentity MTXIdentity
+#define PSMTXCopy MTXCopy
+#define PSMTXConcat MTXConcat
+#define PSMTXConcatArray MTXConcatArray
+#define PSMTXTranspose MTXTranspose
+#define PSMTXInverse MTXInverse
+#define PSMTXInvXpose MTXInvXpose
 #endif
 
 #ifdef MTX_USE_PS
@@ -79,6 +87,11 @@ void PSMTXMultVec(const Mtx m, const Vec* src, Vec* dst);
 void PSMTXMultVecArray(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count);
 void PSMTXMultVecSR(const Mtx m, const Vec* src, Vec* dst);
 void PSMTXMultVecArraySR(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count);
+#else
+#define PSMTXMultVec MTXMultVec
+#define PSMTXMultVecArray MTXMultVecArray
+#define PSMTXMultVecSR MTXMultVecSR
+#define PSMTXMultVecArraySR MTXMultVecArraySR
 #endif
 
 #ifdef MTX_USE_PS
@@ -117,6 +130,19 @@ void PSMTXScaleApply(const Mtx src, Mtx dst, f32 xS, f32 yS, f32 zS);
 void PSMTXRotRad(Mtx m, char axis, f32 rad);
 void PSMTXRotTrig(Mtx m, char axis, f32 sinA, f32 cosA);
 void PSMTXRotAxisRad(Mtx m, const Vec* axis, f32 rad);
+#else
+#define PSMTXQuat MTXQuat
+#define PSMTXReflect MTXReflect
+#define PSMTXTrans MTXTrans
+#define PSMTXTransApply MTXTransApply
+#define PSMTXScale MTXScale
+#define PSMTXScaleApply MTXScaleApply
+#define PSMTXRotRad MTXRotRad
+#define PSMTXRotTrig MTXRotTrig
+#define PSMTXRotAxisRad MTXRotAxisRad
+
+#define PSMTXRotRad MTXRotRad
+#define PSMTXRotAxisRad MTXRotAxisRad
 #endif
 
 #ifdef MTX_USE_PS
@@ -198,10 +224,20 @@ f32 PSVECDotProduct(const Vec* a, const Vec* b);
 void PSVECCrossProduct(const Vec* a, const Vec* b, Vec* axb);
 f32 PSVECSquareDistance(const Vec* a, const Vec* b);
 f32 PSVECDistance(const Vec* a, const Vec* b);
+#else
+#define PSVECAdd VECAdd
+#define PSVECSubtract VECSubtract
+#define PSVECScale VECScale
+#define PSVECNormalize VECNormalize
+#define PSVECSquareMag VECSquareMag
+#define PSVECMag VECMag
+#define PSVECDotProduct VECDotProduct
+#define PSVECCrossProduct VECCrossProduct
+#define PSVECSquareDistance VECSquareDistance
+#define PSVECDistance VECDistance
 #endif
 
-// TODO
-#if defined( MTX_USE_PS) && 0
+#if defined(MTX_USE_PS)
 #define VECAdd PSVECAdd
 #define VECSubtract PSVECSubtract
 #define VECScale PSVECScale
@@ -259,6 +295,15 @@ void PSQUATScale(const Quaternion* q, Quaternion* r, f32 scale);
 f32 PSQUATDotProduct(const Quaternion* p, const Quaternion* q);
 void PSQUATNormalize(const Quaternion* src, Quaternion* unit);
 void PSQUATInverse(const Quaternion* src, Quaternion* inv);
+#else
+#define PSQUATAdd QUATAdd
+#define PSQUATSubtract QUATSubtract
+#define PSQUATMultiply QUATMultiply
+#define PSQUATDivide QUATDivide
+#define PSQUATScale QUATScale
+#define PSQUATDotProduct QUATDotProduct
+#define PSQUATNormalize QUATNormalize
+#define PSQUATInverse QUATInverse
 #endif
 
 #ifdef MTX_USE_PS
