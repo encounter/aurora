@@ -9,13 +9,14 @@
 #include <cassert>
 
 #include "internal.hpp"
+#include <dolphin/os.h>
 #include "dolphin/types.h"
 
 #if !NDEBUG && (INTPTR_MAX > INT32_MAX)
 #define GUARD_MEMORY 1
 #endif
 
-static void* OSBaseAddress;
+static uintptr_t OSBaseAddress;
 
 static void GuardGCMemory();
 static void* AllocMEM1(u32 size);
@@ -29,7 +30,7 @@ void AuroraOSInitMemory() {
   if (aurora::g_config.mem1Size > 0) {
     MEM1Start = AllocMEM1(aurora::g_config.mem1Size);
     MEM1End = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(MEM1Start) + aurora::g_config.mem1Size);
-    OSBaseAddress = MEM1Start;
+    OSBaseAddress = reinterpret_cast<uintptr_t>(MEM1Start);
   }
 }
 
