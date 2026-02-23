@@ -143,4 +143,7 @@ static void* AllocMEM1(u32 size) {
 }
 #endif
 
-
+u32 OSGetPhysicalMemSize() {
+  const auto info = static_cast<OSBootInfo*>(OSPhysicalToCached(0));
+  return info->memorySize;
+}
