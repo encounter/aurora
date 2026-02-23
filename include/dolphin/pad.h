@@ -18,6 +18,8 @@
 #define PAD_ERR_NOT_READY -2
 #define PAD_ERR_TRANSFER -3
 
+#define PAD_MAX_CONTROLLERS 4
+
 #define PAD_BUTTON_LEFT 0x0001
 #define PAD_BUTTON_RIGHT 0x0002
 #define PAD_BUTTON_DOWN 0x0004
@@ -50,8 +52,8 @@ typedef struct PADStatus {
   s8 stickY;
   s8 substickX;
   s8 substickY;
-  u8 triggerL;
-  u8 triggerR;
+  u8 triggerLeft;
+  u8 triggerRight;
   u8 analogA;
   u8 analogB;
   s8 err;

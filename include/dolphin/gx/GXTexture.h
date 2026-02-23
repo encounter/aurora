@@ -10,7 +10,7 @@ extern "C" {
 
 typedef GXTexRegion* (*GXTexRegionCallback)(const GXTexObj* obj, GXTexMapID id);
 
-void GXInitTexObj(GXTexObj* obj, const void* data, u16 width, u16 height, u32 format, GXTexWrapMode wrapS,
+void GXInitTexObj(GXTexObj* obj, const void* data, u16 width, u16 height, GXTexFmt format, GXTexWrapMode wrapS,
                   GXTexWrapMode wrapT, GXBool mipmap);
 void GXInitTexObjCI(GXTexObj* obj, const void* data, u16 width, u16 height, GXCITexFmt format, GXTexWrapMode wrapS,
                     GXTexWrapMode wrapT, GXBool mipmap, u32 tlut);

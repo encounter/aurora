@@ -1,7 +1,9 @@
 #include "window.hpp"
 
+#ifdef AURORA_ENABLE_GX
 #include "imgui.hpp"
 #include "webgpu/gpu.hpp"
+#endif
 #include "input.hpp"
 #include "internal.hpp"
 
@@ -46,7 +48,9 @@ void resize_swapchain() noexcept {
     }
   }
   g_windowSize = size;
+#ifdef AURORA_ENABLE_GX
   webgpu::resize_swapchain(size.fb_width, size.fb_height);
+#endif
 }
 
 void set_window_icon() noexcept {
@@ -68,7 +72,9 @@ const AuroraEvent* poll_events() {
 
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
+#ifdef AURORA_ENABLE_GX
     imgui::process_event(event);
+#endif
 
     switch (event.type) {
     case SDL_EVENT_WINDOW_MINIMIZED: {
@@ -87,7 +93,9 @@ const AuroraEvent* poll_events() {
     }
     case SDL_EVENT_RENDER_DEVICE_RESET: {
       Log.info("Render device reset, recreating surface");
+#ifdef AURORA_ENABLE_GX
       webgpu::refresh_surface(true);
+#endif
       break;
     }
 #if defined(ANDROID)
@@ -173,6 +181,7 @@ bool create_window(AuroraBackend backend) {
   }
 #endif
   switch (backend) {
+#ifdef AURORA_ENABLE_GX
 #ifdef DAWN_ENABLE_BACKEND_VULKAN
   case BACKEND_VULKAN:
     flags |= SDL_WINDOW_VULKAN;
@@ -188,6 +197,7 @@ bool create_window(AuroraBackend backend) {
   case BACKEND_OPENGLES:
     flags |= SDL_WINDOW_OPENGL;
     break;
+#endif
 #endif
   default:
     break;

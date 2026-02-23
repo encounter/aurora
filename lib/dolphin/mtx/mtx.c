@@ -461,7 +461,7 @@ void C_MTXRotTrig(Mtx m, char axis, f32 sinA, f32 cosA) {
     m[2][3] = 0;
     break;
   default:
-    assert(FALSE && "MTXRotTrig():  invalid 'axis' value ");
+    assert(0 && "MTXRotTrig():  invalid 'axis' value ");
     break;
   }
 }

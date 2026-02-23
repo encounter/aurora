@@ -167,5 +167,5 @@ void __GXSetDirtyState();
 void __GXSetGenMode();
 void __GXSetMatrixIndex(GXAttr matIdxAttr);
 void __GXSendFlushPrim();
-
+void __GXFlushTextureState();
 };

@@ -10,6 +10,7 @@ if (NOT TARGET gtest)
   FetchContent_MakeAvailable(googletest)
 endif ()
 
+if (AURORA_ENABLE_GX)
 # GX FIFO round-trip tests
 # Compile GX sources directly to avoid pulling in the full renderer/WebGPU runtime
 add_executable(gx_fifo_tests
@@ -59,3 +60,4 @@ target_link_libraries(gx_fifo_tests PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(gx_fifo_tests)
+endif () # AURORA_ENABLE_GX

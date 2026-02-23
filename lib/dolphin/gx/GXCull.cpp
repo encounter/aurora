@@ -21,6 +21,8 @@ void GXSetScissor(u32 left, u32 top, u32 width, u32 height) {
   aurora::gfx::set_scissor(left, top, width, height);
 }
 
+// TODO GXSetScissorBoxOffset
+
 void GXSetCullMode(GXCullMode mode) {
   // Swap front/back to match hardware convention
   GXCullMode hwMode;
@@ -39,5 +41,22 @@ void GXSetCullMode(GXCullMode mode) {
   __gx->dirtyState |= 4; // gen mode dirty
 }
 
-// TODO GXSetCoPlanar
+void GXSetClipMode(GXClipMode mode) {
+  GX_WRITE_XF_REG(5, mode);
+  __gx->bpSent = 1;
+}
+
+void GXSetCoPlanar(GXBool enable) {
+  u32 reg;
+  SET_REG_FIELD(0, __gx->genMode, 1, 19, enable);
+
+  // This sets a mask that causes only one bit to be updated in genMode on the next write.
+  reg = 0x0008000;
+  SET_REG_FIELD(0, reg, 8, 24, 0xFE);
+  SET_REG_FIELD(0, reg, 24, 0, 1 << 19);
+  GX_WRITE_RAS_REG(reg);
+
+  // immediately flush
+  GX_WRITE_RAS_REG(__gx->genMode);
+}
 }

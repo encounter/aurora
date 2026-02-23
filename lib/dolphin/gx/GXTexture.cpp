@@ -6,7 +6,7 @@
 #include <absl/container/flat_hash_map.h>
 
 extern "C" {
-void GXInitTexObj(GXTexObj* obj_, const void* data, u16 width, u16 height, u32 format, GXTexWrapMode wrapS,
+void GXInitTexObj(GXTexObj* obj_, const void* data, u16 width, u16 height, GXTexFmt format, GXTexWrapMode wrapS,
                   GXTexWrapMode wrapT, GXBool mipmap) {
   memset(obj_, 0, sizeof(GXTexObj));
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
@@ -212,8 +212,8 @@ void GXInitTlutObj(GXTlutObj* obj_, const void* data, GXTlutFmt format, u16 entr
   }
   auto* obj = reinterpret_cast<GXTlutObj_*>(obj_);
   obj->ref = aurora::gfx::new_static_texture_2d(
-      entries, 1, 1, texFmt, aurora::ArrayRef{static_cast<const u8*>(data), static_cast<size_t>(entries) * 2},
-      true, "GXInitTlutObj");
+      entries, 1, 1, texFmt, aurora::ArrayRef{static_cast<const u8*>(data), static_cast<size_t>(entries) * 2}, true,
+      "GXInitTlutObj");
 }
 
 void GXLoadTlut(const GXTlutObj* obj_, GXTlut idx) {
@@ -263,5 +263,10 @@ void GXSetTexCoordBias(GXTexCoordID coord, GXBool s_enable, GXBool t_enable) {
     GX_WRITE_RAS_REG(__gx->suTs1[coord]);
     __gx->bpSent = 1;
   }
+}
+
+void __GXFlushTextureState() {
+  GX_WRITE_RAS_REG(__gx->bpMask);
+  __gx->bpSent = 1;
 }
 }
