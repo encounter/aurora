@@ -205,15 +205,6 @@ u32 OSUncachedToPhysical(void* ucaddr);
 void* OSCachedToUncached(void* caddr);
 void* OSUncachedToCached(void* ucaddr);
 
-#if NDEBUG
-#define OSPhysicalToCached(paddr)    ((void*) ((uintptr_t)(OS_BASE_CACHED   + (uintptr_t)(paddr))))
-#define OSPhysicalToUncached(paddr)  ((void*) ((uintptr_t)(OS_BASE_UNCACHED + (uintptr_t)(paddr))))
-#define OSCachedToPhysical(caddr)    ((u32)   ((u32)(caddr)  - OS_BASE_CACHED))
-#define OSUncachedToPhysical(ucaddr) ((u32)   ((u32)(ucaddr) - OS_BASE_UNCACHED))
-#define OSCachedToUncached(caddr)    ((void*) ((u8*)(caddr)  + (OS_BASE_UNCACHED - OS_BASE_CACHED)))
-#define OSUncachedToCached(ucaddr)   ((void*) ((u8*)(ucaddr) - (OS_BASE_UNCACHED - OS_BASE_CACHED)))
-#endif
-
 // unsorted externs
 extern OSTime __OSGetSystemTime(void);
 extern int __OSIsGcam;
