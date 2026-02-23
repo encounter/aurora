@@ -4,4 +4,5 @@
 
 void OSInit() {
   AuroraOSInitMemory();
+  AuroraInitClock();
 }

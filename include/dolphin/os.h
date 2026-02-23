@@ -76,9 +76,10 @@ u8 __gUnknown800030E3 AT_ADDRESS(OS_BASE_CACHED | 0x30E3);
 #define __OSCoreClock (*(u32 *)(OS_BASE_CACHED + 0x00FC))
 #endif
 
+#define OS_TIMER_CLOCK_DIVIDER 4
 #define OS_BUS_CLOCK   __OSBusClock
 #define OS_CORE_CLOCK  __OSCoreClock
-#define OS_TIMER_CLOCK (OS_BUS_CLOCK/4)
+#define OS_TIMER_CLOCK (OS_BUS_CLOCK/OS_TIMER_CLOCK_DIVIDER)
 
 #define OSTicksToSeconds(ticks)      ((ticks)   / (OS_TIMER_CLOCK))
 #define OSTicksToMilliseconds(ticks) ((ticks)   / (OS_TIMER_CLOCK/1000))
