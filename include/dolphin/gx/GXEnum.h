@@ -722,6 +722,12 @@ typedef enum {
 } GXClipMode;
 
 typedef enum {
+  GX_CLAMP_NONE = 0,
+  GX_CLAMP_TOP = 1,
+  GX_CLAMP_BOTTOM = 2,
+} GXFBClamp;
+
+typedef enum {
   GX_TLUT0 = 0,
   GX_TLUT1 = 1,
   GX_TLUT2 = 2,
@@ -751,12 +757,18 @@ typedef enum {
   GX_MAX_TLUTFMT,
 } GXTlutFmt;
 
-typedef enum _GXTexCacheSize {
+typedef enum {
   GX_TEXCACHE_32K,
   GX_TEXCACHE_128K,
   GX_TEXCACHE_512K,
-  GX_TEXCACHE_NONE
+  GX_TEXCACHE_NONE,
 } GXTexCacheSize;
+
+typedef enum {
+  GX_MT_XF_FLUSH = 1,
+  GX_MT_DL_SAVE_CONTEXT = 2,
+  GX_MT_NULL = 0,
+} GXMiscToken;
 
 #ifdef __cplusplus
 }

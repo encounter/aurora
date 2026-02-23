@@ -89,6 +89,28 @@ void GXSetFogColor(GXColor color) {
   __gx->bpSent = 1;
 }
 
+void GXSetFogRangeAdj(GXBool enable, u16 center, GXFogAdjTable* table) {
+  u32 i;
+  u32 range_adj;
+  u32 range_c;
+
+  if (enable) {
+    for (i = 0; i < 10; i += 2) {
+      range_adj = 0;
+      SET_REG_FIELD(0x10D, range_adj, 12, 0, table->r[i]);
+      SET_REG_FIELD(0x10E, range_adj, 12, 12, table->r[i + 1]);
+      SET_REG_FIELD(0x10F, range_adj, 8, 24, (i >> 1) + 0xE9);
+      GX_WRITE_RAS_REG(range_adj);
+    }
+  }
+  range_c = 0;
+  SET_REG_FIELD(0x115, range_c, 10, 0, center + 342);
+  SET_REG_FIELD(0x116, range_c, 1, 10, enable);
+  SET_REG_FIELD(0x117, range_c, 8, 24, 0xE8);
+  GX_WRITE_RAS_REG(range_c);
+  __gx->bpSent = 1;
+}
+
 void GXSetBlendMode(GXBlendMode mode, GXBlendFactor src, GXBlendFactor dst, GXLogicOp op) {
   SET_REG_FIELD(0, __gx->cmode0, 1, 0, (mode == GX_BM_BLEND || mode == GX_BM_SUBTRACT));
   SET_REG_FIELD(0, __gx->cmode0, 1, 11, (mode == GX_BM_SUBTRACT));
@@ -141,5 +163,29 @@ void GXSetDstAlpha(bool enabled, u8 value) {
   SET_REG_FIELD(0, __gx->cmode1, 1, 8, enabled);
   GX_WRITE_RAS_REG(__gx->cmode1);
   __gx->bpSent = 1;
+}
+
+void GXSetFieldMask(GXBool odd_mask, GXBool even_mask) {
+  u32 reg;
+
+  reg = 0;
+  SET_REG_FIELD(0x1FB, reg, 1, 0, even_mask);
+  SET_REG_FIELD(0x1FC, reg, 1, 1, odd_mask);
+  SET_REG_FIELD(0x1FD, reg, 8, 24, 0x44);
+  GX_WRITE_RAS_REG(reg);
+  __gx->bpSent = 1;
+}
+
+void GXSetFieldMode(GXBool field_mode, GXBool half_aspect_ratio) {
+  u32 reg;
+
+  SET_REG_FIELD(0x21A, __gx->lpSize, 1, 22, half_aspect_ratio);
+  GX_WRITE_RAS_REG(__gx->lpSize);
+  __GXFlushTextureState();
+
+  SET_REG_FIELD(0, reg, 8, 24, 0x68);
+  SET_REG_FIELD(0, reg, 1, 0, field_mode);
+  GX_WRITE_RAS_REG(reg);
+  __GXFlushTextureState();
 }
 }

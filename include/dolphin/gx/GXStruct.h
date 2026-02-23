@@ -101,6 +101,11 @@ typedef struct _GXTlutRegion {
   u32 dummy[4];
 } GXTlutRegion;
 
+typedef struct _GXFogAdjTable
+{
+    u16 r[10];
+} GXFogAdjTable;
+
 #ifdef __cplusplus
 }
 #endif

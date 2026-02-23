@@ -222,8 +222,8 @@ uint32_t PADRead(PADStatus* status) {
     x /= 128;
     y /= 128;
 
-    status[i].triggerL = static_cast<int8_t>(x);
-    status[i].triggerR = static_cast<int8_t>(y);
+    status[i].triggerLeft = static_cast<int8_t>(x);
+    status[i].triggerRight = static_cast<int8_t>(y);
 
     if (controller->m_hasRumble) {
       rumbleSupport |= PAD_CHAN0_BIT >> i;
@@ -402,8 +402,8 @@ void PADClamp(PADStatus* status) {
     ClampStick(&status[i].stickX, &status[i].stickY, ClampRegion.maxStick, ClampRegion.xyStick, ClampRegion.minStick);
     ClampStick(&status[i].substickX, &status[i].substickY, ClampRegion.maxSubstick, ClampRegion.xySubstick,
                ClampRegion.minSubstick);
-    ClampTrigger(&status[i].triggerL, ClampRegion.minTrigger, ClampRegion.maxTrigger);
-    ClampTrigger(&status[i].triggerR, ClampRegion.minTrigger, ClampRegion.maxTrigger);
+    ClampTrigger(&status[i].triggerLeft, ClampRegion.minTrigger, ClampRegion.maxTrigger);
+    ClampTrigger(&status[i].triggerRight, ClampRegion.minTrigger, ClampRegion.maxTrigger);
   }
 }
 
@@ -415,8 +415,8 @@ void PADClampCircle(PADStatus* status) {
 
     ClampCircle(&status[i].stickX, &status[i].stickY, ClampRegion.radStick, ClampRegion.minStick);
     ClampCircle(&status[i].substickX, &status[i].substickY, ClampRegion.radSubstick, ClampRegion.minSubstick);
-    ClampTrigger(&status[i].triggerL, ClampRegion.minTrigger, ClampRegion.maxTrigger);
-    ClampTrigger(&status[i].triggerR, ClampRegion.minTrigger, ClampRegion.maxTrigger);
+    ClampTrigger(&status[i].triggerLeft, ClampRegion.minTrigger, ClampRegion.maxTrigger);
+    ClampTrigger(&status[i].triggerRight, ClampRegion.minTrigger, ClampRegion.maxTrigger);
   }
 }
 
