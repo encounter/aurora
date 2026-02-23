@@ -1,15 +1,18 @@
 #include <aurora/aurora.h>
 
+#ifdef AURORA_ENABLE_GX
 #include "gfx/common.hpp"
 #include "imgui.hpp"
+#include "webgpu/gpu.hpp"
+#include <webgpu/webgpu_cpp.h>
+#endif
+
 #include "input.hpp"
 #include "internal.hpp"
-#include "webgpu/gpu.hpp"
 #include "window.hpp"
 
 #include <SDL3/SDL_filesystem.h>
 #include <magic_enum.hpp>
-#include <webgpu/webgpu_cpp.h>
 
 namespace aurora {
 AuroraConfig g_config;
@@ -17,11 +20,14 @@ AuroraConfig g_config;
 namespace {
 Module Log("aurora");
 
+#ifdef AURORA_ENABLE_GX
 // GPU
 using webgpu::g_device;
 using webgpu::g_queue;
 using webgpu::g_surface;
+#endif
 
+#ifdef AURORA_ENABLE_GX
 constexpr std::array PreferredBackendOrder{
 #ifdef ENABLE_BACKEND_WEBGPU
     BACKEND_WEBGPU,
@@ -48,6 +54,9 @@ constexpr std::array PreferredBackendOrder{
     BACKEND_NULL,
 #endif
 };
+#else
+constexpr std::array<AuroraBackend, 0> PreferredBackendOrder{};
+#endif
 
 bool g_initialFrame = false;
 
@@ -68,6 +77,7 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
   }
   ASSERT(window::initialize(), "Error initializing window");
 
+#ifdef AURORA_ENABLE_GX
   /* Attempt to create a window using the calling application's desired backend */
   AuroraBackend selectedBackend = config.desiredBackend;
   bool windowCreated = false;
@@ -100,18 +110,27 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
   if (webgpu::g_backendType == wgpu::BackendType::Null) {
     ASSERT(window::create_renderer(), "Failed to initialize SDL renderer: {}", SDL_GetError());
   }
+#else
+  AuroraBackend selectedBackend = BACKEND_NULL;
+  ASSERT(window::create_window(BACKEND_NULL), "Error creating window: {}", SDL_GetError());
+  ASSERT(window::create_renderer(), "Failed to initialize SDL renderer: {}", SDL_GetError());
+#endif
 
   window::show_window();
 
+#ifdef AURORA_ENABLE_GX
   gfx::initialize();
 
   imgui::create_context();
+#endif
   const auto size = window::get_window_size();
   Log.info("Using framebuffer size {}x{} scale {}", size.fb_width, size.fb_height, size.scale);
+#ifdef AURORA_ENABLE_GX
   if (g_config.imGuiInitCallback != nullptr) {
     g_config.imGuiInitCallback(&size);
   }
   imgui::initialize();
+#endif
 
   g_initialFrame = true;
   g_config.desiredBackend = selectedBackend;
@@ -123,13 +142,17 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
   };
 }
 
+#ifdef AURORA_ENABLE_GX
 wgpu::TextureView g_currentView;
+#endif
 
 void shutdown() noexcept {
+#ifdef AURORA_ENABLE_GX
   g_currentView = {};
   imgui::shutdown();
   gfx::shutdown();
   webgpu::shutdown();
+#endif
   window::shutdown();
 }
 
@@ -142,6 +165,7 @@ const AuroraEvent* update() noexcept {
 }
 
 bool begin_frame() noexcept {
+#ifdef AURORA_ENABLE_GX
   if (!g_surface) {
     webgpu::refresh_surface(true);
     if (!g_surface) {
@@ -173,10 +197,12 @@ bool begin_frame() noexcept {
   }
   imgui::new_frame(window::get_window_size());
   gfx::begin_frame();
+#endif
   return true;
 }
 
 void end_frame() noexcept {
+#ifdef AURORA_ENABLE_GX
   const auto encoderDescriptor = wgpu::CommandEncoderDescriptor{
       .label = "Redraw encoder",
   };
@@ -209,6 +235,7 @@ void end_frame() noexcept {
   g_queue.Submit(1, &buffer);
   g_surface.Present();
   g_currentView = {};
+#endif
 }
 } // namespace
 } // namespace aurora

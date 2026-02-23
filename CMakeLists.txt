@@ -6,10 +6,14 @@ endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
+option(AURORA_ENABLE_GX "Enable GX implementation and WebGPU renderer" ON)
+
 add_subdirectory(extern)
 
 include(cmake/aurora_core.cmake)
-include(cmake/aurora_gx.cmake)
+if (AURORA_ENABLE_GX)
+  include(cmake/aurora_gx.cmake)
+endif ()
 include(cmake/aurora_pad.cmake)
 include(cmake/aurora_si.cmake)
 include(cmake/aurora_main.cmake)
