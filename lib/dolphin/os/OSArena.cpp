@@ -7,8 +7,8 @@
 #define ROUND64(n, a) (((u64)(n) + (a)-1) & ~(u64)((a)-1))
 #define TRUNC64(n, a) (((u64)(n)) & ~(u64)((a)-1))
 
-void* ArenaLow;
-void* ArenaHigh;
+static void* ArenaLow;
+static void* ArenaHigh;
 
 void* OSGetArenaHi() {
   return ArenaHigh;

@@ -16,13 +16,13 @@
 #define GUARD_MEMORY 1
 #endif
 
-static uintptr_t OSBaseAddress;
+uintptr_t OSBaseAddress;
+
+void* MEM1Start;
+void* MEM1End;
 
 static void GuardGCMemory();
 static void* AllocMEM1(u32 size);
-
-static void* MEM1Start;
-static void* MEM1End;
 
 void AuroraOSInitMemory() {
   GuardGCMemory();
