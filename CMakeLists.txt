@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.30)
+
 project(aurora LANGUAGES C CXX)
 if (APPLE)
     enable_language(OBJC)
@@ -8,7 +9,8 @@ set(CMAKE_CXX_STANDARD 20)
 
 option(AURORA_ENABLE_GX "Enable GX implementation and WebGPU renderer" ON)
 
-add_subdirectory(extern)
+include("cmake/get_cpm.cmake")
+include("cmake/thirdparty.cmake")
 
 include(cmake/aurora_core.cmake)
 if (AURORA_ENABLE_GX)
