@@ -51,6 +51,8 @@ typedef struct AuroraEvent AuroraEvent;
 typedef void (*AuroraLogCallback)(AuroraLogLevel level, const char* module, const char* message, unsigned int len);
 typedef void (*AuroraImGuiInitCallback)(const AuroraWindowSize* size);
 
+#define MEM1_DEFAULT_SIZE = 24 * 1024 * 1024;
+
 typedef struct {
   const char* appName;
   const char* configPath;
@@ -68,6 +70,13 @@ typedef struct {
   uint32_t iconHeight;
   AuroraLogCallback logCallback;
   AuroraImGuiInitCallback imGuiInitCallback;
+
+  /*
+   * The size of the GameCube's main memory, or MEM1 on the Wii.
+   * Note that it will not be allocated at the exact 0x80000000 address, as that cannot be guaranteed.
+   * This can be set to 0 to disable allocating this region.
+   */
+  uint32_t mem1Size;
 } AuroraConfig;
 
 typedef struct {

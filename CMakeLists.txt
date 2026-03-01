@@ -13,6 +13,7 @@ include("cmake/get_cpm.cmake")
 include("cmake/thirdparty.cmake")
 
 include(cmake/aurora_core.cmake)
+include(cmake/aurora_os.cmake)
 if (AURORA_ENABLE_GX)
   include(cmake/aurora_gx.cmake)
 endif ()
