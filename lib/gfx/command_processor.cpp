@@ -73,6 +73,12 @@ static u32 prepare_vtx_buffer(ByteBuffer* outBuf, GXVtxFmt vtxfmt, const u8* ptr
         vtxSize += 4;
         outVtxSize += 12;
         break;
+    case COMBINE(GX_VA_POS, GX_POS_XY, GX_S16):
+        attrArrays[attr].count = 2;
+        attrArrays[attr].type = GX_U16;
+        vtxSize += 4;
+        outVtxSize += 12;
+        break;
       case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_F32):
       case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_F32):
       case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_F32):
