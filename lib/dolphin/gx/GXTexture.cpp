@@ -216,7 +216,7 @@ void GXInitTlutObj(GXTlutObj* obj_, const void* data, GXTlutFmt format, u16 entr
       "GXInitTlutObj");
 }
 
-void GXLoadTlut(const GXTlutObj* obj_, GXTlut idx) {
+void GXLoadTlut(const GXTlutObj* obj_, u32 idx) {
   g_gxState.tluts[idx] = *reinterpret_cast<const GXTlutObj_*>(obj_);
   // TODO stateDirty?
 }

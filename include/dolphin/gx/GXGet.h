@@ -19,6 +19,11 @@ void GXGetProjectionv(f32* p);
 void GXGetLightPos(GXLightObj* lt_obj, f32* x, f32* y, f32* z);
 void GXGetLightColor(GXLightObj* lt_obj, GXColor* color);
 void GXGetVtxAttrFmt(GXVtxFmt idx, GXAttr attr, GXCompCnt* compCnt, GXCompType* compType, u8* shift);
+u32 GXGetTexObjTlut(const GXTexObj* tex_obj);
+
+void GXGetProjectionv(f32* ptr);
+void GXGetViewportv(f32* vp);
+void GXGetScissor(u32* left, u32* top, u32* wd, u32* ht);
 
 #ifdef __cplusplus
 }
