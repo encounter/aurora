@@ -52,6 +52,7 @@ typedef void (*AuroraLogCallback)(AuroraLogLevel level, const char* module, cons
 typedef void (*AuroraImGuiInitCallback)(const AuroraWindowSize* size);
 
 #define MEM1_DEFAULT_SIZE = 24 * 1024 * 1024;
+#define ARAM_DEFAULT_SIZE = 16 * 1024 * 1024;
 
 typedef struct {
   const char* appName;
@@ -77,6 +78,12 @@ typedef struct {
    * This can be set to 0 to disable allocating this region.
    */
   uint32_t mem1Size;
+
+  /*
+   * The size of the GameCube's ARAM, or MEM2 on the Wii.
+   * This can be set to 0 to disable allocating this region.
+   */
+  uint32_t mem2Size;
 } AuroraConfig;
 
 typedef struct {
