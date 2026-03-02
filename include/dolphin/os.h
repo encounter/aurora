@@ -1,8 +1,15 @@
 #ifndef _DOLPHIN_OS_H_
 #define _DOLPHIN_OS_H_
 
+#include <cstdio>
+#include <cstdint>
+
 #include <dolphin/types.h>
 #include <dolphin/gx/GXStruct.h>
+
+void OSReportInit(void);
+void OSSwitchFiberEx(u32, u32, u32, u32, u32, u32);
+void OSVAttention(const char* fmt, va_list args);
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,7 +18,6 @@ extern "C" {
 typedef s64 OSTime;
 typedef u32 OSTick;
 
-#if 0
 #include <dolphin/os/OSAlloc.h>
 #include <dolphin/os/OSCache.h>
 #include <dolphin/os/OSContext.h>
@@ -34,15 +40,28 @@ typedef u32 OSTick;
 #include <dolphin/os/OSLC.h>
 #include <dolphin/os/OSL2.h>
 #include <dolphin/os/OSReboot.h>
+#ifdef __MWERKS__
 #include <dolphin/os/OSExec.h>
+#endif
 #include <dolphin/os/OSMemory.h>
 #include <dolphin/os/OSSemaphore.h>
 #include <dolphin/os/OSUtf.h>
 #include <dolphin/os/OSTimer.h>
-#endif
 
 // private macro, maybe shouldn't be defined here?
 #define OFFSET(addr, align) (((u32)(addr) & ((align)-1)))
+
+#ifndef __MWERKS__
+typedef struct {
+    BOOL valid;
+    u32 restartCode;
+    u32 bootDol;
+    void* regionStart;
+    void* regionEnd;
+    int argsUseDefault;
+    void* argsAddr;
+} OSExecParams;
+#endif
 
 #define DOLPHIN_ALIGNMENT 32
 
@@ -190,13 +209,13 @@ BOOL OSRestoreInterrupts(BOOL level);
 u32 OSGetSoundMode(void);
 void OSSetSoundMode(u32 mode);
 
-void OSReport(const char* msg, ...);
-void OSVReport(const char* msg, va_list list);
-void OSPanic(const char* file, int line, const char* msg, ...);
-void OSFatal(GXColor fg, GXColor bg, const char* msg);
+DECL_WEAK void OSReport(const char* msg, ...);
+DECL_WEAK void OSVReport(const char* msg, va_list list);
+DECL_WEAK void OSPanic NORETURN(const char* file, int line, const char* msg, ...);
+void OSFatal NORETURN(GXColor fg, GXColor bg, const char* msg);
 
-#define OSRoundUp32B(x)   (((u32)(x) + 32 - 1) & ~(32 - 1))
-#define OSRoundDown32B(x) (((u32)(x)) & ~(32 - 1))
+#define OSRoundUp32B(x)   (((uintptr_t)(x) + 32 - 1) & ~(32 - 1))
+#define OSRoundDown32B(x) (((uintptr_t)(x)) & ~(32 - 1))
 
 void* OSPhysicalToCached(u32 paddr);
 void* OSPhysicalToUncached(u32 paddr);
@@ -205,16 +224,27 @@ u32 OSUncachedToPhysical(void* ucaddr);
 void* OSCachedToUncached(void* caddr);
 void* OSUncachedToCached(void* ucaddr);
 
+#if !DEBUG && !defined(TARGET_PC)
+#define OSPhysicalToCached(paddr)    ((void*) ((u32)(OS_BASE_CACHED   + (u32)(paddr))))
+#define OSPhysicalToUncached(paddr)  ((void*) ((u32)(OS_BASE_UNCACHED + (u32)(paddr))))
+#define OSCachedToPhysical(caddr)    ((u32)   ((u32)(caddr)  - OS_BASE_CACHED))
+#define OSUncachedToPhysical(ucaddr) ((u32)   ((u32)(ucaddr) - OS_BASE_UNCACHED))
+#define OSCachedToUncached(caddr)    ((void*) ((u8*)(caddr)  + (OS_BASE_UNCACHED - OS_BASE_CACHED)))
+#define OSUncachedToCached(ucaddr)   ((void*) ((u8*)(ucaddr) - (OS_BASE_UNCACHED - OS_BASE_CACHED)))
+#endif
+
 // unsorted externs
 extern OSTime __OSGetSystemTime(void);
-extern int __OSIsGcam;
-#if 0
+DECL_WEAK extern int __OSIsGcam;
 extern OSExecParams __OSRebootParams;
-#endif
 extern OSTime __OSStartTime;
 extern int __OSInIPL;
 
 // helper for assert line numbers in different revisions
+#ifndef SDK_REVISION
+#define SDK_REVISION 0
+#endif
+
 #if SDK_REVISION < 1
     #define LINE(l0, l1, l2) (l0)
 #elif SDK_REVISION < 2
@@ -223,8 +253,9 @@ extern int __OSInIPL;
     #define LINE(l0, l1, l2) (l2)
 #endif
 
+#if DEBUG
+#if __MWERKS__
 
-#if !NDEBUG
 #define ASSERTLINE(line, cond) \
     ((cond) || (OSPanic(__FILE__, line, "Failed assertion " #cond), 0))
 
@@ -242,6 +273,25 @@ extern int __OSInIPL;
     ((cond) || (OSPanic(__FILE__, line, __VA_ARGS__), 0))
 
 #else
+
+#define ASSERTLINE(line, cond) \
+    ((cond) || (OSPanic(__FILE__, __LINE__, "Failed assertion " #cond), 0))
+
+#define ASSERTMSGLINE(line, cond, msg) \
+    ((cond) || (OSPanic(__FILE__, __LINE__, msg), 0))
+
+    // This is dumb but we dont have a Metrowerks way to do variadic macros in the macro to make this done in a not scrubby way.
+#define ASSERTMSG1LINE(line, cond, msg, arg1) \
+    ((cond) || (OSPanic(__FILE__, __LINE__, msg, arg1), 0))
+#define ASSERTMSG2LINE(line, cond, msg, arg1, arg2) \
+    ((cond) || (OSPanic(__FILE__, __LINE__, msg, arg1, arg2), 0))
+
+#define ASSERTMSGLINEV(line, cond, ...) \
+    ((cond) || (OSPanic(__FILE__, __LINE__, __VA_ARGS__), 0))
+
+#endif
+
+#else
 #define ASSERTLINE(line, cond) (void)0
 #define ASSERTMSGLINE(line, cond, msg) (void)0
 #define ASSERTMSG1LINE(line, cond, msg, arg1) (void)0
@@ -251,8 +301,72 @@ extern int __OSInIPL;
 
 #define ASSERT(cond) ASSERTLINE(__LINE__, cond)
 
+inline s16 __OSf32tos16(__REGISTER f32 inF) {
+    __REGISTER s16 out;
+    u32 tmp;
+    __REGISTER u32* tmpPtr = &tmp;
+    // clang-format off
+#ifdef __MWERKS__
+    asm {
+        psq_st inF, 0(tmpPtr), 0x1, 5
+        lha out, 0(tmpPtr)
+    }
+#else
+    return (s16)inF; // this is wrong i believe
+#endif
+    // clang-format on
+
+    return out;
+}
+
+inline void OSf32tos16(f32* f, s16* out) {
+    *out = __OSf32tos16(*f);
+}
+
+inline u8 __OSf32tou8(__REGISTER f32 inF) {
+    __REGISTER u8 out;
+    u32 tmp;
+    __REGISTER u32* tmpPtr = &tmp;
+    // clang-format off
+#ifdef __MWERKS__
+    asm {
+        psq_st inF, 0(tmpPtr), 0x1, 2
+        lbz out, 0(tmpPtr)
+    }
+#else
+    return (u8)inF; // this is also wrong i believe
+#endif
+    // clang-format on
+
+    return out;
+}
+
+inline void OSf32tou8(f32* f, u8* out) {
+    *out = __OSf32tou8(*f);
+}
+
+static inline void OSInitFastCast(void) {
+    // clang-format off
+#ifdef __MWERKS__
+    asm {
+        li r3, 4
+        oris r3, r3, 4
+        mtspr 0x392, r3
+        li r3, 5
+        oris r3, r3, 5
+        mtspr 0x393, r3
+        li r3, 6
+        oris r3, r3, 6
+        mtspr 0x394, r3
+        li r3, 7
+        oris r3, r3, 7
+        mtspr 0x395, r3
+    }
+#endif
+    // clang-format on
+}
+
 #ifdef __cplusplus
 }
 #endif
-
 #endif

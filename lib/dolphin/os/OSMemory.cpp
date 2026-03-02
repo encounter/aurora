@@ -16,7 +16,7 @@
 #define GUARD_MEMORY 1
 #endif
 
-uintptr_t OSBaseAddress;
+uintptr_t OSBaseAddress = 0;
 
 void* MEM1Start;
 void* MEM1End;

@@ -10,6 +10,7 @@ extern "C" {
 void GXSetVtxDesc(GXAttr attr, GXAttrType type);
 void GXSetVtxDescv(GXVtxDescList* list);
 void GXClearVtxDesc(void);
+void GXSetVtxAttrFmtv(GXVtxFmt vtxfmt, const GXVtxAttrFmtList* list);
 void GXSetVtxAttrFmt(GXVtxFmt vtxfmt, GXAttr attr, GXCompCnt cnt, GXCompType type, u8 frac);
 void GXSetNumTexGens(u8 nTexGens);
 void GXBegin(GXPrimitive type, GXVtxFmt vtxfmt, u16 nverts);

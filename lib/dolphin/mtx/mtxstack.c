@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdint.h>
 #include <dolphin/mtx.h>
 
 void MTXInitStack(MTXStack* sPtr, u32 numMtx) {

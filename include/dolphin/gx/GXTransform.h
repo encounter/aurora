@@ -9,6 +9,9 @@ extern "C" {
 
 #define GX_PROJECTION_SZ 7
 
+void GXProject(f32 x, f32 y, f32 z, const f32 mtx[3][4], const f32* pm, const f32* vp, f32* sx, f32* sy, f32* sz);
+void GXSetProjectionv(const f32* ptr);
+
 #ifdef TARGET_PC
 void GXSetProjection(const void* mtx, GXProjectionType type);
 void GXLoadPosMtxImm(const void* mtx, u32 id);

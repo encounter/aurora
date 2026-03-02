@@ -1,6 +1,12 @@
 #ifndef DOLPHIN_TYPES_H
 #define DOLPHIN_TYPES_H
 
+#if _WIN64 || __LP64__
+#define BIT_64 1
+#else
+#define BIT_64 0
+#endif
+
 #ifdef TARGET_PC
 #include <stdint.h>
 typedef int8_t s8;
@@ -38,6 +44,8 @@ typedef double f64;
 typedef volatile f32 vf32;
 typedef volatile f64 vf64;
 
+typedef char *Ptr;
+
 #if defined(TARGET_PC)
 #include <stdbool.h>
 typedef int BOOL;
@@ -73,6 +81,30 @@ typedef int BOOL;
 #define ATTRIBUTE_ALIGN(num)
 #else
 #error unknown compiler
+#endif
+
+#ifndef DECL_WEAK
+#if defined(__MWERKS__)
+#define DECL_WEAK __declspec(weak)
+#elif defined(__GNUC__)
+#define DECL_WEAK __attribute__((weak))
+#elif defined(_MSC_VER)
+#define DECL_WEAK
+#else
+#error unknown compiler
+#endif
+#endif
+
+#if TARGET_PC && __cplusplus
+#define NORETURN [[noreturn]]
+#else
+#define NORETURN
+#endif
+
+#ifdef __MWERKS__
+#define __REGISTER register
+#else
+#define __REGISTER
 #endif
 
 #endif
