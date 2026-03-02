@@ -3,6 +3,13 @@
 
 #include <dolphin/types.h>
 
+#define PAD_SPEC_0 0
+#define PAD_SPEC_1 1
+#define PAD_SPEC_2 2
+#define PAD_SPEC_3 3
+#define PAD_SPEC_4 4
+#define PAD_SPEC_5 5
+
 #define PAD_CHAN0 0
 #define PAD_CHAN1 1
 #define PAD_CHAN2 2
