@@ -4,7 +4,7 @@
 #include <dolphin/os.h>
 
 namespace chrono = std::chrono;
-using TickDuration = chrono::duration<s64, std::ratio<1, OS_REAL_TIMER_CLOCK>>;
+using TickDuration = chrono::duration<s64, std::ratio<1, OS_TIMER_CLOCK>>;
 
 OSTick OSGetTick() {
     return OSGetTime() & 0xFFFFFFFF;
@@ -21,5 +21,5 @@ void AuroraInitClock() {
     return;
   }
 
-  OS_BUS_CLOCK = OS_REAL_TIMER_CLOCK * OS_TIMER_CLOCK_DIVIDER;
+  __OSBusClock = OS_TIMER_CLOCK * OS_TIMER_CLOCK_DIVIDER;
 }
