@@ -20,7 +20,7 @@ jobs:
 
       - name: install Linux dependencies
         run: |
-          apt install libx11-dev
+          sudo apt install libx11-dev
 
       - name: initialize CMake
         run: |
