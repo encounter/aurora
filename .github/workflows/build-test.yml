@@ -18,13 +18,30 @@ jobs:
         with:
           submodules: true
 
+      - name: install Linux dependencies
+        run: |
+          apt install libx11-dev
+
       - name: initialize CMake
         run: |
           mkdir build
           cmake -B build -GNinja
 
+      - name: initialize CMake (Windows)
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
+          mkdir build
+          cmake -B build -GNinja
+
       - name: build
         run: |
+          cmake --build build
+
+      - name: build (Windows)
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
           cmake --build build
 
       # TODO: Run tests?
