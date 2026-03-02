@@ -125,6 +125,20 @@ static inline void GXEnd(void) {}
 
 #endif
 
+void GXCmd1u8(const u8 x);
+void GXCmd1u16(const u16 x);
+void GXCmd1u32(const u32 x);
+
+void GXParam1u8(const u8 x);
+void GXParam1u16(const u16 x);
+void GXParam1u32(const u32 x);
+void GXParam1s8(const s8 x);
+void GXParam1s16(const s16 x);
+void GXParam1s32(const s32 x);
+void GXParam1f32(const f32 x);
+void GXParam3f32(const f32 x, const f32 y, const f32 z);
+void GXParam4f32(const f32 x, const f32 y, const f32 z, const f32 w);
+
 #ifdef __cplusplus
 }
 #endif

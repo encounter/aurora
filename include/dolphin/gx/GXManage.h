@@ -7,9 +7,11 @@
 extern "C" {
 #endif
 
+typedef void (*GXDrawSyncCallback)(u16 token);
 typedef void (*GXDrawDoneCallback)(void);
 
 GXFifoObj* GXInit(void* base, u32 size);
+GXDrawSyncCallback GXSetDrawSyncCallback(GXDrawSyncCallback cb);
 GXDrawDoneCallback GXSetDrawDoneCallback(GXDrawDoneCallback cb);
 void GXDrawDone(void);
 void GXSetDrawDone(void);

@@ -27,6 +27,8 @@ void GXGetFifoStatus(GXFifoObj* fifo, GXBool* overhi, GXBool* underlow, u32* fif
                      GXBool* gp_read, GXBool* fifowrap);
 void GXGetGPStatus(GXBool* overhi, GXBool* underlow, GXBool* readIdle, GXBool* cmdIdle, GXBool* brkpt);
 void GXInitFifoLimits(GXFifoObj* fifo, u32 hiWaterMark, u32 loWaterMark);
+void* GXGetFifoBase(const GXFifoObj* fifo);
+u32 GXGetFifoSize(const GXFifoObj* fifo);
 
 #ifdef __cplusplus
 }
