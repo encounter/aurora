@@ -29,30 +29,16 @@ jobs:
             libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libthai-dev \
             libpipewire-0.3-dev libwayland-dev libdecor-0-dev liburing-dev libsdl2-dev libglfw3-dev
 
-      - name: initialize CMake
-        if: ${{ matrix.os != 'windows-latest' }}
-        run: |
-          mkdir build
-          cmake -B build -GNinja
+      - name: Set up MSVC env
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
 
-      - name: initialize CMake (Windows)
-        if: ${{ matrix.os == 'windows-latest' }}
-        shell: cmd
+      - name: initialize CMake
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           mkdir build
           cmake -B build -GNinja
 
       - name: build
-        if: ${{ matrix.os != 'windows-latest' }}
         run: |
-          cmake --build build
-
-      - name: build (Windows)
-        if: ${{ matrix.os == 'windows-latest' }}
-        shell: cmd
-        run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           cmake --build build
 
       # TODO: Run tests?
