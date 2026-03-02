@@ -2,6 +2,7 @@
 #include <aurora/event.h>
 #include <aurora/main.h>
 #include <dolphin/gx.h>
+#include <dolphin/os.h>
 
 #include <stdio.h>
 #include <string.h>

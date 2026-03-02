@@ -11,6 +11,7 @@ option(AURORA_ENABLE_GX "Enable GX implementation and WebGPU renderer" ON)
 add_subdirectory(extern)
 
 include(cmake/aurora_core.cmake)
+include(cmake/aurora_os.cmake)
 if (AURORA_ENABLE_GX)
   include(cmake/aurora_gx.cmake)
 endif ()

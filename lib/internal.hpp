@@ -67,6 +67,9 @@ auto underlying(T value) -> std::underlying_type_t<T> {
 #define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
 #endif
 
+#define POINTER_ADD_TYPE(type_, ptr_, offset_) ((type_)((uintptr_t)(ptr_) + (uintptr_t)(offset_)))
+#define POINTER_ADD(ptr_, offset_) POINTER_ADD_TYPE(decltype(ptr_), ptr_, offset_)
+
 #if !defined(__has_cpp_attribute)
 #define __has_cpp_attribute(name) 0
 #endif
@@ -94,6 +97,8 @@ auto underlying(T value) -> std::underlying_type_t<T> {
 #define TRY_WARN(cond, msg, ...)                                                                                       \
   if (!(cond))                                                                                                         \
     UNLIKELY { Log.warn(msg, ##__VA_ARGS__); }
+
+#define UNIMPLEMENTED() FATAL("UNIMPLEMENTED: {}", __FUNCTION__)
 
 namespace aurora {
 extern AuroraConfig g_config;
