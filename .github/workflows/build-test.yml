@@ -1,0 +1,58 @@
+on:
+  push:
+    branches: [ main, 26-03-02-actions ]
+  merge_group:
+  pull_request:
+    types: [ opened, reopened, synchronize, ready_for_review ]
+    branches: [ main ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          submodules: true
+
+      - name: install Linux dependencies
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          sudo apt-get install build-essential git make \
+            pkg-config cmake ninja-build gnome-desktop-testing libasound2-dev libpulse-dev \
+            libaudio-dev libfribidi-dev libjack-dev libsndio-dev libx11-dev libxext-dev \
+            libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
+            libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev \
+            libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libthai-dev \
+            libpipewire-0.3-dev libwayland-dev libdecor-0-dev liburing-dev libsdl2-dev libglfw3-dev
+
+      - name: initialize CMake
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: |
+          mkdir build
+          cmake -B build -GNinja
+
+      - name: initialize CMake (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          mkdir build
+          cmake -B build -GNinja
+
+      - name: build
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: |
+          cmake --build build
+
+      - name: build (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cmake --build build
+
+      # TODO: Run tests?
