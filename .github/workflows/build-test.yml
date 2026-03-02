@@ -1,0 +1,30 @@
+on:
+  push:
+    branches: [ main, 26-03-02-actions ]
+  merge_group:
+  pull_request:
+    types: [ opened, reopened, synchronize, ready_for_review ]
+    branches: [ main ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          submodules: true
+
+      - name: initialize CMake
+        run: |
+          mkdir build
+          cmake -B build -GNinja
+
+      - name: build
+        run: |
+          cmake --build build
+
+      # TODO: Run tests?
