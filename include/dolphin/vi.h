@@ -7,8 +7,10 @@
 extern "C" {
 #endif
 
+typedef void (*VIRetraceCallback)(u32 retraceCount);
+
 void VIInit(void);
-void VIConfigure(GXRenderModeObj *rm);
+void VIConfigure(const GXRenderModeObj *rm);
 void VIConfigurePan(u16 xOrg, u16 yOrg, u16 width, u16 height);
 void VIFlush(void);
 
@@ -19,6 +21,8 @@ u32 VIGetRetraceCount(void);
 u32 VIGetNextField(void);
 u32 VIGetDTVStatus(void);
 
+void* VIGetCurrentFrameBuffer(void);
+void* VIGetNextFrameBuffer(void);
 void VISetNextFrameBuffer(void *fb);
 void VISetBlack(BOOL black);
 

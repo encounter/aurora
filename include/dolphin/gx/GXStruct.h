@@ -87,6 +87,13 @@ typedef struct {
 } GXVtxDescList;
 
 typedef struct {
+  GXAttr attr;
+  GXCompCnt cnt;
+  GXCompType type;
+  u8 frac;
+} GXVtxAttrFmtList;
+
+typedef struct {
   s16 r;
   s16 g;
   s16 b;
