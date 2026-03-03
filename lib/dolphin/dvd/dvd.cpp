@@ -1,8 +1,10 @@
 #include <aurora/dvd.h>
 #include <dolphin/dvd.h>
 #include <nod.h>
+#include <SDL3/SDL_iostream.h>
 
 #include <cstring>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -49,6 +51,47 @@ void clearState() {
 }
 
 bool isValidEntryIndex(s32 entry) { return entry >= 0 && static_cast<size_t>(entry) < s_fstEntries.size(); }
+
+int64_t sdlStreamReadAt(void* userData, uint64_t offset, void* out, size_t len) {
+  auto* io = static_cast<SDL_IOStream*>(userData);
+  if (io == nullptr || out == nullptr ||
+      offset > static_cast<uint64_t>(std::numeric_limits<Sint64>::max())) {
+    return -1;
+  }
+
+  if (SDL_SeekIO(io, static_cast<Sint64>(offset), SDL_IO_SEEK_SET) < 0) {
+    return -1;
+  }
+
+  size_t total = 0;
+  auto* dst = static_cast<uint8_t*>(out);
+  while (total < len) {
+    const size_t read = SDL_ReadIO(io, dst + total, len - total);
+    if (read == 0) {
+      break;
+    }
+    total += read;
+  }
+  return static_cast<int64_t>(total);
+}
+
+int64_t sdlStreamLen(void* userData) {
+  auto* io = static_cast<SDL_IOStream*>(userData);
+  if (io == nullptr) {
+    return -1;
+  }
+
+  const Sint64 size = SDL_GetIOSize(io);
+  return size < 0 ? -1 : static_cast<int64_t>(size);
+}
+
+void sdlStreamClose(void* userData) {
+  auto* io = static_cast<SDL_IOStream*>(userData);
+  if (io == nullptr) {
+    return;
+  }
+  SDL_CloseIO(io);
+}
 
 u32 fstCallback(u32 index, NodNodeKind kind, const char* name, u32 size, void* userData) {
   auto* ctx = static_cast<IterateContext*>(userData);
@@ -222,7 +265,22 @@ bool aurora_dvd_open(const char* disc_path) {
 
   clearState();
 
-  NodResult result = nod_disc_open(disc_path, nullptr, &s_disc);
+  SDL_IOStream* io = SDL_IOFromFile(disc_path, "rb");
+  if (io == nullptr) {
+    return false;
+  }
+
+  const NodDiscStream stream{
+      .user_data = io,
+      .read_at = sdlStreamReadAt,
+      .stream_len = sdlStreamLen,
+      .close = sdlStreamClose,
+  };
+  const NodDiscOptions options{
+      .preloader_threads = 1,
+  };
+
+  NodResult result = nod_disc_open_stream(&stream, &options, &s_disc);
   if (result != NOD_RESULT_OK || s_disc == nullptr) {
     clearState();
     return false;

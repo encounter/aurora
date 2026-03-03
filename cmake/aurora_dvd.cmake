@@ -37,4 +37,4 @@ add_library(aurora::dvd ALIAS aurora_dvd)
 
 target_compile_definitions(aurora_dvd PUBLIC AURORA TARGET_PC)
 target_include_directories(aurora_dvd PUBLIC include)
-target_link_libraries(aurora_dvd PUBLIC nod::nod)
+target_link_libraries(aurora_dvd PUBLIC nod::nod SDL3::SDL3-static)
