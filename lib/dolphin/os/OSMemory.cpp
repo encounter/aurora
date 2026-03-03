@@ -48,9 +48,8 @@ static uintptr_t GetAllocationGranularity() {
 }
 
 static void TryGuardRegion(const uintptr_t start, const uintptr_t end, char const* const name) {
-  assert(start != 0);
-
 #if _WIN32
+  assert(start != 0);
   const auto addr = VirtualAlloc(
       reinterpret_cast<LPVOID>(start),
       end - start,
