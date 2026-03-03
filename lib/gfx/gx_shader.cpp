@@ -512,16 +512,16 @@ auto storage_load(const StorageConfig& mapping, u32 attrIdx) -> StorageLoadResul
   // TODO: Colors are not interpreted correctly
   switch (compType) {
   case GX_U8:
-    attrLoad = fmt::format("fetch_u8_{}(&v_arr_{}, {}, {})", compCnt, attrName, idxFetch, le);
+    attrLoad = fmt::format("fetch_u8_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
     break;
   case GX_S8:
-    attrLoad = fmt::format("fetch_s8_{}(&v_arr_{}, {}, {})", compCnt, attrName, idxFetch, le);
+    attrLoad = fmt::format("fetch_s8_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
     break;
   case GX_U16:
-    attrLoad = fmt::format("fetch_u16_{}(&v_arr_{}, {}, {})", compCnt, attrName, idxFetch, le);
+    attrLoad = fmt::format("fetch_u16_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
     break;
   case GX_S16:
-    attrLoad = fmt::format("fetch_i16_{}(&v_arr_{}, {}, {})", compCnt, attrName, idxFetch, le);
+    attrLoad = fmt::format("fetch_i16_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
     break;
   case GX_F32:
     attrLoad = fmt::format("fetch_f32_{}(&v_arr_{}, {}, {})", compCnt, attrName, idxFetch, le);

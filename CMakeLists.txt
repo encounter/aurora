@@ -5,6 +5,7 @@ if (APPLE)
 endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(AURORA_ENABLE_GX "Enable GX implementation and WebGPU renderer" ON)
 
