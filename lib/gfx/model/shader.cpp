@@ -23,7 +23,7 @@ wgpu::RenderPipeline create_pipeline(const State& state, const PipelineConfig& c
   const auto shader = build_shader(config.shaderConfig, info);
 
   std::array<wgpu::VertexAttribute, gx::MaxVtxAttr> vtxAttrs{};
-  auto [num4xAttr, rem] = std::div(config.shaderConfig.indexedAttributeCount, 4);
+  auto [num4xAttr, rem] = std::div(info.indexAttr.count(), 4);
   u32 num2xAttr = 0;
   if (rem > 2) {
     ++num4xAttr;

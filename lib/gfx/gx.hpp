@@ -400,7 +400,6 @@ struct ShaderConfig {
   std::array<ColorChannelConfig, MaxColorChannels> colorChannels;
   std::array<TcgConfig, MaxTexCoord> tcgs;
   AlphaCompare alphaCompare;
-  u32 indexedAttributeCount = 0;
   std::array<TextureConfig, MaxTextures> textureConfig;
 
   bool operator==(const ShaderConfig& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
@@ -442,6 +441,7 @@ struct ShaderInfo {
   std::bitset<MaxTevRegs> writesTevReg;
   std::bitset<MaxTexMtx> usesTexMtx;
   std::bitset<MaxPTTexMtx> usesPTTexMtx;
+  std::bitset<MaxVtxAttr> indexAttr;
   std::array<GXTexGenType, MaxTexMtx> texMtxTypes{};
   u32 uniformSize = 0;
   bool usesFog : 1 = false;

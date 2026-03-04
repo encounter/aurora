@@ -151,6 +151,14 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   ShaderInfo info{
       .uniformSize = sizeof(PnMtx) + sizeof(Mat4x4<float>), // pos_mtx, nrm_mtx, proj
   };
+  for (int attr = 0; attr < config.vtxAttrs.size(); attr++) {
+    if ((attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) &&
+        config.vtxAttrs[attr] == GX_DIRECT) {
+      info.indexAttr.set(attr);
+    } else if (config.vtxAttrs[attr] == GX_INDEX8 || config.vtxAttrs[attr] == GX_INDEX16) {
+      info.indexAttr.set(attr);
+    }
+  }
   for (int i = 0; i < config.tevStageCount; ++i) {
     const auto& stage = config.tevStages[i];
     // Color pass

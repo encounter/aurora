@@ -590,7 +590,6 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       }
       Log.info("  alphaCompare: comp0 {} ref0 {} op {} comp1 {} ref1 {}", config.alphaCompare.comp0,
                config.alphaCompare.ref0, config.alphaCompare.op, config.alphaCompare.comp1, config.alphaCompare.ref1);
-      Log.info("  indexedAttributeCount: {}", config.indexedAttributeCount);
       Log.info("  fogType: {}", config.fogType);
     }
   }
@@ -607,7 +606,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   size_t locIdx = 0;
   size_t vtxOutIdx = 0;
   size_t uniBindingIdx = 1;
-  if (config.indexedAttributeCount > 0) {
+  if (info.indexAttr.count() > 0) {
     // Display list attributes
     int currAttrIdx = 0;
     for (GXAttr attr{}; attr < MaxVtxAttr; attr = static_cast<GXAttr>(attr + 1)) {
@@ -651,7 +650,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   }
   for (GXAttr attr{}; attr < MaxVtxAttr; attr = GXAttr(attr + 1)) {
     // Direct attributes
-    if (config.vtxAttrs[attr] != GX_DIRECT) {
+    if (info.indexAttr.test(attr) || config.vtxAttrs[attr] != GX_DIRECT) {
       continue;
     }
     if (locIdx > 0) {
