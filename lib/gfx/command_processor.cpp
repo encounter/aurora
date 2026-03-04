@@ -44,6 +44,12 @@ static u32 prepare_vtx_buffer(ByteBuffer* outBuf, GXVtxFmt vtxfmt, const u8* ptr
     case GX_NONE:
       break;
     case GX_DIRECT:
+      if (attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) {
+        ++vtxSize;
+        outVtxSize += 2;
+        break;
+      }
+
 #define COMBINE(val1, val2, val3) (((val1) << 16) | ((val2) << 8) | (val3))
       switch (COMBINE(attr, attrFmt.cnt, attrFmt.type)) {
         DEFAULT_FATAL("not handled: attr {}, cnt {}, type {}", static_cast<GXAttr>(attr), attrFmt.cnt, attrFmt.type);
@@ -187,6 +193,13 @@ static u32 prepare_vtx_buffer(ByteBuffer* outBuf, GXVtxFmt vtxfmt, const u8* ptr
       if (g_gxState.vtxDesc[attr] != GX_DIRECT) {
         continue;
       }
+
+      if (attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) {
+        buf.append(static_cast<u16>(*ptr));
+        ++ptr;
+        continue;
+      }
+
       const auto& attrFmt = g_gxState.vtxFmts[vtxfmt].attrs[attr];
       u8 count = attrArrays[attr].count;
       switch (attrArrays[attr].type) {
@@ -1135,7 +1148,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
       // Determine if 2x4 or 3x4 from count
       if (count <= 8 && startOffset == 0) {
         // 2x4 matrix
-        aurora::Mat2x4<float> mtx{};
+        aurora::Mat3x4<float> mtx{};
         f32* flat = reinterpret_cast<f32*>(&mtx);
         for (u32 i = 0; i < count && i < 8; i++) {
           flat[i] = read_f32(xfData + i * 4, bigEndian);

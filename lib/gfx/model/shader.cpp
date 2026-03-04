@@ -57,7 +57,7 @@ wgpu::RenderPipeline create_pipeline(const State& state, const PipelineConfig& c
   // Direct attributes
   for (int i = 0; i < gx::MaxVtxAttr; ++i) {
     const auto attrType = config.shaderConfig.vtxAttrs[i];
-    if (attrType != GX_DIRECT) {
+    if (info.indexAttr.test(i) || attrType != GX_DIRECT) {
       continue;
     }
     const auto attr = static_cast<GXAttr>(i);
