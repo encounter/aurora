@@ -234,6 +234,7 @@ struct VtxAttrFmt {
   GXCompCnt cnt;
   GXCompType type;
   u8 frac;
+  u8 le = true;
 };
 struct VtxFmt {
   std::array<VtxAttrFmt, MaxVtxAttr> attrs;
@@ -385,7 +386,8 @@ struct StorageConfig {
   GXCompCnt cnt = static_cast<GXCompCnt>(0xFF);
   GXCompType compType = static_cast<GXCompType>(0xFF);
   u8 frac = 0;
-  std::array<u8, 3> pad{};
+  u8 le = 1;
+  std::array<u8, 2> pad{};
 };
 struct ShaderConfig {
   GXFogType fogType;
