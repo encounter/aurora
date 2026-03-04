@@ -1,6 +1,6 @@
 on:
   push:
-    branches: [ main, 26-03-02-actions ]
+    branches: [ main ]
   merge_group:
   pull_request:
     types: [ opened, reopened, synchronize, ready_for_review ]
