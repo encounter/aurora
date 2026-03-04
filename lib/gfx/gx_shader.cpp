@@ -521,7 +521,7 @@ auto storage_load(const StorageConfig& mapping, u32 attrIdx) -> StorageLoadResul
     attrLoad = fmt::format("fetch_u16_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
     break;
   case GX_S16:
-    attrLoad = fmt::format("fetch_i16_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
+    attrLoad = fmt::format("fetch_s16_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
     break;
   case GX_F32:
     attrLoad = fmt::format("fetch_f32_{}(&v_arr_{}, {}, {})", compCnt, attrName, idxFetch, le);
@@ -1205,7 +1205,7 @@ fn fetch_u8_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec
   return vec2f(v) / f32(1u << frac);
 }}
 
-fn fetch_i8_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec2f {{
+fn fetch_s8_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec2f {{
   var v = (bitcast<vec2i>(raw_fetch_u8_2(p, idx)) << vec2u(24)) >> vec2u(24);
   return vec2f(v) / f32(1u << frac);
 }}
@@ -1233,7 +1233,7 @@ fn fetch_u8_3(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec
   return vec3f(v) / f32(1u << frac);
 }}
 
-fn fetch_i8_3(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec3f {{
+fn fetch_s8_3(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec3f {{
   var v = (bitcast<vec3i>(raw_fetch_u8_3(p, idx)) << vec3u(24)) >> vec3u(24);
   return vec3f(v) / f32(1u << frac);
 }}
@@ -1253,7 +1253,7 @@ fn fetch_u8_4(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec
   return vec4f(v) / f32(1u << frac);
 }}
 
-fn fetch_i8_4(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec4f {{
+fn fetch_s8_4(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec4f {{
   var v = (bitcast<vec4i>(raw_fetch_u8_4(p, idx)) << vec4u(24)) >> vec4u(24);
   return vec4f(v) / f32(1u << frac);
 }}
@@ -1288,7 +1288,7 @@ fn fetch_u16_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> ve
   return vec2f(v) / f32(1u << frac);
 }}
 
-fn fetch_i16_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec2f {{
+fn fetch_s16_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec2f {{
   var v = ((bitcast<vec2i>(raw_fetch_u16_2(p, idx, le))) << vec2u(16)) >> vec2u(16);
   return vec2f(v) / f32(1u << frac);
 }}
@@ -1311,7 +1311,7 @@ fn fetch_u16_3(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> ve
   return vec3f(v) / f32(1u << frac);
 }}
 
-fn fetch_i16_3(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec3f {{
+fn fetch_s16_3(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec3f {{
   var v = ((bitcast<vec3i>(raw_fetch_u16_3(p, idx, le))) << vec3u(16)) >> vec3u(16);
   return vec3f(v) / f32(1u << frac);
 }}
@@ -1332,7 +1332,7 @@ fn fetch_u16_4(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> ve
   return vec4f(v) / f32(1u << frac);
 }}
 
-fn fetch_i16_4(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec4f {{
+fn fetch_s16_4(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec4f {{
   var v = (bitcast<vec4i>(raw_fetch_u16_4(p, idx, le)) << vec4u(16)) >> vec4u(16);
   return vec4f(v) / f32(1u << frac);
 }}
