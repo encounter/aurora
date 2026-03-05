@@ -1163,6 +1163,352 @@ TEST_F(GXFifoTest, LoadPosMtxImm_Translation) {
   EXPECT_FLOAT_EQ(decoded.m2[3], 30.0f);
 }
 
+// --- GXLoadNrmMtxImm (XF 0x400-0x459) ---
+
+TEST_F(GXFifoTest, LoadNrmMtxImm_Identity) {
+  // 3x4 matrix with 3x3 identity (translation column ignored by encoder)
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 1.0f;
+  mtx.m1[1] = 1.0f;
+  mtx.m2[2] = 1.0f;
+
+  GXLoadNrmMtxImm(&mtx, GX_PNMTX0);
+  auto bytes = capture_fifo();
+
+  // XF opcode 0x10
+  ASSERT_GE(bytes.size(), 5u);
+  EXPECT_EQ(bytes[0], 0x10);
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& decoded = g_gxState.pnMtx[0].nrm;
+  EXPECT_FLOAT_EQ(decoded.m0[0], 1.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[1], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[0], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 1.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[0], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[1], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[2], 1.0f);
+}
+
+TEST_F(GXFifoTest, LoadNrmMtxImm_ArbitraryValues) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 0.5f;  mtx.m0[1] = -0.5f; mtx.m0[2] = 0.7f;  mtx.m0[3] = 999.0f;
+  mtx.m1[0] = 0.3f;  mtx.m1[1] = 0.8f;  mtx.m1[2] = -0.1f; mtx.m1[3] = 888.0f;
+  mtx.m2[0] = -0.6f; mtx.m2[1] = 0.2f;  mtx.m2[2] = 0.9f;  mtx.m2[3] = 777.0f;
+
+  GXLoadNrmMtxImm(&mtx, GX_PNMTX0);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& decoded = g_gxState.pnMtx[0].nrm;
+  // 3x3 portion should round-trip
+  EXPECT_FLOAT_EQ(decoded.m0[0], 0.5f);
+  EXPECT_FLOAT_EQ(decoded.m0[1], -0.5f);
+  EXPECT_FLOAT_EQ(decoded.m0[2], 0.7f);
+  EXPECT_FLOAT_EQ(decoded.m1[0], 0.3f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 0.8f);
+  EXPECT_FLOAT_EQ(decoded.m1[2], -0.1f);
+  EXPECT_FLOAT_EQ(decoded.m2[0], -0.6f);
+  EXPECT_FLOAT_EQ(decoded.m2[1], 0.2f);
+  EXPECT_FLOAT_EQ(decoded.m2[2], 0.9f);
+  // Translation column is NOT written by the encoder, so it stays zeroed
+  EXPECT_FLOAT_EQ(decoded.m0[3], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[3], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[3], 0.0f);
+}
+
+TEST_F(GXFifoTest, LoadNrmMtxImm_DifferentSlot) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 2.0f;
+  mtx.m1[1] = 3.0f;
+  mtx.m2[2] = 4.0f;
+
+  GXLoadNrmMtxImm(&mtx, GX_PNMTX3);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& decoded = g_gxState.pnMtx[GX_PNMTX3].nrm;
+  EXPECT_FLOAT_EQ(decoded.m0[0], 2.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 3.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[2], 4.0f);
+}
+
+TEST_F(GXFifoTest, LoadNrmMtxImm_Isolation) {
+  // Loading nrm into slot 0 should not affect slot 1 or the pos matrix
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 11.0f;
+  mtx.m1[1] = 22.0f;
+  mtx.m2[2] = 33.0f;
+
+  GXLoadNrmMtxImm(&mtx, GX_PNMTX0);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  // Slot 0 nrm should have our values
+  EXPECT_FLOAT_EQ(g_gxState.pnMtx[0].nrm.m0[0], 11.0f);
+  // Slot 0 pos should remain zeroed (nrm write doesn't touch pos)
+  EXPECT_FLOAT_EQ(g_gxState.pnMtx[0].pos.m0[0], 0.0f);
+  // Slot 1 nrm should remain zeroed
+  EXPECT_FLOAT_EQ(g_gxState.pnMtx[1].nrm.m0[0], 0.0f);
+}
+
+TEST_F(GXFifoTest, LoadNrmMtxImm_WithPosMtx) {
+  // Load both pos and nrm into the same slot, verify both decode correctly
+  aurora::Mat3x4<float> posMtx{};
+  posMtx.m0[0] = 1.0f;
+  posMtx.m1[1] = 1.0f;
+  posMtx.m2[2] = 1.0f;
+  posMtx.m0[3] = 5.0f;
+  posMtx.m1[3] = 10.0f;
+  posMtx.m2[3] = 15.0f;
+
+  aurora::Mat3x4<float> nrmMtx{};
+  nrmMtx.m0[0] = 0.5f;
+  nrmMtx.m1[1] = 0.5f;
+  nrmMtx.m2[2] = 0.5f;
+
+  GXLoadPosMtxImm(&posMtx, GX_PNMTX0);
+  GXLoadNrmMtxImm(&nrmMtx, GX_PNMTX0);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  // Position matrix
+  EXPECT_FLOAT_EQ(g_gxState.pnMtx[0].pos.m0[0], 1.0f);
+  EXPECT_FLOAT_EQ(g_gxState.pnMtx[0].pos.m0[3], 5.0f);
+  EXPECT_FLOAT_EQ(g_gxState.pnMtx[0].pos.m1[3], 10.0f);
+  EXPECT_FLOAT_EQ(g_gxState.pnMtx[0].pos.m2[3], 15.0f);
+  // Normal matrix
+  EXPECT_FLOAT_EQ(g_gxState.pnMtx[0].nrm.m0[0], 0.5f);
+  EXPECT_FLOAT_EQ(g_gxState.pnMtx[0].nrm.m1[1], 0.5f);
+  EXPECT_FLOAT_EQ(g_gxState.pnMtx[0].nrm.m2[2], 0.5f);
+}
+
+// --- GXLoadTexMtxImm 3x4 (XF 0x078-0x0EF) ---
+
+TEST_F(GXFifoTest, LoadTexMtx3x4_Identity) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 1.0f;
+  mtx.m1[1] = 1.0f;
+  mtx.m2[2] = 1.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_TEXMTX0, GX_MTX3x4);
+  auto bytes = capture_fifo();
+
+  ASSERT_GE(bytes.size(), 5u);
+  EXPECT_EQ(bytes[0], 0x10);
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& decoded = g_gxState.texMtxs[0];
+  EXPECT_FLOAT_EQ(decoded.m0[0], 1.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[1], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[3], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[0], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 1.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[3], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[0], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[1], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[2], 1.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[3], 0.0f);
+}
+
+TEST_F(GXFifoTest, LoadTexMtx3x4_ArbitraryValues) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 2.0f;  mtx.m0[1] = 0.5f;  mtx.m0[2] = 0.0f;  mtx.m0[3] = 10.0f;
+  mtx.m1[0] = -0.5f; mtx.m1[1] = 3.0f;  mtx.m1[2] = 0.0f;  mtx.m1[3] = 20.0f;
+  mtx.m2[0] = 0.0f;  mtx.m2[1] = 0.0f;  mtx.m2[2] = 1.5f;  mtx.m2[3] = -5.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_TEXMTX0, GX_MTX3x4);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& decoded = g_gxState.texMtxs[0];
+  EXPECT_FLOAT_EQ(decoded.m0[0], 2.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[1], 0.5f);
+  EXPECT_FLOAT_EQ(decoded.m0[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[3], 10.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[0], -0.5f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 3.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[3], 20.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[0], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[1], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[2], 1.5f);
+  EXPECT_FLOAT_EQ(decoded.m2[3], -5.0f);
+}
+
+TEST_F(GXFifoTest, LoadTexMtx3x4_DifferentSlot) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 7.0f;
+  mtx.m1[1] = 8.0f;
+  mtx.m2[2] = 9.0f;
+  mtx.m2[3] = 42.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_TEXMTX5, GX_MTX3x4);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  // GX_TEXMTX5 = 45, addr = 45*4 = 180 = 0xB4, index = (0xB4 - 0x78) / 12 = 5
+  auto& decoded = g_gxState.texMtxs[5];
+  EXPECT_FLOAT_EQ(decoded.m0[0], 7.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 8.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[2], 9.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[3], 42.0f);
+}
+
+TEST_F(GXFifoTest, LoadTexMtx3x4_LastSlot) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 11.0f;
+  mtx.m1[1] = 22.0f;
+  mtx.m2[2] = 33.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_TEXMTX9, GX_MTX3x4);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& decoded = g_gxState.texMtxs[9];
+  EXPECT_FLOAT_EQ(decoded.m0[0], 11.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 22.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[2], 33.0f);
+}
+
+TEST_F(GXFifoTest, LoadTexMtx3x4_Isolation) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 50.0f;
+  mtx.m1[1] = 60.0f;
+  mtx.m2[2] = 70.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_TEXMTX0, GX_MTX3x4);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_FLOAT_EQ(g_gxState.texMtxs[0].m0[0], 50.0f);
+  // Slot 1 should remain zeroed
+  EXPECT_FLOAT_EQ(g_gxState.texMtxs[1].m0[0], 0.0f);
+  EXPECT_FLOAT_EQ(g_gxState.texMtxs[1].m1[1], 0.0f);
+}
+
+// --- GXLoadTexMtxImm 2x4 (XF 0x078-0x0EF) ---
+
+TEST_F(GXFifoTest, LoadTexMtx2x4_Identity) {
+  // 2x4 identity: row0 = [1,0,0,0], row1 = [0,1,0,0]
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 1.0f;
+  mtx.m1[1] = 1.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_TEXMTX0, GX_MTX2x4);
+  auto bytes = capture_fifo();
+
+  ASSERT_GE(bytes.size(), 5u);
+  EXPECT_EQ(bytes[0], 0x10);
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& decoded = g_gxState.texMtxs[0];
+  // First two rows should round-trip
+  EXPECT_FLOAT_EQ(decoded.m0[0], 1.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[1], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[3], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[0], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 1.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[3], 0.0f);
+  // Third row not written by 2x4, should be zeroed
+  EXPECT_FLOAT_EQ(decoded.m2[0], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[1], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[3], 0.0f);
+}
+
+TEST_F(GXFifoTest, LoadTexMtx2x4_ArbitraryValues) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 0.5f;  mtx.m0[1] = -1.0f; mtx.m0[2] = 0.25f; mtx.m0[3] = 100.0f;
+  mtx.m1[0] = 3.0f;  mtx.m1[1] = 0.0f;  mtx.m1[2] = -2.5f; mtx.m1[3] = -50.0f;
+  // Row 2 values should be ignored by the encoder
+  mtx.m2[0] = 999.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_TEXMTX0, GX_MTX2x4);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& decoded = g_gxState.texMtxs[0];
+  EXPECT_FLOAT_EQ(decoded.m0[0], 0.5f);
+  EXPECT_FLOAT_EQ(decoded.m0[1], -1.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[2], 0.25f);
+  EXPECT_FLOAT_EQ(decoded.m0[3], 100.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[0], 3.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[2], -2.5f);
+  EXPECT_FLOAT_EQ(decoded.m1[3], -50.0f);
+  // Row 2 should be zeroed (only 8 floats written)
+  EXPECT_FLOAT_EQ(decoded.m2[0], 0.0f);
+}
+
+TEST_F(GXFifoTest, LoadTexMtx2x4_DifferentSlot) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 4.0f;
+  mtx.m0[3] = 15.0f;
+  mtx.m1[1] = 5.0f;
+  mtx.m1[3] = 25.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_TEXMTX3, GX_MTX2x4);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& decoded = g_gxState.texMtxs[3];
+  EXPECT_FLOAT_EQ(decoded.m0[0], 4.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[3], 15.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 5.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[3], 25.0f);
+}
+
+TEST_F(GXFifoTest, LoadTexMtx2x4_Isolation) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 10.0f;
+  mtx.m1[1] = 20.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_TEXMTX0, GX_MTX2x4);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_FLOAT_EQ(g_gxState.texMtxs[0].m0[0], 10.0f);
+  EXPECT_FLOAT_EQ(g_gxState.texMtxs[0].m1[1], 20.0f);
+  // Slot 1 should remain zeroed
+  EXPECT_FLOAT_EQ(g_gxState.texMtxs[1].m0[0], 0.0f);
+  EXPECT_FLOAT_EQ(g_gxState.texMtxs[1].m1[1], 0.0f);
+}
+
 // --- GXSetProjection (XF 0x1020-0x1026) ---
 
 TEST_F(GXFifoTest, Projection_Perspective) {
@@ -1466,6 +1812,8 @@ TEST_F(GXFifoTest, TexCoordGen_Mtx2x4_Tex0) {
   auto& tcg = g_gxState.tcgs[GX_TEXCOORD0];
   EXPECT_EQ(tcg.type, GX_TG_MTX2x4);
   EXPECT_EQ(tcg.src, GX_TG_TEX0);
+  EXPECT_EQ(tcg.mtx, GX_TEXMTX0);
+  EXPECT_EQ(tcg.postMtx, GX_PTIDENTITY);
 }
 
 TEST_F(GXFifoTest, TexCoordGen_Mtx3x4_Nrm) {
@@ -1478,6 +1826,7 @@ TEST_F(GXFifoTest, TexCoordGen_Mtx3x4_Nrm) {
   auto& tcg = g_gxState.tcgs[GX_TEXCOORD1];
   EXPECT_EQ(tcg.type, GX_TG_MTX3x4);
   EXPECT_EQ(tcg.src, GX_TG_NRM);
+  EXPECT_EQ(tcg.mtx, GX_TEXMTX0);
   EXPECT_TRUE(tcg.normalize);
   EXPECT_EQ(tcg.postMtx, GX_PTTEXMTX0);
 }
@@ -1491,6 +1840,64 @@ TEST_F(GXFifoTest, TexCoordGen_SRTG_Color0) {
 
   auto& tcg = g_gxState.tcgs[GX_TEXCOORD0];
   EXPECT_EQ(tcg.type, GX_TG_SRTG);
+  EXPECT_EQ(tcg.mtx, GX_TEXMTX0);
+}
+
+TEST_F(GXFifoTest, TexCoordGen_NonZeroMtx) {
+  GXSetTexCoordGen2(GX_TEXCOORD0, GX_TG_MTX3x4, GX_TG_TEX0, GX_TEXMTX3, GX_FALSE, GX_PTTEXMTX5);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& tcg = g_gxState.tcgs[GX_TEXCOORD0];
+  EXPECT_EQ(tcg.type, GX_TG_MTX3x4);
+  EXPECT_EQ(tcg.src, GX_TG_TEX0);
+  EXPECT_EQ(tcg.mtx, GX_TEXMTX3);
+  EXPECT_EQ(tcg.postMtx, GX_PTTEXMTX5);
+}
+
+TEST_F(GXFifoTest, TexCoordGen_MultipleCoords) {
+  GXSetTexCoordGen2(GX_TEXCOORD0, GX_TG_MTX3x4, GX_TG_TEX0, GX_TEXMTX0, GX_FALSE, GX_PTTEXMTX0);
+  GXSetTexCoordGen2(GX_TEXCOORD1, GX_TG_MTX3x4, GX_TG_TEX1, GX_TEXMTX1, GX_FALSE, GX_PTTEXMTX1);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_EQ(g_gxState.tcgs[0].mtx, GX_TEXMTX0);
+  EXPECT_EQ(g_gxState.tcgs[0].postMtx, GX_PTTEXMTX0);
+  EXPECT_EQ(g_gxState.tcgs[0].src, GX_TG_TEX0);
+  EXPECT_EQ(g_gxState.tcgs[1].mtx, GX_TEXMTX1);
+  EXPECT_EQ(g_gxState.tcgs[1].postMtx, GX_PTTEXMTX1);
+  EXPECT_EQ(g_gxState.tcgs[1].src, GX_TG_TEX1);
+}
+
+TEST_F(GXFifoTest, TexCoordGen_HighCoord_MatIdxB) {
+  // TexCoord4+ uses matIdxB
+  GXSetTexCoordGen2(GX_TEXCOORD4, GX_TG_MTX2x4, GX_TG_TEX4, GX_TEXMTX5, GX_FALSE, GX_PTTEXMTX3);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& tcg = g_gxState.tcgs[GX_TEXCOORD4];
+  EXPECT_EQ(tcg.type, GX_TG_MTX2x4);
+  EXPECT_EQ(tcg.src, GX_TG_TEX4);
+  EXPECT_EQ(tcg.mtx, GX_TEXMTX5);
+  EXPECT_EQ(tcg.postMtx, GX_PTTEXMTX3);
+}
+
+TEST_F(GXFifoTest, TexCoordGen_Identity) {
+  GXSetTexCoordGen2(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY, GX_FALSE, GX_PTIDENTITY);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& tcg = g_gxState.tcgs[GX_TEXCOORD0];
+  EXPECT_EQ(tcg.mtx, GX_IDENTITY);
+  EXPECT_EQ(tcg.postMtx, GX_PTIDENTITY);
 }
 
 // --- GXSetChanAmbColor / GXSetChanMatColor (XF 0x100A-0x100D) ---
@@ -1997,6 +2404,143 @@ TEST_F(GXFifoTest, Composite_BlendAndZMode) {
   EXPECT_EQ(g_gxState.alphaCompare.comp0, GX_GREATER);
   EXPECT_EQ(g_gxState.alphaCompare.ref0, 128u);
 }
+
+// --- GXLoadTexMtxImm for PTTexMtx (XF 0x500-0x5EF) ---
+
+TEST_F(GXFifoTest, LoadPTTexMtx_Identity) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 1.0f;
+  mtx.m1[1] = 1.0f;
+  mtx.m2[2] = 1.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_PTTEXMTX0, GX_MTX3x4);
+  auto bytes = capture_fifo();
+
+  // XF opcode 0x10, addr = (64 - 64) * 4 + 0x500 = 0x500, count = 12
+  ASSERT_GE(bytes.size(), 5u);
+  EXPECT_EQ(bytes[0], 0x10);
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& decoded = g_gxState.ptTexMtxs[0];
+  EXPECT_FLOAT_EQ(decoded.m0[0], 1.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[1], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[3], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[0], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 1.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[3], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[0], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[1], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[2], 1.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[3], 0.0f);
+}
+
+TEST_F(GXFifoTest, LoadPTTexMtx_ArbitraryValues) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 2.0f;  mtx.m0[1] = 0.5f;  mtx.m0[2] = 0.0f;  mtx.m0[3] = 10.0f;
+  mtx.m1[0] = -0.5f; mtx.m1[1] = 3.0f;  mtx.m1[2] = 0.0f;  mtx.m1[3] = 20.0f;
+  mtx.m2[0] = 0.0f;  mtx.m2[1] = 0.0f;  mtx.m2[2] = 1.5f;  mtx.m2[3] = -5.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_PTTEXMTX0, GX_MTX3x4);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& decoded = g_gxState.ptTexMtxs[0];
+  EXPECT_FLOAT_EQ(decoded.m0[0], 2.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[1], 0.5f);
+  EXPECT_FLOAT_EQ(decoded.m0[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m0[3], 10.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[0], -0.5f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 3.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[2], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[3], 20.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[0], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[1], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[2], 1.5f);
+  EXPECT_FLOAT_EQ(decoded.m2[3], -5.0f);
+}
+
+TEST_F(GXFifoTest, LoadPTTexMtx_DifferentSlots) {
+  aurora::Mat3x4<float> mtx0{};
+  mtx0.m0[0] = 1.0f;
+  mtx0.m1[1] = 1.0f;
+  mtx0.m2[2] = 1.0f;
+
+  aurora::Mat3x4<float> mtx5{};
+  mtx5.m0[0] = 5.0f;
+  mtx5.m1[1] = 6.0f;
+  mtx5.m2[2] = 7.0f;
+  mtx5.m0[3] = 100.0f;
+
+  GXLoadTexMtxImm(&mtx0, GX_PTTEXMTX0, GX_MTX3x4);
+  GXLoadTexMtxImm(&mtx5, GX_PTTEXMTX5, GX_MTX3x4);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  // Slot 0
+  EXPECT_FLOAT_EQ(g_gxState.ptTexMtxs[0].m0[0], 1.0f);
+  EXPECT_FLOAT_EQ(g_gxState.ptTexMtxs[0].m1[1], 1.0f);
+  EXPECT_FLOAT_EQ(g_gxState.ptTexMtxs[0].m2[2], 1.0f);
+
+  // Slot 5: GX_PTTEXMTX5 = 79, index = (79 - 64) / 3 = 5
+  EXPECT_FLOAT_EQ(g_gxState.ptTexMtxs[5].m0[0], 5.0f);
+  EXPECT_FLOAT_EQ(g_gxState.ptTexMtxs[5].m1[1], 6.0f);
+  EXPECT_FLOAT_EQ(g_gxState.ptTexMtxs[5].m2[2], 7.0f);
+  EXPECT_FLOAT_EQ(g_gxState.ptTexMtxs[5].m0[3], 100.0f);
+}
+
+TEST_F(GXFifoTest, LoadPTTexMtx_LastSlot) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 42.0f;
+  mtx.m1[1] = 43.0f;
+  mtx.m2[2] = 44.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_PTTEXMTX19, GX_MTX3x4);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  auto& decoded = g_gxState.ptTexMtxs[19];
+  EXPECT_FLOAT_EQ(decoded.m0[0], 42.0f);
+  EXPECT_FLOAT_EQ(decoded.m1[1], 43.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[2], 44.0f);
+  // Other elements should be zero (from reset)
+  EXPECT_FLOAT_EQ(decoded.m0[1], 0.0f);
+  EXPECT_FLOAT_EQ(decoded.m2[3], 0.0f);
+}
+
+TEST_F(GXFifoTest, LoadPTTexMtx_Isolation) {
+  // Loading PTTexMtx0 should not affect PTTexMtx1
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 99.0f;
+  mtx.m1[1] = 88.0f;
+  mtx.m2[2] = 77.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_PTTEXMTX0, GX_MTX3x4);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  // Slot 0 should have our values
+  EXPECT_FLOAT_EQ(g_gxState.ptTexMtxs[0].m0[0], 99.0f);
+  // Slot 1 should remain zeroed
+  EXPECT_FLOAT_EQ(g_gxState.ptTexMtxs[1].m0[0], 0.0f);
+  EXPECT_FLOAT_EQ(g_gxState.ptTexMtxs[1].m1[1], 0.0f);
+  EXPECT_FLOAT_EQ(g_gxState.ptTexMtxs[1].m2[2], 0.0f);
+}
+
+// ============================================================================
+// Composite / multi-command tests
+// ============================================================================
 
 TEST_F(GXFifoTest, Composite_TevSetup) {
   // Set up a simple 1-stage TEV that passes through texture color

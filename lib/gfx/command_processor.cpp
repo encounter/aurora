@@ -1138,18 +1138,16 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
   // Position matrices (0x000-0x077) - 10 matrices, 4 rows each, 4 values per row = 12 floats
   if (addr < 0x078) {
     u32 mtxIdx = addr / 4;
+    u32 startOffset = addr % 4;
     if (mtxIdx < gx::MaxPnMtx) {
       auto& mtx = g_gxState.pnMtx[mtxIdx].pos;
-      u32 startOffset = addr - mtxIdx * 4;
       for (u32 i = 0; i < count && (startOffset + i) < 12; i++) {
         reinterpret_cast<f32*>(&mtx)[startOffset + i] = read_f32(xfData + i * 4, bigEndian);
       }
       g_gxState.stateDirty = true;
     }
   }
-  // Texture matrices (0x078-0x0EF) - regular texture matrices
-  // Address space: GX_TEXMTX0=30, each mtx takes 12 XF slots (3x4), id*4 = addr
-  // So addr 0x078=TEXMTX0*4, up to 10 matrices
+  // Texture matrices (0x078-0x0EF)
   else if (addr >= 0x078 && addr < 0x0F0) {
     u32 texBase = addr - 0x078;
     u32 mtxIdx = texBase / 12;
@@ -1180,12 +1178,9 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
   else if (addr >= 0x400 && addr < 0x45A) {
     u32 nrmBase = addr - 0x400;
     u32 mtxIdx = nrmBase / 3;
+    u32 startOffset = nrmBase % 3;
     if (mtxIdx < gx::MaxPnMtx) {
-      auto& mtx = g_gxState.pnMtx[mtxIdx].nrm;
-      // Normal matrices are 3x3 stored as 3 rows of 3 XF values,
-      // but Mat3x4 has 3 rows of 4 floats. Map XF index to Mat3x4 flat index.
-      u32 startOffset = nrmBase - mtxIdx * 3;
-      f32* flat = reinterpret_cast<f32*>(&mtx);
+      f32* flat = reinterpret_cast<f32*>(&g_gxState.pnMtx[mtxIdx].nrm);
       for (u32 i = 0; i < count; i++) {
         u32 xfIdx = startOffset + i;
         u32 row = xfIdx / 3;
@@ -1200,12 +1195,9 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
   // Post-transform texture matrices (0x500-0x5EF)
   else if (addr >= 0x500 && addr < 0x5F0) {
     u32 ptBase = addr - 0x500;
-    u32 mtxIdx = ptBase / 12; // Each PT matrix takes 4 XF slots (but stores 12 floats = 3x4)
-    // Actually PT matrices: (id - GX_PTTEXMTX0) * 4 + 0x500, and they're always 3x4
-    // GX_PTTEXMTX0=64, spacing=3, so mtxIdx = ptBase/4 maps to ptTexMtxs index
+    u32 mtxIdx = ptBase / 12;
+    u32 startOffset = ptBase % 12;
     if (mtxIdx < gx::MaxPTTexMtx) {
-      u32 startOffset = ptBase % 12;
-      // PT matrices store 12 floats (3x4)
       f32* flat = reinterpret_cast<f32*>(&g_gxState.ptTexMtxs[mtxIdx]);
       for (u32 i = 0; i < count && (startOffset + i) < 12; i++) {
         flat[startOffset + i] = read_f32(xfData + i * 4, bigEndian);
@@ -1342,19 +1334,26 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
         }
         break;
       }
-      case 0x18:
-        // Matrix index A -> current PN matrix
+      case 0x18: {
+        // Matrix index A: PnMtx + TexCoord0-3 matrix indices
         g_gxState.currentPnMtx = bp_get(val, 6, 0) / 3;
+        for (u32 i = 0; i < 4 && i < gx::MaxTexCoord; i++) {
+          g_gxState.tcgs[i].mtx = static_cast<GXTexMtx>(bp_get(val, 6, 6 + i * 6));
+        }
+        g_gxState.stateDirty = true;
         break;
-      case 0x19:
-        // Matrix index B
+      }
+      case 0x19: {
+        // Matrix index B: TexCoord4-7 matrix indices
+        for (u32 i = 0; i < 4 && (i + 4) < gx::MaxTexCoord; i++) {
+          g_gxState.tcgs[i + 4].mtx = static_cast<GXTexMtx>(bp_get(val, 6, i * 6));
+        }
+        g_gxState.stateDirty = true;
         break;
+      }
       case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1E: case 0x1F: {
         // Viewport: sx, sy, sz, ox, oy, oz at XF 0x101A-0x101F
-        // Decode back to left/top/width/height/nearZ/farZ
-        // These are written as a bulk block starting at 0x1A
         u32 vpOff = reg - 0x1A;
-        // Read all 6 viewport params if this is the start of the block
         if (vpOff == 0 && count >= 6) {
           f32 sx = read_f32(xfData + 0, bigEndian);
           f32 sy = read_f32(xfData + 4, bigEndian);
@@ -1362,9 +1361,6 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
           f32 ox = read_f32(xfData + 12, bigEndian);
           f32 oy = read_f32(xfData + 16, bigEndian);
           f32 oz = read_f32(xfData + 20, bigEndian);
-          // Reverse the encoding from GXSetViewport:
-          // sx = width/2, sy = -height/2, ox = 340+left+width/2, oy = 340+top+height/2
-          // sz = zmax-zmin, oz = zmax, zmax = 1.6777215e7*farZ, zmin = 1.6777215e7*nearZ
           f32 width = sx * 2.0f;
           f32 height = -sy * 2.0f;
           f32 left = ox - 340.0f - width / 2.0f;

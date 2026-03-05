@@ -577,7 +577,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   }
 
   if (EnableDebugPrints) {
-    Log.info("Shader config (hash {:x}):", hash);
+    Log.info("ShadPrinter config (hash {:x}):", hash);
     {
       for (int i = 0; i < config.tevStageCount; ++i) {
         const auto& stage = config.tevStages[i];
@@ -1009,18 +1009,16 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f(in_nrm, 1.0);", i);
     } else
       UNLIKELY FATAL("unhandled tcg src {}", underlying(tcg.src));
-    if (tcg.type == GX_MTX2x4 || tcg.type == GX_MTX3x4) {
+    if (tcg.type == GX_TG_MTX2x4 || tcg.type == GX_TG_MTX3x4) {
       if (info.indexAttr.test(GX_VA_TEX0MTXIDX + i)) {
         vtxXfrAttrs += fmt::format("\n    var tc{0}_tmp = tc{0} * ubuf.texmtx[in_texmtxidx{0} / 3u];", i);
+      } else if (tcg.mtx == GX_IDENTITY) {
+        vtxXfrAttrs += fmt::format("\n    var tc{0}_tmp = tc{0}.xyz;", i);
       } else {
-        if (tcg.mtx == GX_IDENTITY) {
-          vtxXfrAttrs += fmt::format("\n    var tc{0}_tmp = tc{0}.xyz;", i);
-        } else {
-          u32 texMtxIdx = (tcg.mtx - GX_TEXMTX0) / 3;
-          vtxXfrAttrs += fmt::format("\n    var tc{0}_tmp = tc{0} * ubuf.texmtx[{1}];", i, texMtxIdx);
-        }
+        u32 texMtxIdx = (tcg.mtx - GX_TEXMTX0) / 3;
+        vtxXfrAttrs += fmt::format("\n    var tc{0}_tmp = tc{0} * ubuf.texmtx[{1}];", i, texMtxIdx);
       }
-      if (tcg.type == GX_MTX2x4) {
+      if (tcg.type == GX_TG_MTX2x4) {
         vtxXfrAttrs += fmt::format("\n    tc{0}_tmp.z = 1.0f;", i);
       }
     } else if (tcg.type == GX_TG_SRTG) {

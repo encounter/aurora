@@ -121,6 +121,24 @@ inline std::string format_as(const GXTexGenSrc& src) {
     return "GX_TG_TEX6";
   case GX_TG_TEX7:
     return "GX_TG_TEX7";
+  case GX_TG_TEXCOORD0:
+    return "GX_TG_TEXCOORD0";
+  case GX_TG_TEXCOORD1:
+    return "GX_TG_TEXCOORD1";
+  case GX_TG_TEXCOORD2:
+    return "GX_TG_TEXCOORD2";
+  case GX_TG_TEXCOORD3:
+    return "GX_TG_TEXCOORD3";
+  case GX_TG_TEXCOORD4:
+    return "GX_TG_TEXCOORD4";
+  case GX_TG_TEXCOORD5:
+    return "GX_TG_TEXCOORD5";
+  case GX_TG_TEXCOORD6:
+    return "GX_TG_TEXCOORD6";
+  case GX_TG_COLOR0:
+    return "GX_TG_COLOR0";
+  case GX_TG_COLOR1:
+    return "GX_TG_COLOR1";
   default:
     return fmt::format("GXTexGenSrc({})", underlying(src));
   }
@@ -136,6 +154,20 @@ inline std::string format_as(const GXTexGenType& type) {
     return "GX_TG_BUMP0";
   case GX_TG_BUMP1:
     return "GX_TG_BUMP1";
+  case GX_TG_BUMP2:
+    return "GX_TG_BUMP2";
+  case GX_TG_BUMP3:
+    return "GX_TG_BUMP3";
+  case GX_TG_BUMP4:
+    return "GX_TG_BUMP4";
+  case GX_TG_BUMP5:
+    return "GX_TG_BUMP5";
+  case GX_TG_BUMP6:
+    return "GX_TG_BUMP6";
+  case GX_TG_BUMP7:
+    return "GX_TG_BUMP7";
+  case GX_TG_SRTG:
+    return "GX_TG_SRTG";
   default:
     return fmt::format("GXTexGenType({})", underlying(type));
   }
