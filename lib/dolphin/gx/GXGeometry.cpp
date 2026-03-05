@@ -1,5 +1,6 @@
 #include "gx.hpp"
 #include "__gx.h"
+#include "dolphin/gd/GDGeometry.h"
 
 static inline void SETVCDATTR(GXAttr attr, GXAttrType type) {
   switch (attr) {
@@ -208,12 +209,13 @@ void GXSetArray(GXAttr attr, const void* data, u32 size, u8 stride) {
   GX_WRITE_SOME_REG2(8, cpIdx | 0xA0, reinterpret_cast<uintptr_t>(data), cpIdx - 12);
   GX_WRITE_SOME_REG3(8, cpIdx | 0xB0, stride, cpIdx - 12);
 
-  // Keep g_gxState in sync (TARGET_PC extension: store size)
-  auto& array = g_gxState.arrays[attr];
-  update_gx_state(array.data, data);
-  update_gx_state(array.size, size);
-  update_gx_state(array.stride, stride);
-  array.cachedRange = {};
+  // Write array base
+  GX_WRITE_AURORA(GX_LOAD_AURORA_ARRAYBASE | cpIdx);
+  GX_WRITE_U64(reinterpret_cast<u64>(data));
+  GX_WRITE_U64(size);
+
+  // Write array stride
+  GX_WRITE_CP_REG(CP_REG_ARRAYSTRIDE_ID | cpIdx, stride);
 }
 
 void GXSetTexCoordGen2(GXTexCoordID dst, GXTexGenType type, GXTexGenSrc src, u32 mtx, GXBool normalize, u32 postMtx) {

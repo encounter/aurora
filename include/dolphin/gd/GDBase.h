@@ -63,6 +63,18 @@ inline static void GDWrite_u32(u32 data) {
     __GDWrite((u8)((data >> 0) & 0xFF));
 }
 
+inline static void GDWrite_u64(u64 data) {
+  GDOverflowCheck(sizeof(u64));
+  __GDWrite((u8)((data >> 56) & 0xFF));
+  __GDWrite((u8)((data >> 48) & 0xFF));
+  __GDWrite((u8)((data >> 40) & 0xFF));
+  __GDWrite((u8)((data >> 32) & 0xFF));
+  __GDWrite((u8)((data >> 24) & 0xFF));
+  __GDWrite((u8)((data >> 16) & 0xFF));
+  __GDWrite((u8)((data >> 8) & 0xFF));
+  __GDWrite((u8)((data >> 0) & 0xFF));
+}
+
 inline static void GDWrite_f32(f32 data) {
     union {
         f32 f;
@@ -118,6 +130,11 @@ inline static void GDWriteCPCmd(u8 addr, u32 val) {
 inline static void GDWriteBPCmd(u32 regval) {
     GDWrite_u8(GX_LOAD_BP_REG);
     GDWrite_u32(regval);
+}
+
+inline static void GDWriteAuroraCmd(u16 subCommand) {
+  GDWrite_u8(GX_LOAD_AURORA);
+  GDWrite_u16(subCommand);
 }
 
 inline static void GDSetCurrent(GDLObj* dl) {

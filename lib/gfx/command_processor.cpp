@@ -11,6 +11,9 @@
 #include <cmath>
 #include <cstring>
 
+#include "dolphin/gd/GDGeometry.h"
+#include "dolphin/gx/GXAurora.h"
+
 static aurora::Module Log("aurora::gfx::cp");
 
 using aurora::gfx::gx::g_gxState;
@@ -360,6 +363,18 @@ static inline u32 read_u32(const u8* ptr, bool bigEndian) {
          static_cast<u32>(ptr[0]);
 }
 
+static inline u64 read_u64(const u8* ptr, bool bigEndian) {
+  u64 loaded;
+  // Unaligned-safe load
+  memcpy(&loaded, ptr, sizeof(u64));
+
+  if (bigEndian) {
+    return bswap(loaded);
+  }
+
+  return loaded;
+}
+
 static inline f32 read_f32(const u8* ptr, bool bigEndian) {
   u32 bits = read_u32(ptr, bigEndian);
   f32 val;
@@ -372,6 +387,7 @@ static void handle_bp(u32 value, bool bigEndian);
 static void handle_cp(u8 addr, u32 value, bool bigEndian);
 static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian);
 static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndian);
+static void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian);
 
 void process(const u8* data, u32 size, bool bigEndian) {
   u32 pos = 0;
@@ -428,6 +444,11 @@ void process(const u8* data, u32 size, bool bigEndian) {
 
     case CP_CMD_INVAL_VTX: {
       // Invalidate vertex cache
+      break;
+    }
+
+    case GX_LOAD_AURORA: {
+      handle_aurora(data, pos, size, bigEndian);
       break;
     }
 
@@ -1101,13 +1122,7 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
     }
     // Array base addresses (0xA0-0xAF)
     else if (addr >= 0xA0 && addr <= 0xAF) {
-      u32 attrIdx = addr - 0xA0 + GX_VA_POS;
-      if (attrIdx < GX_VA_MAX_ATTR) {
-        // On TARGET_PC, the array base pointer is set by GXSetArray's side-channel.
-        // The FIFO value is a truncated 32-bit pointer (unusable on 64-bit hosts),
-        // so we only invalidate the cached range here.
-        g_gxState.arrays[attrIdx].cachedRange = {};
-      }
+      Log.error("CP_REG_ARRAYBASE_ID is not supported on Aurora. Use GX_LOAD_AURORA_ARRAYBASE instead.");
     }
     // Array strides (0xB0-0xBF)
     else if (addr >= 0xB0 && addr <= 0xBF) {
@@ -1553,6 +1568,31 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   });
 
   pos += totalVtxBytes;
+}
+
+void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
+  CHECK(pos + 2 <= size, "Aurora cmd read overrun");
+  u16 subCmd = read_u16(data + pos, bigEndian);
+  pos += 2;
+
+  // Setting of vertex array bases.
+  if (subCmd >= GX_LOAD_AURORA_ARRAYBASE && subCmd <= (GX_LOAD_AURORA_ARRAYBASE | 0x0f)) {
+    CHECK(pos + 8 <= size, "GX_LOAD_AURORA_ARRAYBASE read overrun");
+    u32 attrIdx = subCmd - GX_LOAD_AURORA_ARRAYBASE + GX_VA_POS;
+
+    u64 arrayAddr = read_u64(data + pos, bigEndian);
+    pos += 8;
+    u64 arraySize = read_u64(data + pos, bigEndian);
+    pos += 8;
+
+    CHECK(arraySize <= std::numeric_limits<decltype(g_gxState.arrays[attrIdx].size)>::max(), "Array size too large!");
+
+    g_gxState.arrays[attrIdx].data = reinterpret_cast<void*>(arrayAddr);
+    g_gxState.arrays[attrIdx].size = arraySize;
+    g_gxState.arrays[attrIdx].cachedRange = {};
+  } else {
+    Log.error("Unknown Aurora subcommand: {:04X}", subCmd);
+  }
 }
 
 } // namespace aurora::gfx::command_processor

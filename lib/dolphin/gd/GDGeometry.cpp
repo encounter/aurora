@@ -1,6 +1,8 @@
 #include <dolphin/gd.h>
 #include <dolphin/os.h>
 
+#include "dolphin/gx/GXAurora.h"
+
 void GDSetVtxDescv(const GXVtxDescList* attrPtr) {
     u32 nnorms = 0;
     u32 ncols = 0;
@@ -242,28 +244,27 @@ void GDSetVtxAttrFmtv(GXVtxFmt vtxfmt, const GXVtxAttrFmtList* list) {
     GDWriteCPCmd(vtxfmt + CP_REG_VAT_GRP2_ID, CP_REG_VAT_GRP2(tx4Frac, tx5Cnt, tx5Type, tx5Frac, tx6Cnt, tx6Type, tx6Frac, tx7Cnt, tx7Type, tx7Frac));
 }
 
-void GDSetArray(GXAttr attr, void* base_ptr, u8 stride) {
-    s32 cpAttr;
-    if (attr == GX_VA_NBT) {
-        cpAttr = GX_VA_TEX0MTXIDX;
-    } else {
-        cpAttr = attr - GX_VA_POS;
-    }
+void GDSetArraySized(GXAttr attr, void* base_ptr, u32 size, u8 stride) {
+  s32 cpAttr;
+  if (attr == GX_VA_NBT) {
+    cpAttr = 1;
+  } else {
+    cpAttr = attr - GX_VA_POS;
+  }
 
-    GDWriteCPCmd(cpAttr + CP_REG_ARRAYBASE_ID, OSCachedToPhysical(base_ptr));
-    GDWriteCPCmd(cpAttr + CP_REG_ARRAYSTRIDE_ID, stride);
+  GDWriteAuroraCmd(cpAttr + GX_LOAD_AURORA_ARRAYBASE);
+  GDWrite_u64((u64)base_ptr);
+  GDWrite_u64((u64)size);
+
+  GDWriteCPCmd(cpAttr + CP_REG_ARRAYSTRIDE_ID, stride);
 }
 
-void GDSetArrayRaw(GXAttr attr, u32 base_ptr_raw, u8 stride) {
-    s32 cpAttr;
-    if (attr == GX_VA_NBT) {
-        cpAttr = GX_VA_TEX0MTXIDX;
-    } else {
-        cpAttr = attr - GX_VA_POS;
-    }
+void GDSetArray(GXAttr, void*, u8) {
+    OSPanic(__FILE__, __LINE__, "GDSetArray is not supported on Aurora");
+}
 
-    GDWriteCPCmd(cpAttr + CP_REG_ARRAYBASE_ID, base_ptr_raw);
-    GDWriteCPCmd(cpAttr + CP_REG_ARRAYSTRIDE_ID, stride);
+void GDSetArrayRaw(GXAttr, u32, u8) {
+    OSPanic(__FILE__, __LINE__, "GDSetArrayRaw is not supported on Aurora");
 }
 
 void GDPatchArrayPtr(void* base_ptr) {

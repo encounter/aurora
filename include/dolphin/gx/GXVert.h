@@ -128,6 +128,7 @@ static inline void GXEnd(void) {}
 void GXCmd1u8(const u8 x);
 void GXCmd1u16(const u16 x);
 void GXCmd1u32(const u32 x);
+void GXCmd1u64(const u64 x);
 
 void GXParam1u8(const u8 x);
 void GXParam1u16(const u16 x);

@@ -204,6 +204,7 @@ void GXTexCoord1x8(u8 index) { GX_WRITE_U8(index); }
 void GXCmd1u8(const u8 x) { aurora::gfx::fifo::write_u8(static_cast<uint8_t>(x)); }
 void GXCmd1u16(const u16 x) { aurora::gfx::fifo::write_u16(static_cast<uint16_t>(x)); }
 void GXCmd1u32(const u32 x) { aurora::gfx::fifo::write_u32(static_cast<uint32_t>(x)); }
+void GXCmd1u64(const u64 x) { aurora::gfx::fifo::write_u64(static_cast<uint64_t>(x)); }
 
 void GXParam1u8(const u8 x) { aurora::gfx::fifo::write_u8(static_cast<uint8_t>(x)); }
 void GXParam1u16(const u16 x) { aurora::gfx::fifo::write_u16(static_cast<uint16_t>(x)); }
