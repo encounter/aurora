@@ -3,6 +3,10 @@ name: Build & test
 on:
   push:
 
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
 jobs:
   build:
     name: Build & test
@@ -29,6 +33,9 @@ jobs:
             libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev \
             libudev-dev libthai-dev libpipewire-0.3-dev libwayland-dev libdecor-0-dev \
             liburing-dev libsdl2-dev libglfw3-dev
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Set up MSVC env
         if: ${{ matrix.os == 'windows-latest' }}
