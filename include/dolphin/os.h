@@ -1,8 +1,11 @@
 #ifndef _DOLPHIN_OS_H_
 #define _DOLPHIN_OS_H_
 
+#ifdef __cplusplus
 #include <cstdio>
-#include <cstdint>
+#else
+#include <stdio.h>
+#endif
 
 #include <dolphin/types.h>
 #include <dolphin/gx/GXStruct.h>

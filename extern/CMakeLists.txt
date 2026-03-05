@@ -6,7 +6,7 @@ set(BUILD_TESTING OFF CACHE INTERNAL "Build tests")
 if (NOT EMSCRIPTEN)
   if (AURORA_ENABLE_GX)
     if (NOT TARGET webgpu_dawn)
-      message(STATUS "aurora: Building Dawn")
+      message(STATUS "aurora: Fetching Dawn")
 
       set(DAWN_BUILD_MONOLITHIC_LIBRARY STATIC CACHE INTERNAL "Bundle all dawn components into a single shared library.")
       set(DAWN_BUILD_SAMPLES OFF CACHE INTERNAL "Disable Dawn sample applications")
@@ -39,7 +39,7 @@ if (NOT EMSCRIPTEN)
   else ()
     # Abseil is needed for core libraries but normally comes via Dawn
     if (NOT TARGET absl::flat_hash_map)
-      message(STATUS "aurora: Building abseil-cpp (standalone)")
+      message(STATUS "aurora: Fetching abseil-cpp (standalone)")
       if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY OR CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "DLL$")
         set(ABSL_MSVC_STATIC_RUNTIME OFF CACHE INTERNAL "Link static runtime libraries")
       else()
@@ -61,7 +61,7 @@ if (NOT EMSCRIPTEN)
   endif ()
 
   if (NOT TARGET SDL3-static)
-    message(STATUS "aurora: Building SDL3")
+    message(STATUS "aurora: Fetching SDL3")
 
     set(SDL_STATIC ON CACHE BOOL "Build SDL3 static library" FORCE)
     if (WIN32)
@@ -87,7 +87,7 @@ else ()
 endif ()
 
 if (NOT TARGET xxhash)
-  message(STATUS "aurora: Building xxhash")
+  message(STATUS "aurora: Fetching xxhash")
   FetchContent_Declare(xxhash
     URL https://github.com/Cyan4973/xxHash/archive/refs/tags/v0.8.3.tar.gz
     URL_HASH SHA256=aae608dfe8213dfd05d909a57718ef82f30722c392344583d3f39050c7f29a80
@@ -105,7 +105,7 @@ else ()
 endif ()
 
 if (NOT TARGET fmt)
-  message(STATUS "aurora: Building fmt")
+  message(STATUS "aurora: Fetching fmt")
   FetchContent_Declare(fmt
     URL https://github.com/fmtlib/fmt/archive/refs/tags/11.1.4.tar.gz
     URL_HASH SHA256=ac366b7b4c2e9f0dde63a59b3feb5ee59b67974b14ee5dc9ea8ad78aa2c1ee1e
@@ -122,7 +122,7 @@ endif ()
 
 if (AURORA_ENABLE_GX)
   if (NOT TARGET imgui)
-    message(STATUS "aurora: Building imgui")
+    message(STATUS "aurora: Fetching imgui")
     FetchContent_Declare(imgui
       URL https://github.com/ocornut/imgui/archive/refs/tags/v1.91.9b-docking.tar.gz
       URL_HASH SHA256=466fdef9b18de15f0bb6e288e3d00ffa3d82200ec458ce5e4f724a161d9528a5
