@@ -149,8 +149,28 @@ void alpha_arg_reg_info(GXTevAlphaArg arg, const TevStage& stage, ShaderInfo& in
 
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   ShaderInfo info{
-      .uniformSize = sizeof(PnMtx) + sizeof(Mat4x4<float>), // pos_mtx, nrm_mtx, proj
+    .uniformSize = sizeof(Mat4x4<float>), // proj
   };
+
+  for (int attr = 0; attr < config.vtxAttrs.size(); attr++) {
+    if ((attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) &&
+        config.vtxAttrs[attr] == GX_DIRECT) {
+      info.indexAttr.set(attr);
+    } else if (config.vtxAttrs[attr] == GX_INDEX8 || config.vtxAttrs[attr] == GX_INDEX16) {
+      info.indexAttr.set(attr);
+    }
+  }
+  if (info.indexAttr.test(GX_VA_PNMTXIDX)) {
+    info.uniformSize += sizeof(PnMtx) * MaxPnMtx;
+  } else {
+    info.uniformSize += sizeof(PnMtx);
+  }
+  for (int i = 0; i < 10; i++) {
+    if (info.indexAttr.test(GX_VA_TEX0MTXIDX + i)) {
+      info.usesTexMtx = (1 << MaxTexMtx) - 1; // need all texmtx
+      break;
+    }
+  }
   for (int i = 0; i < config.tevStageCount; ++i) {
     const auto& stage = config.tevStages[i];
     // Color pass
@@ -213,28 +233,16 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
     if (tcg.mtx != GX_IDENTITY) {
       u32 texMtxIdx = (tcg.mtx - GX_TEXMTX0) / 3;
       info.usesTexMtx.set(texMtxIdx);
-      info.texMtxTypes[texMtxIdx] = tcg.type;
     }
     if (tcg.postMtx != GX_PTIDENTITY) {
       u32 postMtxIdx = (tcg.postMtx - GX_PTTEXMTX0) / 3;
       info.usesPTTexMtx.set(postMtxIdx);
     }
   }
-  for (int i = 0; i < info.usesTexMtx.size(); ++i) {
-    if (info.usesTexMtx.test(i)) {
-      switch (info.texMtxTypes[i]) {
-      case GX_TG_MTX2x4:
-        info.uniformSize += sizeof(Mat2x4<float>);
-        break;
-      case GX_TG_MTX3x4:
-        info.uniformSize += sizeof(Mat3x4<float>);
-        break;
-      default:
-        break;
-      }
-    }
-  }
-  info.uniformSize += info.usesPTTexMtx.count() * sizeof(Mat3x4<float>);
+  if (info.usesTexMtx.any())
+    info.uniformSize += sizeof(Mat3x4<float>) * MaxTexMtx;
+  if (info.usesPTTexMtx.any())
+    info.uniformSize += sizeof(Mat3x4<float>) * MaxPTTexMtx;
   if (config.fogType != GX_FOG_NONE) {
     info.usesFog = true;
     info.uniformSize += sizeof(Fog);
@@ -246,10 +254,19 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
 
 Range build_uniform(const ShaderInfo& info) noexcept {
   auto [buf, range] = map_uniform(info.uniformSize);
-  {
+  buf.append(g_gxState.proj);
+
+  if (info.indexAttr.test(GX_VA_PNMTXIDX)) {
+    for (int i = 0; i < MaxPnMtx; i++) {
+      buf.append(g_gxState.pnMtx[i].pos);
+    }
+    for (int i = 0; i < MaxPnMtx; i++) {
+      buf.append(g_gxState.pnMtx[i].nrm);
+    }
+  } else {
     buf.append(g_gxState.pnMtx[g_gxState.currentPnMtx]);
-    buf.append(g_gxState.proj);
   }
+
   for (int i = 0; i < info.loadsTevReg.size(); ++i) {
     if (info.loadsTevReg.test(i)) {
       buf.append(g_gxState.colorRegs[i]);
@@ -290,28 +307,13 @@ Range build_uniform(const ShaderInfo& info) noexcept {
       buf.append(g_gxState.kcolors[i]);
     }
   }
-  for (int i = 0; i < info.usesTexMtx.size(); ++i) {
-    if (!info.usesTexMtx.test(i)) {
-      continue;
-    }
-    switch (info.texMtxTypes[i]) {
-      DEFAULT_FATAL("unhandled tex mtx type {}", underlying(info.texMtxTypes[i]));
-    case GX_TG_MTX2x4:
-      if (std::holds_alternative<Mat2x4<float>>(g_gxState.texMtxs[i])) {
-        buf.append(std::get<Mat2x4<float>>(g_gxState.texMtxs[i]));
-      } else
-        UNLIKELY FATAL("expected 2x4 mtx in idx {}", i);
-      break;
-    case GX_TG_MTX3x4:
-      if (std::holds_alternative<Mat3x4<float>>(g_gxState.texMtxs[i])) {
-        buf.append(std::get<Mat3x4<float>>(g_gxState.texMtxs[i]));
-      } else
-        UNLIKELY FATAL("expected 3x4 mtx in idx {}", i);
-      break;
+  if (info.usesTexMtx.any()) {
+    for (int i = 0; i < info.usesTexMtx.size(); ++i) {
+      buf.append(g_gxState.texMtxs[i]);
     }
   }
-  for (int i = 0; i < info.usesPTTexMtx.size(); ++i) {
-    if (info.usesPTTexMtx.test(i)) {
+  if (info.usesPTTexMtx.any()) {
+    for (int i = 0; i < info.usesPTTexMtx.size(); ++i) {
       buf.append(g_gxState.ptTexMtxs[i]);
     }
   }

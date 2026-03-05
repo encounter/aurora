@@ -284,9 +284,6 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
   if (g_gxState.alphaCompare) {
     config.shaderConfig.alphaCompare = g_gxState.alphaCompare;
   }
-  config.shaderConfig.indexedAttributeCount =
-      std::count_if(config.shaderConfig.vtxAttrs.begin(), config.shaderConfig.vtxAttrs.end(),
-                    [](const auto type) { return type == GX_INDEX8 || type == GX_INDEX16; });
   for (u8 i = 0; i < MaxTextures; ++i) {
     const auto& bind = g_gxState.textures[i];
     TextureConfig texConfig{};
