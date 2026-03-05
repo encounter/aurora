@@ -577,7 +577,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   }
 
   if (EnableDebugPrints) {
-    Log.info("ShadPrinter config (hash {:x}):", hash);
+    Log.info("Shader config (hash {:x}):", hash);
     {
       for (int i = 0; i < config.tevStageCount; ++i) {
         const auto& stage = config.tevStages[i];
