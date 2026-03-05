@@ -489,6 +489,16 @@ static void handle_bp(u32 value, bool bigEndian) {
   // Mask off the register ID from the value for field extraction
   // (the regId is stored in bits 24-31, data is in bits 0-23)
 
+  if (regId == 0xFE) {
+    g_gxState.bpRegCache[regId] = value & 0x00FFFFFF;
+    return;
+  } else {
+    u32 ssMask = g_gxState.bpRegCache[0xFE];
+    g_gxState.bpRegCache[0xFE] = 0x00FFFFFF;
+    value = (g_gxState.bpRegCache[regId] & ~ssMask) | (value & ssMask);
+    g_gxState.bpRegCache[regId] = value;
+  }
+
   // TEV color combiner stages (0xC0, 0xC2, 0xC4, ... 0xDE)
   if (regId >= 0xC0 && regId <= 0xDE && (regId & 1) == 0) {
     u32 stage = (regId - 0xC0) / 2;
