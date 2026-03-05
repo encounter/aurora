@@ -205,6 +205,8 @@ void GXSetArray(GXAttr attr, const void* data, u32 size, u8 stride) {
   }
   u32 cpIdx = cpAttr - GX_VA_POS;
 
+  assert((cpIdx & ~0xF) == 0);
+
   // Write CP array base and stride
   GX_WRITE_SOME_REG2(8, cpIdx | 0xA0, reinterpret_cast<uintptr_t>(data), cpIdx - 12);
   GX_WRITE_SOME_REG3(8, cpIdx | 0xB0, stride, cpIdx - 12);

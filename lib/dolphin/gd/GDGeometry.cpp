@@ -1,3 +1,4 @@
+#include <cassert>
 #include <dolphin/gd.h>
 #include <dolphin/os.h>
 
@@ -251,6 +252,8 @@ void GDSetArraySized(GXAttr attr, void* base_ptr, u32 size, u8 stride) {
   } else {
     cpAttr = attr - GX_VA_POS;
   }
+
+  assert((cpAttr & ~0xF) == 0);
 
   GDWriteAuroraCmd(cpAttr + GX_LOAD_AURORA_ARRAYBASE);
   GDWrite_u64((u64)base_ptr);
