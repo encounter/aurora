@@ -1,5 +1,6 @@
 #include "gx.hpp"
 
+#include "../../gfx/common.hpp"
 #include "../../gfx/texture.hpp"
 
 extern "C" {
@@ -17,8 +18,7 @@ void GXGetVtxAttrFmt(GXVtxFmt idx, GXAttr attr, GXCompCnt* compCnt, GXCompType* 
   *shift = fmt.frac;
 }
 
-void GXGetViewportv(f32 *vp)
-{
+void GXGetViewportv(f32 *vp) {
   const auto& cachedVp = aurora::gfx::get_viewport();
   vp[0] = cachedVp.left;
   vp[1] = cachedVp.top;

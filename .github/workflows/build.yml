@@ -2,6 +2,7 @@ name: Build & test
 
 on:
   push:
+  pull_request:
 
 env:
   SCCACHE_GHA_ENABLED: "true"
@@ -26,6 +27,7 @@ jobs:
       - name: Install dependencies
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
+          sudo apt-get update
           sudo apt-get install build-essential git make pkg-config cmake ninja-build \
             libasound2-dev libpulse-dev libaudio-dev libfribidi-dev libjack-dev libsndio-dev \
             libx11-dev libxext-dev libx11-xcb-dev libxrandr-dev libxcursor-dev libxfixes-dev \

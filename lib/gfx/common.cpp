@@ -63,7 +63,7 @@ struct Command {
   std::vector<std::string> debugGroupStack;
 #endif
   union Data {
-    SetViewportCommand setViewport;
+    Viewport setViewport;
     SetScissorCommand setScissor;
     ShaderDrawCommand draw;
   } data;
@@ -232,13 +232,13 @@ static void push_draw_command(ShaderDrawCommand data) {
   ++g_drawCallCount;
 }
 
-static SetViewportCommand g_cachedViewport;
-const SetViewportCommand& get_viewport() noexcept {
+static Viewport g_cachedViewport;
+const Viewport& get_viewport() noexcept {
   return g_cachedViewport;
 }
 
 void set_viewport(float left, float top, float width, float height, float znear, float zfar) noexcept {
-  SetViewportCommand cmd{left, top, width, height, znear, zfar};
+  Viewport cmd{left, top, width, height, znear, zfar};
   if (cmd != g_cachedViewport) {
     push_command(CommandType::SetViewport, Command::Data{.setViewport = cmd});
     g_cachedViewport = cmd;

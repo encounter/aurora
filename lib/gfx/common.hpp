@@ -179,7 +179,7 @@ struct ClipRect {
   bool operator!=(const ClipRect& rhs) const { return !(*this == rhs); }
 };
 
-struct SetViewportCommand {
+struct Viewport {
   float left;
   float top;
   float width;
@@ -187,11 +187,11 @@ struct SetViewportCommand {
   float znear;
   float zfar;
 
-  bool operator==(const SetViewportCommand& rhs) const {
+  bool operator==(const Viewport& rhs) const {
     return left == rhs.left && top == rhs.top && width == rhs.width && height == rhs.height && znear == rhs.znear &&
            zfar == rhs.zfar;
   }
-  bool operator!=(const SetViewportCommand& rhs) const { return !(*this == rhs); }
+  bool operator!=(const Viewport& rhs) const { return !(*this == rhs); }
 };
 
 struct TextureRef;
@@ -259,7 +259,7 @@ wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor);
 
 uint32_t align_uniform(uint32_t value);
 
-const SetViewportCommand& get_viewport() noexcept;
+const Viewport& get_viewport() noexcept;
 void set_viewport(float left, float top, float width, float height, float znear, float zfar) noexcept;
 void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept;
 } // namespace aurora::gfx

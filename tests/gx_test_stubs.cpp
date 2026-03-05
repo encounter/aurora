@@ -76,6 +76,10 @@ Range push_indices(const uint8_t* data, size_t length) { return {}; }
 Range push_uniform(const uint8_t* data, size_t length) { return {}; }
 Range push_storage(const uint8_t* data, size_t length) { return {}; }
 
+const Viewport& get_viewport() noexcept {
+  static Viewport vp{0.f, 0.f, 640.f, 480.f, 0.f, 1.f};
+  return vp;
+}
 void set_viewport(float left, float top, float width, float height, float znear, float zfar) noexcept {}
 void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {}
 } // namespace aurora::gfx
