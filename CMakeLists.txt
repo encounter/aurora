@@ -5,15 +5,18 @@ if (APPLE)
 endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(AURORA_ENABLE_GX "Enable GX implementation and WebGPU renderer" ON)
 
 add_subdirectory(extern)
 
 include(cmake/aurora_core.cmake)
+include(cmake/aurora_os.cmake)
 if (AURORA_ENABLE_GX)
   include(cmake/aurora_gx.cmake)
 endif ()
+include(cmake/aurora_gd.cmake)
 include(cmake/aurora_pad.cmake)
 include(cmake/aurora_si.cmake)
 include(cmake/aurora_main.cmake)

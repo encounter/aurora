@@ -150,7 +150,6 @@ struct ColorChannelState {
   Vec4<float> ambColor;
   GX::LightMask lightMask;
 };
-using TexMtxVariant = std::variant<std::monostate, Mat2x4<float>, Mat3x4<float>>;
 struct TcgConfig {
   GXTexGenType type = GX_TG_MTX2x4;
   GXTexGenSrc src = GX_MAX_TEXGENSRC;
@@ -234,6 +233,7 @@ struct VtxAttrFmt {
   GXCompCnt cnt;
   GXCompType type;
   u8 frac;
+  u8 le = true;
 };
 struct VtxFmt {
   std::array<VtxAttrFmt, MaxVtxAttr> attrs;
@@ -299,7 +299,7 @@ struct GXState {
   std::array<TevStage, MaxTevStages> tevStages;
   std::array<TextureBind, MaxTextures> textures;
   std::array<GXTlutObj_, MaxTluts> tluts;
-  std::array<TexMtxVariant, MaxTexMtx> texMtxs;
+  std::array<Mat3x4<float>, MaxTexMtx> texMtxs;
   std::array<Mat3x4<float>, MaxPTTexMtx> ptTexMtxs;
   std::array<TcgConfig, MaxTexCoord> tcgs;
   std::array<TexCoordScale, MaxTexCoord> texCoordScales;
@@ -385,7 +385,8 @@ struct StorageConfig {
   GXCompCnt cnt = static_cast<GXCompCnt>(0xFF);
   GXCompType compType = static_cast<GXCompType>(0xFF);
   u8 frac = 0;
-  std::array<u8, 3> pad{};
+  u8 le = 1;
+  std::array<u8, 2> pad{};
 };
 struct ShaderConfig {
   GXFogType fogType;
@@ -398,14 +399,13 @@ struct ShaderConfig {
   std::array<ColorChannelConfig, MaxColorChannels> colorChannels;
   std::array<TcgConfig, MaxTexCoord> tcgs;
   AlphaCompare alphaCompare;
-  u32 indexedAttributeCount = 0;
   std::array<TextureConfig, MaxTextures> textureConfig;
 
   bool operator==(const ShaderConfig& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
 };
 static_assert(std::has_unique_object_representations_v<ShaderConfig>);
 
-constexpr u32 GXPipelineConfigVersion = 5;
+constexpr u32 GXPipelineConfigVersion = 6;
 struct PipelineConfig {
   u32 version = GXPipelineConfigVersion;
   ShaderConfig shaderConfig;
@@ -440,7 +440,7 @@ struct ShaderInfo {
   std::bitset<MaxTevRegs> writesTevReg;
   std::bitset<MaxTexMtx> usesTexMtx;
   std::bitset<MaxPTTexMtx> usesPTTexMtx;
-  std::array<GXTexGenType, MaxTexMtx> texMtxTypes{};
+  std::bitset<MaxVtxAttr> indexAttr;
   u32 uniformSize = 0;
   bool usesFog : 1 = false;
   bool lightingEnabled : 1 = false;

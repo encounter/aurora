@@ -252,12 +252,14 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
       config.shaderConfig.attrMapping[i] = {};
       continue;
     }
+    const auto& attrFmt = vtxFmt.attrs[i];
     // Map attribute to its own storage
     config.shaderConfig.attrMapping[i] = StorageConfig{
         .attr = static_cast<GXAttr>(i),
-        .cnt = vtxFmt.attrs[i].cnt,
-        .compType = vtxFmt.attrs[i].type,
-        .frac = vtxFmt.attrs[i].frac,
+        .cnt = attrFmt.cnt,
+        .compType = attrFmt.type,
+        .frac = attrFmt.frac,
+        .le = attrFmt.le,
     };
   }
   config.shaderConfig.tevSwapTable = g_gxState.tevSwapTable;
@@ -282,9 +284,6 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
   if (g_gxState.alphaCompare) {
     config.shaderConfig.alphaCompare = g_gxState.alphaCompare;
   }
-  config.shaderConfig.indexedAttributeCount =
-      std::count_if(config.shaderConfig.vtxAttrs.begin(), config.shaderConfig.vtxAttrs.end(),
-                    [](const auto type) { return type == GX_INDEX8 || type == GX_INDEX16; });
   for (u8 i = 0; i < MaxTextures; ++i) {
     const auto& bind = g_gxState.textures[i];
     TextureConfig texConfig{};
