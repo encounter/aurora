@@ -175,7 +175,7 @@ struct TextureDecoderIA8 {
   static constexpr uint32_t BlockHeight = 4;
 
   static void decode_texel(Target* target, const Source* in, const uint32_t x) {
-    const auto texel = bswap(in[x]);
+    const auto texel = in[x];
     const uint8_t intensity = texel >> 8;
     target[x].r = intensity;
     target[x].g = intensity;

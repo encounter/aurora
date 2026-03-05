@@ -461,18 +461,13 @@ auto storage_load(const StorageConfig& mapping, u32 attrIdx) -> StorageLoadResul
     break;
   case GX_VA_CLR0:
   case GX_VA_CLR1:
-    switch (mapping.cnt) {
-    case GX_CLR_RGB:
-      compCnt = 3;
-      break;
-    case GX_CLR_RGBA:
-      compCnt = 4;
-      break;
-    default:
-      Log.fatal("storage_load: Unsupported {} component count {}", mapping.attr, mapping.cnt);
-    }
+    // special handling
     switch (mapping.compType) {
+    case GX_RGB565:
     case GX_RGB8:
+    case GX_RGBX8:
+    case GX_RGBA4:
+    case GX_RGBA6:
     case GX_RGBA8:
       compType = mapping.compType;
       break;
@@ -520,28 +515,52 @@ auto storage_load(const StorageConfig& mapping, u32 attrIdx) -> StorageLoadResul
   std::string_view arrType;
   std::string attrLoad;
 
-  // TODO: Colors are not interpreted correctly
-  switch (compType) {
-  case GX_U8:
-    attrLoad = fmt::format("fetch_u8_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
-    break;
-  case GX_S8:
-    attrLoad = fmt::format("fetch_s8_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
-    break;
-  case GX_U16:
-    attrLoad = fmt::format("fetch_u16_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
-    break;
-  case GX_S16:
-    attrLoad = fmt::format("fetch_s16_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
-    break;
-  case GX_F32:
-    attrLoad = fmt::format("fetch_f32_{}(&v_arr_{}, {}, {})", compCnt, attrName, idxFetch, le);
-    break;
-  case GX_RGBA8:
-    attrLoad = fmt::format("unpack4x8unorm(v_arr_{}[{}])", attrName, idxFetch);
-    break;
-  default:
-    Log.fatal("storage_load: Unimplemented {}", compType);
+  if (mapping.attr >= GX_VA_CLR0 && mapping.attr <= GX_VA_CLR1) {
+    switch (compType) {
+    case GX_RGB565:
+      attrLoad = fmt::format("fetch_rgb565(&v_arr_{}, {}, {})", attrName, idxFetch, le);
+      break;
+    case GX_RGB8:
+      attrLoad = fmt::format("fetch_rgb8(&v_arr_{}, {}, {})", attrName, idxFetch, le);
+      break;
+    case GX_RGBX8:
+      attrLoad = fmt::format("fetch_rgbx8(&v_arr_{}, {}, {})", attrName, idxFetch, le);
+      break;
+    case GX_RGBA4:
+      attrLoad = fmt::format("fetch_rgba4(&v_arr_{}, {}, {})", attrName, idxFetch, le);
+      break;
+    case GX_RGBA6:
+      attrLoad = fmt::format("fetch_rgba6(&v_arr_{}, {}, {})", attrName, idxFetch, le);
+      break;
+    case GX_RGBA8:
+      attrLoad = fmt::format("fetch_rgba8(&v_arr_{}, {}, {})", attrName, idxFetch, le);
+      break;
+    default:
+      Log.fatal("storage_load: Unimplemented {}", compType);
+    }
+  } else {
+    switch (compType) {
+    case GX_U8:
+      attrLoad = fmt::format("fetch_u8_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
+      break;
+    case GX_S8:
+      attrLoad = fmt::format("fetch_s8_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
+      break;
+    case GX_U16:
+      attrLoad = fmt::format("fetch_u16_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
+      break;
+    case GX_S16:
+      attrLoad = fmt::format("fetch_s16_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
+      break;
+    case GX_F32:
+      attrLoad = fmt::format("fetch_f32_{}(&v_arr_{}, {}, {})", compCnt, attrName, idxFetch, le);
+      break;
+    case GX_RGBA8:
+      attrLoad = fmt::format("unpack4x8unorm(v_arr_{}[{}])", attrName, idxFetch);
+      break;
+    default:
+      Log.fatal("storage_load: Unimplemented {}", compType);
+    }
   }
 
   return {
@@ -1272,10 +1291,10 @@ fn fetch_s8_3(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec
 // US8x4
 fn raw_fetch_u8_4(p: ptr<storage, array<u32>>, idx: u32) -> vec4u {{
   var word = p[idx];
-  var v0 = (word >> 24) & 0xFF;
-  var v1 = (word >> 16) & 0xFF;
-  var v2 = (word >>  8) & 0xFF;
-  var v3 = (word >>  0) & 0xFF;
+  var v0 = (word >>  0) & 0xFF;
+  var v1 = (word >>  8) & 0xFF;
+  var v2 = (word >> 16) & 0xFF;
+  var v3 = (word >> 24) & 0xFF;
   return vec4u(v0, v1, v2, v3);
 }}
 
@@ -1366,6 +1385,60 @@ fn fetch_u16_4(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> ve
 fn fetch_s16_4(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec4f {{
   var v = (bitcast<vec4i>(raw_fetch_u16_4(p, idx, le)) << vec4u(16)) >> vec4u(16);
   return vec4f(v) / f32(1u << frac);
+}}
+
+// Colors
+fn fetch_rgb565(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
+  var v = raw_fetch_u16_1(p, idx, le);
+  return vec4f(
+    f32((v >> 11) & 0x1F) / f32(0x1F),
+    f32((v >>  5) & 0x3F) / f32(0x3F),
+    f32((v >>  0) & 0x1F) / f32(0x1F),
+    1.0f,
+  );
+}}
+
+fn fetch_rgb8(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
+  var v = raw_fetch_u8_3(p, idx);
+  var v4 = vec4u(v.x, v.y, v.z, 255);
+  return vec4f(v4) / 255.0f;
+}}
+
+fn fetch_rgbx8(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
+  var v = raw_fetch_u8_4(p, idx);
+  var v4 = vec4u(v.x, v.y, v.z, 255);
+  return vec4f(v4) / 255.0f;
+}}
+
+fn fetch_rgba4(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
+  var v = raw_fetch_u16_1(p, idx, le);
+  return vec4f(
+    f32((v >> 12) & 0x0F) / f32(0x0F),
+    f32((v >>  8) & 0x0F) / f32(0x0F),
+    f32((v >>  4) & 0x0F) / f32(0x0F),
+    f32((v >>  0) & 0x0F) / f32(0x0F),
+  );
+}}
+
+fn fetch_rgba6(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
+  var w = raw_fetch_u8_3(p, idx);
+  var v: u32;
+  if (le) {{
+    v = (w.z << 16) | (w.y << 8) | (w.x);
+  }} else {{
+    v = (w.x << 16) | (w.y << 8) | (w.z);
+  }}
+  return vec4f(
+    f32((v >> 18) & 0x3F) / f32(0x3F),
+    f32((v >> 12) & 0x3F) / f32(0x3F),
+    f32((v >>  6) & 0x3F) / f32(0x3F),
+    f32((v >>  0) & 0x3F) / f32(0x3F),
+  );
+}}
+
+fn fetch_rgba8(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
+  var v = raw_fetch_u8_4(p, idx);
+  return vec4f(v) / 255.0f;
 }}
 
 {10}

@@ -452,7 +452,7 @@ bool initialize(AuroraBackend auroraBackend) {
     /* clang-format off */
 #if _WIN32
       "use_dxc",
-#ifdef NDEBUG
+#ifndef NDEBUG
       "emit_hlsl_debug_symbols",
 #endif
 #endif

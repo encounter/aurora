@@ -489,6 +489,16 @@ static void handle_bp(u32 value, bool bigEndian) {
   // Mask off the register ID from the value for field extraction
   // (the regId is stored in bits 24-31, data is in bits 0-23)
 
+  if (regId == 0xFE) {
+    g_gxState.bpRegCache[regId] = value & 0x00FFFFFF;
+    return;
+  } else {
+    u32 ssMask = g_gxState.bpRegCache[0xFE];
+    g_gxState.bpRegCache[0xFE] = 0x00FFFFFF;
+    value = (g_gxState.bpRegCache[regId] & ~ssMask) | (value & ssMask);
+    g_gxState.bpRegCache[regId] = value;
+  }
+
   // TEV color combiner stages (0xC0, 0xC2, 0xC4, ... 0xDE)
   if (regId >= 0xC0 && regId <= 0xDE && (regId & 1) == 0) {
     u32 stage = (regId - 0xC0) / 2;
@@ -1190,11 +1200,11 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
   // Post-transform texture matrices (0x500-0x5EF)
   else if (addr >= 0x500 && addr < 0x5F0) {
     u32 ptBase = addr - 0x500;
-    u32 mtxIdx = ptBase / 4; // Each PT matrix takes 4 XF slots (but stores 12 floats = 3x4)
+    u32 mtxIdx = ptBase / 12; // Each PT matrix takes 4 XF slots (but stores 12 floats = 3x4)
     // Actually PT matrices: (id - GX_PTTEXMTX0) * 4 + 0x500, and they're always 3x4
     // GX_PTTEXMTX0=64, spacing=3, so mtxIdx = ptBase/4 maps to ptTexMtxs index
     if (mtxIdx < gx::MaxPTTexMtx) {
-      u32 startOffset = ptBase - mtxIdx * 4;
+      u32 startOffset = ptBase % 12;
       // PT matrices store 12 floats (3x4)
       f32* flat = reinterpret_cast<f32*>(&g_gxState.ptTexMtxs[mtxIdx]);
       for (u32 i = 0; i < count && (startOffset + i) < 12; i++) {

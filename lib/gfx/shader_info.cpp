@@ -165,7 +165,7 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   } else {
     info.uniformSize += sizeof(PnMtx);
   }
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 8; i++) {
     if (info.indexAttr.test(GX_VA_TEX0MTXIDX + i)) {
       info.usesTexMtx = (1 << MaxTexMtx) - 1; // need all texmtx
       break;
