@@ -17,7 +17,16 @@ void GXGetVtxAttrFmt(GXVtxFmt idx, GXAttr attr, GXCompCnt* compCnt, GXCompType* 
   *shift = fmt.frac;
 }
 
-// TODO GXGetViewportv
+void GXGetViewportv(f32 *vp)
+{
+  const auto& cachedVp = aurora::gfx::get_viewport();
+  vp[0] = cachedVp.left;
+  vp[1] = cachedVp.top;
+  vp[2] = cachedVp.width;
+  vp[3] = cachedVp.height;
+  vp[4] = cachedVp.znear;
+  vp[5] = cachedVp.zfar;
+}
 
 void GXGetProjectionv(f32* p) {
   const auto& mtx = g_gxState.proj;

@@ -48,20 +48,6 @@ enum class CommandType {
   SetScissor,
   Draw,
 };
-struct SetViewportCommand {
-  float left;
-  float top;
-  float width;
-  float height;
-  float znear;
-  float zfar;
-
-  bool operator==(const SetViewportCommand& rhs) const {
-    return left == rhs.left && top == rhs.top && width == rhs.width && height == rhs.height && znear == rhs.znear &&
-           zfar == rhs.zfar;
-  }
-  bool operator!=(const SetViewportCommand& rhs) const { return !(*this == rhs); }
-};
 struct SetScissorCommand {
   uint32_t x;
   uint32_t y;
@@ -247,6 +233,10 @@ static void push_draw_command(ShaderDrawCommand data) {
 }
 
 static SetViewportCommand g_cachedViewport;
+const SetViewportCommand& get_viewport() noexcept {
+  return g_cachedViewport;
+}
+
 void set_viewport(float left, float top, float width, float height, float znear, float zfar) noexcept {
   SetViewportCommand cmd{left, top, width, height, znear, zfar};
   if (cmd != g_cachedViewport) {
