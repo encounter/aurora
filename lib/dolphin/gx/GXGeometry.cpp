@@ -1,6 +1,10 @@
 #include "gx.hpp"
 #include "__gx.h"
 
+#if !NDEBUG
+static volatile u8 forcePointerLoad;
+#endif
+
 static inline void SETVCDATTR(GXAttr attr, GXAttrType type) {
   switch (attr) {
   case GX_VA_PNMTXIDX:
@@ -204,9 +208,12 @@ void GXSetArray(GXAttr attr, const void* data, u32 size, u8 stride) {
   }
   u32 cpIdx = cpAttr - GX_VA_POS;
 
-  // Write CP array base and stride
-  GX_WRITE_SOME_REG2(8, cpIdx | 0xA0, reinterpret_cast<uintptr_t>(data), cpIdx - 12);
-  GX_WRITE_SOME_REG3(8, cpIdx | 0xB0, stride, cpIdx - 12);
+#if !NDEBUG
+  if (size > 0) {
+    // Cause trap if array pointer is invalid. Catch it in the act.
+    forcePointerLoad = *((u8*)data);
+  }
+#endif
 
   // Keep g_gxState in sync (TARGET_PC extension: store size)
   auto& array = g_gxState.arrays[attr];
