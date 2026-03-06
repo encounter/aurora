@@ -8,6 +8,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(AURORA_ENABLE_GX "Enable GX implementation and WebGPU renderer" ON)
+option(AURORA_ENABLE_DVD "Enable DVD implementation backed by nod" OFF)
 
 add_subdirectory(extern)
 
@@ -22,12 +23,16 @@ include(cmake/aurora_si.cmake)
 include(cmake/aurora_main.cmake)
 include(cmake/aurora_mtx.cmake)
 include(cmake/aurora_vi.cmake)
+if (AURORA_ENABLE_DVD)
+  include(cmake/aurora_dvd.cmake)
+endif ()
 
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_subdirectory(examples)
 endif ()
 
 if (NOT CMAKE_CROSSCOMPILING)
+  enable_testing()
   add_subdirectory(tests)
 endif ()
 
@@ -62,6 +67,11 @@ target_compile_definitions(aurora_shared PUBLIC AURORA TARGET_PC)
 target_include_directories(aurora_shared PUBLIC include)
 target_link_libraries(aurora_shared PUBLIC SDL3::SDL3-static fmt::fmt xxhash)
 target_link_libraries(aurora_shared PRIVATE absl::btree absl::flat_hash_map)
+
+if (AURORA_ENABLE_DVD)
+  target_sources(aurora_shared PRIVATE lib/dolphin/dvd/dvd.cpp)
+  target_link_libraries(aurora_shared PRIVATE nod::nod)
+endif ()
 
 if (AURORA_ENABLE_GX)
   target_sources(aurora_shared PRIVATE
