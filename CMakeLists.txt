@@ -28,6 +28,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif ()
 
 if (NOT CMAKE_CROSSCOMPILING)
+  enable_testing()
   add_subdirectory(tests)
 endif ()
 
