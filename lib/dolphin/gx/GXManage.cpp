@@ -1,7 +1,7 @@
 #include "gx.hpp"
 #include "__gx.h"
 
-#include "../../gfx/fifo.hpp"
+#include "../../gx/fifo.hpp"
 
 #include <cstring>
 
@@ -29,7 +29,7 @@ GXFifoObj* GXInit(void* base, u32 size) {
   __gx->vNum = 0;
 
   // Initialize FIFO subsystem
-  aurora::gfx::fifo::init();
+  aurora::gx::fifo::init();
   GXInitFifoBase(&sFifoObj, base, size);
   GXSetCPUFifo(&sFifoObj);
   GXSetGPFifo(&sFifoObj);

@@ -2,14 +2,12 @@
 #include <dolphin/gx.h>
 #include <aurora/math.hpp>
 
-#include "common.hpp"
 #include "../internal.hpp"
-#include "texture.hpp"
+#include "../gfx/common.hpp"
+#include "../gfx/texture.hpp"
 
 #include <absl/container/flat_hash_map.h>
 #include <type_traits>
-#include <utility>
-#include <variant>
 #include <cstring>
 #include <bitset>
 #include <memory>
@@ -46,7 +44,7 @@ constexpr float GX_LARGE_NUMBER = -1.0e+18f;
 constexpr float GX_LARGE_NUMBER = -1048576.0f;
 #endif
 
-namespace aurora::gfx::gx {
+namespace aurora::gx {
 constexpr bool EnableNormalVisualization = false;
 constexpr bool EnableDebugPrints = false;
 constexpr bool UsePerPixelLighting = true;
@@ -234,10 +232,14 @@ struct VtxAttrFmt {
   GXCompType type;
   u8 frac;
   u8 le = true;
+  u8 _p1 = 0;
+  u8 _p2 = 0;
 };
+static_assert(std::has_unique_object_representations_v<VtxAttrFmt>);
 struct VtxFmt {
   std::array<VtxAttrFmt, MaxVtxAttr> attrs;
 };
+static_assert(std::has_unique_object_representations_v<VtxFmt>);
 struct PnMtx {
   Mat3x4<float> pos;
   Mat3x4<float> nrm;
@@ -268,7 +270,7 @@ struct AttrArray {
   const void* data;
   u32 size;
   u8 stride;
-  Range cachedRange;
+  gfx::Range cachedRange;
 };
 inline bool operator==(const AttrArray& lhs, const AttrArray& rhs) {
   return lhs.data == rhs.data && lhs.size == rhs.size && lhs.stride == rhs.stride;
@@ -297,7 +299,7 @@ struct GXState {
   std::array<ColorChannelState, MaxColorChannels> colorChannelState;
   std::array<Light, GX::MaxLights> lights;
   std::array<TevStage, MaxTevStages> tevStages;
-  std::array<TextureBind, MaxTextures> textures;
+  std::array<gfx::TextureBind, MaxTextures> textures;
   std::array<GXTlutObj_, MaxTluts> tluts;
   std::array<Mat3x4<float>, MaxTexMtx> texMtxs;
   std::array<Mat3x4<float>, MaxPTTexMtx> ptTexMtxs;
@@ -314,9 +316,9 @@ struct GXState {
   std::array<IndStage, MaxIndStages> indStages;
   std::array<IndTexMtxInfo, MaxIndTexMtxs> indTexMtxs;
   std::array<AttrArray, GX_VA_MAX_ATTR> arrays;
-  ClipRect texCopySrc;
+  gfx::ClipRect texCopySrc;
   GXTexFmt texCopyFmt;
-  absl::flat_hash_map<void*, TextureHandle> copyTextures;
+  absl::flat_hash_map<void*, gfx::TextureHandle> copyTextures;
   bool depthCompare = true;
   bool depthUpdate = true;
   bool colorUpdate = true;
@@ -332,7 +334,7 @@ struct GXState {
 extern GXState g_gxState;
 
 void shutdown() noexcept;
-const TextureBind& get_texture(GXTexMapID id) noexcept;
+const gfx::TextureBind& get_texture(GXTexMapID id) noexcept;
 
 static inline bool requires_copy_conversion(const GXTexObj_& obj) {
   if (!obj.ref) {
@@ -372,9 +374,9 @@ static inline bool requires_load_conversion(const GXTexObj_& obj) {
 static inline bool is_palette_format(u32 fmt) { return fmt == GX_TF_C4 || fmt == GX_TF_C8 || fmt == GX_TF_C14X2; }
 
 struct TextureConfig {
-  u32 copyFmt = InvalidTextureFormat; // Underlying texture format
-  u32 loadFmt = InvalidTextureFormat; // Texture format being bound
-  bool renderTex = false;             // Perform conversion
+  u32 copyFmt = gfx::InvalidTextureFormat; // Underlying texture format
+  u32 loadFmt = gfx::InvalidTextureFormat; // Texture format being bound
+  bool renderTex = false;                  // Perform conversion
   u8 _p1 = 0;
   u8 _p2 = 0;
   u8 _p3 = 0;
@@ -407,20 +409,7 @@ struct ShaderConfig {
 };
 static_assert(std::has_unique_object_representations_v<ShaderConfig>);
 
-constexpr u32 GXPipelineConfigVersion = 6;
-struct PipelineConfig {
-  u32 version = GXPipelineConfigVersion;
-  ShaderConfig shaderConfig;
-  GXPrimitive primitive;
-  GXCompare depthFunc;
-  GXCullMode cullMode;
-  GXBlendMode blendMode;
-  GXBlendFactor blendFacSrc, blendFacDst;
-  GXLogicOp blendOp;
-  u32 dstAlpha;
-  bool depthCompare, depthUpdate, alphaUpdate, colorUpdate;
-};
-static_assert(std::has_unique_object_representations_v<PipelineConfig>);
+struct PipelineConfig;
 
 struct GXBindGroupLayouts {
   wgpu::BindGroupLayout uniformLayout;
@@ -428,9 +417,9 @@ struct GXBindGroupLayouts {
   wgpu::BindGroupLayout textureLayout;
 };
 struct GXBindGroups {
-  BindGroupRef uniformBindGroup;
-  BindGroupRef samplerBindGroup;
-  BindGroupRef textureBindGroup;
+  gfx::BindGroupRef uniformBindGroup;
+  gfx::BindGroupRef samplerBindGroup;
+  gfx::BindGroupRef textureBindGroup;
 };
 // Output info from shader generation
 struct ShaderInfo {
@@ -448,7 +437,7 @@ struct ShaderInfo {
   bool lightingEnabled : 1 = false;
 };
 struct BindGroupRanges {
-  std::array<Range, GX_VA_MAX_ATTR> vaRanges{};
+  std::array<gfx::Range, GX_VA_MAX_ATTR> vaRanges{};
 };
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept;
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderInfo& info,
@@ -458,4 +447,4 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
 GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const ShaderConfig& config) noexcept;
 GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& config,
                                const BindGroupRanges& ranges) noexcept;
-} // namespace aurora::gfx::gx
+} // namespace aurora::gx

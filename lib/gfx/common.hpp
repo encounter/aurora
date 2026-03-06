@@ -8,6 +8,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <aurora/gfx.h>
 #include <aurora/math.hpp>
 #include <webgpu/webgpu_cpp.h>
 #define XXH_STATIC_LINKING_ONLY
@@ -152,6 +153,7 @@ private:
 } // namespace aurora
 
 namespace aurora::gfx {
+extern AuroraStats g_stats;
 extern wgpu::Buffer g_vertexBuffer;
 extern wgpu::Buffer g_uniformBuffer;
 extern wgpu::Buffer g_indexBuffer;
@@ -198,7 +200,7 @@ struct TextureRef;
 using TextureHandle = std::shared_ptr<TextureRef>;
 
 enum class ShaderType : uint8_t {
-  Model = 1,
+  GX = 1,
 };
 
 void initialize();
@@ -213,26 +215,26 @@ void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> 
 
 Range push_verts(const uint8_t* data, size_t length);
 template <typename T>
-static inline Range push_verts(ArrayRef<T> data) {
+static Range push_verts(ArrayRef<T> data) {
   return push_verts(reinterpret_cast<const uint8_t*>(data.data()), data.size() * sizeof(T));
 }
 Range push_indices(const uint8_t* data, size_t length);
 template <typename T>
-static inline Range push_indices(ArrayRef<T> data) {
+static Range push_indices(ArrayRef<T> data) {
   return push_indices(reinterpret_cast<const uint8_t*>(data.data()), data.size() * sizeof(T));
 }
 Range push_uniform(const uint8_t* data, size_t length);
 template <typename T>
-static inline Range push_uniform(const T& data) {
+static Range push_uniform(const T& data) {
   return push_uniform(reinterpret_cast<const uint8_t*>(&data), sizeof(T));
 }
 Range push_storage(const uint8_t* data, size_t length);
 template <typename T>
-static inline Range push_storage(ArrayRef<T> data) {
+static Range push_storage(ArrayRef<T> data) {
   return push_storage(reinterpret_cast<const uint8_t*>(data.data()), data.size() * sizeof(T));
 }
 template <typename T>
-static inline Range push_storage(const T& data) {
+static Range push_storage(const T& data) {
   return push_storage(reinterpret_cast<const uint8_t*>(&data), sizeof(T));
 }
 Range push_texture_data(const uint8_t* data, size_t length, uint32_t bytesPerRow, uint32_t rowsPerImage);
@@ -246,7 +248,7 @@ const State& get_state();
 template <typename DrawData>
 void push_draw_command(DrawData data);
 template <typename DrawData>
-void merge_draw_command(DrawData data);
+DrawData* get_last_draw_command();
 
 template <typename PipelineConfig>
 PipelineRef pipeline_ref(PipelineConfig config);

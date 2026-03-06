@@ -1,8 +1,8 @@
 #include "shader_info.hpp"
 
-namespace aurora::gfx::gx {
+namespace aurora::gx {
 namespace {
-Module Log("aurora::gfx::gx");
+Module Log("aurora::gx");
 
 void color_arg_reg_info(GXTevColorArg arg, const TevStage& stage, ShaderInfo& info) {
   switch (arg) {
@@ -39,7 +39,7 @@ void color_arg_reg_info(GXTevColorArg arg, const TevStage& stage, ShaderInfo& in
     break;
   case GX_CC_RASC:
   case GX_CC_RASA:
-      info.sampledColorChannels.set(color_channel(stage.channelId));
+    info.sampledColorChannels.set(color_channel(stage.channelId));
     break;
   case GX_CC_KONST:
     switch (stage.kcSel) {
@@ -149,7 +149,7 @@ void alpha_arg_reg_info(GXTevAlphaArg arg, const TevStage& stage, ShaderInfo& in
 
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   ShaderInfo info{
-    .uniformSize = sizeof(Mat4x4<float>), // proj
+      .uniformSize = sizeof(Mat4x4<float>), // proj
   };
 
   for (int attr = 0; attr < config.vtxAttrs.size(); attr++) {
@@ -248,12 +248,12 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
     info.uniformSize += sizeof(Fog);
   }
   info.uniformSize += info.sampledTextures.count() * sizeof(u32);
-  info.uniformSize = align_uniform(info.uniformSize);
+  info.uniformSize = gfx::align_uniform(info.uniformSize);
   return info;
 }
 
-Range build_uniform(const ShaderInfo& info) noexcept {
-  auto [buf, range] = map_uniform(info.uniformSize);
+gfx::Range build_uniform(const ShaderInfo& info) noexcept {
+  auto [buf, range] = gfx::map_uniform(info.uniformSize);
   buf.append(g_gxState.proj);
 
   if (info.indexAttr.test(GX_VA_PNMTXIDX)) {
@@ -333,4 +333,4 @@ Range build_uniform(const ShaderInfo& info) noexcept {
   g_gxState.stateDirty = false;
   return range;
 }
-} // namespace aurora::gfx::gx
+} // namespace aurora::gx

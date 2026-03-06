@@ -102,13 +102,6 @@ void aurora_end_frame();
 AuroraBackend aurora_get_backend();
 const AuroraBackend* aurora_get_available_backends(size_t* count);
 
-#ifndef NDEBUG
-#define AURORA_GFX_DEBUG_GROUPS
-#endif
-
-void push_debug_group(const char* label);
-void pop_debug_group();
-
 #ifdef __cplusplus
 }
 #endif
