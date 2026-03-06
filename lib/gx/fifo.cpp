@@ -5,9 +5,8 @@
 #include <cstring>
 #include <vector>
 
-static aurora::Module Log("aurora::gfx::fifo");
-
-namespace aurora::gfx::fifo {
+namespace aurora::gx::fifo {
+static Module Log("aurora::gx::fifo");
 
 // Internal FIFO buffer for inline rendering
 static std::vector<u8> sInternalBuffer;
@@ -87,16 +86,12 @@ void drain() {
     return;
   }
   // Process the internal buffer through the command processor
-  command_processor::process(sInternalBuffer.data(), static_cast<u32>(sInternalBuffer.size()), true);
+  process(sInternalBuffer.data(), static_cast<u32>(sInternalBuffer.size()), true);
   sInternalBuffer.clear();
-}
-
-void process(const u8* data, u32 size, bool bigEndian) {
-  command_processor::process(data, size, bigEndian);
 }
 
 const u8* get_buffer_data() { return sInternalBuffer.data(); }
 u32 get_buffer_size() { return static_cast<u32>(sInternalBuffer.size()); }
 void clear_buffer() { sInternalBuffer.clear(); }
 
-} // namespace aurora::gfx::fifo
+} // namespace aurora::gx::fifo

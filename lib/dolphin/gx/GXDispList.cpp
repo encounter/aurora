@@ -1,7 +1,8 @@
 #include "gx.hpp"
 #include "__gx.h"
 
-#include "../../gfx/fifo.hpp"
+#include "../../gx/command_processor.hpp"
+#include "../../gx/fifo.hpp"
 
 #include <cstring>
 
@@ -24,7 +25,7 @@ void GXBeginDisplayList(void* list, u32 size) {
   __gx->inDispList = 1;
 
   // Redirect FIFO writes to the user-provided buffer
-  aurora::gfx::fifo::begin_display_list(static_cast<u8*>(list), size);
+  aurora::gx::fifo::begin_display_list(static_cast<u8*>(list), size);
 }
 
 u32 GXEndDisplayList() {
@@ -34,7 +35,7 @@ u32 GXEndDisplayList() {
   }
 
   // End FIFO redirection and get the byte count (ROUNDUP32)
-  u32 bytesWritten = aurora::gfx::fifo::end_display_list();
+  u32 bytesWritten = aurora::gx::fifo::end_display_list();
 
   // Restore saved shadow register state
   if (__gx->dlSaveContext != 0) {
@@ -60,10 +61,10 @@ void GXCallDisplayList(const void* data, u32 nbytes) {
   // Drain the internal FIFO so that any pending CP register writes
   // (VCD, VAT, etc.) are processed into g_gxState before the display
   // list's draw commands reference them.
-  aurora::gfx::fifo::drain();
+  aurora::gx::fifo::drain();
 
   // Process the display list through the command processor
-  aurora::gfx::fifo::process(static_cast<const u8*>(data), nbytes, true);
+  aurora::gx::fifo::process(static_cast<const u8*>(data), nbytes, true);
 }
 
 void GXCallDisplayListLE(const void* data, u32 nbytes) {
@@ -80,9 +81,9 @@ void GXCallDisplayListLE(const void* data, u32 nbytes) {
   // Drain the internal FIFO so that any pending CP register writes
   // (VCD, VAT, etc.) are processed into g_gxState before the display
   // list's draw commands reference them.
-  aurora::gfx::fifo::drain();
+  aurora::gx::fifo::drain();
 
   // Process the display list through the command processor (little-endian)
-  aurora::gfx::fifo::process(static_cast<const u8*>(data), nbytes, false);
+  aurora::gx::fifo::process(static_cast<const u8*>(data), nbytes, false);
 }
 }

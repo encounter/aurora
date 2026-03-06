@@ -2,9 +2,10 @@
 
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"
-#include "model/shader.hpp"
+#include "../gx/pipeline.hpp"
 #include "texture.hpp"
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <fstream>
@@ -25,7 +26,7 @@ using webgpu::g_queue;
 std::vector<std::string> g_debugGroupStack;
 #endif
 
-constexpr uint64_t UniformBufferSize = 25165824; // 24mb
+constexpr uint64_t UniformBufferSize = 3145728;  // 3mb
 constexpr uint64_t VertexBufferSize = 3145728;   // 3mb
 constexpr uint64_t IndexBufferSize = 1048576;    // 1mb
 constexpr uint64_t StorageBufferSize = 8388608;  // 8mb
@@ -35,12 +36,12 @@ constexpr uint64_t StagingBufferSize =
     UniformBufferSize + VertexBufferSize + IndexBufferSize + StorageBufferSize + TextureUploadSize;
 
 struct ShaderState {
-  model::State model;
+  gx::State gx;
 };
 struct ShaderDrawCommand {
   ShaderType type;
   union {
-    model::DrawData model;
+    gx::DrawData gx;
   };
 };
 enum class CommandType {
@@ -106,8 +107,6 @@ static absl::flat_hash_map<PipelineRef, wgpu::RenderPipeline> g_pipelines;
 static std::deque<std::pair<PipelineRef, NewPipelineCallback>> g_queuedPipelines;
 static absl::flat_hash_map<BindGroupRef, wgpu::BindGroup> g_cachedBindGroups;
 static absl::flat_hash_map<SamplerRef, wgpu::Sampler> g_cachedSamplers;
-std::atomic_uint32_t queuedPipelines;
-std::atomic_uint32_t createdPipelines;
 
 static ByteBuffer g_verts;
 static ByteBuffer g_uniforms;
@@ -125,12 +124,9 @@ static ShaderState g_state;
 static PipelineRef g_currentPipeline;
 
 // for imgui debug
-size_t g_drawCallCount;
-size_t g_mergedDrawCallCount;
-size_t g_lastVertSize;
-size_t g_lastUniformSize;
-size_t g_lastIndexSize;
-size_t g_lastStorageSize;
+AuroraStats g_stats{};
+std::atomic_ref queuedPipelines{g_stats.queuedPipelines};
+std::atomic_ref createdPipelines{g_stats.createdPipelines};
 
 using CommandList = std::vector<Command>;
 struct RenderPass {
@@ -215,27 +211,25 @@ static inline void push_command(CommandType type, const Command::Data& data) {
   });
 }
 
-static inline Command& get_last_draw_command(ShaderType type) {
-  CHECK(g_currentRenderPass != UINT32_MAX, "No last command");
+template <>
+gx::DrawData* get_last_draw_command() {
+  if (g_currentRenderPass >= g_renderPasses.size()) {
+    return nullptr;
+  }
   auto& last = g_renderPasses[g_currentRenderPass].commands.back();
-  if (last.type != CommandType::Draw || last.data.draw.type != type)
-    UNLIKELY {
-      FATAL("Last command invalid: {} {}, expected {} {}", magic_enum::enum_name(last.type),
-            magic_enum::enum_name(last.data.draw.type), magic_enum::enum_name(CommandType::Draw),
-            magic_enum::enum_name(type));
-    }
-  return last;
+  if (last.type != CommandType::Draw || last.data.draw.type != ShaderType::GX) {
+    return nullptr;
+  }
+  return &last.data.draw.gx;
 }
 
 static void push_draw_command(ShaderDrawCommand data) {
   push_command(CommandType::Draw, Command::Data{.draw = data});
-  ++g_drawCallCount;
+  ++g_stats.drawCallCount;
 }
 
 static Viewport g_cachedViewport;
-const Viewport& get_viewport() noexcept {
-  return g_cachedViewport;
-}
+const Viewport& get_viewport() noexcept { return g_cachedViewport; }
 
 void set_viewport(float left, float top, float width, float height, float znear, float zfar) noexcept {
   Viewport cmd{left, top, width, height, znear, zfar};
@@ -265,28 +259,14 @@ void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> 
   ++g_currentRenderPass;
 }
 
-// template <>
-// void merge_draw_command(stream::DrawData data) {
-//   auto& last = get_last_draw_command(ShaderType::Stream).data.draw.stream;
-//   CHECK(last.vertRange.offset + last.vertRange.size == data.vertRange.offset, "Invalid vertex merge range: {} -> {}",
-//         last.vertRange.offset + last.vertRange.size, data.vertRange.offset);
-//   CHECK(last.indexRange.offset + last.indexRange.size == data.indexRange.offset, "Invalid index merge range: {} ->
-//   {}",
-//         last.indexRange.offset + last.indexRange.size, data.indexRange.offset);
-//   last.vertRange.size += data.vertRange.size;
-//   last.indexRange.size += data.indexRange.size;
-//   last.indexCount += data.indexCount;
-//   ++g_mergedDrawCallCount;
-// }
-
 template <>
-void push_draw_command(model::DrawData data) {
-  push_draw_command(ShaderDrawCommand{.type = ShaderType::Model, .model = data});
+void push_draw_command(gx::DrawData data) {
+  push_draw_command(ShaderDrawCommand{.type = ShaderType::GX, .gx = data});
 }
 
 template <>
-PipelineRef pipeline_ref(model::PipelineConfig config) {
-  return find_pipeline(ShaderType::Model, config, [=]() { return create_pipeline(g_state.model, config); });
+PipelineRef pipeline_ref(gx::PipelineConfig config) {
+  return find_pipeline(ShaderType::GX, config, [=]() { return create_pipeline(g_state.gx, config); });
 }
 
 static void pipeline_worker() {
@@ -351,15 +331,15 @@ void load_pipeline_cache() {
       u32 size = *reinterpret_cast<const u32*>(pipelineCache.data() + offset);
       offset += sizeof(u32);
       switch (type) {
-      case ShaderType::Model: {
-        if (size != sizeof(model::PipelineConfig)) {
+      case ShaderType::GX: {
+        if (size != sizeof(gx::PipelineConfig)) {
           break;
         }
-        const auto config = *reinterpret_cast<const model::PipelineConfig*>(pipelineCache.data() + offset);
+        const auto config = *reinterpret_cast<const gx::PipelineConfig*>(pipelineCache.data() + offset);
         if (config.version != gx::GXPipelineConfigVersion) {
           break;
         }
-        find_pipeline(type, config, [=]() { return model::create_pipeline(g_state.model, config); }, true);
+        find_pipeline(type, config, [=]() { return gx::create_pipeline(g_state.gx, config); }, true);
         break;
       }
       default:
@@ -423,7 +403,7 @@ void initialize() {
   }
   map_staging_buffer();
 
-  g_state.model = model::construct_state();
+  g_state.gx = gx::construct_state();
 
   load_pipeline_cache();
 }
@@ -494,8 +474,8 @@ void begin_frame() {
   mapBuffer(g_storage, StorageBufferSize);
   mapBuffer(g_textureUpload, TextureUploadSize);
 
-  g_drawCallCount = 0;
-  g_mergedDrawCallCount = 0;
+  g_stats.drawCallCount = 0;
+  g_stats.mergedDrawCallCount = 0;
 
   g_renderPasses.emplace_back();
   g_renderPasses[0].clearColor = gx::g_gxState.clearColor;
@@ -524,10 +504,10 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
     return writeSize;
   };
   g_stagingBuffers[currentStagingBuffer].Unmap();
-  g_lastVertSize = writeBuffer(g_verts, g_vertexBuffer, VertexBufferSize, "Vertex");
-  g_lastUniformSize = writeBuffer(g_uniforms, g_uniformBuffer, UniformBufferSize, "Uniform");
-  g_lastIndexSize = writeBuffer(g_indices, g_indexBuffer, IndexBufferSize, "Index");
-  g_lastStorageSize = writeBuffer(g_storage, g_storageBuffer, StorageBufferSize, "Storage");
+  g_stats.lastVertSize = writeBuffer(g_verts, g_vertexBuffer, VertexBufferSize, "Vertex");
+  g_stats.lastUniformSize = writeBuffer(g_uniforms, g_uniformBuffer, UniformBufferSize, "Uniform");
+  g_stats.lastIndexSize = writeBuffer(g_indices, g_indexBuffer, IndexBufferSize, "Index");
+  g_stats.lastStorageSize = writeBuffer(g_storage, g_storageBuffer, StorageBufferSize, "Storage");
   {
     // Perform texture copies
     for (const auto& item : g_textureUploads) {
@@ -667,8 +647,8 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
     case CommandType::Draw: {
       const auto& draw = cmd.data.draw;
       switch (draw.type) {
-      case ShaderType::Model:
-        model::render(g_state.model, draw.model, pass);
+      case ShaderType::GX:
+        gx::render(g_state.gx, draw.gx, pass);
         break;
       }
     } break;
@@ -809,3 +789,5 @@ void pop_debug_group() {
   aurora::gfx::g_debugGroupStack.pop_back();
 #endif
 }
+
+const AuroraStats* aurora_get_stats() { return &aurora::gfx::g_stats; }
