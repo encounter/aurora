@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#include <dolphin/gx/GXAurora.h>
 #include <dolphin/gx/GXBump.h>
 #include <dolphin/gx/GXCommandList.h>
 #include <dolphin/gx/GXCpu2Efb.h>

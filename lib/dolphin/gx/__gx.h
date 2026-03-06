@@ -7,13 +7,15 @@ namespace aurora::gx::fifo {
 void write_u8(u8 val);
 void write_u16(u16 val);
 void write_u32(u32 val);
+void write_u64(u64 val);
 void write_f32(f32 val);
-} // namespace aurora::gfx::fifo
+} // namespace aurora::gx::fifo
 
 // FIFO write macros - route through software FIFO buffer
 #define GX_WRITE_U8(ub) aurora::gx::fifo::write_u8(static_cast<u8>(ub))
 #define GX_WRITE_U16(us) aurora::gx::fifo::write_u16(static_cast<u16>(us))
 #define GX_WRITE_U32(ui) aurora::gx::fifo::write_u32(static_cast<u32>(ui))
+#define GX_WRITE_U64(ui) aurora::gx::fifo::write_u64(static_cast<u64>(ui))
 #define GX_WRITE_F32(f) aurora::gx::fifo::write_f32(static_cast<f32>(f))
 
 // XF register write: opcode 0x10, address in XF space (0x1000+addr), then value
@@ -73,6 +75,19 @@ void write_f32(f32 val);
 #define SET_REG_FIELD(line, reg, size, shift, val)                                                                     \
   do {                                                                                                                 \
     (reg) = ((u32)(reg) & ~(((1u << (size)) - 1) << (shift))) | ((u32)(val) << (shift));                               \
+  } while (0)
+
+#define GX_WRITE_AURORA(cmd)     \
+  do {                           \
+    GX_WRITE_U8(GX_LOAD_AURORA); \
+    GX_WRITE_U16(cmd);           \
+  } while (0)
+
+#define GX_WRITE_CP_REG(addr, value)  \
+  do {                                \
+  GX_WRITE_U8(GX_LOAD_CP_REG);        \
+  GX_WRITE_U8(addr);                  \
+  GX_WRITE_U32(value);                \
   } while (0)
 
 // Shadow register struct - mirrors the hardware GX state

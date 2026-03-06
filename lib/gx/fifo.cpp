@@ -51,6 +51,17 @@ void write_u32(u32 val) {
   write_byte(static_cast<u8>(val & 0xFF));
 }
 
+void write_u64(u64 val) {
+  write_byte(static_cast<u8>((val >> 56) & 0xFF));
+  write_byte(static_cast<u8>((val >> 48) & 0xFF));
+  write_byte(static_cast<u8>((val >> 40) & 0xFF));
+  write_byte(static_cast<u8>((val >> 32) & 0xFF));
+  write_byte(static_cast<u8>((val >> 24) & 0xFF));
+  write_byte(static_cast<u8>((val >> 16) & 0xFF));
+  write_byte(static_cast<u8>((val >> 8) & 0xFF));
+  write_byte(static_cast<u8>(val & 0xFF));
+}
+
 void write_f32(f32 val) {
   u32 bits;
   std::memcpy(&bits, &val, sizeof(bits));

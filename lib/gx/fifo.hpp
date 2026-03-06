@@ -12,6 +12,7 @@ void init();
 void write_u8(u8 val);
 void write_u16(u16 val);
 void write_u32(u32 val);
+void write_u64(u64 val);
 void write_f32(f32 val);
 
 // Display list recording: redirect FIFO writes to a user-provided buffer

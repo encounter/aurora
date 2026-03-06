@@ -58,6 +58,23 @@ constexpr T bswap(T val) noexcept {
 }
 
 template <typename T>
+  requires(sizeof(T) == sizeof(uint64_t) && std::is_arithmetic_v<T>)
+constexpr T bswap(T val) noexcept {
+  union {
+    uint64_t u;
+    T t;
+  } v{.t = val};
+#if __GNUC__
+  v.u = __builtin_bswap64(v.u);
+#elif _WIN32
+  v.u = _byteswap_uint64(v.u);
+#else
+  static_assert(false, "bswap 64bit not implemented on this target");
+#endif
+  return v.t;
+}
+
+template <typename T>
   requires(std::is_enum_v<T>)
 auto underlying(T value) -> std::underlying_type_t<T> {
   return static_cast<std::underlying_type_t<T>>(value);
