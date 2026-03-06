@@ -10,7 +10,7 @@ static __GXData_struct sSavedGXData;
 
 extern "C" {
 void GXBeginDisplayList(void* list, u32 size) {
-  CHECK(!aurora::gfx::fifo::in_display_list(), "Display list began twice!");
+  CHECK(!aurora::gx::fifo::in_display_list(), "Display list began twice!");
 
   // Flush any pending dirty state before recording
   if (__gx->dirtyState != 0) {
