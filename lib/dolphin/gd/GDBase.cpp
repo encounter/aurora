@@ -1,5 +1,6 @@
 #include <dolphin/gd.h>
 #include <dolphin/os.h>
+#include "gd.hpp"
 
 GDLObj* __GDCurrentDL = NULL;
 static GDOverflowCb overflowcb = NULL;
@@ -32,7 +33,7 @@ void GDOverflowed(void) {
     if (overflowcb) {
         (*overflowcb)();
     } else {
-        ASSERTMSGLINE(77, 0, "GDWrite: display list overflowed");
+        Log.fatal("GDWrite: display list overflowed");
     }
 }
 
