@@ -24,7 +24,7 @@ typedef enum {
   BACKEND_NULL,
 } AuroraBackend;
 
-typedef enum {
+typedef enum : uint8_t {
   LOG_DEBUG,
   LOG_INFO,
   LOG_WARNING,
@@ -70,6 +70,7 @@ typedef struct {
   uint32_t iconWidth;
   uint32_t iconHeight;
   AuroraLogCallback logCallback;
+  AuroraLogLevel logLevel;
   AuroraImGuiInitCallback imGuiInitCallback;
 
   /*
