@@ -190,7 +190,7 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderIn
                                     const char* label) noexcept {
   const wgpu::DepthStencilState depthStencil{
       .format = g_graphicsConfig.depthFormat,
-      .depthWriteEnabled = config.depthUpdate,
+      .depthWriteEnabled = config.depthCompare && config.depthUpdate,
       .depthCompare = config.depthCompare ? to_compare_function(config.depthFunc) : wgpu::CompareFunction::Always,
   };
   const auto blendState =
