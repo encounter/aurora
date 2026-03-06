@@ -35,8 +35,8 @@ add_executable(gx_fifo_tests
   ../lib/dolphin/gx/GXTransform.cpp
   ../lib/dolphin/gx/GXVert.cpp
   # FIFO/command processor (encoder + decoder)
-  ../lib/gfx/fifo.cpp
-  ../lib/gfx/command_processor.cpp
+  ../lib/gx/fifo.cpp
+  ../lib/gx/command_processor.cpp
 )
 
 target_include_directories(gx_fifo_tests PRIVATE

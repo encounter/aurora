@@ -1,13 +1,13 @@
 add_library(aurora_gx STATIC
         lib/gfx/common.cpp
         lib/gfx/texture.cpp
-        lib/gfx/gx.cpp
-        lib/gfx/gx_shader.cpp
         lib/gfx/texture_convert.cpp
-        lib/gfx/shader_info.cpp
-        lib/gfx/model/shader.cpp
-        lib/gfx/fifo.cpp
-        lib/gfx/command_processor.cpp
+        lib/gx/command_processor.cpp
+        lib/gx/fifo.cpp
+        lib/gx/gx.cpp
+        lib/gx/pipeline.cpp
+        lib/gx/shader.cpp
+        lib/gx/shader_info.cpp
         lib/dolphin/gx/GXBump.cpp
         lib/dolphin/gx/GXCull.cpp
         lib/dolphin/gx/GXDispList.cpp

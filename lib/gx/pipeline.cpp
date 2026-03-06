@@ -1,20 +1,14 @@
-#include "shader.hpp"
+#include "pipeline.hpp"
 
-#include "../../webgpu/gpu.hpp"
-#include "../gx_fmt.hpp"
-#include "../command_processor.hpp"
-#include "../shader_info.hpp"
+#include "../webgpu/gpu.hpp"
+#include "gx_fmt.hpp"
+#include "command_processor.hpp"
+#include "shader_info.hpp"
 
 #include <absl/container/flat_hash_map.h>
 
-namespace aurora::gfx::model {
-static Module Log("aurora::gfx::model");
-
-void queue_surface(const u8* dlStart, u32 dlSize, bool bigEndian) noexcept {
-  // Process the display list through the command processor, which handles
-  // state changes (BP/CP/XF registers) and draw commands
-  aurora::gfx::command_processor::process(dlStart, dlSize, bigEndian);
-}
+namespace aurora::gx {
+static Module Log("aurora::gx");
 
 State construct_state() { return {}; }
 
@@ -111,7 +105,7 @@ wgpu::RenderPipeline create_pipeline(const State& state, const PipelineConfig& c
 }
 
 void render(const State& state, const DrawData& data, const wgpu::RenderPassEncoder& pass) {
-  if (!bind_pipeline(data.pipeline, pass)) {
+  if (!gfx::bind_pipeline(data.pipeline, pass)) {
     return;
   }
 
@@ -125,19 +119,17 @@ void render(const State& state, const DrawData& data, const wgpu::RenderPassEnco
     offsets[bindIdx] = range.offset;
     ++bindIdx;
   }
-  pass.SetBindGroup(0, find_bind_group(data.bindGroups.uniformBindGroup), bindIdx, offsets.data());
+  pass.SetBindGroup(0, gfx::find_bind_group(data.bindGroups.uniformBindGroup), bindIdx, offsets.data());
   if (data.bindGroups.samplerBindGroup && data.bindGroups.textureBindGroup) {
-    pass.SetBindGroup(1, find_bind_group(data.bindGroups.samplerBindGroup));
-    pass.SetBindGroup(2, find_bind_group(data.bindGroups.textureBindGroup));
+    pass.SetBindGroup(1, gfx::find_bind_group(data.bindGroups.samplerBindGroup));
+    pass.SetBindGroup(2, gfx::find_bind_group(data.bindGroups.textureBindGroup));
   }
-  pass.SetVertexBuffer(0, g_vertexBuffer, data.vertRange.offset, data.vertRange.size);
-  pass.SetIndexBuffer(g_indexBuffer, wgpu::IndexFormat::Uint16, data.idxRange.offset, data.idxRange.size);
+  pass.SetVertexBuffer(0, gfx::g_vertexBuffer, data.vertRange.offset, data.vertRange.size);
+  pass.SetIndexBuffer(gfx::g_indexBuffer, wgpu::IndexFormat::Uint16, data.idxRange.offset, data.idxRange.size);
   if (data.dstAlpha != UINT32_MAX) {
     const wgpu::Color color{0.f, 0.f, 0.f, data.dstAlpha / 255.f};
     pass.SetBlendConstant(&color);
   }
   pass.DrawIndexed(data.indexCount);
 }
-} // namespace aurora::gfx::model
-
-static absl::flat_hash_map<aurora::HashType, aurora::gfx::Range> sCachedRanges;
+} // namespace aurora::gx

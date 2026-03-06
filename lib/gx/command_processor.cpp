@@ -1,8 +1,9 @@
 #include "command_processor.hpp"
 
+#include "../gfx/common.hpp"
 #include "gx.hpp"
 #include "gx_fmt.hpp"
-#include "model/shader.hpp"
+#include "pipeline.hpp"
 #include "shader_info.hpp"
 #include "../internal.hpp"
 
@@ -11,19 +12,13 @@
 #include <cmath>
 #include <cstring>
 
-static aurora::Module Log("aurora::gfx::cp");
-
-using aurora::gfx::gx::g_gxState;
-
-namespace aurora::gfx::command_processor {
+namespace aurora::gx::fifo {
+static Module Log("aurora::gx::fifo");
 
 struct DisplayListCache {
   ByteBuffer vtxBuf;
-  ByteBuffer idxBuf;
-  GXVtxFmt fmt;
 
-  DisplayListCache(ByteBuffer&& vtxBuf, ByteBuffer&& idxBuf, GXVtxFmt fmt)
-  : vtxBuf(std::move(vtxBuf)), idxBuf(std::move(idxBuf)), fmt(fmt) {}
+  DisplayListCache(ByteBuffer&& vtxBuf) : vtxBuf(std::move(vtxBuf)) {}
 };
 
 static absl::flat_hash_map<HashType, DisplayListCache> sCachedDisplayLists;
@@ -79,13 +74,13 @@ static u32 prepare_vtx_buffer(ByteBuffer* outBuf, GXVtxFmt vtxfmt, const u8* ptr
         vtxSize += 2;
         outVtxSize += 12;
         break;
-	  case COMBINE(GX_VA_POS, GX_POS_XY, GX_U16):
+      case COMBINE(GX_VA_POS, GX_POS_XY, GX_U16):
         attrArrays[attr].count = 2;
         attrArrays[attr].type = GX_U16;
         vtxSize += 4;
         outVtxSize += 12;
         break;
-    case COMBINE(GX_VA_POS, GX_POS_XY, GX_S16):
+      case COMBINE(GX_VA_POS, GX_POS_XY, GX_S16):
         attrArrays[attr].count = 2;
         attrArrays[attr].type = GX_S16;
         vtxSize += 4;
@@ -459,7 +454,7 @@ void process(const u8* data, u32 size, bool bigEndian) {
             else
               hex += fmt::format(" {:02x}", data[i]);
           }
-          Log.error("  hex dump (pos {}-{}):{}",dumpStart, dumpEnd - 1, hex);
+          Log.error("  hex dump (pos {}-{}):{}", dumpStart, dumpEnd - 1, hex);
         }
         FATAL("command_processor: unknown opcode 0x{:02X} at pos {}", cmd, pos - 1);
       }
@@ -469,16 +464,14 @@ void process(const u8* data, u32 size, bool bigEndian) {
 }
 
 // Helper to extract bit fields from a 32-bit register
-static inline u32 bp_get(u32 reg, u32 size, u32 shift) {
-  return (reg >> shift) & ((1u << size) - 1);
-}
+static u32 bp_get(u32 reg, u32 size, u32 shift) { return reg >> shift & (1u << size) - 1; }
 
 // Helper to convert packed RGBA8 to Vec4<float>
-static inline aurora::Vec4<float> unpack_color(u32 packed) {
+static Vec4<float> unpack_color(u32 packed) {
   return {
-      static_cast<float>((packed >> 24) & 0xFF) / 255.f,
-      static_cast<float>((packed >> 16) & 0xFF) / 255.f,
-      static_cast<float>((packed >> 8) & 0xFF) / 255.f,
+      static_cast<float>(packed >> 24 & 0xFF) / 255.f,
+      static_cast<float>(packed >> 16 & 0xFF) / 255.f,
+      static_cast<float>(packed >> 8 & 0xFF) / 255.f,
       static_cast<float>(packed & 0xFF) / 255.f,
   };
 }
@@ -502,7 +495,7 @@ static void handle_bp(u32 value, bool bigEndian) {
   // TEV color combiner stages (0xC0, 0xC2, 0xC4, ... 0xDE)
   if (regId >= 0xC0 && regId <= 0xDE && (regId & 1) == 0) {
     u32 stage = (regId - 0xC0) / 2;
-    if (stage < gx::MaxTevStages) {
+    if (stage < MaxTevStages) {
       auto& s = g_gxState.tevStages[stage];
       s.colorPass.d = static_cast<GXTevColorArg>(bp_get(value, 4, 0));
       s.colorPass.c = static_cast<GXTevColorArg>(bp_get(value, 4, 4));
@@ -530,7 +523,7 @@ static void handle_bp(u32 value, bool bigEndian) {
   // TEV alpha combiner stages (0xC1, 0xC3, 0xC5, ... 0xDF)
   if (regId >= 0xC1 && regId <= 0xDF && (regId & 1) == 1) {
     u32 stage = (regId - 0xC1) / 2;
-    if (stage < gx::MaxTevStages) {
+    if (stage < MaxTevStages) {
       auto& s = g_gxState.tevStages[stage];
       s.tevSwapRas = static_cast<GXTevSwapSel>(bp_get(value, 2, 0));
       s.tevSwapTex = static_cast<GXTevSwapSel>(bp_get(value, 2, 2));
@@ -586,12 +579,24 @@ static void handle_bp(u32 value, bool bigEndian) {
     break;
 
   // TEV indirect stages (0x10-0x1F)
-  case 0x10: case 0x11: case 0x12: case 0x13:
-  case 0x14: case 0x15: case 0x16: case 0x17:
-  case 0x18: case 0x19: case 0x1A: case 0x1B:
-  case 0x1C: case 0x1D: case 0x1E: case 0x1F: {
+  case 0x10:
+  case 0x11:
+  case 0x12:
+  case 0x13:
+  case 0x14:
+  case 0x15:
+  case 0x16:
+  case 0x17:
+  case 0x18:
+  case 0x19:
+  case 0x1A:
+  case 0x1B:
+  case 0x1C:
+  case 0x1D:
+  case 0x1E:
+  case 0x1F: {
     u32 stage = regId - 0x10;
-    if (stage < gx::MaxTevStages) {
+    if (stage < MaxTevStages) {
       auto& s = g_gxState.tevStages[stage];
       s.indTexStage = static_cast<GXIndTexStageID>(bp_get(value, 2, 0));
       s.indTexFormat = static_cast<GXIndTexFormat>(bp_get(value, 2, 2));
@@ -608,7 +613,8 @@ static void handle_bp(u32 value, bool bigEndian) {
   }
 
   // Scissor registers (0x20, 0x21)
-  case 0x20: case 0x21: {
+  case 0x20:
+  case 0x21: {
     Log.warn("Unimplemented: BP register {:x} (scissor)", regId);
     break;
   }
@@ -621,11 +627,11 @@ static void handle_bp(u32 value, bool bigEndian) {
 
   // Indirect texture scale (0x25, 0x26)
   case 0x25: {
-    if (gx::MaxIndStages > 0) {
+    if (MaxIndStages > 0) {
       g_gxState.indStages[0].scaleS = static_cast<GXIndTexScale>(bp_get(value, 4, 0));
       g_gxState.indStages[0].scaleT = static_cast<GXIndTexScale>(bp_get(value, 4, 4));
     }
-    if (gx::MaxIndStages > 1) {
+    if (MaxIndStages > 1) {
       g_gxState.indStages[1].scaleS = static_cast<GXIndTexScale>(bp_get(value, 4, 8));
       g_gxState.indStages[1].scaleT = static_cast<GXIndTexScale>(bp_get(value, 4, 12));
     }
@@ -633,11 +639,11 @@ static void handle_bp(u32 value, bool bigEndian) {
     break;
   }
   case 0x26: {
-    if (gx::MaxIndStages > 2) {
+    if (MaxIndStages > 2) {
       g_gxState.indStages[2].scaleS = static_cast<GXIndTexScale>(bp_get(value, 4, 0));
       g_gxState.indStages[2].scaleT = static_cast<GXIndTexScale>(bp_get(value, 4, 4));
     }
-    if (gx::MaxIndStages > 3) {
+    if (MaxIndStages > 3) {
       g_gxState.indStages[3].scaleS = static_cast<GXIndTexScale>(bp_get(value, 4, 8));
       g_gxState.indStages[3].scaleT = static_cast<GXIndTexScale>(bp_get(value, 4, 12));
     }
@@ -647,7 +653,7 @@ static void handle_bp(u32 value, bool bigEndian) {
 
   // Indirect texture reference (0x27)
   case 0x27: {
-    for (u32 i = 0; i < gx::MaxIndStages; i++) {
+    for (u32 i = 0; i < MaxIndStages; i++) {
       g_gxState.indStages[i].texMapId = static_cast<GXTexMapID>(bp_get(value, 3, i * 6));
       g_gxState.indStages[i].texCoordId = static_cast<GXTexCoordID>(bp_get(value, 3, i * 6 + 3));
     }
@@ -656,17 +662,23 @@ static void handle_bp(u32 value, bool bigEndian) {
   }
 
   // TEV order / tref (0x28-0x2F) - 2 stages per register
-  case 0x28: case 0x29: case 0x2A: case 0x2B:
-  case 0x2C: case 0x2D: case 0x2E: case 0x2F: {
+  case 0x28:
+  case 0x29:
+  case 0x2A:
+  case 0x2B:
+  case 0x2C:
+  case 0x2D:
+  case 0x2E:
+  case 0x2F: {
     u32 idx = regId - 0x28;
     u32 stage0 = idx * 2;
     u32 stage1 = idx * 2 + 1;
 
     // Channel ID reverse mapping from hardware to GX
-    static const GXChannelID r2c[] = {GX_COLOR0A0, GX_COLOR1A1, GX_COLOR0A0, GX_COLOR1A1,
-                                       GX_COLOR0A0, GX_COLOR_ZERO, GX_COLOR_ZERO, GX_COLOR_NULL};
+    static const GXChannelID r2c[] = {GX_COLOR0A0, GX_COLOR1A1,   GX_COLOR0A0,   GX_COLOR1A1,
+                                      GX_COLOR0A0, GX_COLOR_ZERO, GX_COLOR_ZERO, GX_COLOR_NULL};
 
-    if (stage0 < gx::MaxTevStages) {
+    if (stage0 < MaxTevStages) {
       auto& s = g_gxState.tevStages[stage0];
       s.texMapId = static_cast<GXTexMapID>(bp_get(value, 3, 0));
       s.texCoordId = static_cast<GXTexCoordID>(bp_get(value, 3, 3));
@@ -677,7 +689,7 @@ static void handle_bp(u32 value, bool bigEndian) {
       u32 chanHw = bp_get(value, 3, 7);
       s.channelId = (chanHw < 8) ? r2c[chanHw] : GX_COLOR_NULL;
     }
-    if (stage1 < gx::MaxTevStages) {
+    if (stage1 < MaxTevStages) {
       auto& s = g_gxState.tevStages[stage1];
       s.texMapId = static_cast<GXTexMapID>(bp_get(value, 3, 12));
       s.texCoordId = static_cast<GXTexCoordID>(bp_get(value, 3, 15));
@@ -751,11 +763,17 @@ static void handle_bp(u32 value, bool bigEndian) {
   }
 
   // TEV K color/alpha select (0xF6-0xFD)
-  case 0xF6: case 0xF7: case 0xF8: case 0xF9:
-  case 0xFA: case 0xFB: case 0xFC: case 0xFD: {
+  case 0xF6:
+  case 0xF7:
+  case 0xF8:
+  case 0xF9:
+  case 0xFA:
+  case 0xFB:
+  case 0xFC:
+  case 0xFD: {
     u32 kselIdx = regId - 0xF6;
     // Swap table entries (packed into pairs of ksel registers)
-    if (kselIdx < gx::MaxTevSwap * 2) {
+    if (kselIdx < MaxTevSwap * 2) {
       u32 swapIdx = kselIdx / 2;
       if (kselIdx & 1) {
         g_gxState.tevSwapTable[swapIdx].blue = static_cast<GXTevColorChan>(bp_get(value, 2, 0));
@@ -768,11 +786,11 @@ static void handle_bp(u32 value, bool bigEndian) {
     // K color/alpha selection for 2 stages per register
     u32 stage0 = kselIdx * 2;
     u32 stage1 = kselIdx * 2 + 1;
-    if (stage0 < gx::MaxTevStages) {
+    if (stage0 < MaxTevStages) {
       g_gxState.tevStages[stage0].kcSel = static_cast<GXTevKColorSel>(bp_get(value, 5, 4));
       g_gxState.tevStages[stage0].kaSel = static_cast<GXTevKAlphaSel>(bp_get(value, 5, 9));
     }
-    if (stage1 < gx::MaxTevStages) {
+    if (stage1 < MaxTevStages) {
       g_gxState.tevStages[stage1].kcSel = static_cast<GXTevKColorSel>(bp_get(value, 5, 14));
       g_gxState.tevStages[stage1].kaSel = static_cast<GXTevKAlphaSel>(bp_get(value, 5, 19));
     }
@@ -859,8 +877,14 @@ static void handle_bp(u32 value, bool bigEndian) {
   // RA registers: 0xE0, 0xE2, 0xE4, 0xE6 (even)
   // BG registers: 0xE1, 0xE3, 0xE5, 0xE7 (odd)
   // Bit 23 distinguishes: 0 = TEV color register, 1 = K color register
-  case 0xE0: case 0xE1: case 0xE2: case 0xE3:
-  case 0xE4: case 0xE5: case 0xE6: case 0xE7: {
+  case 0xE0:
+  case 0xE1:
+  case 0xE2:
+  case 0xE3:
+  case 0xE4:
+  case 0xE5:
+  case 0xE6:
+  case 0xE7: {
     u32 idx = (regId - 0xE0) / 2;
     bool isRA = (regId & 1) == 0;
     bool isKColor = bp_get(value, 1, 23) != 0;
@@ -880,21 +904,25 @@ static void handle_bp(u32 value, bool bigEndian) {
       }
     } else {
       // TEV color register (11-bit signed components)
-      if (idx < gx::MaxTevRegs) {
+      if (idx < MaxTevRegs) {
         auto& cr = g_gxState.colorRegs[idx];
         if (isRA) {
           // 11-bit signed: sign-extend from 11 bits
           s32 r = bp_get(value, 11, 0);
-          if (r & 0x400) r |= ~0x7FF; // sign extend
+          if (r & 0x400)
+            r |= ~0x7FF; // sign extend
           s32 a = bp_get(value, 11, 12);
-          if (a & 0x400) a |= ~0x7FF;
+          if (a & 0x400)
+            a |= ~0x7FF;
           cr[0] = static_cast<float>(r) / 255.f;
           cr[3] = static_cast<float>(a) / 255.f;
         } else {
           s32 b = bp_get(value, 11, 0);
-          if (b & 0x400) b |= ~0x7FF;
+          if (b & 0x400)
+            b |= ~0x7FF;
           s32 g = bp_get(value, 11, 12);
-          if (g & 0x400) g |= ~0x7FF;
+          if (g & 0x400)
+            g |= ~0x7FF;
           cr[2] = static_cast<float>(b) / 255.f;
           cr[1] = static_cast<float>(g) / 255.f;
         }
@@ -907,18 +935,26 @@ static void handle_bp(u32 value, bool bigEndian) {
   // Indirect texture matrices (0x06-0x0E)
   // Each matrix uses 3 consecutive registers (one per row of the 3x2 matrix).
   // Matrix 0: 0x06-0x08, Matrix 1: 0x09-0x0B, Matrix 2: 0x0C-0x0E
-  case 0x06: case 0x07: case 0x08:
-  case 0x09: case 0x0A: case 0x0B:
-  case 0x0C: case 0x0D: case 0x0E: {
+  case 0x06:
+  case 0x07:
+  case 0x08:
+  case 0x09:
+  case 0x0A:
+  case 0x0B:
+  case 0x0C:
+  case 0x0D:
+  case 0x0E: {
     u32 idx = (regId - 0x06) / 3; // matrix index (0-2)
     u32 row = (regId - 0x06) % 3; // row index (0-2)
     auto& info = g_gxState.indTexMtxs[idx];
 
     // Decode 11-bit signed matrix elements (scaled by 1024)
     s32 col0 = bp_get(value, 11, 0);
-    if (col0 & 0x400) col0 |= ~0x7FF; // sign-extend from 11 bits
+    if (col0 & 0x400)
+      col0 |= ~0x7FF; // sign-extend from 11 bits
     s32 col1 = bp_get(value, 11, 11);
-    if (col1 & 0x400) col1 |= ~0x7FF;
+    if (col1 & 0x400)
+      col1 |= ~0x7FF;
 
     auto& r = row == 0 ? info.mtx.m0 : (row == 1 ? info.mtx.m1 : info.mtx.m2);
     r.x = static_cast<float>(col0) / 1024.0f;
@@ -937,10 +973,22 @@ static void handle_bp(u32 value, bool bigEndian) {
   // SU texture coordinate scale registers (0x30-0x3F)
   // Even registers (suTs0): S-axis scale, bias, cyl wrap, line/point offset
   // Odd registers (suTs1): T-axis scale, bias, cyl wrap
-  case 0x30: case 0x31: case 0x32: case 0x33:
-  case 0x34: case 0x35: case 0x36: case 0x37:
-  case 0x38: case 0x39: case 0x3A: case 0x3B:
-  case 0x3C: case 0x3D: case 0x3E: case 0x3F: {
+  case 0x30:
+  case 0x31:
+  case 0x32:
+  case 0x33:
+  case 0x34:
+  case 0x35:
+  case 0x36:
+  case 0x37:
+  case 0x38:
+  case 0x39:
+  case 0x3A:
+  case 0x3B:
+  case 0x3C:
+  case 0x3D:
+  case 0x3E:
+  case 0x3F: {
     u32 coordIdx = (regId - 0x30) / 2;
     bool isT = (regId & 1) != 0;
     auto& tcs = g_gxState.texCoordScales[coordIdx];
@@ -1000,19 +1048,19 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
   // VCD low (0x50)
   case 0x50: {
     auto& vd = g_gxState.vtxDesc;
-    vd[GX_VA_PNMTXIDX]   = static_cast<GXAttrType>(bp_get(value, 1, 0));
-    vd[GX_VA_TEX0MTXIDX]  = static_cast<GXAttrType>(bp_get(value, 1, 1));
-    vd[GX_VA_TEX1MTXIDX]  = static_cast<GXAttrType>(bp_get(value, 1, 2));
-    vd[GX_VA_TEX2MTXIDX]  = static_cast<GXAttrType>(bp_get(value, 1, 3));
-    vd[GX_VA_TEX3MTXIDX]  = static_cast<GXAttrType>(bp_get(value, 1, 4));
-    vd[GX_VA_TEX4MTXIDX]  = static_cast<GXAttrType>(bp_get(value, 1, 5));
-    vd[GX_VA_TEX5MTXIDX]  = static_cast<GXAttrType>(bp_get(value, 1, 6));
-    vd[GX_VA_TEX6MTXIDX]  = static_cast<GXAttrType>(bp_get(value, 1, 7));
-    vd[GX_VA_TEX7MTXIDX]  = static_cast<GXAttrType>(bp_get(value, 1, 8));
-    vd[GX_VA_POS]          = static_cast<GXAttrType>(bp_get(value, 2, 9));
-    vd[GX_VA_NRM]          = static_cast<GXAttrType>(bp_get(value, 2, 11));
-    vd[GX_VA_CLR0]         = static_cast<GXAttrType>(bp_get(value, 2, 13));
-    vd[GX_VA_CLR1]         = static_cast<GXAttrType>(bp_get(value, 2, 15));
+    vd[GX_VA_PNMTXIDX] = static_cast<GXAttrType>(bp_get(value, 1, 0));
+    vd[GX_VA_TEX0MTXIDX] = static_cast<GXAttrType>(bp_get(value, 1, 1));
+    vd[GX_VA_TEX1MTXIDX] = static_cast<GXAttrType>(bp_get(value, 1, 2));
+    vd[GX_VA_TEX2MTXIDX] = static_cast<GXAttrType>(bp_get(value, 1, 3));
+    vd[GX_VA_TEX3MTXIDX] = static_cast<GXAttrType>(bp_get(value, 1, 4));
+    vd[GX_VA_TEX4MTXIDX] = static_cast<GXAttrType>(bp_get(value, 1, 5));
+    vd[GX_VA_TEX5MTXIDX] = static_cast<GXAttrType>(bp_get(value, 1, 6));
+    vd[GX_VA_TEX6MTXIDX] = static_cast<GXAttrType>(bp_get(value, 1, 7));
+    vd[GX_VA_TEX7MTXIDX] = static_cast<GXAttrType>(bp_get(value, 1, 8));
+    vd[GX_VA_POS] = static_cast<GXAttrType>(bp_get(value, 2, 9));
+    vd[GX_VA_NRM] = static_cast<GXAttrType>(bp_get(value, 2, 11));
+    vd[GX_VA_CLR0] = static_cast<GXAttrType>(bp_get(value, 2, 13));
+    vd[GX_VA_CLR1] = static_cast<GXAttrType>(bp_get(value, 2, 15));
     g_gxState.stateDirty = true;
     break;
   }
@@ -1139,7 +1187,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
   if (addr < 0x078) {
     u32 mtxIdx = addr / 4;
     u32 startOffset = addr % 4;
-    if (mtxIdx < gx::MaxPnMtx) {
+    if (mtxIdx < MaxPnMtx) {
       auto& mtx = g_gxState.pnMtx[mtxIdx].pos;
       for (u32 i = 0; i < count && (startOffset + i) < 12; i++) {
         reinterpret_cast<f32*>(&mtx)[startOffset + i] = read_f32(xfData + i * 4, bigEndian);
@@ -1152,11 +1200,11 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
     u32 texBase = addr - 0x078;
     u32 mtxIdx = texBase / 12;
     u32 startOffset = texBase % 12;
-    if (mtxIdx < gx::MaxTexMtx) {
+    if (mtxIdx < MaxTexMtx) {
       // Determine if 2x4 or 3x4 from count
       if (count <= 8 && startOffset == 0) {
         // 2x4 matrix
-        aurora::Mat3x4<float> mtx{};
+        Mat3x4<float> mtx{};
         f32* flat = reinterpret_cast<f32*>(&mtx);
         for (u32 i = 0; i < count && i < 8; i++) {
           flat[i] = read_f32(xfData + i * 4, bigEndian);
@@ -1164,7 +1212,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
         g_gxState.texMtxs[mtxIdx] = mtx;
       } else {
         // 3x4 matrix
-        aurora::Mat3x4<float> mtx{};
+        Mat3x4<float> mtx{};
         f32* flat = reinterpret_cast<f32*>(&mtx);
         for (u32 i = 0; i < count && (startOffset + i) < 12; i++) {
           flat[startOffset + i] = read_f32(xfData + i * 4, bigEndian);
@@ -1179,7 +1227,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
     u32 nrmBase = addr - 0x400;
     u32 mtxIdx = nrmBase / 3;
     u32 startOffset = nrmBase % 3;
-    if (mtxIdx < gx::MaxPnMtx) {
+    if (mtxIdx < MaxPnMtx) {
       f32* flat = reinterpret_cast<f32*>(&g_gxState.pnMtx[mtxIdx].nrm);
       for (u32 i = 0; i < count; i++) {
         u32 xfIdx = startOffset + i;
@@ -1197,7 +1245,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
     u32 ptBase = addr - 0x500;
     u32 mtxIdx = ptBase / 12;
     u32 startOffset = ptBase % 12;
-    if (mtxIdx < gx::MaxPTTexMtx) {
+    if (mtxIdx < MaxPTTexMtx) {
       f32* flat = reinterpret_cast<f32*>(&g_gxState.ptTexMtxs[mtxIdx]);
       for (u32 i = 0; i < count && (startOffset + i) < 12; i++) {
         flat[startOffset + i] = read_f32(xfData + i * 4, bigEndian);
@@ -1310,7 +1358,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
       case 0x11: {
         // Channel control registers
         u32 chanId = reg - 0x0E;
-        if (chanId < gx::MaxColorChannels) {
+        if (chanId < MaxColorChannels) {
           auto& chan = g_gxState.colorChannelConfig[chanId];
           chan.matSrc = static_cast<GXColorSrc>(bp_get(val, 1, 0));
           chan.lightingEnabled = bp_get(val, 1, 1) != 0;
@@ -1337,7 +1385,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
       case 0x18: {
         // Matrix index A: PnMtx + TexCoord0-3 matrix indices
         g_gxState.currentPnMtx = bp_get(val, 6, 0) / 3;
-        for (u32 i = 0; i < 4 && i < gx::MaxTexCoord; i++) {
+        for (u32 i = 0; i < 4 && i < MaxTexCoord; i++) {
           g_gxState.tcgs[i].mtx = static_cast<GXTexMtx>(bp_get(val, 6, 6 + i * 6));
         }
         g_gxState.stateDirty = true;
@@ -1345,13 +1393,18 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
       }
       case 0x19: {
         // Matrix index B: TexCoord4-7 matrix indices
-        for (u32 i = 0; i < 4 && (i + 4) < gx::MaxTexCoord; i++) {
+        for (u32 i = 0; i < 4 && (i + 4) < MaxTexCoord; i++) {
           g_gxState.tcgs[i + 4].mtx = static_cast<GXTexMtx>(bp_get(val, 6, i * 6));
         }
         g_gxState.stateDirty = true;
         break;
       }
-      case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1E: case 0x1F: {
+      case 0x1A:
+      case 0x1B:
+      case 0x1C:
+      case 0x1D:
+      case 0x1E:
+      case 0x1F: {
         // Viewport: sx, sy, sz, ox, oy, oz at XF 0x101A-0x101F
         u32 vpOff = reg - 0x1A;
         if (vpOff == 0 && count >= 6) {
@@ -1367,11 +1420,17 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
           f32 top = oy - 340.0f - height / 2.0f;
           f32 farZ = oz / 1.6777215e7f;
           f32 nearZ = (oz - sz) / 1.6777215e7f;
-          aurora::gfx::set_viewport(left, top, width, height, nearZ, farZ);
+          gfx::set_viewport(left, top, width, height, nearZ, farZ);
         }
         break;
       }
-      case 0x20: case 0x21: case 0x22: case 0x23: case 0x24: case 0x25: case 0x26: {
+      case 0x20:
+      case 0x21:
+      case 0x22:
+      case 0x23:
+      case 0x24:
+      case 0x25:
+      case 0x26: {
         // Projection: 6 params + type at XF 0x1020-0x1026
         u32 projOff = reg - 0x20;
         if (projOff == 0 && count >= 7) {
@@ -1412,7 +1471,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
         // TexGen config (0x40-0x4F) and post-transform (0x50-0x5F)
         if (reg >= 0x40 && reg <= 0x4F) {
           u32 tcIdx = reg - 0x40;
-          if (tcIdx < gx::MaxTexCoord) {
+          if (tcIdx < MaxTexCoord) {
             auto& tcg = g_gxState.tcgs[tcIdx];
             bool proj = bp_get(val, 1, 1) != 0;
             u32 form = bp_get(val, 1, 2);
@@ -1429,11 +1488,9 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
             }
 
             // Decode source from row
-            static const GXTexGenSrc rowToSrc[] = {GX_TG_POS,    GX_TG_NRM,    GX_TG_COLOR0,
-                                                    GX_TG_BINRM,  GX_TG_TANGENT, GX_TG_TEX0,
-                                                    GX_TG_TEX1,   GX_TG_TEX2,   GX_TG_TEX3,
-                                                    GX_TG_TEX4,   GX_TG_TEX5,   GX_TG_TEX6,
-                                                    GX_TG_TEX7};
+            static const GXTexGenSrc rowToSrc[] = {GX_TG_POS,  GX_TG_NRM,  GX_TG_COLOR0, GX_TG_BINRM, GX_TG_TANGENT,
+                                                   GX_TG_TEX0, GX_TG_TEX1, GX_TG_TEX2,   GX_TG_TEX3,  GX_TG_TEX4,
+                                                   GX_TG_TEX5, GX_TG_TEX6, GX_TG_TEX7};
             if (srcRow < 13) {
               tcg.src = rowToSrc[srcRow];
             }
@@ -1441,7 +1498,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
           }
         } else if (reg >= 0x50 && reg <= 0x5F) {
           u32 tcIdx = reg - 0x50;
-          if (tcIdx < gx::MaxTexCoord) {
+          if (tcIdx < MaxTexCoord) {
             g_gxState.tcgs[tcIdx].postMtx = static_cast<GXPTTexMtx>(bp_get(val, 6, 0) + 64);
             g_gxState.tcgs[tcIdx].normalize = bp_get(val, 1, 8) != 0;
             g_gxState.stateDirty = true;
@@ -1459,9 +1516,6 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
 
 // Draw command handler - parses vertices inline and caches results
 static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndian) {
-  using namespace aurora::gfx;
-  using namespace aurora::gfx::gx;
-
   u8 opcode = cmd & CP_OPCODE_MASK;
   GXVtxFmt fmt = static_cast<GXVtxFmt>(cmd & CP_VAT_MASK);
   GXPrimitive prim = static_cast<GXPrimitive>(opcode);
@@ -1476,7 +1530,8 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   u32 vtxSize = prepare_vtx_buffer(nullptr, fmt, nullptr, vtxCount, bigEndian);
   u32 totalVtxBytes = vtxCount * vtxSize;
   // Log.warn("  draw: prim {:02x} fmt {} vtxCount {} vtxSize {} totalBytes {} pos {} -> {}",
-  //          static_cast<u32>(prim), static_cast<u32>(fmt), vtxCount, vtxSize, totalVtxBytes, pos, pos + totalVtxBytes);
+  //          static_cast<u32>(prim), static_cast<u32>(fmt), vtxCount, vtxSize, totalVtxBytes, pos, pos +
+  //          totalVtxBytes);
   if (pos + totalVtxBytes > size) {
     // Hex dump around the draw command for debugging
     u32 cmdPos = pos - 2 - 1; // opcode byte position (before vtxCount and pos++)
@@ -1489,34 +1544,57 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
       else
         hex += fmt::format(" {:02x}", data[i]);
     }
-    Log.error("  hex dump around draw cmd (pos {}-{}):{}",dumpStart, dumpEnd - 1, hex);
+    Log.error("  hex dump around draw cmd (pos {}-{}):{}", dumpStart, dumpEnd - 1, hex);
     FATAL("draw vertex data overrun: need {} bytes at pos {}, have {}", totalVtxBytes, pos, size);
   }
 
-  // Hash over the raw command data: cmd byte + vtxCount (2 bytes) + vertex data
-  const u8* hashStart = data + pos - 3; // cmd byte + vtxCount + vtxData
-  u32 hashSize = 3 + totalVtxBytes;
-  const auto hash = xxh3_hash_s(hashStart, hashSize, 0);
+  // Hash over the vertex format and raw command data
+  auto hash = xxh3_hash_s(&g_gxState.vtxFmts[fmt], sizeof(VtxFmt), 0);
+  hash = xxh3_hash_s(data + pos - 3, 3 + totalVtxBytes, hash); // cmd byte + vtxCount + vtxData
 
-  Range vertRange, idxRange;
+  gfx::Range vertRange, idxRange;
   u32 numIndices = 0;
 
   auto it = sCachedDisplayLists.find(hash);
   if (it != sCachedDisplayLists.end()) {
     // Cache hit - use cached buffers
     const auto& cache = it->second;
-    numIndices = cache.idxBuf.size() / 2;
-    vertRange = push_verts(cache.vtxBuf.data(), cache.vtxBuf.size());
-    idxRange = push_indices(cache.idxBuf.data(), cache.idxBuf.size());
+    vertRange = gfx::push_verts(cache.vtxBuf.data(), cache.vtxBuf.size());
   } else {
     // Cache miss - build index buffer and cache both
     ByteBuffer vtxBuf;
-    ByteBuffer idxBuf;
     prepare_vtx_buffer(&vtxBuf, fmt, vtxDataStart, vtxCount, bigEndian);
+    vertRange = gfx::push_verts(vtxBuf.data(), vtxBuf.size());
+    sCachedDisplayLists.try_emplace(hash, std::move(vtxBuf));
+  }
+
+  pos += totalVtxBytes;
+
+  if (!g_gxState.stateDirty) {
+    // Try to merge with previous draw call
+    if (auto* lastDraw = gfx::get_last_draw_command<DrawData>()) {
+      ByteBuffer idxBuf;
+      numIndices = prepare_idx_buffer(idxBuf, prim, lastDraw->vtxCount, vtxCount);
+      idxRange = gfx::push_indices(idxBuf.data(), idxBuf.size());
+      CHECK(lastDraw->vertRange.offset + lastDraw->vertRange.size == vertRange.offset,
+            "Non-consecutive vertex ranges ({} < {})", lastDraw->vertRange.offset + lastDraw->vertRange.size,
+            vertRange.offset);
+      CHECK(lastDraw->idxRange.offset + lastDraw->idxRange.size == idxRange.offset,
+            "Non-consecutive index ranges ({} < {})", lastDraw->idxRange.offset + lastDraw->idxRange.size,
+            idxRange.offset);
+      lastDraw->vertRange.size += vertRange.size;
+      lastDraw->idxRange.size += idxRange.size;
+      lastDraw->vtxCount += vtxCount;
+      lastDraw->indexCount += numIndices;
+      ++gfx::g_stats.mergedDrawCallCount;
+      return;
+    }
+  }
+
+  {
+    ByteBuffer idxBuf;
     numIndices = prepare_idx_buffer(idxBuf, prim, 0, vtxCount);
-    vertRange = push_verts(vtxBuf.data(), vtxBuf.size());
-    idxRange = push_indices(idxBuf.data(), idxBuf.size());
-    sCachedDisplayLists.try_emplace(hash, std::move(vtxBuf), std::move(idxBuf), fmt);
+    idxRange = gfx::push_indices(idxBuf.data(), idxBuf.size());
   }
 
   // Build pipeline, bind groups, and push draw command
@@ -1529,30 +1607,29 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
     if (array.cachedRange.size > 0) {
       ranges.vaRanges[i] = array.cachedRange;
     } else {
-      const auto range = push_storage(static_cast<const uint8_t*>(array.data), array.size);
+      const auto range = gfx::push_storage(static_cast<const uint8_t*>(array.data), array.size);
       ranges.vaRanges[i] = range;
       array.cachedRange = range;
     }
   }
 
-  model::PipelineConfig config{};
+  PipelineConfig config{};
   populate_pipeline_config(config, GX_TRIANGLES, fmt);
   const auto info = build_shader_info(config.shaderConfig);
   const auto bindGroups = build_bind_groups(info, config.shaderConfig, ranges);
-  const auto pipeline = pipeline_ref(config);
+  const auto pipeline = gfx::pipeline_ref(config);
 
-  push_draw_command(model::DrawData{
+  gfx::push_draw_command(DrawData{
       .pipeline = pipeline,
       .vertRange = vertRange,
       .idxRange = idxRange,
       .dataRanges = ranges,
       .uniformRange = build_uniform(info),
+      .vtxCount = vtxCount,
       .indexCount = numIndices,
       .bindGroups = bindGroups,
       .dstAlpha = g_gxState.dstAlpha,
   });
-
-  pos += totalVtxBytes;
 }
 
-} // namespace aurora::gfx::command_processor
+} // namespace aurora::gx::fifo

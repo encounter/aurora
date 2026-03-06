@@ -1,11 +1,11 @@
 #pragma once
 
 #include "../../internal.hpp"
-#include "../../gfx/gx.hpp"
+#include "../../gx/gx.hpp"
 
 static aurora::Module Log("aurora::gx");
 
-using aurora::gfx::gx::g_gxState;
+using aurora::gx::g_gxState;
 
 template <typename T>
 static inline void update_gx_state(T& val, T newVal) {

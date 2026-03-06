@@ -3,8 +3,10 @@
 #include <gtest/gtest.h>
 
 #include <dolphin/gx.h>
-#include "../lib/gfx/gx.hpp"
-#include "../lib/gfx/fifo.hpp"
+
+#include "gx/gx.hpp"
+#include "gx/fifo.hpp"
+#include "gx/command_processor.hpp"
 
 #include <cstring>
 #include <vector>
@@ -16,25 +18,25 @@ class GXFifoTest : public ::testing::Test {
 protected:
   void SetUp() override {
     GXInit(nullptr, 0);
-    aurora::gfx::fifo::clear_buffer();
-    aurora::gfx::gx::g_gxState = aurora::gfx::gx::GXState{};
+    aurora::gx::fifo::clear_buffer();
+    aurora::gx::g_gxState = aurora::gx::GXState{};
   }
 
   // Copy the internal FIFO buffer contents and clear it
   std::vector<u8> capture_fifo() {
-    auto size = aurora::gfx::fifo::get_buffer_size();
-    auto* data = aurora::gfx::fifo::get_buffer_data();
+    auto size = aurora::gx::fifo::get_buffer_size();
+    auto* data = aurora::gx::fifo::get_buffer_data();
     std::vector<u8> bytes(data, data + size);
-    aurora::gfx::fifo::clear_buffer();
+    aurora::gx::fifo::clear_buffer();
     return bytes;
   }
 
   // Reset g_gxState to default-constructed state
-  void reset_gx_state() { aurora::gfx::gx::g_gxState = aurora::gfx::gx::GXState{}; }
+  void reset_gx_state() { aurora::gx::g_gxState = aurora::gx::GXState{}; }
 
   // Decode a captured FIFO byte stream through the command processor
   void decode_fifo(const std::vector<u8>& bytes) {
-    aurora::gfx::fifo::process(bytes.data(), static_cast<u32>(bytes.size()), true);
+    aurora::gx::fifo::process(bytes.data(), static_cast<u32>(bytes.size()), true);
   }
 
   // Flush dirty state, then capture the FIFO buffer
@@ -44,5 +46,5 @@ protected:
   }
 
   // Convenience reference to g_gxState
-  aurora::gfx::gx::GXState& gxState() { return aurora::gfx::gx::g_gxState; }
+  aurora::gx::GXState& gxState() { return aurora::gx::g_gxState; }
 };

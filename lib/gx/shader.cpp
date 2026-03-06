@@ -1,4 +1,4 @@
-#include "common.hpp"
+#include "../gfx/common.hpp"
 
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"
@@ -11,16 +11,16 @@
 #include <string_view>
 #include <utility>
 
-namespace aurora::gfx::gx {
+namespace aurora::gx {
 using namespace fmt::literals;
 using namespace std::string_literals;
 using namespace std::string_view_literals;
 
 static Module Log("aurora::gfx::gx");
 
-absl::flat_hash_map<ShaderRef, std::pair<wgpu::ShaderModule, gx::ShaderInfo>> g_gxCachedShaders;
+absl::flat_hash_map<gfx::ShaderRef, std::pair<wgpu::ShaderModule, ShaderInfo>> g_gxCachedShaders;
 #ifndef NDEBUG
-static absl::flat_hash_map<ShaderRef, gx::ShaderConfig> g_gxCachedShaderConfigs;
+static absl::flat_hash_map<gfx::ShaderRef, ShaderConfig> g_gxCachedShaderConfigs;
 #endif
 
 static inline std::string_view chan_comp(GXTevColorChan chan) noexcept {
@@ -564,7 +564,7 @@ auto storage_load(const StorageConfig& mapping, u32 attrIdx) -> StorageLoadResul
   }
 
   return {
-    .attrLoad = attrLoad,
+      .attrLoad = attrLoad,
   };
 }
 
@@ -710,12 +710,12 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   }
   if (info.indexAttr.test(GX_VA_PNMTXIDX)) {
     vtxXfrAttrsPre +=
-      "\n    var pos_mtx = ubuf.pos_mtx[in_pnmtxidx / 3u];"
-      "\n    var nrm_mtx = ubuf.nrm_mtx[in_pnmtxidx / 3u];"s;
+        "\n    var pos_mtx = ubuf.pos_mtx[in_pnmtxidx / 3u];"
+        "\n    var nrm_mtx = ubuf.nrm_mtx[in_pnmtxidx / 3u];"s;
   } else {
     vtxXfrAttrsPre +=
-      "\n    var pos_mtx = ubuf.pos_mtx;"
-      "\n    var nrm_mtx = ubuf.nrm_mtx;"s;
+        "\n    var pos_mtx = ubuf.pos_mtx;"
+        "\n    var nrm_mtx = ubuf.nrm_mtx;"s;
   }
   vtxXfrAttrsPre += fmt::format(
       "\n    var mv_pos = vec4<f32>({}, 1.0) * pos_mtx;"
@@ -905,13 +905,14 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       } else if (cc.attnFn == GX_AF_SPEC) {
         std::string normal = UsePerPixelLighting ? "in.mv_nrm" : "mv_nrm";
         std::string dist_attn = diffFn != GX_DF_NONE
-                      ? "max(0.0, dot(normalize(light.dist_att), vec3f(1.0, attn, attn * attn)));"
-                      : "max(0.0, dot(light.dist_att, vec3f(1.0, attn, attn * attn)));";
+                                    ? "max(0.0, dot(normalize(light.dist_att), vec3f(1.0, attn, attn * attn)));"
+                                    : "max(0.0, dot(light.dist_att, vec3f(1.0, attn, attn * attn)));";
         lightAttnFn = fmt::format(R"""(
           attn = select(0.0, max(0.0, dot({0}, light.dir)), dot({0}, ldir) >= 0.0);
           var cos_attn = dot(light.cos_att, vec3f(1.0, attn, attn * attn));
           var dist_attn = {1};
-          attn = max(0.0, cos_attn / dist_attn);)""", normal, dist_attn);
+          attn = max(0.0, cos_attn / dist_attn);)""",
+                                  normal, dist_attn);
       }
       if (diffFn == GX_DF_NONE) {
         lightDiffFn = "1.0";
@@ -947,7 +948,8 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         outVar = fmt::format("out.cc{}", i);
         posVar = "mv_pos";
       }
-      auto lightFunc = fmt::format(R"""(
+      auto lightFunc =
+          fmt::format(R"""(
     {{
       var lighting = {5};
       for (var i = 0u; i < {1}u; i++) {{
@@ -963,7 +965,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       }}
       {6} = vec4f(({4} * clamp(lighting, vec4f(0.0), vec4f(1.0))).xyz, {8}.a);
     }})""",
-                                   i, GX::MaxLights, lightAttnFn, lightDiffFn, matSrc, ambSrc, outVar, posVar, alphaSrc);
+                      i, GX::MaxLights, lightAttnFn, lightDiffFn, matSrc, ambSrc, outVar, posVar, alphaSrc);
       if (UsePerPixelLighting) {
         fragmentFnPre += fmt::format("\n    var rast{}: vec4f;", i);
         fragmentFnPre += lightFunc;
@@ -1031,7 +1033,8 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       vtxXfrAttrs += fmt::format("\n    var tc{0}_proj = tc{0}_tmp;", i);
     } else {
       u32 postMtxIdx = (tcg.postMtx - GX_PTTEXMTX0) / 3;
-      vtxXfrAttrs += fmt::format("\n    var tc{0}_proj = vec4f(tc{0}_tmp.xyz, 1.0) * ubuf.postmtx[{1}];", i, postMtxIdx);
+      vtxXfrAttrs +=
+          fmt::format("\n    var tc{0}_proj = vec4f(tc{0}_tmp.xyz, 1.0) * ubuf.postmtx[{1}];", i, postMtxIdx);
     }
     vtxXfrAttrs += fmt::format("\n    out.tex{0}_uv = tc{0}_proj.xy;", i);
   }
@@ -1530,4 +1533,4 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {{{8}{7}
 
   return pair.first;
 }
-} // namespace aurora::gfx::gx
+} // namespace aurora::gx

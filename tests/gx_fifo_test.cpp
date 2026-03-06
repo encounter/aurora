@@ -8,7 +8,7 @@
 
 #include <cmath>
 
-using aurora::gfx::gx::g_gxState;
+using aurora::gx::g_gxState;
 
 // ============================================================================
 // BP registers (direct FIFO writes, no dirty state flush needed)
@@ -880,7 +880,7 @@ TEST_F(GXFifoTest, ClearVtxDesc_ClearsAll) {
   GXSetVtxDesc(GX_VA_TEX6, GX_DIRECT);
   GXSetVtxDesc(GX_VA_TEX7, GX_DIRECT);
   // Discard the dirty state from above
-  aurora::gfx::fifo::clear_buffer();
+  aurora::gx::fifo::clear_buffer();
 
   // Now clear and flush
   GXClearVtxDesc();

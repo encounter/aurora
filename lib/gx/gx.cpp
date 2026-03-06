@@ -1,26 +1,24 @@
 #include "gx.hpp"
 
+#include "pipeline.hpp"
 #include "../webgpu/gpu.hpp"
 #include "../window.hpp"
 #include "../internal.hpp"
-#include "common.hpp"
+#include "../gfx/common.hpp"
+#include "../gfx/texture.hpp"
 
 #include <absl/container/flat_hash_map.h>
 #include <cfloat>
 
-using aurora::gfx::gx::g_gxState;
 static aurora::Module Log("aurora::gx");
 
-namespace aurora::gfx {
-static Module Log("aurora::gfx::gx");
-
-namespace gx {
+namespace aurora::gx {
 using webgpu::g_device;
 using webgpu::g_graphicsConfig;
 
 GXState g_gxState{};
 
-const TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[static_cast<size_t>(id)]; }
+const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[static_cast<size_t>(id)]; }
 
 static inline wgpu::BlendFactor to_blend_factor(GXBlendFactor fac, bool isDst) {
   switch (fac) {
@@ -325,17 +323,17 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
   std::array<wgpu::BindGroupEntry, GX_VA_MAX_ATTR + 1> uniformEntries;
   memset(&uniformEntries, 0, sizeof(uniformEntries));
   uniformEntries[0].binding = 0;
-  uniformEntries[0].buffer = g_uniformBuffer;
+  uniformEntries[0].buffer = gfx::g_uniformBuffer;
   uniformEntries[0].size = info.uniformSize;
   u32 uniformBindIdx = 1;
   for (u32 i = 0; i < GX_VA_MAX_ATTR; ++i) {
-    const Range& range = ranges.vaRanges[i];
+    const gfx::Range& range = ranges.vaRanges[i];
     if (range.size <= 0) {
       continue;
     }
     wgpu::BindGroupEntry& entry = uniformEntries[uniformBindIdx];
     entry.binding = uniformBindIdx;
-    entry.buffer = g_storageBuffer;
+    entry.buffer = gfx::g_storageBuffer;
     entry.size = range.size;
     ++uniformBindIdx;
   }
@@ -355,7 +353,7 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
     wgpu::BindGroupEntry& samplerEntry = samplerEntries[samplerCount];
     samplerEntry.binding = samplerCount;
     samplerEntry.size = wgpu::kWholeSize;
-    samplerEntry.sampler = sampler_ref(tex.get_descriptor());
+    samplerEntry.sampler = gfx::sampler_ref(tex.get_descriptor());
     ++samplerCount;
     wgpu::BindGroupEntry& textureEntry = textureEntries[textureCount];
     textureEntry.binding = textureCount;
@@ -394,9 +392,9 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
       .entries = textureEntries.data(),
   };
   return {
-      .uniformBindGroup = bind_group_ref(uniformBindGroupDescriptor),
-      .samplerBindGroup = bind_group_ref(samplerBindGroupDescriptor),
-      .textureBindGroup = bind_group_ref(textureBindGroupDescriptor),
+      .uniformBindGroup = gfx::bind_group_ref(uniformBindGroupDescriptor),
+      .samplerBindGroup = gfx::bind_group_ref(samplerBindGroupDescriptor),
+      .textureBindGroup = gfx::bind_group_ref(textureBindGroupDescriptor),
   };
 }
 
@@ -531,7 +529,7 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
 }
 
 // TODO this is awkward
-extern absl::flat_hash_map<ShaderRef, std::pair<wgpu::ShaderModule, gx::ShaderInfo>> g_gxCachedShaders;
+extern absl::flat_hash_map<gfx::ShaderRef, std::pair<wgpu::ShaderModule, gx::ShaderInfo>> g_gxCachedShaders;
 void shutdown() noexcept {
   // TODO we should probably store this all in g_state.gx instead
   sUniformBindGroupLayouts.clear();
@@ -545,7 +543,7 @@ void shutdown() noexcept {
   g_gxCachedShaders.clear();
   g_gxState.copyTextures.clear();
 }
-} // namespace gx
+} // namespace aurora::gx
 
 static wgpu::AddressMode wgpu_address_mode(GXTexWrapMode mode) {
   switch (mode) {
@@ -581,12 +579,12 @@ static u16 wgpu_aniso(GXAnisotropy aniso) {
   case GX_ANISO_1:
     return 1;
   case GX_ANISO_2:
-    return std::max<u16>(webgpu::g_graphicsConfig.textureAnisotropy / 2, 1);
+    return std::max<u16>(aurora::webgpu::g_graphicsConfig.textureAnisotropy / 2, 1);
   case GX_ANISO_4:
-    return std::max<u16>(webgpu::g_graphicsConfig.textureAnisotropy, 1);
+    return std::max<u16>(aurora::webgpu::g_graphicsConfig.textureAnisotropy, 1);
   }
 }
-wgpu::SamplerDescriptor TextureBind::get_descriptor() const noexcept {
+wgpu::SamplerDescriptor aurora::gfx::TextureBind::get_descriptor() const noexcept {
   if (gx::requires_copy_conversion(texObj) && gx::is_palette_format(texObj.ref->gxFormat)) {
     return {
         .label = "Generated Non-Filtering Sampler",
@@ -611,5 +609,4 @@ wgpu::SamplerDescriptor TextureBind::get_descriptor() const noexcept {
       .mipmapFilter = mipFilter,
       .maxAnisotropy = wgpu_aniso(texObj.maxAniso),
   };
-}
-} // namespace aurora::gfx
+} // namespace aurora::gx

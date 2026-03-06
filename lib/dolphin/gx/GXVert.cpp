@@ -1,6 +1,6 @@
 #include "gx.hpp"
 #include "__gx.h"
-#include "../../gfx/fifo.hpp"
+#include "../../gx/fifo.hpp"
 
 // Track vertex count between GXBegin/GXEnd for mismatch detection
 static u16 sBeginNVerts = 0;
@@ -27,13 +27,13 @@ void GXBegin(GXPrimitive primitive, GXVtxFmt vtxFmt, u16 nVerts) {
 
   // Record state for vertex count validation in GXEnd
   sBeginNVerts = nVerts;
-  sBeginFifoSize = aurora::gfx::fifo::get_buffer_size();
+  sBeginFifoSize = aurora::gx::fifo::get_buffer_size();
   sInBegin = true;
 }
 
 void GXEnd() {
   if (sInBegin) {
-    u32 bytesWritten = aurora::gfx::fifo::get_buffer_size() - sBeginFifoSize;
+    u32 bytesWritten = aurora::gx::fifo::get_buffer_size() - sBeginFifoSize;
     if (sBeginNVerts > 0 && bytesWritten > 0) {
       u32 vtxSize = bytesWritten / sBeginNVerts;
       u32 remainder = bytesWritten % sBeginNVerts;
@@ -48,8 +48,8 @@ void GXEnd() {
     }
     sInBegin = false;
   }
-  if (!aurora::gfx::fifo::in_display_list()) {
-    aurora::gfx::fifo::drain();
+  if (!aurora::gx::fifo::in_display_list()) {
+    aurora::gx::fifo::drain();
   }
 }
 
@@ -201,28 +201,27 @@ void GXTexCoord1x16(u16 index) { GX_WRITE_U16(index); }
 
 void GXTexCoord1x8(u8 index) { GX_WRITE_U8(index); }
 
-void GXCmd1u8(const u8 x) { aurora::gfx::fifo::write_u8(static_cast<uint8_t>(x)); }
-void GXCmd1u16(const u16 x) { aurora::gfx::fifo::write_u16(static_cast<uint16_t>(x)); }
-void GXCmd1u32(const u32 x) { aurora::gfx::fifo::write_u32(static_cast<uint32_t>(x)); }
+void GXCmd1u8(const u8 x) { aurora::gx::fifo::write_u8(x); }
+void GXCmd1u16(const u16 x) { aurora::gx::fifo::write_u16(x); }
+void GXCmd1u32(const u32 x) { aurora::gx::fifo::write_u32(x); }
 
-void GXParam1u8(const u8 x) { aurora::gfx::fifo::write_u8(static_cast<uint8_t>(x)); }
-void GXParam1u16(const u16 x) { aurora::gfx::fifo::write_u16(static_cast<uint16_t>(x)); }
-void GXParam1u32(const u32 x) { aurora::gfx::fifo::write_u32(static_cast<uint32_t>(x)); }
-void GXParam1s8(const s8 x) { aurora::gfx::fifo::write_u8(static_cast<uint8_t>(x)); }
-void GXParam1s16(const s16 x) { aurora::gfx::fifo::write_u16(static_cast<uint16_t>(x)); }
-void GXParam1s32(const s32 x) { aurora::gfx::fifo::write_u32(static_cast<uint32_t>(x)); }
-void GXParam1f32(const f32 x) { aurora::gfx::fifo::write_f32(x); }
+void GXParam1u8(const u8 x) { aurora::gx::fifo::write_u8(x); }
+void GXParam1u16(const u16 x) { aurora::gx::fifo::write_u16(x); }
+void GXParam1u32(const u32 x) { aurora::gx::fifo::write_u32(x); }
+void GXParam1s8(const s8 x) { aurora::gx::fifo::write_u8(static_cast<uint8_t>(x)); }
+void GXParam1s16(const s16 x) { aurora::gx::fifo::write_u16(static_cast<uint16_t>(x)); }
+void GXParam1s32(const s32 x) { aurora::gx::fifo::write_u32(static_cast<uint32_t>(x)); }
+void GXParam1f32(const f32 x) { aurora::gx::fifo::write_f32(x); }
 void GXParam3f32(const f32 x, const f32 y, const f32 z) {
-  aurora::gfx::fifo::write_f32(x);
-  aurora::gfx::fifo::write_f32(y);
-  aurora::gfx::fifo::write_f32(z);
+  aurora::gx::fifo::write_f32(x);
+  aurora::gx::fifo::write_f32(y);
+  aurora::gx::fifo::write_f32(z);
 }
 void GXParam4f32(const f32 x, const f32 y, const f32 z, const f32 w) {
-  aurora::gfx::fifo::write_f32(x);
-  aurora::gfx::fifo::write_f32(y);
-  aurora::gfx::fifo::write_f32(z);
-  aurora::gfx::fifo::write_f32(w);
+  aurora::gx::fifo::write_f32(x);
+  aurora::gx::fifo::write_f32(y);
+  aurora::gx::fifo::write_f32(z);
+  aurora::gx::fifo::write_f32(w);
 }
-
 
 } // extern "C"

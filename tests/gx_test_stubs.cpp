@@ -2,11 +2,11 @@
 // references but that live in the full renderer (common.cpp, gx.cpp, model/shader.cpp, etc.).
 // These allow the test binary to link without pulling in WebGPU runtime.
 
-#include "../lib/gfx/gx.hpp"
-#include "../lib/gfx/model/shader.hpp"
-#include "../lib/gfx/shader_info.hpp"
-#include "../lib/gfx/texture.hpp"
-#include "../lib/internal.hpp"
+#include "gx/gx.hpp"
+#include "gx/pipeline.hpp"
+#include "gx/shader_info.hpp"
+#include "gfx/texture.hpp"
+#include "internal.hpp"
 
 #include <cstdio>
 #include <fmt/format.h>
@@ -24,13 +24,14 @@ void log_internal(AuroraLogLevel level, const char* module, const char* message,
 } // namespace aurora
 
 // --- fmt::formatter<AuroraLogLevel> ---
-auto fmt::formatter<AuroraLogLevel>::format(AuroraLogLevel level,
-                                            format_context& ctx) const -> format_context::iterator {
+auto fmt::formatter<AuroraLogLevel>::format(AuroraLogLevel level, format_context& ctx) const
+    -> format_context::iterator {
   return fmt::format_to(ctx.out(), "{}", static_cast<int>(level));
 }
 
 // --- GPU buffers (default-constructed, not used in tests) ---
 namespace aurora::gfx {
+AuroraStats g_stats;
 wgpu::Buffer g_vertexBuffer;
 wgpu::Buffer g_uniformBuffer;
 wgpu::Buffer g_indexBuffer;
@@ -38,9 +39,9 @@ wgpu::Buffer g_storageBuffer;
 } // namespace aurora::gfx
 
 // --- GXState (the real instance -- tests validate this) ---
-namespace aurora::gfx::gx {
+namespace aurora::gx {
 GXState g_gxState{};
-} // namespace aurora::gfx::gx
+} // namespace aurora::gx
 
 // --- Texture uploads ---
 namespace aurora::gfx {
@@ -48,15 +49,13 @@ std::vector<TextureUpload> g_textureUploads;
 } // namespace aurora::gfx
 
 // --- get_texture ---
-namespace aurora::gfx::gx {
-const TextureBind& get_texture(GXTexMapID id) noexcept {
-  return g_gxState.textures[id];
-}
+namespace aurora::gx {
+const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[id]; }
 void shutdown() noexcept {}
-} // namespace aurora::gfx::gx
+} // namespace aurora::gx
 
 // --- Shader/pipeline stubs ---
-namespace aurora::gfx::gx {
+namespace aurora::gx {
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept {
   // No-op for tests
 }
@@ -65,9 +64,9 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
   return {};
 }
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept { return {}; }
-Range build_uniform(const ShaderInfo& info) noexcept { return {}; }
+gfx::Range build_uniform(const ShaderInfo& info) noexcept { return {}; }
 u8 color_channel(GXChannelID id) noexcept { return 0; }
-} // namespace aurora::gfx::gx
+} // namespace aurora::gx
 
 // --- Buffer push stubs ---
 namespace aurora::gfx {
@@ -88,12 +87,16 @@ void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {}
 // These are template instantiations that command_processor.cpp needs
 namespace aurora::gfx {
 template <>
-PipelineRef pipeline_ref<model::PipelineConfig>(model::PipelineConfig config) {
+PipelineRef pipeline_ref<gx::PipelineConfig>(gx::PipelineConfig config) {
   return 0;
 }
 template <>
-void push_draw_command<model::DrawData>(model::DrawData data) {
+void push_draw_command<gx::DrawData>(gx::DrawData data) {
   // No-op
+}
+template <>
+gx::DrawData* get_last_draw_command() {
+  return nullptr;
 }
 } // namespace aurora::gfx
 
@@ -101,13 +104,6 @@ void push_draw_command<model::DrawData>(model::DrawData data) {
 namespace aurora::gfx {
 wgpu::SamplerDescriptor TextureBind::get_descriptor() const noexcept { return wgpu::SamplerDescriptor{}; }
 } // namespace aurora::gfx
-
-// --- model::queue_surface ---
-namespace aurora::gfx::model {
-void queue_surface(const u8* dlStart, u32 dlSize, bool bigEndian) noexcept {
-  // No-op
-}
-} // namespace aurora::gfx::model
 
 // --- Texture creation/write stubs ---
 namespace aurora::gfx {
