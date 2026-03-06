@@ -1035,6 +1035,89 @@ TEST_F(GXFifoTest, VtxAttrFmt_MultipleTexCoords) {
   EXPECT_EQ(vf.attrs[GX_VA_TEX2].frac, 8);
 }
 
+// --- GXSetArray (Aurora array-base command + CP stride command) ---
+
+TEST_F(GXFifoTest, SetArray_Pos_EncodesAuroraArrayBaseAndStride) {
+  u8 posData[32]{};
+  u8 oldData[8]{};
+
+  GXSetArray(GX_VA_POS, posData, sizeof(posData), 12);
+  auto bytes = capture_fifo();
+
+  ASSERT_EQ(bytes.size(), 25u);
+  EXPECT_EQ(bytes[0], GX_LOAD_AURORA);
+  EXPECT_EQ(bytes[1], 0x00);
+  EXPECT_EQ(bytes[2], GX_LOAD_AURORA_ARRAYBASE);
+
+  const auto expect_be64 = [&](size_t offset, u64 value) {
+    for (size_t i = 0; i < 8; ++i) {
+      EXPECT_EQ(bytes[offset + i], static_cast<u8>((value >> (56 - i * 8)) & 0xFF));
+    }
+  };
+  const auto expect_be32 = [&](size_t offset, u32 value) {
+    for (size_t i = 0; i < 4; ++i) {
+      EXPECT_EQ(bytes[offset + i], static_cast<u8>((value >> (24 - i * 8)) & 0xFF));
+    }
+  };
+
+  expect_be64(3, static_cast<u64>(reinterpret_cast<uintptr_t>(posData)));
+  expect_be64(11, sizeof(posData));
+  EXPECT_EQ(bytes[19], GX_LOAD_CP_REG);
+  EXPECT_EQ(bytes[20], GX_CP_REG_ARRAYSTRIDE);
+  expect_be32(21, 12);
+
+  reset_gx_state();
+  gxState().arrays[GX_VA_POS].data = oldData;
+  gxState().arrays[GX_VA_POS].size = sizeof(oldData);
+  gxState().arrays[GX_VA_POS].stride = 2;
+  gxState().arrays[GX_VA_POS].cachedRange.offset = 4;
+  gxState().arrays[GX_VA_POS].cachedRange.size = 8;
+  gxState().stateDirty = false;
+  decode_fifo(bytes);
+
+  EXPECT_EQ(gxState().arrays[GX_VA_POS].data, posData);
+  EXPECT_EQ(gxState().arrays[GX_VA_POS].size, sizeof(posData));
+  EXPECT_EQ(gxState().arrays[GX_VA_POS].stride, 12);
+  EXPECT_EQ(gxState().arrays[GX_VA_POS].cachedRange.offset, 0u);
+  EXPECT_EQ(gxState().arrays[GX_VA_POS].cachedRange.size, 0u);
+  EXPECT_TRUE(gxState().stateDirty);
+}
+
+TEST_F(GXFifoTest, SetArray_Nbt_UsesNrmCommandSlotAndState) {
+  u8 nbtData[96]{};
+  u8 untouchedData[24]{};
+
+  GXSetArray(GX_VA_NBT, nbtData, sizeof(nbtData), 36);
+  auto bytes = capture_fifo();
+
+  ASSERT_EQ(bytes.size(), 25u);
+  EXPECT_EQ(bytes[0], GX_LOAD_AURORA);
+  EXPECT_EQ(bytes[1], 0x00);
+  EXPECT_EQ(bytes[2], GX_LOAD_AURORA_ARRAYBASE | 0x01);
+  EXPECT_EQ(bytes[19], GX_LOAD_CP_REG);
+  EXPECT_EQ(bytes[20], GX_CP_REG_ARRAYSTRIDE | 0x01);
+
+  reset_gx_state();
+  gxState().arrays[GX_VA_NRM].cachedRange.offset = 12;
+  gxState().arrays[GX_VA_NRM].cachedRange.size = 48;
+  gxState().arrays[GX_VA_NBT].data = untouchedData;
+  gxState().arrays[GX_VA_NBT].size = sizeof(untouchedData);
+  gxState().arrays[GX_VA_NBT].stride = 24;
+  gxState().stateDirty = false;
+  decode_fifo(bytes);
+
+  EXPECT_EQ(gxState().arrays[GX_VA_NRM].data, nbtData);
+  EXPECT_EQ(gxState().arrays[GX_VA_NRM].size, sizeof(nbtData));
+  EXPECT_EQ(gxState().arrays[GX_VA_NRM].stride, 36);
+  EXPECT_EQ(gxState().arrays[GX_VA_NRM].cachedRange.offset, 0u);
+  EXPECT_EQ(gxState().arrays[GX_VA_NRM].cachedRange.size, 0u);
+  EXPECT_TRUE(gxState().stateDirty);
+
+  EXPECT_EQ(gxState().arrays[GX_VA_NBT].data, untouchedData);
+  EXPECT_EQ(gxState().arrays[GX_VA_NBT].size, sizeof(untouchedData));
+  EXPECT_EQ(gxState().arrays[GX_VA_NBT].stride, 24);
+}
+
 // ============================================================================
 // BP genMode (requires __GXSetDirtyState() flush)
 // ============================================================================

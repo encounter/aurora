@@ -1177,6 +1177,7 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
       if (attrIdx < GX_VA_MAX_ATTR) {
         g_gxState.arrays[attrIdx].stride = static_cast<u8>(value);
         g_gxState.arrays[attrIdx].cachedRange = {};
+        g_gxState.stateDirty = true;
       }
     }
     break;
@@ -1666,6 +1667,7 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     g_gxState.arrays[attrIdx].data = reinterpret_cast<void*>(arrayAddr);
     g_gxState.arrays[attrIdx].size = arraySize;
     g_gxState.arrays[attrIdx].cachedRange = {};
+    g_gxState.stateDirty = true;
   } else {
     Log.error("Unknown Aurora subcommand: {:04X}", subCmd);
   }
