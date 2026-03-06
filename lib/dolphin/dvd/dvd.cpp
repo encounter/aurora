@@ -1,8 +1,11 @@
 #include <aurora/dvd.h>
 #include <dolphin/dvd.h>
+#include <dolphin/os.h>
 #include <nod.h>
 #include <SDL3/SDL_iostream.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <string>
@@ -51,6 +54,10 @@ void clearState() {
 }
 
 bool isValidEntryIndex(s32 entry) { return entry >= 0 && static_cast<size_t>(entry) < s_fstEntries.size(); }
+
+bool isAligned(const void* addr, uintptr_t align) {
+  return (reinterpret_cast<uintptr_t>(addr) & (align - 1)) == 0;
+}
 
 int64_t sdlStreamReadAt(void* userData, uint64_t offset, void* out, size_t len) {
   auto* io = static_cast<SDL_IOStream*>(userData);
@@ -254,6 +261,77 @@ void setCommandResult(DVDCommandBlock* block, s32 state, u32 transferred) {
   block->transferredSize = transferred;
 }
 
+s32 stateForResult(s32 result) {
+  if (result == DVD_RESULT_CANCELED) {
+    return DVD_STATE_CANCELED;
+  }
+  if (result == DVD_RESULT_IGNORED) {
+    return DVD_STATE_IGNORED;
+  }
+  return result >= 0 ? DVD_STATE_END : DVD_STATE_FATAL_ERROR;
+}
+
+bool isCommandBlockIdle(const DVDCommandBlock* block) {
+  return block != nullptr && block->state != DVD_STATE_BUSY && block->state != DVD_STATE_WAITING;
+}
+
+NodHandle* getCommandHandle(DVDCommandBlock* block) {
+  if (block != nullptr && block->userData != nullptr) {
+    return static_cast<NodHandle*>(block->userData);
+  }
+  return s_disc;
+}
+
+void beginCommand(DVDCommandBlock* block, u32 command, void* addr, u32 length, u32 offset, DVDCBCallback callback) {
+  if (block == nullptr) {
+    return;
+  }
+  block->command = command;
+  block->addr = addr;
+  block->length = length;
+  block->offset = offset;
+  block->transferredSize = 0;
+  block->callback = callback;
+  block->state = DVD_STATE_BUSY;
+}
+
+void finishCommand(DVDCommandBlock* block, s32 result, u32 transferred) {
+  setCommandResult(block, stateForResult(result), transferred);
+}
+
+int completeImmediateCommand(DVDCommandBlock* block, u32 command, s32 result, u32 transferred, DVDCBCallback callback) {
+  beginCommand(block, command, nullptr, 0, 0, callback);
+  finishCommand(block, result, transferred);
+  if (callback != nullptr) {
+    callback(result, block);
+  }
+  return TRUE;
+}
+
+void cbForReadAsync(s32 result, DVDCommandBlock* block) {
+  auto* fileInfo = reinterpret_cast<DVDFileInfo*>(reinterpret_cast<char*>(block) - offsetof(DVDFileInfo, cb));
+  ASSERTLINE(0x2ED, &fileInfo->cb == block);
+  if (fileInfo->callback != nullptr) {
+    fileInfo->callback(result, fileInfo);
+  }
+}
+
+void cbForSeekAsync(s32 result, DVDCommandBlock* block) {
+  auto* fileInfo = reinterpret_cast<DVDFileInfo*>(reinterpret_cast<char*>(block) - offsetof(DVDFileInfo, cb));
+  ASSERTLINE(0x383, &fileInfo->cb == block);
+  if (fileInfo->callback != nullptr) {
+    fileInfo->callback(result, fileInfo);
+  }
+}
+
+void cbForPrepareStreamAsync(s32 result, DVDCommandBlock* block) {
+  auto* fileInfo = reinterpret_cast<DVDFileInfo*>(reinterpret_cast<char*>(block) - offsetof(DVDFileInfo, cb));
+  ASSERTLINE(0x497, &fileInfo->cb == block);
+  if (fileInfo->callback != nullptr) {
+    fileInfo->callback(result, fileInfo);
+  }
+}
+
 } // namespace
 
 extern "C" {
@@ -319,42 +397,56 @@ void DVDInit(void) {}
 
 int DVDReadAbsAsyncPrio(DVDCommandBlock* block, void* addr, s32 length, s32 offset, DVDCBCallback callback, s32 prio) {
   (void)prio;
-  if (block == nullptr) {
+  ASSERTMSGLINE(0x780, block, "DVDReadAbsAsync(): null pointer is specified to command block address.");
+  ASSERTMSGLINE(0x781, addr, "DVDReadAbsAsync(): null pointer is specified to addr.");
+  ASSERTMSGLINE(0x783, isAligned(addr, 32), "DVDReadAbsAsync(): address must be aligned with 32 byte boundary.");
+  ASSERTMSGLINE(0x785, !(length & (32 - 1)), "DVDReadAbsAsync(): length must be a multiple of 32.");
+  ASSERTMSGLINE(0x787, !(offset & (4 - 1)), "DVDReadAbsAsync(): offset must be a multiple of 4.");
+  ASSERTMSGLINE(0x789, length > 0, "DVD read: 0 or negative value was specified to length of the read\n");
+  const bool idle = isCommandBlockIdle(block);
+  ASSERTMSGLINE(0x793, idle, "DVDReadAbsAsync(): command block is used for processing previous request.");
+  if (block == nullptr || addr == nullptr || !isAligned(addr, 32) || (length & 31) != 0 || (offset & 3) != 0 ||
+      length <= 0 || !idle) {
     return FALSE;
   }
 
-  block->state = DVD_STATE_BUSY;
-  block->addr = addr;
-  block->length = static_cast<u32>((length >= 0) ? length : 0);
-  block->offset = static_cast<u32>((offset >= 0) ? offset : 0);
-  block->callback = callback;
-
+  beginCommand(block, DVD_COMMAND_READ, addr, static_cast<u32>(length), static_cast<u32>(offset), callback);
   u32 transferred = 0;
-  s32 result = readFromHandle(s_disc, addr, length, offset, &transferred);
-  setCommandResult(block, DVD_STATE_END, transferred);
+  s32 result = readFromHandle(getCommandHandle(block), addr, length, offset, &transferred);
+  finishCommand(block, result, transferred);
   if (callback != nullptr) {
     callback(result, block);
   }
-  return (result >= 0) ? TRUE : FALSE;
+  return TRUE;
 }
 
 int DVDSeekAbsAsyncPrio(DVDCommandBlock* block, s32 offset, DVDCBCallback callback, s32 prio) {
   (void)prio;
-  if (block == nullptr || s_disc == nullptr || offset < 0) {
+  ASSERTMSGLINE(0x7AA, block, "DVDSeekAbs(): null pointer is specified to command block address.");
+  ASSERTMSGLINE(0x7AC, !(offset & (4 - 1)), "DVDSeekAbs(): offset must be a multiple of 4.");
+  const bool idle = isCommandBlockIdle(block);
+  ASSERTMSGLINE(0x7B3, idle, "DVDSeekAbs(): command block is used for processing previous request.");
+  if (block == nullptr || offset < 0 || (offset & 3) != 0 || !idle) {
     return FALSE;
   }
 
-  block->state = DVD_STATE_BUSY;
-  const int64_t seek = nod_seek(s_disc, offset, 0);
-  setCommandResult(block, DVD_STATE_END, 0);
+  beginCommand(block, DVD_COMMAND_SEEK, nullptr, 0, static_cast<u32>(offset), callback);
+  NodHandle* handle = getCommandHandle(block);
+  const int64_t seek = handle != nullptr ? nod_seek(handle, static_cast<int64_t>(offset), 0) : -1;
+  const s32 result = (seek < 0) ? DVD_RESULT_FATAL_ERROR : DVD_RESULT_GOOD;
+  finishCommand(block, result, 0);
   if (callback != nullptr) {
-    callback((seek < 0) ? DVD_RESULT_FATAL_ERROR : DVD_RESULT_GOOD, block);
+    callback(result, block);
   }
-  return (seek < 0) ? FALSE : TRUE;
+  return TRUE;
 }
 
 int DVDReadAbsAsyncForBS(DVDCommandBlock* block, void* addr, s32 length, s32 offset, DVDCBCallback callback) {
-  return DVDReadAbsAsyncPrio(block, addr, length, offset, callback, 2);
+  const int result = DVDReadAbsAsyncPrio(block, addr, length, offset, callback, 2);
+  if (result != FALSE && block != nullptr) {
+    block->command = DVD_COMMAND_BSREAD;
+  }
+  return result;
 }
 
 int DVDReadDiskID(DVDCommandBlock* block, DVDDiskID* diskID, DVDCBCallback callback) {
@@ -371,15 +463,16 @@ int DVDReadDiskID(DVDCommandBlock* block, DVDDiskID* diskID, DVDCBCallback callb
 }
 
 int DVDPrepareStreamAbsAsync(DVDCommandBlock* block, u32 length, u32 offset, DVDCBCallback callback) {
-  (void)length;
-  (void)offset;
-  if (block != nullptr) {
-    setCommandResult(block, DVD_STATE_END, 0);
+  const bool idle = isCommandBlockIdle(block);
+  if (block == nullptr || !idle) {
+    return FALSE;
   }
+  beginCommand(block, DVD_COMMAND_INITSTREAM, nullptr, length, offset, callback);
+  finishCommand(block, DVD_RESULT_IGNORED, 0);
   if (callback != nullptr) {
     callback(DVD_RESULT_IGNORED, block);
   }
-  return FALSE;
+  return TRUE;
 }
 
 int DVDCancelStreamAsync(DVDCommandBlock* block, DVDCBCallback callback) {
@@ -417,13 +510,10 @@ s32 DVDStopStreamAtEnd(DVDCommandBlock* block) {
 }
 
 int DVDGetStreamErrorStatusAsync(DVDCommandBlock* block, DVDCBCallback callback) {
-  if (block != nullptr) {
-    setCommandResult(block, DVD_STATE_END, 0);
+  if (block == nullptr || !isCommandBlockIdle(block)) {
+    return FALSE;
   }
-  if (callback != nullptr) {
-    callback(DVD_RESULT_IGNORED, block);
-  }
-  return FALSE;
+  return completeImmediateCommand(block, DVD_COMMAND_REQUEST_AUDIO_ERROR, DVD_RESULT_IGNORED, 0, callback);
 }
 
 s32 DVDGetStreamErrorStatus(DVDCommandBlock* block) {
@@ -432,13 +522,10 @@ s32 DVDGetStreamErrorStatus(DVDCommandBlock* block) {
 }
 
 int DVDGetStreamPlayAddrAsync(DVDCommandBlock* block, DVDCBCallback callback) {
-  if (block != nullptr) {
-    setCommandResult(block, DVD_STATE_END, 0);
+  if (block == nullptr || !isCommandBlockIdle(block)) {
+    return FALSE;
   }
-  if (callback != nullptr) {
-    callback(DVD_RESULT_IGNORED, block);
-  }
-  return FALSE;
+  return completeImmediateCommand(block, DVD_COMMAND_REQUEST_PLAY_ADDR, DVD_RESULT_IGNORED, 0, callback);
 }
 
 s32 DVDGetStreamPlayAddr(DVDCommandBlock* block) {
@@ -447,13 +534,10 @@ s32 DVDGetStreamPlayAddr(DVDCommandBlock* block) {
 }
 
 int DVDGetStreamStartAddrAsync(DVDCommandBlock* block, DVDCBCallback callback) {
-  if (block != nullptr) {
-    setCommandResult(block, DVD_STATE_END, 0);
+  if (block == nullptr || !isCommandBlockIdle(block)) {
+    return FALSE;
   }
-  if (callback != nullptr) {
-    callback(DVD_RESULT_IGNORED, block);
-  }
-  return FALSE;
+  return completeImmediateCommand(block, DVD_COMMAND_REQUEST_START_ADDR, DVD_RESULT_IGNORED, 0, callback);
 }
 
 s32 DVDGetStreamStartAddr(DVDCommandBlock* block) {
@@ -462,13 +546,10 @@ s32 DVDGetStreamStartAddr(DVDCommandBlock* block) {
 }
 
 int DVDGetStreamLengthAsync(DVDCommandBlock* block, DVDCBCallback callback) {
-  if (block != nullptr) {
-    setCommandResult(block, DVD_STATE_END, 0);
+  if (block == nullptr || !isCommandBlockIdle(block)) {
+    return FALSE;
   }
-  if (callback != nullptr) {
-    callback(DVD_RESULT_IGNORED, block);
-  }
-  return FALSE;
+  return completeImmediateCommand(block, DVD_COMMAND_REQUEST_LENGTH, DVD_RESULT_IGNORED, 0, callback);
 }
 
 s32 DVDGetStreamLength(DVDCommandBlock* block) {
@@ -477,13 +558,13 @@ s32 DVDGetStreamLength(DVDCommandBlock* block) {
 }
 
 int DVDChangeDiskAsyncForBS(DVDCommandBlock* block, DVDCBCallback callback) {
-  if (block != nullptr) {
-    block->state = DVD_STATE_IGNORED;
+  ASSERTMSGLINE(0xA1F, block, "DVDChangeDiskAsyncForBS(): null pointer is specified to command block address.");
+  const bool idle = isCommandBlockIdle(block);
+  ASSERTMSGLINE(0xA25, idle, "DVDChangeDiskAsyncForBS(): command block is used for processing previous request.");
+  if (block == nullptr || !idle) {
+    return FALSE;
   }
-  if (callback != nullptr) {
-    callback(DVD_RESULT_IGNORED, block);
-  }
-  return FALSE;
+  return completeImmediateCommand(block, DVD_COMMAND_BS_CHANGE_DISK, DVD_RESULT_IGNORED, 0, callback);
 }
 
 int DVDChangeDiskAsync(DVDCommandBlock* block, DVDDiskID* id, DVDCBCallback callback) {
@@ -646,7 +727,7 @@ BOOL DVDFastOpen(s32 entrynum, DVDFileInfo* fileInfo) {
   }
 
   std::memset(fileInfo, 0, sizeof(*fileInfo));
-  fileInfo->startAddr = static_cast<u32>(entrynum);
+  fileInfo->startAddr = 0;
   fileInfo->length = s_fstEntries[entrynum].nextOrLength;
 
   NodHandle* handle = nullptr;
@@ -702,70 +783,75 @@ BOOL DVDChangeDir(const char* dirName) {
 }
 
 BOOL DVDReadAsyncPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset, DVDCallback callback, s32 prio) {
-  (void)prio;
-  if (fileInfo == nullptr || fileInfo->cb.userData == nullptr) {
-    if (callback != nullptr) {
-      callback(DVD_RESULT_FATAL_ERROR, fileInfo);
+  ASSERTMSGLINE(0x2C7, fileInfo, "DVDReadAsync(): null pointer is specified to file info address  ");
+  ASSERTMSGLINE(0x2C8, addr, "DVDReadAsync(): null pointer is specified to addr  ");
+  ASSERTMSGLINE(0x2CC, isAligned(addr, 32), "DVDReadAsync(): address must be aligned with 32 byte boundaries  ");
+  ASSERTMSGLINE(0x2CE, !(length & 0x1F), "DVDReadAsync(): length must be  multiple of 32 byte  ");
+  ASSERTMSGLINE(0x2D0, !(offset & 3), "DVDReadAsync(): offset must be multiple of 4 byte  ");
+  if (fileInfo == nullptr || addr == nullptr || fileInfo->cb.userData == nullptr || !isAligned(addr, 32) ||
+      (length & 0x1F) != 0 || (offset & 3) != 0 || length <= 0) {
+    if (fileInfo != nullptr) {
+      fileInfo->cb.state = DVD_STATE_END;
     }
     return FALSE;
   }
 
-  fileInfo->cb.state = DVD_STATE_BUSY;
-  u32 transferred = 0;
-  s32 result = readFromHandle(static_cast<NodHandle*>(fileInfo->cb.userData), addr, length, offset, &transferred);
-  fileInfo->cb.state = DVD_STATE_END;
-  fileInfo->cb.transferredSize = transferred;
-  if (callback != nullptr) {
-    callback(result, fileInfo);
+  if (!(0 <= offset && static_cast<u32>(offset) < fileInfo->length)) {
+    OSPanic(__FILE__, 0x2D5, "DVDReadAsync(): specified area is out of the file  ");
+    return FALSE;
   }
-  return (result >= 0) ? TRUE : FALSE;
+  const int64_t end = static_cast<int64_t>(offset) + static_cast<int64_t>(length);
+  const int64_t limit = static_cast<int64_t>(fileInfo->length) + DVD_MIN_TRANSFER_SIZE;
+  if (!(0 <= end && end < limit)) {
+    OSPanic(__FILE__, 0x2DB, "DVDReadAsync(): specified area is out of the file  ");
+    return FALSE;
+  }
+
+  fileInfo->callback = callback;
+  return DVDReadAbsAsyncPrio(&fileInfo->cb, addr, length, offset, cbForReadAsync, prio);
 }
 
 s32 DVDReadPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset, s32 prio) {
-  (void)prio;
-  if (fileInfo == nullptr || fileInfo->cb.userData == nullptr) {
+  if (!DVDReadAsyncPrio(fileInfo, addr, length, offset, nullptr, prio)) {
     return DVD_RESULT_FATAL_ERROR;
   }
-  fileInfo->cb.state = DVD_STATE_BUSY;
-  u32 transferred = 0;
-  s32 result = readFromHandle(static_cast<NodHandle*>(fileInfo->cb.userData), addr, length, offset, &transferred);
-  fileInfo->cb.state = DVD_STATE_END;
-  fileInfo->cb.transferredSize = transferred;
-  return result;
+  if (fileInfo->cb.state == DVD_STATE_END) {
+    return static_cast<s32>(fileInfo->cb.transferredSize);
+  }
+  if (fileInfo->cb.state == DVD_STATE_CANCELED) {
+    return DVD_RESULT_CANCELED;
+  }
+  return DVD_RESULT_FATAL_ERROR;
 }
 
 int DVDSeekAsyncPrio(DVDFileInfo* fileInfo, s32 offset, void (*callback)(s32, DVDFileInfo*), s32 prio) {
-  (void)prio;
-  if (fileInfo == nullptr || fileInfo->cb.userData == nullptr || offset < 0) {
+  ASSERTMSGLINE(0x368, fileInfo, "DVDSeek(): null pointer is specified to file info address  ");
+  ASSERTMSGLINE(0x36C, !(offset & 3), "DVDSeek(): offset must be multiple of 4 byte  ");
+  if (fileInfo == nullptr || fileInfo->cb.userData == nullptr || offset < 0 || (offset & 3) != 0) {
     if (fileInfo != nullptr) {
       fileInfo->cb.state = DVD_STATE_END;
-    }
-    if (callback != nullptr) {
-      callback(DVD_RESULT_FATAL_ERROR, fileInfo);
     }
     return FALSE;
   }
-  fileInfo->cb.state = DVD_STATE_BUSY;
-  const int64_t seek = nod_seek(static_cast<NodHandle*>(fileInfo->cb.userData), offset, 0);
-  fileInfo->cb.state = DVD_STATE_END;
-  if (callback != nullptr) {
-    callback((seek < 0) ? DVD_RESULT_FATAL_ERROR : DVD_RESULT_GOOD, fileInfo);
+  if (!(static_cast<u32>(offset) < fileInfo->length)) {
+    OSPanic(__FILE__, 0x371, "DVDSeek(): offset is out of the file  ");
+    return FALSE;
   }
-  return (seek < 0) ? FALSE : TRUE;
+  fileInfo->callback = callback;
+  return DVDSeekAbsAsyncPrio(&fileInfo->cb, offset, cbForSeekAsync, prio);
 }
 
 s32 DVDSeekPrio(DVDFileInfo* fileInfo, s32 offset, s32 prio) {
-  (void)prio;
-  if (fileInfo == nullptr || fileInfo->cb.userData == nullptr || offset < 0) {
-    if (fileInfo != nullptr) {
-      fileInfo->cb.state = DVD_STATE_END;
-    }
+  if (!DVDSeekAsyncPrio(fileInfo, offset, nullptr, prio)) {
     return DVD_RESULT_FATAL_ERROR;
   }
-  fileInfo->cb.state = DVD_STATE_BUSY;
-  const int64_t seek = nod_seek(static_cast<NodHandle*>(fileInfo->cb.userData), offset, 0);
-  fileInfo->cb.state = DVD_STATE_END;
-  return (seek < 0) ? DVD_RESULT_FATAL_ERROR : DVD_RESULT_GOOD;
+  if (fileInfo->cb.state == DVD_STATE_END) {
+    return DVD_RESULT_GOOD;
+  }
+  if (fileInfo->cb.state == DVD_STATE_CANCELED) {
+    return DVD_RESULT_CANCELED;
+  }
+  return DVD_RESULT_FATAL_ERROR;
 }
 
 s32 DVDGetFileInfoStatus(const DVDFileInfo* fileInfo) {
@@ -836,12 +922,22 @@ void* DVDGetFSTLocation(void) {
 }
 
 BOOL DVDPrepareStreamAsync(DVDFileInfo* fileInfo, u32 length, u32 offset, DVDCallback callback) {
-  (void)length;
-  (void)offset;
-  if (callback != nullptr) {
-    callback(DVD_RESULT_IGNORED, fileInfo);
+  ASSERTMSGLINE(0x46C, fileInfo, "DVDPrepareStreamAsync(): NULL file info was specified");
+  if (fileInfo == nullptr || fileInfo->cb.userData == nullptr) {
+    return FALSE;
   }
-  return FALSE;
+  if (length == 0) {
+    length = fileInfo->length - offset;
+  }
+  const uint64_t end = static_cast<uint64_t>(offset) + static_cast<uint64_t>(length);
+  if (!(offset < fileInfo->length && end <= fileInfo->length)) {
+    OSPanic(__FILE__, 0x484,
+            "DVDPrepareStreamAsync(): The area specified (offset(0x%x), length(0x%x)) is out of the file", offset,
+            length);
+    return FALSE;
+  }
+  fileInfo->callback = callback;
+  return DVDPrepareStreamAbsAsync(&fileInfo->cb, length, offset, cbForPrepareStreamAsync);
 }
 
 s32 DVDPrepareStream(DVDFileInfo* fileInfo, u32 length, u32 offset) {
