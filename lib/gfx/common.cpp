@@ -353,7 +353,7 @@ void load_pipeline_cache() {
 
 // Write serialized pipelines to file
 void save_pipeline_cache() {
-  const auto path = std::string{g_config.configPath} + "pipeline_cache.bin";
+  const auto path = std::string{g_config.configPath} + "/pipeline_cache.bin";
   std::ofstream file(path, std::ios::out | std::ios::trunc | std::ios::binary);
   if (file) {
     file.write(reinterpret_cast<const char*>(&g_serializedPipelineCount), sizeof(g_serializedPipelineCount));
