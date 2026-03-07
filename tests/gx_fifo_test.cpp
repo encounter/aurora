@@ -1238,8 +1238,7 @@ TEST_F(GXFifoTest, LoadPosMtxImm_Translation) {
   reset_gx_state();
   decode_fifo(bytes);
 
-  // GX_PNMTX3 = 9, XF addr = 9*4 = 36, decoder mtxIdx = 36/4 = 9
-  auto& decoded = g_gxState.pnMtx[GX_PNMTX3].pos;
+  auto& decoded = g_gxState.pnMtx[3].pos;
   EXPECT_FLOAT_EQ(decoded.m0[0], 1.0f);
   EXPECT_FLOAT_EQ(decoded.m0[3], 10.0f);
   EXPECT_FLOAT_EQ(decoded.m1[3], 20.0f);
@@ -1318,7 +1317,7 @@ TEST_F(GXFifoTest, LoadNrmMtxImm_DifferentSlot) {
   reset_gx_state();
   decode_fifo(bytes);
 
-  auto& decoded = g_gxState.pnMtx[GX_PNMTX3].nrm;
+  auto& decoded = g_gxState.pnMtx[3].nrm;
   EXPECT_FLOAT_EQ(decoded.m0[0], 2.0f);
   EXPECT_FLOAT_EQ(decoded.m1[1], 3.0f);
   EXPECT_FLOAT_EQ(decoded.m2[2], 4.0f);

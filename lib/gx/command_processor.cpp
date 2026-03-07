@@ -369,11 +369,148 @@ static inline u64 read_u64(const u8* ptr, bool bigEndian) {
   return loaded;
 }
 
+// Helper to convert packed RGBA8 to Vec4<float>
+static Vec4<float> unpack_color(u32 packed) {
+  return {
+      static_cast<float>(packed >> 24 & 0xFF) / 255.f,
+      static_cast<float>(packed >> 16 & 0xFF) / 255.f,
+      static_cast<float>(packed >> 8 & 0xFF) / 255.f,
+      static_cast<float>(packed & 0xFF) / 255.f,
+  };
+}
+
 static inline f32 read_f32(const u8* ptr, bool bigEndian) {
   u32 bits = read_u32(ptr, bigEndian);
   f32 val;
   std::memcpy(&val, &bits, sizeof(val));
   return val;
+}
+
+static bool copy_xf_data(u32 addr, const u8* data, u32 len, bool bigEndian) {
+  if (addr < 0x78) {
+    // Position matrices (0x0000 - 0x0077)
+    u32 mtxIdx = addr / 12;
+    u32 startOffset = addr % 12;
+    // We only support full writes to matrices
+    CHECK(mtxIdx < MaxPnMtx, "XF: PosMtx copy oob? Should never happen; mtxIdx={}", mtxIdx);
+    CHECK(startOffset == 0 && len == 12, "XF: PosMtx sub-copy unsupported: offs={}, len={}", startOffset, len);
+    auto& mtx = g_gxState.pnMtx[mtxIdx].pos;
+    f32* flat = reinterpret_cast<f32*>(&mtx);
+    for (u32 i = 0; i < len; i++) {
+      flat[i] = read_f32(data + i * 4, bigEndian);
+    }
+    g_gxState.stateDirty = true;
+  } else if (addr < 0x0F0) {
+    // Texture matrices (0x078-0x0EF)
+    u32 texBase = addr - 0x078;
+    u32 mtxIdx = texBase / 12;
+    u32 startOffset = texBase % 12;
+    CHECK(mtxIdx < MaxTexMtx, "XF TexMtx copy oob? Should never happen; mtxIdx={}", mtxIdx);
+    CHECK(startOffset == 0 && (len == 8 || len == 12), "XF TexMtx sub-copy unsupported: offs={}, len={}", startOffset,
+          len);
+
+    // Determine if 2x4 or 3x4 from count
+    auto& mtx = g_gxState.texMtxs[mtxIdx];
+    f32* flat = reinterpret_cast<f32*>(&mtx);
+    for (u32 i = 0; i < len; i++) {
+      flat[i] = read_f32(data + i * 4, bigEndian);
+    }
+    g_gxState.stateDirty = true;
+    return true;
+  } else if (addr >= 0x400 && addr < 0x45A) {
+    // Normal matrices (0x400-0x459)
+    u32 nrmBase = addr - 0x400;
+    u32 mtxIdx = nrmBase / 9;
+    u32 startOffset = nrmBase % 9;
+    // We only support full writes to matrices
+    CHECK(mtxIdx < MaxPnMtx, "XF: NrmMtx copy oob? Should never happen; mtxIdx={}", mtxIdx);
+    CHECK(startOffset == 0 && len == 9, "XF: NrmMtx sub-copy unsupported: offs={}, len={}", startOffset, len);
+    auto& mtx = g_gxState.pnMtx[mtxIdx].nrm;
+    f32* flat = reinterpret_cast<f32*>(&mtx);
+    for (u32 i = 0; i < len; i++) {
+      u32 xfIdx = i;
+      u32 row = xfIdx / 3;
+      u32 col = xfIdx % 3;
+      if (row < 3) {
+        flat[row * 4 + col] = read_f32(data + i * 4, bigEndian);
+      }
+    }
+    g_gxState.stateDirty = true;
+    return true;
+  } else if (addr >= 0x500 && addr < 0x5F0) {
+    // Post-transform texture matrices (0x500-0x5EF)
+    u32 ptBase = addr - 0x500;
+    u32 mtxIdx = ptBase / 12;
+    u32 startOffset = ptBase % 12;
+    CHECK(mtxIdx < MaxPTTexMtx, "XF: PTTexMtx copy oob? Should never happen; mtxIdx={}", mtxIdx);
+    CHECK(startOffset == 0 && len == 12, "XF: PTTexMtx sub-copy unsupported: offs={}, len={}", startOffset, len);
+    auto& mtx = g_gxState.ptTexMtxs[mtxIdx];
+    f32* flat = reinterpret_cast<f32*>(&mtx);
+    for (u32 i = 0; i < len; i++) {
+      flat[startOffset + i] = read_f32(data + i * 4, bigEndian);
+    }
+    g_gxState.stateDirty = true;
+    return true;
+  } else if (addr >= 0x600 && addr < 0x680) {
+    // Lights (0x600-0x67F) - 8 lights, 16 values each
+    u32 lightBase = addr - 0x600;
+    u32 lightIdx = lightBase / 0x10;
+    u32 startOffset = lightBase % 0x10;
+    CHECK(lightIdx < 8, "XF: Light copy oob? Should never happen; lightIdx={}", lightIdx);
+    CHECK(startOffset + len <= 0x10, "XF: Light copy that crosses across light boundaries unsupported: offs={}, len={}", startOffset, len);
+    auto& light = g_gxState.lights[lightIdx];
+    for (u32 i = 0; i < len; i++) {
+      u32 field = startOffset + i;
+      f32 val = read_f32(data + i * 4, bigEndian);
+      u32 ival = read_u32(data + i * 4, bigEndian);
+      switch (field) {
+      case 3: // Color (packed u32)
+        light.color = unpack_color(ival);
+        break;
+      case 4:
+        light.cosAtt[0] = val;
+        break; // a0
+      case 5:
+        light.cosAtt[1] = val;
+        break; // a1
+      case 6:
+        light.cosAtt[2] = val;
+        break; // a2
+      case 7:
+        light.distAtt[0] = val;
+        break; // k0
+      case 8:
+        light.distAtt[1] = val;
+        break; // k1
+      case 9:
+        light.distAtt[2] = val;
+        break; // k2
+      case 10:
+        light.pos[0] = val;
+        break; // px
+      case 11:
+        light.pos[1] = val;
+        break; // py
+      case 12:
+        light.pos[2] = val;
+        break; // pz
+      case 13:
+        light.dir[0] = val;
+        break; // nx
+      case 14:
+        light.dir[1] = val;
+        break; // ny
+      case 15:
+        light.dir[2] = val;
+        break; // nz
+      default:
+        break; // padding (0-2)
+      }
+    }
+    g_gxState.stateDirty = true;
+    return true;
+  }
+  return false;
 }
 
 // Forward declarations for register handlers (implemented in later phases)
@@ -423,7 +560,16 @@ void process(const u8* data, u32 size, bool bigEndian) {
     case CP_CMD_LOAD_INDX_D: {
       // Indexed XF load: 4 bytes of data
       CHECK(pos + 4 <= size, "indexed XF read overrun");
-      Log.warn("Unimplemented indexed XF load (opcode 0x{:02X})", opcode);
+      u32 arrayType = GX_POS_MTX_ARRAY + (opcode - (CP_CMD_LOAD_INDX_A / 0x08));
+      u8 srcArrayIdx = data[pos++];
+      auto const& array = g_gxState.arrays[arrayType];
+      u8* srcData = ((u8*)array.data) + srcArrayIdx * array.stride;
+      u16 addrLen = read_u16(data + pos, bigEndian);
+      u16 len = (addrLen >> 12) + 1;
+      u16 dstAddr = addrLen & 0x0FFF;
+      if (!copy_xf_data(dstAddr, srcData, len, bigEndian)) {
+        Log.warn("Unimplemented indexed XF load (opcode 0x{:02X}, dstAddr=%04x)", opcode, dstAddr);
+      }
       pos += 4;
       break;
     }
@@ -485,16 +631,6 @@ void process(const u8* data, u32 size, bool bigEndian) {
 
 // Helper to extract bit fields from a 32-bit register
 static u32 bp_get(u32 reg, u32 size, u32 shift) { return reg >> shift & (1u << size) - 1; }
-
-// Helper to convert packed RGBA8 to Vec4<float>
-static Vec4<float> unpack_color(u32 packed) {
-  return {
-      static_cast<float>(packed >> 24 & 0xFF) / 255.f,
-      static_cast<float>(packed >> 16 & 0xFF) / 255.f,
-      static_cast<float>(packed >> 8 & 0xFF) / 255.f,
-      static_cast<float>(packed & 0xFF) / 255.f,
-  };
-}
 
 // BP register handler - decodes BP (RAS/pixel engine) register writes and updates g_gxState
 static void handle_bp(u32 value, bool bigEndian) {
@@ -1198,136 +1334,10 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
 
   const u8* xfData = data + pos;
 
-  // Position matrices (0x000-0x077) - 10 matrices, 4 rows each, 4 values per row = 12 floats
-  if (addr < 0x078) {
-    u32 mtxIdx = addr / 4;
-    u32 startOffset = addr % 4;
-    if (mtxIdx < MaxPnMtx) {
-      auto& mtx = g_gxState.pnMtx[mtxIdx].pos;
-      for (u32 i = 0; i < count && (startOffset + i) < 12; i++) {
-        reinterpret_cast<f32*>(&mtx)[startOffset + i] = read_f32(xfData + i * 4, bigEndian);
-      }
-      g_gxState.stateDirty = true;
-    }
-  }
-  // Texture matrices (0x078-0x0EF)
-  else if (addr >= 0x078 && addr < 0x0F0) {
-    u32 texBase = addr - 0x078;
-    u32 mtxIdx = texBase / 12;
-    u32 startOffset = texBase % 12;
-    if (mtxIdx < MaxTexMtx) {
-      // Determine if 2x4 or 3x4 from count
-      if (count <= 8 && startOffset == 0) {
-        // 2x4 matrix
-        Mat3x4<float> mtx{};
-        f32* flat = reinterpret_cast<f32*>(&mtx);
-        for (u32 i = 0; i < count && i < 8; i++) {
-          flat[i] = read_f32(xfData + i * 4, bigEndian);
-        }
-        g_gxState.texMtxs[mtxIdx] = mtx;
-      } else {
-        // 3x4 matrix
-        Mat3x4<float> mtx{};
-        f32* flat = reinterpret_cast<f32*>(&mtx);
-        for (u32 i = 0; i < count && (startOffset + i) < 12; i++) {
-          flat[startOffset + i] = read_f32(xfData + i * 4, bigEndian);
-        }
-        g_gxState.texMtxs[mtxIdx] = mtx;
-      }
-      g_gxState.stateDirty = true;
-    }
-  }
-  // Normal matrices (0x400-0x459)
-  else if (addr >= 0x400 && addr < 0x45A) {
-    u32 nrmBase = addr - 0x400;
-    u32 mtxIdx = nrmBase / 3;
-    u32 startOffset = nrmBase % 3;
-    if (mtxIdx < MaxPnMtx) {
-      f32* flat = reinterpret_cast<f32*>(&g_gxState.pnMtx[mtxIdx].nrm);
-      for (u32 i = 0; i < count; i++) {
-        u32 xfIdx = startOffset + i;
-        u32 row = xfIdx / 3;
-        u32 col = xfIdx % 3;
-        if (row < 3) {
-          flat[row * 4 + col] = read_f32(xfData + i * 4, bigEndian);
-        }
-      }
-      g_gxState.stateDirty = true;
-    }
-  }
-  // Post-transform texture matrices (0x500-0x5EF)
-  else if (addr >= 0x500 && addr < 0x5F0) {
-    u32 ptBase = addr - 0x500;
-    u32 mtxIdx = ptBase / 12;
-    u32 startOffset = ptBase % 12;
-    if (mtxIdx < MaxPTTexMtx) {
-      f32* flat = reinterpret_cast<f32*>(&g_gxState.ptTexMtxs[mtxIdx]);
-      for (u32 i = 0; i < count && (startOffset + i) < 12; i++) {
-        flat[startOffset + i] = read_f32(xfData + i * 4, bigEndian);
-      }
-      g_gxState.stateDirty = true;
-    }
-  }
-  // Lights (0x600-0x67F) - 8 lights, 16 values each
-  else if (addr >= 0x600 && addr < 0x680) {
-    u32 lightBase = addr - 0x600;
-    u32 lightIdx = lightBase / 0x10;
-    u32 offset = lightBase % 0x10;
-    if (lightIdx < GX::MaxLights) {
-      auto& light = g_gxState.lights[lightIdx];
-      for (u32 i = 0; i < count && (offset + i) < 16; i++) {
-        u32 field = offset + i;
-        f32 val = read_f32(xfData + i * 4, bigEndian);
-        u32 ival = read_u32(xfData + i * 4, bigEndian);
-        switch (field) {
-        case 3: // Color (packed u32)
-          light.color = unpack_color(ival);
-          break;
-        case 4:
-          light.cosAtt[0] = val;
-          break; // a0
-        case 5:
-          light.cosAtt[1] = val;
-          break; // a1
-        case 6:
-          light.cosAtt[2] = val;
-          break; // a2
-        case 7:
-          light.distAtt[0] = val;
-          break; // k0
-        case 8:
-          light.distAtt[1] = val;
-          break; // k1
-        case 9:
-          light.distAtt[2] = val;
-          break; // k2
-        case 10:
-          light.pos[0] = val;
-          break; // px
-        case 11:
-          light.pos[1] = val;
-          break; // py
-        case 12:
-          light.pos[2] = val;
-          break; // pz
-        case 13:
-          light.dir[0] = val;
-          break; // nx
-        case 14:
-          light.dir[1] = val;
-          break; // ny
-        case 15:
-          light.dir[2] = val;
-          break; // nz
-        default:
-          break; // padding (0-2)
-        }
-      }
-      g_gxState.stateDirty = true;
-    }
-  }
-  // XF registers (0x1000+)
-  else if (addr >= 0x1000) {
+  if (copy_xf_data(addr, xfData, count, bigEndian)) {
+    // copy_xf_data handled everything.
+  } else if (addr >= 0x1000) {
+    // XF registers (0x1000+)
     u32 xfAddr = addr - 0x1000;
     for (u32 i = 0; i < count; i++) {
       u32 reg = xfAddr + i;
@@ -1667,7 +1677,7 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     CHECK(arraySize <= std::numeric_limits<decltype(g_gxState.arrays[attrIdx].size)>::max(), "Array size too large!");
 
     g_gxState.arrays[attrIdx].data = reinterpret_cast<void*>(arrayAddr);
-    g_gxState.arrays[attrIdx].size = arraySize;
+    g_gxState.arrays[attrIdx].size = (u32)arraySize;
     g_gxState.arrays[attrIdx].cachedRange = {};
     g_gxState.stateDirty = true;
   } else {
