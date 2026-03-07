@@ -24,7 +24,7 @@ typedef enum {
   BACKEND_NULL,
 } AuroraBackend;
 
-typedef enum : uint8_t {
+typedef enum {
   LOG_DEBUG,
   LOG_INFO,
   LOG_WARNING,
