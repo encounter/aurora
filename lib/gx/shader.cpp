@@ -275,23 +275,23 @@ static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view sc
     return fmt::format("select({3}, {2}, round({0}.r * 255.0) == round({1}.r * 255.0)) + {4}", a, b, c, zero, d);
   case GX_TEV_COMP_GR16_GT:
     return fmt::format(
-        "((round(dot({0}.rg * 255.0, vec2(1.0, 256.0))) > round(dot({1}.rg * 255.0, vec2(1.0, 256.0)))) ? {2} : {3}) + "
-        "{4}",
+        "select({3}, {2}, round(dot({0}.rg * 255.0, vec2(1.0, 256.0))) > round(dot({1}.rg * 255.0, vec2(1.0, 256.0))))"
+        " + {4}",
         a, b, c, zero, d);
   case GX_TEV_COMP_GR16_EQ:
     return fmt::format(
-        "((round(dot({0}.rg * 255.0, vec2(1.0, 256.0))) == round(dot({1}.rg * 255.0, vec2(1.0, 256.0)))) ? {2} : {3}) "
-        "+ {4}",
+        "select({3}, {2}, round(dot({0}.rg * 255.0, vec2(1.0, 256.0))) == round(dot({1}.rg * 255.0, vec2(1.0, 256.0))))"
+        " + {4}",
         a, b, c, zero, d);
   case GX_TEV_COMP_BGR24_GT:
     return fmt::format(
-        "((round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) > round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
-        "65536.0)))) ? {2} : {3}) + {4}",
+        "select({3}, {2}, round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) > round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
+        "65536.0)))) + {4}",
         a, b, c, zero, d);
   case GX_TEV_COMP_BGR24_EQ:
     return fmt::format(
-        "((round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) == round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
-        "65536.0)))) ? {2} : {3}) + {4}",
+        "select({3}, {2}, round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) == round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
+        "65536.0)))) + {4}",
         a, b, c, zero, d);
   }
 }
