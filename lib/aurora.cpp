@@ -142,6 +142,11 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
   };
 }
 
+void aurora_set_log_level(AuroraLogLevel level) noexcept {
+  g_config.logLevel = level;
+}
+
+
 #ifdef AURORA_ENABLE_GX
 wgpu::TextureView g_currentView;
 #endif
