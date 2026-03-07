@@ -11,12 +11,18 @@
 namespace aurora {
 void log_internal(AuroraLogLevel level, const char* module, const char* message, unsigned int len) noexcept;
 
+extern AuroraConfig g_config;
+
+void set_log_level() noexcept;
+
 struct Module {
   const char* name;
   explicit Module(const char* name) noexcept : name(name) {}
 
   template <typename... T>
   void report(const AuroraLogLevel level, fmt::format_string<T...> fmt, T&&... args) noexcept {
+    if (g_config.logLevel > level) return;
+
     auto message = fmt::format(fmt, std::forward<T>(args)...);
     log_internal(level, name, message.c_str(), message.size());
   }

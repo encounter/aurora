@@ -12,8 +12,6 @@ extern AuroraConfig g_config;
 
 void log_internal(const AuroraLogLevel level, const char* module, const char* message,
                   const unsigned int len) noexcept {
-  if (level < g_config.logLevel) return;
-  
   if (g_config.logCallback == nullptr) {
     fmt::println(stderr, "[{}] [{}] {}", level, module, std::string_view(message, len));
   } else {
