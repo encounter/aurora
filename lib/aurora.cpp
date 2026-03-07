@@ -77,10 +77,6 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
   }
   ASSERT(window::initialize(), "Error initializing window");
 
-void set_log_level(AuroraLogLevel level) {
-  g_config.logLevel = level;
-}
-
 #ifdef AURORA_ENABLE_GX
   /* Attempt to create a window using the calling application's desired backend */
   AuroraBackend selectedBackend = config.desiredBackend;
@@ -145,6 +141,11 @@ void set_log_level(AuroraLogLevel level) {
       .windowSize = size,
   };
 }
+
+void set_log_level(AuroraLogLevel level) noexcept {
+  g_config.logLevel = level;
+}
+
 
 #ifdef AURORA_ENABLE_GX
 wgpu::TextureView g_currentView;
