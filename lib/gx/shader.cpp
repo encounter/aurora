@@ -260,13 +260,59 @@ static std::string alpha_arg_reg(GXTevAlphaArg arg, size_t stageIdx, const Shade
   }
 }
 
-static std::string_view tev_op(GXTevOp op) {
+static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view scale, std::string a, std::string b,
+                          std::string c, std::string d, std::string zero) {
   switch (op) {
     DEFAULT_FATAL("unimplemented tev op {}", underlying(op));
   case GX_TEV_ADD:
-    return ""sv;
-  case GX_TEV_SUB:
-    return "-"sv;
+  case GX_TEV_SUB: {
+    std::string_view neg = op == GX_TEV_SUB ? "-"sv : ""sv;
+    return fmt::format("(({0}mix({1}, {2}, {3}) + {4}){5}){6}", neg, a, b, c, d, bias, scale);
+  }
+  case GX_TEV_COMP_R8_GT:
+    return fmt::format("((round({0}.r * 255.0) > round({1}.r * 255.0)) ? {2} : {3}) + {4}", a, b, c, zero, d);
+  case GX_TEV_COMP_R8_EQ:
+    return fmt::format("((round({0}.r * 255.0) == round({1}.r * 255.0)) ? {2} : {3}) + {4}", a, b, c, zero, d);
+  case GX_TEV_COMP_GR16_GT:
+    return fmt::format(
+        "((round(dot({0}.rg * 255.0, vec2(1.0, 256.0))) > round(dot({1}.rg * 255.0, vec2(1.0, 256.0)))) ? {2} : {3}) + "
+        "{4}",
+        a, b, c, zero, d);
+  case GX_TEV_COMP_GR16_EQ:
+    return fmt::format(
+        "((round(dot({0}.rg * 255.0, vec2(1.0, 256.0))) == round(dot({1}.rg * 255.0, vec2(1.0, 256.0)))) ? {2} : {3}) "
+        "+ {4}",
+        a, b, c, zero, d);
+  case GX_TEV_COMP_BGR24_GT:
+    return fmt::format(
+        "((round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) > round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
+        "65536.0)))) ? {2} : {3}) + {4}",
+        a, b, c, zero, d);
+  case GX_TEV_COMP_BGR24_EQ:
+    return fmt::format(
+        "((round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) == round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
+        "65536.0)))) ? {2} : {3}) + {4}",
+        a, b, c, zero, d);
+  }
+}
+
+static std::string tev_color_op(GXTevOp op, std::string_view bias, std::string_view scale, bool clamp, std::string a,
+                                std::string b, std::string c, std::string d) {
+  std::string expr = tev_op(op, bias, scale, a, b, c, d, "vec3(0)");
+  if (clamp) {
+    return fmt::format("clamp({}, vec3f(0.0), vec3f(1.0))", expr);
+  } else {
+    return expr;
+  }
+}
+
+static std::string tev_alpha_op(GXTevOp op, std::string_view bias, std::string_view scale, bool clamp, std::string a,
+                                std::string b, std::string c, std::string d) {
+  std::string expr = tev_op(op, bias, scale, a, b, c, d, "0.0");
+  if (clamp) {
+    return fmt::format("clamp({}, 0.0, 1.0)", expr);
+  } else {
+    return expr;
   }
 }
 
@@ -760,14 +806,11 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         outReg = "tevreg2";
         break;
       }
-      std::string op = fmt::format(
-          "(({4}mix({0}, {1}, {2}) + {3}){5}){6}", color_arg_reg(stage.colorPass.a, idx, config, stage),
-          color_arg_reg(stage.colorPass.b, idx, config, stage), color_arg_reg(stage.colorPass.c, idx, config, stage),
-          color_arg_reg(stage.colorPass.d, idx, config, stage), tev_op(stage.colorOp.op), tev_bias(stage.colorOp.bias),
-          tev_scale(stage.colorOp.scale));
-      if (stage.colorOp.clamp) {
-        op = fmt::format("clamp({}, vec3f(0.0), vec3f(1.0))", op);
-      }
+
+      std::string op = tev_color_op(
+          stage.colorOp.op, tev_bias(stage.colorOp.bias), tev_scale(stage.colorOp.scale), stage.colorOp.clamp,
+          color_arg_reg(stage.colorPass.a, idx, config, stage), color_arg_reg(stage.colorPass.b, idx, config, stage),
+          color_arg_reg(stage.colorPass.c, idx, config, stage), color_arg_reg(stage.colorPass.d, idx, config, stage));
       fragmentFn += fmt::format("\n    // TEV stage {2}\n    {0} = vec4f({1}, {0}.a);", outReg, op, idx);
     }
     {
@@ -787,14 +830,11 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         outReg = "tevreg2.a";
         break;
       }
-      std::string op = fmt::format(
-          "(({4}mix({0}, {1}, {2}) + {3}){5}){6}", alpha_arg_reg(stage.alphaPass.a, idx, config, stage),
-          alpha_arg_reg(stage.alphaPass.b, idx, config, stage), alpha_arg_reg(stage.alphaPass.c, idx, config, stage),
-          alpha_arg_reg(stage.alphaPass.d, idx, config, stage), tev_op(stage.alphaOp.op), tev_bias(stage.alphaOp.bias),
-          tev_scale(stage.alphaOp.scale));
-      if (stage.alphaOp.clamp) {
-        op = fmt::format("clamp({}, 0.0, 1.0)", op);
-      }
+
+      std::string op = tev_alpha_op(
+          stage.alphaOp.op, tev_bias(stage.alphaOp.bias), tev_scale(stage.alphaOp.scale), stage.alphaOp.clamp,
+          alpha_arg_reg(stage.alphaPass.a, idx, config, stage), alpha_arg_reg(stage.alphaPass.b, idx, config, stage),
+          alpha_arg_reg(stage.alphaPass.c, idx, config, stage), alpha_arg_reg(stage.alphaPass.d, idx, config, stage));
       fragmentFn += fmt::format("\n    {0} = {1};", outReg, op);
     }
   }
