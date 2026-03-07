@@ -70,6 +70,7 @@ typedef struct {
   uint32_t iconWidth;
   uint32_t iconHeight;
   AuroraLogCallback logCallback;
+  AuroraLogLevel logLevel;
   AuroraImGuiInitCallback imGuiInitCallback;
 
   /*
@@ -98,6 +99,8 @@ void aurora_shutdown();
 const AuroraEvent* aurora_update();
 bool aurora_begin_frame();
 void aurora_end_frame();
+
+void aurora_set_log_level(AuroraLogLevel level);
 
 AuroraBackend aurora_get_backend();
 const AuroraBackend* aurora_get_available_backends(size_t* count);
