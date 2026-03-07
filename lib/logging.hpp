@@ -13,8 +13,6 @@ void log_internal(AuroraLogLevel level, const char* module, const char* message,
 
 extern AuroraConfig g_config;
 
-void set_log_level() noexcept;
-
 struct Module {
   const char* name;
   explicit Module(const char* name) noexcept : name(name) {}

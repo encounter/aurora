@@ -100,7 +100,7 @@ const AuroraEvent* aurora_update();
 bool aurora_begin_frame();
 void aurora_end_frame();
 
-void set_log_level(AuroraLogLevel level);
+void aurora_set_log_level(AuroraLogLevel level);
 
 AuroraBackend aurora_get_backend();
 const AuroraBackend* aurora_get_available_backends(size_t* count);

@@ -142,7 +142,7 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
   };
 }
 
-void set_log_level(AuroraLogLevel level) noexcept {
+void aurora_set_log_level(AuroraLogLevel level) noexcept {
   g_config.logLevel = level;
 }
 
