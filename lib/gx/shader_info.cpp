@@ -160,17 +160,10 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
       info.indexAttr.set(attr);
     }
   }
-  if (info.indexAttr.test(GX_VA_PNMTXIDX)) {
-    info.uniformSize += sizeof(PnMtx) * MaxPnMtx;
-  } else {
-    info.uniformSize += sizeof(PnMtx);
-  }
-  for (int i = 0; i < 8; i++) {
-    if (info.indexAttr.test(GX_VA_TEX0MTXIDX + i)) {
-      info.usesTexMtx = (1 << MaxTexMtx) - 1; // need all texmtx
-      break;
-    }
-  }
+
+  // 10 position matrices, 10 texture matrices, 10 normal matrices.
+  info.uniformSize += sizeof(Mat3x4<float>) * 30;
+
   for (int i = 0; i < config.tevStageCount; ++i) {
     const auto& stage = config.tevStages[i];
     // Color pass
@@ -230,17 +223,11 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
       continue;
     }
     const auto& tcg = config.tcgs[i];
-    if (tcg.mtx != GX_IDENTITY) {
-      u32 texMtxIdx = (tcg.mtx - GX_TEXMTX0) / 3;
-      info.usesTexMtx.set(texMtxIdx);
-    }
     if (tcg.postMtx != GX_PTIDENTITY) {
       u32 postMtxIdx = (tcg.postMtx - GX_PTTEXMTX0) / 3;
       info.usesPTTexMtx.set(postMtxIdx);
     }
   }
-  if (info.usesTexMtx.any())
-    info.uniformSize += sizeof(Mat3x4<float>) * MaxTexMtx;
   if (info.usesPTTexMtx.any())
     info.uniformSize += sizeof(Mat3x4<float>) * MaxPTTexMtx;
   if (config.fogType != GX_FOG_NONE) {
@@ -256,15 +243,16 @@ gfx::Range build_uniform(const ShaderInfo& info) noexcept {
   auto [buf, range] = gfx::map_uniform(info.uniformSize);
   buf.append(g_gxState.proj);
 
-  if (info.indexAttr.test(GX_VA_PNMTXIDX)) {
-    for (int i = 0; i < MaxPnMtx; i++) {
-      buf.append(g_gxState.pnMtx[i].pos);
-    }
-    for (int i = 0; i < MaxPnMtx; i++) {
-      buf.append(g_gxState.pnMtx[i].nrm);
-    }
-  } else {
-    buf.append(g_gxState.pnMtx[g_gxState.currentPnMtx]);
+  for (int i = 0; i < MaxPnMtx; i++) {
+    buf.append(g_gxState.pnMtx[i].pos);
+  }
+
+  for (int i = 0; i < MaxTexMtx; i++) {
+    buf.append(g_gxState.texMtxs[i]);
+  }
+
+  for (int i = 0; i < MaxPnMtx; i++) {
+    buf.append(g_gxState.pnMtx[i].nrm);
   }
 
   for (int i = 0; i < info.loadsTevReg.size(); ++i) {
@@ -305,11 +293,6 @@ gfx::Range build_uniform(const ShaderInfo& info) noexcept {
   for (int i = 0; i < info.sampledKColors.size(); ++i) {
     if (info.sampledKColors.test(i)) {
       buf.append(g_gxState.kcolors[i]);
-    }
-  }
-  if (info.usesTexMtx.any()) {
-    for (int i = 0; i < info.usesTexMtx.size(); ++i) {
-      buf.append(g_gxState.texMtxs[i]);
     }
   }
   if (info.usesPTTexMtx.any()) {
