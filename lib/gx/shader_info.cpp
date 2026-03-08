@@ -256,9 +256,6 @@ gfx::Range build_uniform(const ShaderInfo& info) noexcept {
     buf.append(g_gxState.pnMtx[i].nrm);
   }
 
-  buf.append(g_gxState.currentPnMtx);
-  buf.append_zeroes(16 - sizeof(u32)); // padding.
-
   for (int i = 0; i < info.loadsTevReg.size(); ++i) {
     if (info.loadsTevReg.test(i)) {
       buf.append(g_gxState.colorRegs[i]);

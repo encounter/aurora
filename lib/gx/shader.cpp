@@ -759,9 +759,11 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         "\n    var pos_mtx = ubuf.postex_mtx[in_pnmtxidx / 3u];"
         "\n    var nrm_mtx = ubuf.nrm_mtx[in_pnmtxidx / 3u];"sv;
   } else {
-    vtxXfrAttrsPre +=
-        "\n    var pos_mtx = ubuf.postex_mtx[ubuf.current_pn_mtx / 3u];"
-        "\n    var nrm_mtx = ubuf.nrm_mtx[ubuf.current_pn_mtx / 3u];"sv;
+    vtxXfrAttrsPre += fmt::format(
+        "\n    var pos_mtx = ubuf.postex_mtx[{0}];"
+        "\n    var nrm_mtx = ubuf.nrm_mtx[{0}];",
+        config.currentPnMtx
+    );
   }
 
   vtxXfrAttrsPre += fmt::format(
@@ -781,7 +783,6 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
 
   uniBufAttrs += fmt::format("\n    postex_mtx: array<mat3x4f, {}>,", MaxPnMtx + MaxTexMtx);
   uniBufAttrs += fmt::format("\n    nrm_mtx: array<mat3x4f, {}>,", MaxPnMtx);
-  uniBufAttrs += "\n    current_pn_mtx: u32,"sv;
   std::string fragmentFnPre;
   std::string fragmentFn;
   for (u32 idx = 0; idx < config.tevStageCount; ++idx) {
