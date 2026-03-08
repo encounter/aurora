@@ -257,6 +257,8 @@ void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> 
   newPass.clearDepth = g_renderPasses[g_currentRenderPass].clearDepth;
   newPass.clear = clear;
   ++g_currentRenderPass;
+  push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
+  push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
 }
 
 template <>
@@ -484,8 +486,8 @@ void begin_frame() {
     g_renderPasses[0].clearDepth = gx::UseReversedZ ? (1.f - normalizedDepth) : normalizedDepth;
   }
   g_currentRenderPass = 0;
-  // push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
-  // push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
+  push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
+  push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
 
   if (!g_hasPipelineThread) {
     g_pipelinesPerFrame = 0;
