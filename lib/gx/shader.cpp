@@ -270,9 +270,9 @@ static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view sc
     return fmt::format("(({0}mix({1}, {2}, {3}) + {4}){5}){6}", neg, a, b, c, d, bias, scale);
   }
   case GX_TEV_COMP_R8_GT:
-    return fmt::format("((round({0}.r * 255.0) > round({1}.r * 255.0)) ? {2} : {3}) + {4}", a, b, c, zero, d);
+    return fmt::format("select({3}, {2}, round({0}.r * 255.0) > round({1}.r * 255.0)) + {4}", a, b, c, zero, d);
   case GX_TEV_COMP_R8_EQ:
-    return fmt::format("((round({0}.r * 255.0) == round({1}.r * 255.0)) ? {2} : {3}) + {4}", a, b, c, zero, d);
+    return fmt::format("select({3}, {2}, round({0}.r * 255.0) == round({1}.r * 255.0)) + {4}", a, b, c, zero, d);
   case GX_TEV_COMP_GR16_GT:
     return fmt::format(
         "((round(dot({0}.rg * 255.0, vec2(1.0, 256.0))) > round(dot({1}.rg * 255.0, vec2(1.0, 256.0)))) ? {2} : {3}) + "
