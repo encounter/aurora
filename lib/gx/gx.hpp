@@ -404,6 +404,7 @@ struct ShaderConfig {
   std::array<TcgConfig, MaxTexCoord> tcgs;
   AlphaCompare alphaCompare;
   std::array<TextureConfig, MaxTextures> textureConfig;
+  u32 currentPnMtx = 0;
 
   bool operator==(const ShaderConfig& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
 };

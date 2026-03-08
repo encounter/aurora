@@ -296,6 +296,8 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     }
     config.shaderConfig.textureConfig[i] = texConfig;
   }
+  bool hasPnMtxIdx = config.shaderConfig.vtxAttrs[GX_VA_PNMTXIDX] == GX_DIRECT;
+  config.shaderConfig.currentPnMtx = hasPnMtxIdx ? 0 : g_gxState.currentPnMtx;
   config = {
       .shaderConfig = config.shaderConfig,
       .primitive = primitive,

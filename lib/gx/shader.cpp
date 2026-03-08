@@ -275,23 +275,23 @@ static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view sc
     return fmt::format("select({3}, {2}, round({0}.r * 255.0) == round({1}.r * 255.0)) + {4}", a, b, c, zero, d);
   case GX_TEV_COMP_GR16_GT:
     return fmt::format(
-        "((round(dot({0}.rg * 255.0, vec2(1.0, 256.0))) > round(dot({1}.rg * 255.0, vec2(1.0, 256.0)))) ? {2} : {3}) + "
-        "{4}",
+        "select({3}, {2}, round(dot({0}.rg * 255.0, vec2(1.0, 256.0))) > round(dot({1}.rg * 255.0, vec2(1.0, 256.0))))"
+        " + {4}",
         a, b, c, zero, d);
   case GX_TEV_COMP_GR16_EQ:
     return fmt::format(
-        "((round(dot({0}.rg * 255.0, vec2(1.0, 256.0))) == round(dot({1}.rg * 255.0, vec2(1.0, 256.0)))) ? {2} : {3}) "
-        "+ {4}",
+        "select({3}, {2}, round(dot({0}.rg * 255.0, vec2(1.0, 256.0))) == round(dot({1}.rg * 255.0, vec2(1.0, 256.0))))"
+        " + {4}",
         a, b, c, zero, d);
   case GX_TEV_COMP_BGR24_GT:
     return fmt::format(
-        "((round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) > round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
-        "65536.0)))) ? {2} : {3}) + {4}",
+        "select({3}, {2}, round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) > round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
+        "65536.0)))) + {4}",
         a, b, c, zero, d);
   case GX_TEV_COMP_BGR24_EQ:
     return fmt::format(
-        "((round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) == round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
-        "65536.0)))) ? {2} : {3}) + {4}",
+        "select({3}, {2}, round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) == round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
+        "65536.0)))) + {4}",
         a, b, c, zero, d);
   }
 }
@@ -759,9 +759,11 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         "\n    var pos_mtx = ubuf.postex_mtx[in_pnmtxidx / 3u];"
         "\n    var nrm_mtx = ubuf.nrm_mtx[in_pnmtxidx / 3u];"sv;
   } else {
-    vtxXfrAttrsPre +=
-        "\n    var pos_mtx = ubuf.postex_mtx[ubuf.current_pn_mtx / 3u];"
-        "\n    var nrm_mtx = ubuf.nrm_mtx[ubuf.current_pn_mtx / 3u];"sv;
+    vtxXfrAttrsPre += fmt::format(
+        "\n    var pos_mtx = ubuf.postex_mtx[{0}];"
+        "\n    var nrm_mtx = ubuf.nrm_mtx[{0}];",
+        config.currentPnMtx
+    );
   }
 
   vtxXfrAttrsPre += fmt::format(
@@ -781,7 +783,6 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
 
   uniBufAttrs += fmt::format("\n    postex_mtx: array<mat3x4f, {}>,", MaxPnMtx + MaxTexMtx);
   uniBufAttrs += fmt::format("\n    nrm_mtx: array<mat3x4f, {}>,", MaxPnMtx);
-  uniBufAttrs += "\n    current_pn_mtx: u32,"sv;
   std::string fragmentFnPre;
   std::string fragmentFn;
   for (u32 idx = 0; idx < config.tevStageCount; ++idx) {
