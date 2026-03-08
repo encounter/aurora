@@ -756,13 +756,14 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   }
   if (info.indexAttr.test(GX_VA_PNMTXIDX)) {
     vtxXfrAttrsPre +=
-        "\n    var pos_mtx = ubuf.pos_mtx[in_pnmtxidx / 3u];"
-        "\n    var nrm_mtx = ubuf.nrm_mtx[in_pnmtxidx / 3u];"s;
+        "\n    var pos_mtx = ubuf.postex_mtx[in_pnmtxidx / 3u];"
+        "\n    var nrm_mtx = ubuf.nrm_mtx[in_pnmtxidx / 3u];"sv;
   } else {
     vtxXfrAttrsPre +=
-        "\n    var pos_mtx = ubuf.pos_mtx;"
-        "\n    var nrm_mtx = ubuf.nrm_mtx;"s;
+        "\n    var pos_mtx = ubuf.postex_mtx[ubuf.current_pn_mtx / 3u];"
+        "\n    var nrm_mtx = ubuf.nrm_mtx[ubuf.current_pn_mtx / 3u];"sv;
   }
+
   vtxXfrAttrsPre += fmt::format(
       "\n    var mv_pos = vec4<f32>({}, 1.0) * pos_mtx;"
       "\n    var mv_nrm = normalize(vec4<f32>({}, 0.0) * nrm_mtx);"
@@ -778,13 +779,9 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
     vtxXfrAttrsPre += "\n    out.nrm = mv_nrm;";
   }
 
-  if (info.indexAttr.test(GX_VA_PNMTXIDX)) {
-    uniBufAttrs += fmt::format("\n    pos_mtx: array<mat3x4f, {}>,", MaxPnMtx);
-    uniBufAttrs += fmt::format("\n    nrm_mtx: array<mat3x4f, {}>,", MaxPnMtx);
-  } else {
-    uniBufAttrs += fmt::format("\n    pos_mtx: mat3x4f,");
-    uniBufAttrs += fmt::format("\n    nrm_mtx: mat3x4f,");
-  }
+  uniBufAttrs += fmt::format("\n    postex_mtx: array<mat3x4f, {}>,", MaxPnMtx + MaxTexMtx);
+  uniBufAttrs += fmt::format("\n    nrm_mtx: array<mat3x4f, {}>,", MaxPnMtx);
+  uniBufAttrs += "\n    current_pn_mtx: u32,"sv;
   std::string fragmentFnPre;
   std::string fragmentFn;
   for (u32 idx = 0; idx < config.tevStageCount; ++idx) {
@@ -1053,12 +1050,12 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       UNLIKELY FATAL("unhandled tcg src {}", underlying(tcg.src));
     if (tcg.type == GX_TG_MTX2x4 || tcg.type == GX_TG_MTX3x4) {
       if (info.indexAttr.test(GX_VA_TEX0MTXIDX + i)) {
-        vtxXfrAttrs += fmt::format("\n    var tc{0}_tmp = tc{0} * ubuf.texmtx[in_texmtxidx{0} / 3u];", i);
+        vtxXfrAttrs += fmt::format("\n    var tc{0}_tmp = tc{0} * ubuf.postex_mtx[in_texmtxidx{0} / 3u];", i);
       } else if (tcg.mtx == GX_IDENTITY) {
         vtxXfrAttrs += fmt::format("\n    var tc{0}_tmp = tc{0}.xyz;", i);
       } else {
-        u32 texMtxIdx = (tcg.mtx - GX_TEXMTX0) / 3;
-        vtxXfrAttrs += fmt::format("\n    var tc{0}_tmp = tc{0} * ubuf.texmtx[{1}];", i, texMtxIdx);
+        u32 texMtxIdx = (tcg.mtx) / 3;
+        vtxXfrAttrs += fmt::format("\n    var tc{0}_tmp = tc{0} * ubuf.postex_mtx[{1}];", i, texMtxIdx);
       }
       if (tcg.type == GX_TG_MTX2x4) {
         vtxXfrAttrs += fmt::format("\n    tc{0}_tmp.z = 1.0f;", i);
@@ -1113,8 +1110,6 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
     }
     fragmentFnPre += texture_conversion(texConfig, i, stage.texMapId);
   }
-  if (info.usesTexMtx.any())
-    uniBufAttrs += fmt::format("\n    texmtx: array<mat3x4f, {}>,", MaxTexMtx);
   if (info.usesPTTexMtx.any())
     uniBufAttrs += fmt::format("\n    postmtx: array<mat3x4f, {}>,", MaxPTTexMtx);
   if (info.usesFog) {

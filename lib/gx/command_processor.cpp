@@ -1401,7 +1401,9 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
         // Matrix index A: PnMtx + TexCoord0-3 matrix indices
         g_gxState.currentPnMtx = bp_get(val, 6, 0) / 3;
         for (u32 i = 0; i < 4 && i < MaxTexCoord; i++) {
-          g_gxState.tcgs[i].mtx = static_cast<GXTexMtx>(bp_get(val, 6, 6 + i * 6));
+          auto texMtx = static_cast<GXTexMtx>(bp_get(val, 6, 6 + i * 6));
+          assert(texMtx >= 0 && texMtx <= GXTexMtx::GX_IDENTITY);
+          g_gxState.tcgs[i].mtx = texMtx;
         }
         g_gxState.stateDirty = true;
         break;

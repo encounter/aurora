@@ -429,7 +429,6 @@ struct ShaderInfo {
   std::bitset<MaxColorChannels / 2> sampledColorChannels;
   std::bitset<MaxTevRegs> loadsTevReg;
   std::bitset<MaxTevRegs> writesTevReg;
-  std::bitset<MaxTexMtx> usesTexMtx;
   std::bitset<MaxPTTexMtx> usesPTTexMtx;
   std::bitset<MaxVtxAttr> indexAttr;
   u32 uniformSize = 0;
