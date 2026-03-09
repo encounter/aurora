@@ -10,7 +10,9 @@
 #include <deque>
 #include <fstream>
 #include <mutex>
+#include <ranges>
 #include <thread>
+#include <variant>
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
@@ -49,6 +51,7 @@ enum class CommandType {
   SetViewport,
   SetScissor,
   Draw,
+  DebugMarker,
 };
 struct SetScissorCommand {
   uint32_t x;
@@ -59,16 +62,17 @@ struct SetScissorCommand {
   bool operator==(const SetScissorCommand& rhs) const { return x == rhs.x && y == rhs.y && w == rhs.w && h == rhs.h; }
   bool operator!=(const SetScissorCommand& rhs) const { return !(*this == rhs); }
 };
+
+struct DebugMarkerCommand {
+  std::string label;
+};
+
 struct Command {
-  CommandType type;
 #ifdef AURORA_GFX_DEBUG_GROUPS
   std::vector<std::string> debugGroupStack;
 #endif
-  union Data {
-    Viewport setViewport;
-    SetScissorCommand setScissor;
-    ShaderDrawCommand draw;
-  } data;
+
+  std::variant<Viewport, SetScissorCommand, ShaderDrawCommand, DebugMarkerCommand> data;
 };
 } // namespace aurora::gfx
 
@@ -203,19 +207,24 @@ static PipelineRef find_pipeline(ShaderType type, const PipelineConfig& config, 
   return hash;
 }
 
-static inline void push_command(CommandType type, const Command::Data& data) {
+template <typename Type, typename... Args>
+static inline void push_command(Args&&... args) {
   if (g_currentRenderPass == UINT32_MAX)
     UNLIKELY {
-      Log.warn("Dropping command {}", magic_enum::enum_name(type));
+      Log.warn("Dropping command {}", typeid(Type).name());
       return;
     }
   g_renderPasses[g_currentRenderPass].commands.push_back({
-      .type = type,
 #ifdef AURORA_GFX_DEBUG_GROUPS
       .debugGroupStack = g_debugGroupStack,
 #endif
-      .data = data,
+      .data { std::in_place_type<Type>, std::forward<Args...>(args...) },
   });
+}
+
+template <typename Type>
+static inline void push_command(const Type& copy) {
+  push_command<Type, const Type&>(copy);
 }
 
 template <>
@@ -224,14 +233,20 @@ gx::DrawData* get_last_draw_command() {
     return nullptr;
   }
   auto& last = g_renderPasses[g_currentRenderPass].commands.back();
-  if (last.type != CommandType::Draw || last.data.draw.type != ShaderType::GX) {
+  if (!std::holds_alternative<ShaderDrawCommand>(last.data)) {
     return nullptr;
   }
-  return &last.data.draw.gx;
+
+  auto& draw = std::get<ShaderDrawCommand>(last.data);
+  if (draw.type != ShaderType::GX) {
+    return nullptr;
+  }
+
+  return &draw.gx;
 }
 
 static void push_draw_command(ShaderDrawCommand data) {
-  push_command(CommandType::Draw, Command::Data{.draw = data});
+  push_command<ShaderDrawCommand, ShaderDrawCommand&>(data);
   ++g_stats.drawCallCount;
 }
 
@@ -241,7 +256,7 @@ const Viewport& get_viewport() noexcept { return g_cachedViewport; }
 void set_viewport(float left, float top, float width, float height, float znear, float zfar) noexcept {
   Viewport cmd{left, top, width, height, znear, zfar};
   if (cmd != g_cachedViewport) {
-    push_command(CommandType::SetViewport, Command::Data{.setViewport = cmd});
+    push_command(cmd);
     g_cachedViewport = cmd;
   }
 }
@@ -250,7 +265,7 @@ static SetScissorCommand g_cachedScissor;
 void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {
   SetScissorCommand cmd{x, y, w, h};
   if (cmd != g_cachedScissor) {
-    push_command(CommandType::SetScissor, Command::Data{.setScissor = cmd});
+    push_command(cmd);
     g_cachedScissor = cmd;
   }
 }
@@ -264,13 +279,17 @@ void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> 
   newPass.clearDepth = g_renderPasses[g_currentRenderPass].clearDepth;
   newPass.clear = clear;
   ++g_currentRenderPass;
-  push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
-  push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
+  push_command(g_cachedViewport);
+  push_command(g_cachedScissor);
 }
 
 template <>
 void push_draw_command(gx::DrawData data) {
   push_draw_command(ShaderDrawCommand{.type = ShaderType::GX, .gx = data});
+}
+
+void insert_debug_marker(std::string label) {
+  push_command(DebugMarkerCommand{std::move(label)});
 }
 
 template <>
@@ -498,8 +517,8 @@ void begin_frame() {
     g_renderPasses[0].clearDepth = gx::UseReversedZ ? (1.f - normalizedDepth) : normalizedDepth;
   }
   g_currentRenderPass = 0;
-  push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
-  push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
+  push_command(g_cachedViewport);
+  push_command(g_cachedScissor);
 
   if (!g_hasPipelineThread) {
     g_pipelinesPerFrame = 0;
@@ -549,6 +568,15 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
   if (!g_hasPipelineThread) {
     pipeline_worker();
   }
+
+#if defined(AURORA_GFX_DEBUG_GROUPS)
+  if (!g_debugGroupStack.empty()) {
+    for (auto & it : std::ranges::reverse_view(g_debugGroupStack)) {
+      Log.warn("Debug group was not popped at end of frame: {}", it);
+    }
+    g_debugGroupStack.clear();
+  }
+#endif
 }
 
 void render(wgpu::CommandEncoder& cmd) {
@@ -642,30 +670,29 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
       lastDebugGroupStack = cmd.debugGroupStack;
     }
 #endif
-    switch (cmd.type) {
-    case CommandType::SetViewport: {
-      const auto& vp = cmd.data.setViewport;
+    if (std::holds_alternative<Viewport>(cmd.data)) {
+      const auto& vp = std::get<Viewport>(cmd.data);
       const float minDepth = gx::UseReversedZ ? 1.f - vp.zfar : vp.znear;
       const float maxDepth = gx::UseReversedZ ? 1.f - vp.znear : vp.zfar;
       pass.SetViewport(vp.left, vp.top, vp.width, vp.height, minDepth, maxDepth);
-    } break;
-    case CommandType::SetScissor: {
-      const auto& sc = cmd.data.setScissor;
+    } else if (std::holds_alternative<SetScissorCommand>(cmd.data)) {
+      const auto& sc = std::get<SetScissorCommand>(cmd.data);
       const auto& size = webgpu::g_frameBuffer.size;
       const auto x = std::clamp(sc.x, 0u, size.width);
       const auto y = std::clamp(sc.y, 0u, size.height);
       const auto w = std::clamp(sc.w, 0u, size.width - x);
       const auto h = std::clamp(sc.h, 0u, size.height - y);
       pass.SetScissorRect(x, y, w, h);
-    } break;
-    case CommandType::Draw: {
-      const auto& draw = cmd.data.draw;
+    } else if (std::holds_alternative<ShaderDrawCommand>(cmd.data)) {
+      const auto& draw = std::get<ShaderDrawCommand>(cmd.data);
       switch (draw.type) {
       case ShaderType::GX:
         gx::render(g_state.gx, draw.gx, pass);
         break;
       }
-    } break;
+    } else if (std::holds_alternative<DebugMarkerCommand>(cmd.data)) {
+      const auto& dm = std::get<DebugMarkerCommand>(cmd.data);
+      pass.InsertDebugMarker(wgpu::StringView(dm.label));
     }
   }
 
@@ -793,6 +820,9 @@ wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
 uint32_t align_uniform(uint32_t value) { return ALIGN(value, g_cachedLimits.minUniformBufferOffsetAlignment); }
 } // namespace aurora::gfx
 
+void aurora::gfx::push_debug_group(std::string label) {
+  g_debugGroupStack.push_back(std::move(label));
+}
 void push_debug_group(const char* label) {
 #ifdef AURORA_GFX_DEBUG_GROUPS
   aurora::gfx::g_debugGroupStack.emplace_back(label);

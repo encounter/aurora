@@ -8,6 +8,7 @@ add_library(aurora_gd STATIC
         lib/dolphin/gd/GDTexture.cpp
         lib/dolphin/gd/GDTransform.cpp
         lib/dolphin/gd/gd.hpp
+        lib/dolphin/gd/GDAurora.cpp
 )
 
 add_library(aurora::gd ALIAS aurora_gd)
