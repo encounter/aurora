@@ -56,7 +56,7 @@ if (AURORA_ENABLE_GX)
     absl::flat_hash_map
     absl::btree
     dawn::dawncpp_headers
-    SDL3::SDL3-static
+    ${AURORA_SDL3_TARGET}
   )
 
   gtest_discover_tests(gx_fifo_tests)
