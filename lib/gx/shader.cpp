@@ -263,7 +263,7 @@ static std::string alpha_arg_reg(GXTevAlphaArg arg, size_t stageIdx, const Shade
 }
 
 static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view scale, std::string a, std::string b,
-                          std::string c, std::string d, std::string zero) {
+                          std::string c, std::string d, std::string_view zero) {
   switch (op) {
     DEFAULT_FATAL("unimplemented tev op {}", underlying(op));
   case GX_TEV_ADD:
@@ -295,27 +295,23 @@ static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view sc
         "select({3}, {2}, round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) == round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
         "65536.0)))) + {4}",
         a, b, c, zero, d);
+  case GX_TEV_COMP_RGB8_GT:
+    return fmt::format("select({3}, {2}, round({0} * 255.0) > round({1} * 255.0)) + {4}", a, b, c, zero, d);
+  case GX_TEV_COMP_RGB8_EQ:
+    return fmt::format("select({3}, {2}, round({0} * 255.0) == round({1} * 255.0)) + {4}", a, b, c, zero, d);
   }
 }
 
 static std::string tev_color_op(GXTevOp op, std::string_view bias, std::string_view scale, bool clamp, std::string a,
                                 std::string b, std::string c, std::string d) {
-  std::string expr = tev_op(op, bias, scale, a, b, c, d, "vec3(0)");
-  if (clamp) {
-    return fmt::format("clamp({}, vec3f(0.0), vec3f(1.0))", expr);
-  } else {
-    return expr;
-  }
+  std::string expr = tev_op(op, bias, scale, a, b, c, d, "vec3(0)"sv);
+  return clamp ? fmt::format("clamp({}, vec3f(0.0), vec3f(1.0))", expr) : expr;
 }
 
 static std::string tev_alpha_op(GXTevOp op, std::string_view bias, std::string_view scale, bool clamp, std::string a,
                                 std::string b, std::string c, std::string d) {
-  std::string expr = tev_op(op, bias, scale, a, b, c, d, "0.0");
-  if (clamp) {
-    return fmt::format("clamp({}, 0.0, 1.0)", expr);
-  } else {
-    return expr;
-  }
+  std::string expr = tev_op(op, bias, scale, a, b, c, d, "0.0"sv);
+  return clamp ? fmt::format("clamp({}, 0.0, 1.0)", expr) : expr;
 }
 
 static std::string_view tev_bias(GXTevBias bias) {
