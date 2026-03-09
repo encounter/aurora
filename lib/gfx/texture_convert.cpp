@@ -90,9 +90,10 @@ static ByteBuffer DecodeTiled(uint32_t width, uint32_t height, uint32_t mips, Ar
     const uint32_t bheight = (h + (T::BlockHeight - 1)) / T::BlockHeight;
     for (uint32_t by = 0; by < bheight; ++by) {
       const uint32_t baseY = by * T::BlockHeight;
+      const uint32_t numRows = std::min(h - baseY, T::BlockHeight);
       for (uint32_t bx = 0; bx < bwidth; ++bx) {
         const uint32_t baseX = bx * T::BlockWidth;
-        for (uint32_t y = 0; y < std::min(h - baseY, T::BlockHeight); ++y) {
+        for (uint32_t y = 0; y < numRows; ++y) {
           auto* target = targetMip + (baseY + y) * w + baseX;
           const auto n = std::min(w - baseX, T::BlockWidth);
           for (uint32_t x = 0; x < n; ++x) {
@@ -100,6 +101,8 @@ static ByteBuffer DecodeTiled(uint32_t width, uint32_t height, uint32_t mips, Ar
           }
           in += T::BlockWidth / T::Frac;
         }
+        const uint32_t extraY = T::BlockHeight - numRows;
+        in += T::BlockWidth * extraY / T::Frac;
       }
     }
     targetMip += w * h;
