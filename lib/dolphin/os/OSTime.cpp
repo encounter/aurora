@@ -84,7 +84,7 @@ void OSTicksToCalendarTime(OSTime ticks, OSCalendarTime* td) {
     d = ticks % OS_SEC_TO_TICKS(1);    
     if (d < 0) {
         d += OS_SEC_TO_TICKS(1);
-        ASSERTLINE(356, 0 <= d);
+        ASSERT(0 <= d);
     }
 
     td->usec = OS_TICKS_TO_USEC(d) % USEC_MAX;
@@ -126,7 +126,7 @@ OSTime OSCalendarTimeToTicks(OSCalendarTime* td) {
         ov_mon--;
     }
 
-    ASSERTLINE(412, (ov_mon <= 0 && 0 <= td->year + ov_mon) || (0 < ov_mon && td->year <= INT_MAX - ov_mon));
+    ASSERT((ov_mon <= 0 && 0 <= td->year + ov_mon) || (0 < ov_mon && td->year <= INT_MAX - ov_mon));
     
     year = td->year + ov_mon;
 
