@@ -8,6 +8,7 @@
 #include <dolphin/gx/GXEnum.h>
 
 #include <absl/container/flat_hash_map.h>
+#include <mutex>
 #include <string_view>
 #include <utility>
 
@@ -18,6 +19,7 @@ using namespace std::string_view_literals;
 
 static Module Log("aurora::gfx::gx");
 
+std::mutex g_gxCachedShadersMutex;
 absl::flat_hash_map<gfx::ShaderRef, std::pair<wgpu::ShaderModule, ShaderInfo>> g_gxCachedShaders;
 #ifndef NDEBUG
 static absl::flat_hash_map<gfx::ShaderRef, ShaderConfig> g_gxCachedShaderConfigs;
@@ -616,10 +618,13 @@ auto storage_load(const StorageConfig& mapping, u32 attrIdx) -> StorageLoadResul
 
 wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& info) noexcept {
   const auto hash = xxh3_hash(config);
-  const auto it = g_gxCachedShaders.find(hash);
-  if (it != g_gxCachedShaders.end()) {
-    // CHECK(g_gxCachedShaderConfigs[hash] == config, "Shader collision! {:x}", hash);
-    return it->second.first;
+  {
+    std::lock_guard lock{g_gxCachedShadersMutex};
+    const auto it = g_gxCachedShaders.find(hash);
+    if (it != g_gxCachedShaders.end()) {
+      // CHECK(g_gxCachedShaderConfigs[hash] == config, "Shader collision! {:x}", hash);
+      return it->second.first;
+    }
   }
 
   if (EnableDebugPrints) {
@@ -1561,12 +1566,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {{{8}{7}
   };
   auto shader = webgpu::g_device.CreateShaderModule(&shaderDescriptor);
 
-  auto pair = std::make_pair(shader, info);
-  g_gxCachedShaders.emplace(hash, pair);
+  {
+    std::lock_guard lock{g_gxCachedShadersMutex};
+    g_gxCachedShaders.emplace(hash, std::make_pair(shader, info));
 #ifndef NDEBUG
-  g_gxCachedShaderConfigs.emplace(hash, config);
+    g_gxCachedShaderConfigs.emplace(hash, config);
 #endif
+  }
 
-  return pair.first;
+  return shader;
 }
 } // namespace aurora::gx

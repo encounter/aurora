@@ -13,6 +13,7 @@
 #include <thread>
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <magic_enum.hpp>
 
 namespace aurora::gfx {
@@ -104,7 +105,9 @@ static std::thread g_pipelineThread;
 static std::atomic_bool g_pipelineThreadEnd;
 static std::condition_variable g_pipelineCv;
 static absl::flat_hash_map<PipelineRef, wgpu::RenderPipeline> g_pipelines;
-static std::deque<std::pair<PipelineRef, NewPipelineCallback>> g_queuedPipelines;
+static std::deque<std::pair<PipelineRef, NewPipelineCallback>> g_priorityPipelines;
+static std::deque<std::pair<PipelineRef, NewPipelineCallback>> g_backgroundPipelines;
+static absl::flat_hash_set<PipelineRef> g_pendingPipelines;
 static absl::flat_hash_map<BindGroupRef, wgpu::BindGroup> g_cachedBindGroups;
 static absl::flat_hash_map<SamplerRef, wgpu::Sampler> g_cachedSamplers;
 
@@ -161,31 +164,35 @@ static PipelineRef find_pipeline(ShaderType type, const PipelineConfig& config, 
   {
     std::scoped_lock guard{g_pipelineMutex};
     found = g_pipelines.contains(hash);
-    if (!found) {
-      const auto ref =
-          std::find_if(g_queuedPipelines.begin(), g_queuedPipelines.end(), [=](auto v) { return v.first == hash; });
-      if (g_hasPipelineThread) {
-        if (ref != g_queuedPipelines.end()) {
-          found = true;
-        }
-      } else {
-        if (ref != g_queuedPipelines.end()) {
-          found = true;
-        } else if (g_pipelinesPerFrame < BuildPipelinesPerFrame) {
-          g_pipelines.try_emplace(hash, cb());
-          if (serialize) {
-            serialize_pipeline_config(type, config);
-          }
-          ++g_pipelinesPerFrame;
-          createdPipelines++;
-          found = true;
+    if (!found && g_pendingPipelines.contains(hash)) {
+      found = true;
+      // Promote from background to priority if requested during a frame
+      if (g_currentRenderPass != UINT32_MAX) {
+        auto it = std::find_if(g_backgroundPipelines.begin(), g_backgroundPipelines.end(),
+                               [=](const auto& v) { return v.first == hash; });
+        if (it != g_backgroundPipelines.end()) {
+          g_priorityPipelines.emplace_back(std::move(*it));
+          g_backgroundPipelines.erase(it);
         }
       }
     }
     if (!found) {
-      g_queuedPipelines.emplace_back(std::pair{hash, std::move(cb)});
-      if (serialize) {
-        serialize_pipeline_config(type, config);
+      if (!g_hasPipelineThread && g_pipelinesPerFrame < BuildPipelinesPerFrame) {
+        g_pipelines.try_emplace(hash, cb());
+        if (serialize) {
+          serialize_pipeline_config(type, config);
+        }
+        ++g_pipelinesPerFrame;
+        createdPipelines++;
+        found = true;
+      } else {
+        bool isFrameRequest = g_currentRenderPass != UINT32_MAX;
+        auto& targetQueue = isFrameRequest ? g_priorityPipelines : g_backgroundPipelines;
+        targetQueue.emplace_back(std::pair{hash, std::move(cb)});
+        g_pendingPipelines.insert(hash);
+        if (serialize) {
+          serialize_pipeline_config(type, config);
+        }
       }
     }
   }
@@ -279,29 +286,32 @@ static void pipeline_worker() {
       std::unique_lock lock{g_pipelineMutex};
       if (g_hasPipelineThread) {
         if (!hasMore) {
-          g_pipelineCv.wait(lock, [] { return !g_queuedPipelines.empty() || g_pipelineThreadEnd; });
+          g_pipelineCv.wait(lock, [] {
+            return !g_priorityPipelines.empty() || !g_backgroundPipelines.empty() || g_pipelineThreadEnd;
+          });
         }
-      } else if (g_queuedPipelines.empty()) {
+      } else if (g_priorityPipelines.empty() && g_backgroundPipelines.empty()) {
         return;
       }
       if (g_pipelineThreadEnd) {
         break;
       }
-      cb = std::move(g_queuedPipelines.front());
+      auto& source = !g_priorityPipelines.empty() ? g_priorityPipelines : g_backgroundPipelines;
+      cb = std::move(source.front());
+      source.pop_front();
     }
     auto result = cb.second();
-    // std::this_thread::sleep_for(std::chrono::milliseconds{1500});
     {
-      std::scoped_lock lock{g_pipelineMutex};
-      ASSERT(g_pipelines.try_emplace(cb.first, std::move(result)).second, "Duplicate pipeline {}", cb.first);
-      g_queuedPipelines.pop_front();
-      hasMore = !g_queuedPipelines.empty();
+      std::lock_guard lock{g_pipelineMutex};
+      g_pipelines.try_emplace(cb.first, std::move(result));
+      g_pendingPipelines.erase(cb.first);
+      hasMore = !g_priorityPipelines.empty() || !g_backgroundPipelines.empty();
     }
     if (!g_hasPipelineThread) {
       ++g_pipelinesPerFrame;
     }
-    createdPipelines++;
-    queuedPipelines--;
+    ++createdPipelines;
+    --queuedPipelines;
   }
 }
 
@@ -425,7 +435,9 @@ void shutdown() {
   g_cachedBindGroups.clear();
   g_cachedSamplers.clear();
   g_pipelines.clear();
-  g_queuedPipelines.clear();
+  g_priorityPipelines.clear();
+  g_backgroundPipelines.clear();
+  g_pendingPipelines.clear();
   g_vertexBuffer = {};
   g_uniformBuffer = {};
   g_indexBuffer = {};

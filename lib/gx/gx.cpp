@@ -9,6 +9,7 @@
 
 #include <absl/container/flat_hash_map.h>
 #include <cfloat>
+#include <mutex>
 
 static aurora::Module Log("aurora::gx");
 
@@ -315,6 +316,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
   };
 }
 
+static std::mutex sBindGroupLayoutMutex;
 static absl::flat_hash_map<u32, wgpu::BindGroupLayout> sUniformBindGroupLayouts;
 static absl::flat_hash_map<u32, std::pair<wgpu::BindGroupLayout, wgpu::BindGroupLayout>> sTextureBindGroupLayouts;
 
@@ -407,10 +409,14 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
   uniformHasher.update(info.uniformSize);
   uniformHasher.update(config.attrMapping);
   const auto uniformLayoutHash = uniformHasher.digest();
-  auto it = sUniformBindGroupLayouts.find(uniformLayoutHash);
-  if (it != sUniformBindGroupLayouts.end()) {
-    out.uniformLayout = it->second;
-  } else {
+  {
+    std::lock_guard lock{sBindGroupLayoutMutex};
+    auto it = sUniformBindGroupLayouts.find(uniformLayoutHash);
+    if (it != sUniformBindGroupLayouts.end()) {
+      out.uniformLayout = it->second;
+    }
+  }
+  if (!out.uniformLayout) {
     std::array<wgpu::BindGroupLayoutEntry, GX_VA_MAX_ATTR + 1> uniformLayoutEntries{
         wgpu::BindGroupLayoutEntry{
             .binding = 0,
@@ -444,18 +450,22 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
         .entries = uniformLayoutEntries.data(),
     };
     out.uniformLayout = g_device.CreateBindGroupLayout(&uniformLayoutDescriptor);
-    sUniformBindGroupLayouts[uniformLayoutHash] = out.uniformLayout;
+    std::lock_guard lock{sBindGroupLayoutMutex};
+    sUniformBindGroupLayouts.try_emplace(uniformLayoutHash, out.uniformLayout);
   }
 
   Hasher textureHasher;
   textureHasher.update(info.sampledTextures);
   textureHasher.update(config.textureConfig);
   const auto textureLayoutHash = textureHasher.digest();
-  auto it2 = sTextureBindGroupLayouts.find(textureLayoutHash);
-  if (it2 != sTextureBindGroupLayouts.end()) {
-    out.samplerLayout = it2->second.first;
-    out.textureLayout = it2->second.second;
-    return out;
+  {
+    std::lock_guard lock{sBindGroupLayoutMutex};
+    auto it2 = sTextureBindGroupLayouts.find(textureLayoutHash);
+    if (it2 != sTextureBindGroupLayouts.end()) {
+      out.samplerLayout = it2->second.first;
+      out.textureLayout = it2->second.second;
+      return out;
+    }
   }
 
   u32 numSamplers = 0;
@@ -526,7 +536,11 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
     };
     out.textureLayout = g_device.CreateBindGroupLayout(&descriptor);
   }
-  sTextureBindGroupLayouts[textureLayoutHash] = {out.samplerLayout, out.textureLayout};
+  {
+    std::lock_guard lock{sBindGroupLayoutMutex};
+    sTextureBindGroupLayouts.try_emplace(textureLayoutHash,
+                                         std::make_pair(out.samplerLayout, out.textureLayout));
+  }
   return out;
 }
 
