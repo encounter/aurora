@@ -2,25 +2,6 @@
 
 #include <memory>
 
-#if defined(DAWN_ENABLE_BACKEND_D3D11)
-#include <dawn/native/D3D11Backend.h>
-#endif
-#if defined(DAWN_ENABLE_BACKEND_D3D12)
-#include <dawn/native/D3D12Backend.h>
-#endif
-#if defined(DAWN_ENABLE_BACKEND_METAL)
-#include <dawn/native/MetalBackend.h>
-#endif
-#if defined(DAWN_ENABLE_BACKEND_VULKAN)
-#include <dawn/native/VulkanBackend.h>
-#endif
-#if defined(DAWN_ENABLE_BACKEND_OPENGL)
-#include <dawn/native/OpenGLBackend.h>
-#endif
-#if defined(DAWN_ENABLE_BACKEND_NULL)
-#include <dawn/native/NullBackend.h>
-#endif
-
 #if !defined(SDL_PLATFORM_MACOS)
 #include <SDL3/SDL_video.h>
 #endif

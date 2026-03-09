@@ -5,85 +5,35 @@ set(BUILD_TESTING OFF CACHE INTERNAL "Build tests")
 
 if (NOT EMSCRIPTEN)
   if (AURORA_ENABLE_GX)
-    if (NOT TARGET webgpu_dawn)
-      message(STATUS "aurora: Fetching Dawn")
-
-      set(DAWN_BUILD_MONOLITHIC_LIBRARY STATIC CACHE INTERNAL "Bundle all dawn components into a single shared library.")
-      set(DAWN_BUILD_SAMPLES OFF CACHE INTERNAL "Disable Dawn sample applications")
-      set(DAWN_BUILD_BENCHMARKS OFF CACHE INTERNAL "Disable Dawn benchmarks")
-      set(DAWN_SUPPORTS_GLFW_FOR_WINDOWING OFF CACHE INTERNAL "Disable Dawn GLFW windowing")
-      set(DAWN_ENABLE_DESKTOP_GL OFF CACHE INTERNAL "Enable compilation of the OpenGL backend")
-      set(DAWN_ENABLE_OPENGLES OFF CACHE INTERNAL "Enable compilation of the OpenGL ES backend")
-      set(DAWN_FETCH_DEPENDENCIES ON CACHE INTERNAL "Use fetch_dawn_dependencies.py as an alternative to using depot_tools")
-      set(TINT_BUILD_TESTS OFF CACHE INTERNAL "Build tests")
-      set(TINT_BUILD_CMD_TOOLS OFF CACHE INTERNAL "Build the Tint command line tools")
-      if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY OR CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "DLL$")
-        set(ABSL_MSVC_STATIC_RUNTIME OFF CACHE INTERNAL "Link static runtime libraries")
-      else()
-        set(ABSL_MSVC_STATIC_RUNTIME ON CACHE INTERNAL "Link static runtime libraries")
-      endif()
-
-      FetchContent_Declare(dawn
-        URL https://github.com/google/dawn/archive/refs/tags/v20260214.164635.tar.gz
-        URL_HASH SHA256=1bfa3dcd7b787ca2e3b6444e8ed839b75eeb514db922cc9ea8de7b29820f2d25
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-        EXCLUDE_FROM_ALL
-      )
-      FetchContent_MakeAvailable(dawn)
-      if (NOT TARGET webgpu_dawn)
-        message(FATAL_ERROR "Failed to make dawn available")
-      endif ()
-    else ()
-      message(STATUS "aurora: Using existing Dawn")
-    endif ()
-  else ()
-    # Abseil is needed for core libraries but normally comes via Dawn
-    if (NOT TARGET absl::flat_hash_map)
-      message(STATUS "aurora: Fetching abseil-cpp (standalone)")
-      if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY OR CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "DLL$")
-        set(ABSL_MSVC_STATIC_RUNTIME OFF CACHE INTERNAL "Link static runtime libraries")
-      else()
-        set(ABSL_MSVC_STATIC_RUNTIME ON CACHE INTERNAL "Link static runtime libraries")
-      endif()
-      set(ABSL_PROPAGATE_CXX_STD ON)
-      FetchContent_Declare(abseil-cpp
-        URL https://github.com/abseil/abseil-cpp/archive/refs/tags/20240722.0.tar.gz
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-        EXCLUDE_FROM_ALL
-      )
-      FetchContent_MakeAvailable(abseil-cpp)
-      if (NOT TARGET absl::flat_hash_map)
-        message(FATAL_ERROR "Failed to make abseil-cpp available")
-      endif ()
-    else ()
-      message(STATUS "aurora: Using existing abseil-cpp")
-    endif ()
+    include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/AuroraDawnProvider.cmake)
   endif ()
 
-  if (NOT TARGET SDL3-static)
-    message(STATUS "aurora: Fetching SDL3")
-
-    set(SDL_STATIC ON CACHE BOOL "Build SDL3 static library" FORCE)
-    if (WIN32)
-      set(SDL_LIBC ON CACHE BOOL "Use the system C library" FORCE)
-    endif ()
-
-    FetchContent_Declare(SDL
-      URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.4.0.tar.gz
-      URL_HASH SHA256=9614b9696abc4597ffce6b888829dc6537ae500423474c342ac4a67222c5654c
+  # Abseil is needed for core libraries. It normally comes via Dawn's vendor build,
+  # but when using prebuilt/system Dawn, we need to fetch it separately.
+  if (NOT TARGET absl::flat_hash_map)
+    message(STATUS "aurora: Fetching abseil-cpp (standalone)")
+    if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY OR CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "DLL$")
+      set(ABSL_MSVC_STATIC_RUNTIME OFF CACHE INTERNAL "Link static runtime libraries")
+    else()
+      set(ABSL_MSVC_STATIC_RUNTIME ON CACHE INTERNAL "Link static runtime libraries")
+    endif()
+    set(ABSL_PROPAGATE_CXX_STD ON)
+    FetchContent_Declare(abseil-cpp
+      URL https://github.com/abseil/abseil-cpp/archive/refs/tags/20240722.0.tar.gz
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE
       EXCLUDE_FROM_ALL
     )
-    FetchContent_MakeAvailable(SDL)
-    if (NOT TARGET SDL3-static)
-      message(FATAL_ERROR "Failed to make SDL3 available")
+    FetchContent_MakeAvailable(abseil-cpp)
+    if (NOT TARGET absl::flat_hash_map)
+      message(FATAL_ERROR "Failed to make abseil-cpp available")
     endif ()
-  else ()
-    message(STATUS "aurora: Using existing SDL3")
   endif ()
+
+  include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/AuroraSDL3Provider.cmake)
 else ()
   set(ABSL_PROPAGATE_CXX_STD ON)
   add_subdirectory(dawn/third_party/abseil-cpp EXCLUDE_FROM_ALL)
+  set(AURORA_SDL3_TARGET SDL3::SDL3-static CACHE INTERNAL "SDL3 target for emscripten")
 endif ()
 
 if (NOT TARGET xxhash)
@@ -147,7 +97,7 @@ if (AURORA_ENABLE_GX)
       ${imgui_SOURCE_DIR}/backends/imgui_impl_wgpu.cpp
     )
     target_compile_definitions(imgui_backends PRIVATE IMGUI_IMPL_WEBGPU_BACKEND_DAWN)
-    target_link_libraries(imgui_backends PRIVATE imgui SDL3::SDL3-static dawn::webgpu_dawn)
+    target_link_libraries(imgui_backends PRIVATE imgui ${AURORA_SDL3_TARGET} dawn::webgpu_dawn)
     target_link_libraries(imgui PUBLIC imgui_backends)
 
     # Optional, replaces stb_freetype if available
