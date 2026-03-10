@@ -830,6 +830,10 @@ void push_debug_group(const char* label) {
 }
 void pop_debug_group() {
 #ifdef AURORA_GFX_DEBUG_GROUPS
+  if (aurora::gfx::g_debugGroupStack.empty()) {
+    aurora::gfx::Log.error("Debug group stack underflowed!");
+    return;
+  }
   aurora::gfx::g_debugGroupStack.pop_back();
 #endif
 }
