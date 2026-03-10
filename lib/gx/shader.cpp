@@ -1204,10 +1204,10 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         fragmentFn += fmt::format("\n    if (!({} || {})) {{ discard; }}", comp0, comp1);
         break;
       case GX_AOP_XOR:
-        fragmentFn += fmt::format("\n    if (!({} ^^ {})) {{ discard; }}", comp0, comp1);
+        fragmentFn += fmt::format("\n    if (({} == {})) {{ discard; }}", comp0, comp1);
         break;
       case GX_AOP_XNOR:
-        fragmentFn += fmt::format("\n    if (({} ^^ {})) {{ discard; }}", comp0, comp1);
+        fragmentFn += fmt::format("\n    if (({} != {})) {{ discard; }}", comp0, comp1);
         break;
       }
     }
