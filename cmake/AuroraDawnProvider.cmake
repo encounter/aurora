@@ -109,22 +109,10 @@ elseif (AURORA_DAWN_PROVIDER STREQUAL "system")
 elseif (AURORA_DAWN_PROVIDER STREQUAL "package")
   # ── Package: download prebuilt Dawn install tree ──
   if (NOT AURORA_DAWN_PACKAGE_URL)
-    # Calculate default URL from official Google Dawn releases
-    if (NOT AURORA_DAWN_COMMIT)
-      message(FATAL_ERROR
-        "AURORA_DAWN_PROVIDER=package requires AURORA_DAWN_PACKAGE_URL or AURORA_DAWN_COMMIT to be set.")
-    endif ()
-    if (WIN32)
-      set(_dawn_platform "windows-latest")
-    elseif (APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
-      set(_dawn_platform "macos-latest")
-    elseif (APPLE)
-      set(_dawn_platform "macos-15-intel")
-    else ()
-      set(_dawn_platform "ubuntu-latest")
-    endif ()
+    string(TOLOWER "${CMAKE_SYSTEM_NAME}" _dawn_system)
+    string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _dawn_arch)
     set(AURORA_DAWN_PACKAGE_URL
-      "https://github.com/google/dawn/releases/download/${AURORA_DAWN_VERSION}/Dawn-${AURORA_DAWN_COMMIT}-${_dawn_platform}-Release.tar.gz")
+      "https://github.com/encounter/dawn-build/releases/download/${AURORA_DAWN_VERSION}/dawn-${_dawn_system}-${_dawn_arch}.tar.gz")
   endif ()
   message(STATUS "aurora: Fetching prebuilt Dawn package from ${AURORA_DAWN_PACKAGE_URL}")
 
@@ -183,6 +171,7 @@ elseif (AURORA_DAWN_PROVIDER STREQUAL "package")
   get_target_property(_dawn_pkg_type dawn::webgpu_dawn TYPE)
   if (_dawn_pkg_type STREQUAL "SHARED_LIBRARY")
     set(AURORA_DAWN_IS_SHARED TRUE PARENT_SCOPE)
+
   else ()
     set(AURORA_DAWN_IS_SHARED FALSE PARENT_SCOPE)
   endif ()

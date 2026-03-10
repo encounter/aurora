@@ -46,7 +46,13 @@ if (NOT TARGET xxhash)
     EXCLUDE_FROM_ALL
   )
   set(XXHASH_BUILD_XXHSUM OFF CACHE INTERNAL "Build the xxhsum binary")
+  # xxhash uses CMAKE_DEPENDENT_OPTION(BUILD_SHARED_LIBS ...) which writes
+  # a sticky CACHE INTERNAL entry on reconfigure. Undo it afterward.
+  set(_aurora_xxhash_saved_bsl "${BUILD_SHARED_LIBS}")
   FetchContent_MakeAvailable(xxhash)
+  unset(BUILD_SHARED_LIBS CACHE)
+  set(BUILD_SHARED_LIBS "${_aurora_xxhash_saved_bsl}")
+  unset(_aurora_xxhash_saved_bsl)
   if (NOT TARGET xxhash)
     message(FATAL_ERROR "Failed to make xxhash available")
   endif ()
