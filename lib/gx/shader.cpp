@@ -1040,7 +1040,11 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       continue;
     }
     const auto& tcg = config.tcgs[i];
-    vtxOutAttrs += fmt::format("\n    @location({}) tex{}_uv: vec2f,", vtxOutIdx++, i);
+    if (tcg.type == GX_TG_MTX3x4) {
+      vtxOutAttrs += fmt::format("\n    @location({}) tex{}_uvw: vec3f,", vtxOutIdx++, i);
+    } else {
+      vtxOutAttrs += fmt::format("\n    @location({}) tex{}_uv: vec2f,", vtxOutIdx++, i);
+    }
     if (tcg.src >= GX_TG_TEX0 && tcg.src <= GX_TG_TEX7) {
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 0.0, 1.0);", i,
                                  vtx_attr(config, GXAttr(GX_VA_TEX0 + (tcg.src - GX_TG_TEX0))));
@@ -1075,7 +1079,14 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       vtxXfrAttrs +=
           fmt::format("\n    var tc{0}_proj = vec4f(tc{0}_tmp.xyz, 1.0) * ubuf.postmtx[{1}];", i, postMtxIdx);
     }
-    vtxXfrAttrs += fmt::format("\n    out.tex{0}_uv = tc{0}_proj.xy;", i);
+
+    if (tcg.type == GX_TG_MTX3x4) {
+      vtxXfrAttrs += fmt::format("\n    out.tex{0}_uvw = tc{0}_proj.xyz;", i);
+      fragmentFnPre += fmt::format("\n    var tex{0}_uv = in.tex{0}_uvw.xy / in.tex{0}_uvw.zz;", i);
+    } else {
+      vtxXfrAttrs += fmt::format("\n    out.tex{0}_uv = tc{0}_proj.xy;", i);
+      fragmentFnPre += fmt::format("\n    var tex{0}_uv = in.tex{0}_uv.xy;", i);
+    }
   }
   for (int i = 0; i < config.tevStages.size(); ++i) {
     const auto& stage = config.tevStages[i];
@@ -1085,7 +1096,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         || !info.sampledTextures.test(stage.texMapId)) {
       continue;
     }
-    std::string uvIn = fmt::format("in.tex{0}_uv", underlying(stage.texCoordId));
+    std::string uvIn = fmt::format("tex{0}_uv", underlying(stage.texCoordId));
     const auto& texConfig = config.textureConfig[stage.texMapId];
     if (is_palette_format(texConfig.loadFmt)) {
       std::string_view suffix;
@@ -1204,10 +1215,10 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         fragmentFn += fmt::format("\n    if (!({} || {})) {{ discard; }}", comp0, comp1);
         break;
       case GX_AOP_XOR:
-        fragmentFn += fmt::format("\n    if (!({} ^^ {})) {{ discard; }}", comp0, comp1);
+        fragmentFn += fmt::format("\n    if (({} == {})) {{ discard; }}", comp0, comp1);
         break;
       case GX_AOP_XNOR:
-        fragmentFn += fmt::format("\n    if (({} ^^ {})) {{ discard; }}", comp0, comp1);
+        fragmentFn += fmt::format("\n    if (({} != {})) {{ discard; }}", comp0, comp1);
         break;
       }
     }

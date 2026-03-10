@@ -152,6 +152,19 @@ static u32 prepare_vtx_buffer(ByteBuffer* outBuf, GXVtxFmt vtxfmt, const u8* ptr
         vtxSize += 2;
         outVtxSize += 8;
         break;
+      case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX3, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX4, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX5, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX6, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX7, GX_TEX_ST, GX_U8):
+        attrArrays[attr].count = 2;
+        attrArrays[attr].type = GX_U8;
+        vtxSize += 2;
+        outVtxSize += 8;
+        break;
       case COMBINE(GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8):
       case COMBINE(GX_VA_CLR1, GX_CLR_RGBA, GX_RGBA8):
         attrArrays[attr].count = 4;
@@ -580,7 +593,7 @@ void process(const u8* data, u32 size, bool bigEndian) {
       u16 len = (addrLen >> 12) + 1;
       u16 dstAddr = addrLen & 0x0FFF;
       if (!copy_xf_data(dstAddr, srcData, len, bigEndian)) {
-        Log.warn("Unimplemented indexed XF load (opcode 0x{:02X}, dstAddr=%04x)", opcode, dstAddr);
+        Log.debug("Unimplemented indexed XF load (opcode 0x{:02X}, dstAddr=%04x)", opcode, dstAddr);
       }
       pos += 4;
       break;
@@ -743,7 +756,7 @@ static void handle_bp(u32 value, bool bigEndian) {
   // BP mask (0x0F) - internal, applies to next BP write
   case 0x0F:
     // The BP mask is used by the hardware to selectively update fields.
-    Log.warn("BP mask set to {:06x}, but selective updates are not implemented", value & 0xFFFFFF);
+    Log.debug("BP mask set to {:06x}, but selective updates are not implemented", value & 0xFFFFFF);
     break;
 
   // TEV indirect stages (0x10-0x1F)
@@ -783,13 +796,13 @@ static void handle_bp(u32 value, bool bigEndian) {
   // Scissor registers (0x20, 0x21)
   case 0x20:
   case 0x21: {
-    Log.warn("Unimplemented: BP register {:x} (scissor)", regId);
+    Log.debug("Unimplemented: BP register {:x} (scissor)", regId);
     break;
   }
 
   // Line/point size (0x22)
   case 0x22: {
-    Log.warn("Unimplemented: BP register {:x} (line/point size)", regId);
+    Log.debug("Unimplemented: BP register {:x} (line/point size)", regId);
     break;
   }
 
@@ -1204,7 +1217,7 @@ static void handle_bp(u32 value, bool bigEndian) {
       // Texture format/wrap/filter configuration.
       // These are handled pragmatically - GXLoadTexObj sets texture handles directly.
     } else {
-      Log.warn("Unhandled BP register 0x{:02X} (value 0x{:06X})", regId, value & 0xFFFFFF);
+      Log.debug("Unhandled BP register 0x{:02X} (value 0x{:06X})", regId, value & 0xFFFFFF);
     }
     break;
   }
@@ -1269,7 +1282,13 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
       vf.attrs[GX_VA_POS].frac = static_cast<u8>(bp_get(value, 5, 4));
       vf.attrs[GX_VA_NRM].cnt = static_cast<GXCompCnt>(bp_get(value, 1, 9));
       vf.attrs[GX_VA_NRM].type = static_cast<GXCompType>(bp_get(value, 3, 10));
-      vf.attrs[GX_VA_NRM].frac = 0;
+      if (vf.attrs[GX_VA_NRM].type == GX_U8 || vf.attrs[GX_VA_NRM].type == GX_S8) {
+        vf.attrs[GX_VA_NRM].frac = 6;
+      } else if (vf.attrs[GX_VA_NRM].type == GX_U16 || vf.attrs[GX_VA_NRM].type == GX_S16) {
+        vf.attrs[GX_VA_NRM].frac = 14;
+      } else {
+        vf.attrs[GX_VA_NRM].frac = 0;
+      }
       vf.attrs[GX_VA_CLR0].cnt = static_cast<GXCompCnt>(bp_get(value, 1, 13));
       vf.attrs[GX_VA_CLR0].type = static_cast<GXCompType>(bp_get(value, 3, 14));
       vf.attrs[GX_VA_CLR0].frac = 0;
@@ -1543,7 +1562,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
             g_gxState.stateDirty = true;
           }
         } else {
-          Log.warn("Unhandled XF register 0x{:04X} (value 0x{:08X})", reg, val);
+          Log.debug("Unhandled XF register 0x{:04X} (value 0x{:08X})", reg, val);
         }
         break;
       }
