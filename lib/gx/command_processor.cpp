@@ -580,7 +580,7 @@ void process(const u8* data, u32 size, bool bigEndian) {
       u16 len = (addrLen >> 12) + 1;
       u16 dstAddr = addrLen & 0x0FFF;
       if (!copy_xf_data(dstAddr, srcData, len, bigEndian)) {
-        Log.warn("Unimplemented indexed XF load (opcode 0x{:02X}, dstAddr=%04x)", opcode, dstAddr);
+        Log.debug("Unimplemented indexed XF load (opcode 0x{:02X}, dstAddr=%04x)", opcode, dstAddr);
       }
       pos += 4;
       break;
@@ -743,7 +743,7 @@ static void handle_bp(u32 value, bool bigEndian) {
   // BP mask (0x0F) - internal, applies to next BP write
   case 0x0F:
     // The BP mask is used by the hardware to selectively update fields.
-    Log.warn("BP mask set to {:06x}, but selective updates are not implemented", value & 0xFFFFFF);
+    Log.debug("BP mask set to {:06x}, but selective updates are not implemented", value & 0xFFFFFF);
     break;
 
   // TEV indirect stages (0x10-0x1F)
@@ -783,13 +783,13 @@ static void handle_bp(u32 value, bool bigEndian) {
   // Scissor registers (0x20, 0x21)
   case 0x20:
   case 0x21: {
-    Log.warn("Unimplemented: BP register {:x} (scissor)", regId);
+    Log.debug("Unimplemented: BP register {:x} (scissor)", regId);
     break;
   }
 
   // Line/point size (0x22)
   case 0x22: {
-    Log.warn("Unimplemented: BP register {:x} (line/point size)", regId);
+    Log.debug("Unimplemented: BP register {:x} (line/point size)", regId);
     break;
   }
 
@@ -1204,7 +1204,7 @@ static void handle_bp(u32 value, bool bigEndian) {
       // Texture format/wrap/filter configuration.
       // These are handled pragmatically - GXLoadTexObj sets texture handles directly.
     } else {
-      Log.warn("Unhandled BP register 0x{:02X} (value 0x{:06X})", regId, value & 0xFFFFFF);
+      Log.debug("Unhandled BP register 0x{:02X} (value 0x{:06X})", regId, value & 0xFFFFFF);
     }
     break;
   }
@@ -1543,7 +1543,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
             g_gxState.stateDirty = true;
           }
         } else {
-          Log.warn("Unhandled XF register 0x{:04X} (value 0x{:08X})", reg, val);
+          Log.debug("Unhandled XF register 0x{:04X} (value 0x{:08X})", reg, val);
         }
         break;
       }
