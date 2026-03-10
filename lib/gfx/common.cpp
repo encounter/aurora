@@ -821,7 +821,9 @@ uint32_t align_uniform(uint32_t value) { return ALIGN(value, g_cachedLimits.minU
 } // namespace aurora::gfx
 
 void aurora::gfx::push_debug_group(std::string label) {
+#if defined(AURORA_GFX_DEBUG_GROUPS)
   g_debugGroupStack.push_back(std::move(label));
+#endif
 }
 void push_debug_group(const char* label) {
 #ifdef AURORA_GFX_DEBUG_GROUPS
