@@ -148,3 +148,5 @@ void push_debug_group(const char*) {
 }
 void pop_debug_group() {
 }
+void aurora::gfx::insert_debug_marker(std::string) {
+}
