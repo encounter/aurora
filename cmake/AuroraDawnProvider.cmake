@@ -63,6 +63,7 @@ if (_aurora_dawn_provider STREQUAL "auto")
       set(_aurora_dawn_provider "vendor")
     endif ()
   endif ()
+  set(AURORA_DAWN_PROVIDER "${_aurora_dawn_provider}" CACHE STRING "" FORCE)
   message(STATUS "aurora: Dawn auto-resolved provider: ${_aurora_dawn_provider}")
 endif ()
 

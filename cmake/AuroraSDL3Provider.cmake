@@ -49,6 +49,7 @@ if (_aurora_sdl3_provider STREQUAL "auto")
       set(_aurora_sdl3_provider "vendor")
     endif ()
   endif ()
+  set(AURORA_SDL3_PROVIDER "${_aurora_sdl3_provider}" CACHE STRING "" FORCE)
   message(STATUS "aurora: SDL3 auto-resolved provider: ${_aurora_sdl3_provider}")
 endif ()
 

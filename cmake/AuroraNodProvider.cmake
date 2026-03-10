@@ -32,6 +32,7 @@ if (_aurora_nod_provider STREQUAL "auto")
       set(_aurora_nod_provider "vendor")
     endif ()
   endif ()
+  set(AURORA_NOD_PROVIDER "${_aurora_nod_provider}" CACHE STRING "" FORCE)
   message(STATUS "aurora: nod auto-resolved provider: ${_aurora_nod_provider}")
 endif ()
 
