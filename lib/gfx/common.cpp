@@ -684,8 +684,9 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
       }
     } break;
     case CommandType::DebugMarker: {
-      std::vector<std::string>& a = g_debugMarkers;
+#if defined(AURORA_GFX_DEBUG_GROUPS)
       pass.InsertDebugMarker(wgpu::StringView(g_debugMarkers[cmd.data.debugMarkerIndex]));
+#endif
     } break;
     }
   }
