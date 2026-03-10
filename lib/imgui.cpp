@@ -113,7 +113,9 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
     ImGui_ImplSDLRenderer3_RenderDrawData(data, renderer);
     SDL_RenderPresent(renderer);
   } else {
+    pass.PushDebugGroup("Aurora: Dear Imgui");
     ImGui_ImplWGPU_RenderDrawData(data, pass.Get());
+    pass.PopDebugGroup();
   }
 }
 
