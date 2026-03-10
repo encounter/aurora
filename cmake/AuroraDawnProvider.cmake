@@ -38,7 +38,35 @@ function(_aurora_dawn_set_platform_backends)
   endif ()
 endfunction()
 
-if (AURORA_DAWN_PROVIDER STREQUAL "vendor")
+# ── Auto: resolve provider based on platform availability ──
+set(_aurora_dawn_provider "${AURORA_DAWN_PROVIDER}")
+if (_aurora_dawn_provider STREQUAL "auto")
+  # Prebuilt Dawn packages available for: windows-{amd64,arm64}, linux-{x86_64,aarch64}, darwin-{arm64,x86_64}
+  set(_has_package FALSE)
+  if (WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|ARM64)$")
+    set(_has_package TRUE)
+  elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|aarch64)$")
+    set(_has_package TRUE)
+  elseif (APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|x86_64)$")
+    set(_has_package TRUE)
+  endif ()
+
+  if (_has_package)
+    set(_aurora_dawn_provider "package")
+  else ()
+    set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
+    find_package(Dawn QUIET)
+    set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL OFF)
+    if (Dawn_FOUND)
+      set(_aurora_dawn_provider "system")
+    else ()
+      set(_aurora_dawn_provider "vendor")
+    endif ()
+  endif ()
+  message(STATUS "aurora: Dawn auto-resolved provider: ${_aurora_dawn_provider}")
+endif ()
+
+if (_aurora_dawn_provider STREQUAL "vendor")
   # ── Vendor: FetchContent build from source ──
   if (NOT TARGET webgpu_dawn)
     message(STATUS "aurora: Fetching Dawn (provider=vendor, linkage=${AURORA_DAWN_LINKAGE})")
@@ -88,12 +116,14 @@ if (AURORA_DAWN_PROVIDER STREQUAL "vendor")
     set(AURORA_DAWN_IS_SHARED FALSE PARENT_SCOPE)
   endif ()
 
-elseif (AURORA_DAWN_PROVIDER STREQUAL "system")
+elseif (_aurora_dawn_provider STREQUAL "system")
   # ── System: find_package(Dawn) ──
   message(STATUS "aurora: Using system Dawn (provider=system)")
-  set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
-  find_package(Dawn REQUIRED)
-  set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL OFF)
+  if (NOT Dawn_FOUND)
+    set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
+    find_package(Dawn REQUIRED)
+    set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL OFF)
+  endif ()
   if (NOT TARGET dawn::webgpu_dawn)
     message(FATAL_ERROR "find_package(Dawn) succeeded but dawn::webgpu_dawn target not found")
   endif ()
@@ -106,7 +136,7 @@ elseif (AURORA_DAWN_PROVIDER STREQUAL "system")
     set(AURORA_DAWN_IS_SHARED FALSE PARENT_SCOPE)
   endif ()
 
-elseif (AURORA_DAWN_PROVIDER STREQUAL "package")
+elseif (_aurora_dawn_provider STREQUAL "package")
   # ── Package: download prebuilt Dawn install tree ──
   if (NOT AURORA_DAWN_PACKAGE_URL)
     string(TOLOWER "${CMAKE_SYSTEM_NAME}" _dawn_system)
@@ -178,7 +208,7 @@ elseif (AURORA_DAWN_PROVIDER STREQUAL "package")
 
 else ()
   message(FATAL_ERROR "Invalid AURORA_DAWN_PROVIDER: ${AURORA_DAWN_PROVIDER} "
-    "(must be vendor, system, or package)")
+    "(must be auto, vendor, system, or package)")
 endif ()
 
 # Ensure dawn::dawncpp_headers target exists (needed by tests).

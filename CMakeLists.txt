@@ -15,78 +15,38 @@ set(AURORA_DAWN_VERSION "v20260307.161309" CACHE STRING "Dawn version tag (https
 set(AURORA_SDL3_VERSION "3.4.2" CACHE STRING "SDL3 version tag (https://github.com/libsdl-org/SDL/releases)")
 set(AURORA_NOD_VERSION "v2.0.0-alpha.8" CACHE STRING "nod version tag (https://github.com/encounter/nod/releases)")
 
-# Platform-specific provider defaults
-set(_is_x86 FALSE)
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86|i[3-6]86)$")
-  set(_is_x86 TRUE)
-endif ()
-set(_is_x86_64 FALSE)
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
-  set(_is_x86_64 TRUE)
-endif ()
-set(_is_arm64 FALSE)
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
-  set(_is_arm64 TRUE)
-endif ()
-
+# Platform-specific defaults
 if (CMAKE_CROSSCOMPILING OR EMSCRIPTEN)
   # Cross-compiling: vendor everything, don't use system packages
-  set(_default_dawn "vendor")
-  set(_default_sdl3 "vendor")
-  set(_default_nod "vendor")
+  set(_default_provider "vendor")
   set(_default_linkage "static")
-elseif (WIN32 AND _is_x86_64)
-  set(_default_dawn "package")
-  set(_default_sdl3 "package")
-  set(_default_nod "package")
-  set(_default_linkage "shared")
-elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND _is_x86_64)
-  set(_default_dawn "package")
-  set(_default_sdl3 "system")
-  set(_default_nod "package")
-  set(_default_linkage "static")
-elseif (APPLE AND _is_arm64)
-  set(_default_dawn "package")
-  set(_default_sdl3 "system")
-  set(_default_nod "package")
-  set(_default_linkage "static")
-elseif (APPLE AND _is_x86_64)
-  set(_default_dawn "package")
-  set(_default_sdl3 "system")
-  set(_default_nod "vendor")
-  set(_default_linkage "static")
-elseif (WIN32)
-  # Windows x86 / arm64: no prebuilt Dawn or nod
-  set(_default_dawn "vendor")
-  set(_default_sdl3 "package")
-  set(_default_nod "vendor")
-  set(_default_linkage "shared")
 else ()
-  # Linux other arches, etc.
-  set(_default_dawn "vendor")
-  set(_default_sdl3 "system")
-  set(_default_nod "vendor")
-  set(_default_linkage "static")
+  set(_default_provider "auto")
+  if (WIN32)
+    set(_default_linkage "shared")
+  else ()
+    set(_default_linkage "static")
+  endif ()
 endif ()
 
 # Dawn/WebGPU (if AURORA_ENABLE_GX)
-set(AURORA_DAWN_PROVIDER "${_default_dawn}" CACHE STRING
-  "How to provide Dawn: vendor (build from source), system (find_package/imported), package (download prebuilt)")
-set_property(CACHE AURORA_DAWN_PROVIDER PROPERTY STRINGS vendor system package)
+set(AURORA_DAWN_PROVIDER "${_default_provider}" CACHE STRING
+  "How to provide Dawn: auto, vendor (build from source), system (find_package/imported), package (download prebuilt)")
+set_property(CACHE AURORA_DAWN_PROVIDER PROPERTY STRINGS auto vendor system package)
 set(AURORA_DAWN_LINKAGE "${_default_linkage}" CACHE STRING "Dawn linkage type preference")
 set_property(CACHE AURORA_DAWN_LINKAGE PROPERTY STRINGS shared static)
 
 # SDL3
-set(AURORA_SDL3_PROVIDER "${_default_sdl3}" CACHE STRING
-  "How to provide SDL3: vendor (build from source), system (find_package/imported), or package (download prebuilt)")
-set_property(CACHE AURORA_SDL3_PROVIDER PROPERTY STRINGS vendor system package)
+set(AURORA_SDL3_PROVIDER "${_default_provider}" CACHE STRING
+  "How to provide SDL3: auto, vendor (build from source), system (find_package/imported), or package (download prebuilt)")
+set_property(CACHE AURORA_SDL3_PROVIDER PROPERTY STRINGS auto vendor system package)
 set(AURORA_SDL3_LINKAGE "${_default_linkage}" CACHE STRING "SDL3 linkage type preference")
 set_property(CACHE AURORA_SDL3_LINKAGE PROPERTY STRINGS shared static)
 
 # nod (if AURORA_ENABLE_DVD)
-set(AURORA_NOD_PROVIDER "${_default_nod}" CACHE STRING
-  "How to provide nod: vendor (build from source), system (find_package/imported), package (download prebuilt)")
-set_property(CACHE AURORA_NOD_PROVIDER PROPERTY STRINGS vendor system package)
+set(AURORA_NOD_PROVIDER "${_default_provider}" CACHE STRING
+  "How to provide nod: auto, vendor (build from source), system (find_package/imported), package (download prebuilt)")
+set_property(CACHE AURORA_NOD_PROVIDER PROPERTY STRINGS auto vendor system package)
 set(AURORA_NOD_LINKAGE "${_default_linkage}" CACHE STRING "nod linkage type preference")
 set_property(CACHE AURORA_NOD_LINKAGE PROPERTY STRINGS shared static)
 

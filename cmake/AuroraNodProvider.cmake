@@ -9,7 +9,33 @@ include_guard(GLOBAL)
 #   - "shared" (default): prefer nod::nod_shared
 #   - "static": prefer nod::nod_static
 
-if (AURORA_NOD_PROVIDER STREQUAL "vendor")
+# ── Auto: resolve provider based on platform availability ──
+set(_aurora_nod_provider "${AURORA_NOD_PROVIDER}")
+if (_aurora_nod_provider STREQUAL "auto")
+  # Prebuilt nod packages available for: windows-x86_64, linux-x86_64, macos-arm64
+  set(_has_package FALSE)
+  if (WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64)$")
+    set(_has_package TRUE)
+  elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64)$")
+    set(_has_package TRUE)
+  elseif (APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64)$")
+    set(_has_package TRUE)
+  endif ()
+
+  if (_has_package)
+    set(_aurora_nod_provider "package")
+  else ()
+    find_package(nod QUIET CONFIG)
+    if (nod_FOUND)
+      set(_aurora_nod_provider "system")
+    else ()
+      set(_aurora_nod_provider "vendor")
+    endif ()
+  endif ()
+  message(STATUS "aurora: nod auto-resolved provider: ${_aurora_nod_provider}")
+endif ()
+
+if (_aurora_nod_provider STREQUAL "vendor")
   # ── Vendor: FetchContent + Corrosion build from source ──
   if (NOT TARGET nod::nod)
     message(STATUS "aurora: Building nod (provider=vendor, linkage=${AURORA_NOD_LINKAGE})")
@@ -41,26 +67,28 @@ if (AURORA_NOD_PROVIDER STREQUAL "vendor")
     message(STATUS "aurora: Using existing nod")
   endif ()
 
-elseif (AURORA_NOD_PROVIDER STREQUAL "system")
+elseif (_aurora_nod_provider STREQUAL "system")
   # ── System: find preinstalled nod ──
   message(STATUS "aurora: Using system nod (provider=system, linkage=${AURORA_NOD_LINKAGE})")
 
-  set(_aurora_nod_saved_bsl "${BUILD_SHARED_LIBS}")
-  if (AURORA_NOD_LINKAGE STREQUAL "static")
-    set(BUILD_SHARED_LIBS OFF)
-  else ()
-    set(BUILD_SHARED_LIBS ON)
-  endif ()
+  if (NOT nod_FOUND)
+    set(_aurora_nod_saved_bsl "${BUILD_SHARED_LIBS}")
+    if (AURORA_NOD_LINKAGE STREQUAL "static")
+      set(BUILD_SHARED_LIBS OFF)
+    else ()
+      set(BUILD_SHARED_LIBS ON)
+    endif ()
 
-  find_package(nod REQUIRED CONFIG)
-  set(BUILD_SHARED_LIBS "${_aurora_nod_saved_bsl}")
-  unset(_aurora_nod_saved_bsl)
+    find_package(nod REQUIRED CONFIG)
+    set(BUILD_SHARED_LIBS "${_aurora_nod_saved_bsl}")
+    unset(_aurora_nod_saved_bsl)
+  endif ()
   if (NOT TARGET nod::nod)
     message(FATAL_ERROR "find_package(nod) succeeded but nod::nod target not found")
   endif ()
   message(STATUS "aurora: Found nod via find_package(nod)")
 
-elseif (AURORA_NOD_PROVIDER STREQUAL "package")
+elseif (_aurora_nod_provider STREQUAL "package")
   # ── Package: download prebuilt nod library ──
   if (NOT AURORA_NOD_PACKAGE_URL)
     if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -108,5 +136,5 @@ elseif (AURORA_NOD_PROVIDER STREQUAL "package")
 
 else ()
   message(FATAL_ERROR "Invalid AURORA_NOD_PROVIDER: ${AURORA_NOD_PROVIDER} "
-    "(must be vendor, system, or package)")
+    "(must be auto, vendor, system, or package)")
 endif ()
