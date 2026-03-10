@@ -64,11 +64,18 @@ if (_aurora_sdl3_provider STREQUAL "system")
   _aurora_sdl3_select_target()
 
 elseif (_aurora_sdl3_provider STREQUAL "package")
-  # ── Package: download official SDL3 development package ──
+  # ── Package: download custom build or official SDL3 development package ──
   if (NOT AURORA_SDL3_PACKAGE_URL)
     if (WIN32)
-      set(AURORA_SDL3_PACKAGE_URL
-        "https://github.com/libsdl-org/SDL/releases/download/release-${AURORA_SDL3_VERSION}/SDL3-devel-${AURORA_SDL3_VERSION}-VC.zip")
+      # We have custom builds of SDL3 for Win32 x86/AMD64 with libusb support included
+      if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86)$")
+        string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _sdl3_arch)
+        set(AURORA_SDL3_PACKAGE_URL
+          "https://github.com/encounter/sdl3-build/releases/download/v${AURORA_SDL3_VERSION}/SDL3-windows-${_sdl3_arch}.tar.gz")
+      else ()
+        set(AURORA_SDL3_PACKAGE_URL
+          "https://github.com/libsdl-org/SDL/releases/download/release-${AURORA_SDL3_VERSION}/SDL3-devel-${AURORA_SDL3_VERSION}-VC.zip")
+      endif ()
     elseif (MINGW)
       set(AURORA_SDL3_PACKAGE_URL
         "https://github.com/libsdl-org/SDL/releases/download/release-${AURORA_SDL3_VERSION}/SDL3-devel-${AURORA_SDL3_VERSION}-mingw.tar.gz")
