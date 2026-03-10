@@ -52,6 +52,15 @@ set_property(CACHE AURORA_NOD_LINKAGE PROPERTY STRINGS shared static)
 
 add_subdirectory(extern)
 
+# Ensure Abseil headers come from Aurora's configured dependency target
+if (TARGET absl::flat_hash_map)
+  get_target_property(_aurora_absl_include_dirs absl::flat_hash_map INTERFACE_INCLUDE_DIRECTORIES)
+  if (_aurora_absl_include_dirs)
+    include_directories(BEFORE ${_aurora_absl_include_dirs})
+  endif ()
+  unset(_aurora_absl_include_dirs)
+endif ()
+
 include(cmake/aurora_core.cmake)
 include(cmake/aurora_os.cmake)
 if (AURORA_ENABLE_GX)
