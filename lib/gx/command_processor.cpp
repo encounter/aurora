@@ -1282,7 +1282,13 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
       vf.attrs[GX_VA_POS].frac = static_cast<u8>(bp_get(value, 5, 4));
       vf.attrs[GX_VA_NRM].cnt = static_cast<GXCompCnt>(bp_get(value, 1, 9));
       vf.attrs[GX_VA_NRM].type = static_cast<GXCompType>(bp_get(value, 3, 10));
-      vf.attrs[GX_VA_NRM].frac = 0;
+      if (vf.attrs[GX_VA_NRM].type == GX_U8 || vf.attrs[GX_VA_NRM].type == GX_S8) {
+        vf.attrs[GX_VA_NRM].frac = 6;
+      } else if (vf.attrs[GX_VA_NRM].type == GX_U16 || vf.attrs[GX_VA_NRM].type == GX_S16) {
+        vf.attrs[GX_VA_NRM].frac = 14;
+      } else {
+        vf.attrs[GX_VA_NRM].frac = 0;
+      }
       vf.attrs[GX_VA_CLR0].cnt = static_cast<GXCompCnt>(bp_get(value, 1, 13));
       vf.attrs[GX_VA_CLR0].type = static_cast<GXCompType>(bp_get(value, 3, 14));
       vf.attrs[GX_VA_CLR0].frac = 0;
