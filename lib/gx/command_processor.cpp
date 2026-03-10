@@ -152,6 +152,19 @@ static u32 prepare_vtx_buffer(ByteBuffer* outBuf, GXVtxFmt vtxfmt, const u8* ptr
         vtxSize += 2;
         outVtxSize += 8;
         break;
+      case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX3, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX4, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX5, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX6, GX_TEX_ST, GX_U8):
+      case COMBINE(GX_VA_TEX7, GX_TEX_ST, GX_U8):
+        attrArrays[attr].count = 2;
+        attrArrays[attr].type = GX_U8;
+        vtxSize += 2;
+        outVtxSize += 8;
+        break;
       case COMBINE(GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8):
       case COMBINE(GX_VA_CLR1, GX_CLR_RGBA, GX_RGBA8):
         attrArrays[attr].count = 4;
