@@ -141,3 +141,10 @@ void wgpuBufferAddRef(WGPUBuffer) {}
 void wgpuTextureAddRef(WGPUTexture) {}
 void wgpuTextureViewAddRef(WGPUTextureView) {}
 }
+
+void aurora::gfx::push_debug_group(std::string) {
+}
+void push_debug_group(const char*) {
+}
+void pop_debug_group() {
+}
