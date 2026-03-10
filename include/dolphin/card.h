@@ -228,14 +228,15 @@ extern u32 __CARDFreq;
 #define CARDFreq EXI_FREQ_16M
 #endif
 
-void CARDInit(void);
-s32 CARDGetResultCode(s32 chan);
-s32 CARDCheckAsync(s32 chan, CARDCallback callback);
-s32 CARDFreeBlocks(s32 chan, s32* byteNotUsed, s32* filesNotUsed);
 s32 CARDRenameAsync(s32 chan, const char* oldName, const char* newName, CARDCallback callback);
 
 // CARDBios
+#if TARGET_PC
+void CARDInit(const char* game, const char* maker);
+void CARDSetGameAndMaker(const s32 chan, const char* game, const char* maker);
+#else
 void CARDInit(void);
+#endif
 s32 CARDGetResultCode(s32 chan);
 s32 CARDFreeBlocks(s32 chan, s32* byteNotUsed, s32* filesNotUsed);
 s32 CARDGetEncoding(s32 chan, u16* encode);

@@ -1,6 +1,6 @@
 add_library(kabufuda STATIC
         include/kabufuda/Constants.hpp
-        include/kabufuda/AsyncIO.hpp
+        include/kabufuda/FileIO.hpp lib/kabufuda/FileIO.cpp
         include/kabufuda/BlockAllocationTable.hpp lib/kabufuda/BlockAllocationTable.cpp
         include/kabufuda/Card.hpp lib/kabufuda/Card.cpp
         include/kabufuda/Directory.hpp lib/kabufuda/Directory.cpp
@@ -35,18 +35,7 @@ if (WIN32)
             )
         endif ()
     endif ()
-
-    target_sources(kabufuda PRIVATE
-            lib/kabufuda/AsyncIOWin32.cpp
-    )
-elseif (NX OR EMSCRIPTEN)
-    target_sources(kabufuda PRIVATE
-            lib/kabufuda/AsyncIONX.cpp
-    )
 else ()
-    target_sources(kabufuda PRIVATE
-            lib/kabufuda/AsyncIOPosix.cpp
-    )
     if (NOT APPLE)
         target_link_libraries(kabufuda PUBLIC rt)
     endif ()

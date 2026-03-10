@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 
 #include "kabufuda/SRAM.hpp"
@@ -71,7 +72,6 @@ ECardResult Card::_pumpOpen() {
   if (res == ECardResult::READY) {
     m_ch._swapEndian();
     m_maxBlock = m_ch.m_sizeMb * MbitToBlocks;
-    m_fileHandle.resizeQueue(m_maxBlock);
 
     m_dirs[0].swapEndian();
     m_dirs[1].swapEndian();
@@ -770,6 +770,10 @@ void Card::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) const {
   filesNotUsed = m_dirs[m_currentDir].numFreeFiles();
 }
 
+void Card::getEncoding(uint16_t& encoding) const {
+  encoding = m_ch.m_encoding;
+}
+
 static std::unique_ptr<uint8_t[]> DummyBlock;
 
 void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
@@ -800,14 +804,13 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   m_currentBat = 1;
 
   m_fileHandle = {};
-  m_fileHandle = AsyncIO(m_filename.c_str(), true);
+  m_fileHandle = FileIO(m_filename.c_str(), true);
 
   if (m_fileHandle) {
     const uint32_t blockCount = (uint32_t(size) * MbitToBlocks) - 5;
 
     m_tmpCh = m_ch;
     m_tmpCh._swapEndian();
-    m_fileHandle.resizeQueue(5 + blockCount);
     m_fileHandle.asyncWrite(0, m_tmpCh.raw.data(), BlockSize, 0);
     m_tmpDirs[0] = m_dirs[0];
     m_tmpDirs[0].swapEndian();
@@ -833,10 +836,10 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
 }
 
 ProbeResults Card::probeCardFile(std::string_view filename) {
-  Sstat stat;
-  if (Stat(filename.data(), &stat) || !S_ISREG(stat.st_mode))
+  std::filesystem::path path(filename);
+  if (!std::filesystem::exists(path))
     return {ECardResult::NOCARD, 0, 0};
-  return {ECardResult::READY, uint32_t(stat.st_size / BlockSize) / MbitToBlocks, 0x2000};
+  return {ECardResult::READY, uint32_t(std::filesystem::file_size(path) / BlockSize) / MbitToBlocks, 0x2000};
 }
 
 void Card::commit() {
@@ -869,9 +872,8 @@ void Card::commit() {
 bool Card::open(std::string_view filepath) {
   m_opened = false;
   m_filename = filepath;
-  m_fileHandle = AsyncIO(m_filename);
+  m_fileHandle = FileIO(m_filename);
   if (m_fileHandle) {
-    m_fileHandle.resizeQueue(5);
     if (!m_fileHandle.asyncRead(0, m_ch.raw.data(), BlockSize, 0))
       return false;
     if (!m_fileHandle.asyncRead(1, m_dirs[0].raw.data(), BlockSize, BlockSize * 1))

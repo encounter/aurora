@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string>
 
-#include "kabufuda/AsyncIO.hpp"
+#include "kabufuda/FileIO.hpp"
 #include "kabufuda/BlockAllocationTable.hpp"
 #include "kabufuda/Directory.hpp"
 #include "kabufuda/File.hpp"
@@ -23,7 +23,10 @@ class FileHandle {
 
 public:
   FileHandle() = default;
+  explicit FileHandle(uint32_t idx, int32_t offset) : idx(idx), offset(offset) {}
+
   uint32_t getFileNo() const { return idx; }
+  uint32_t getOffset() const { return offset; }
   explicit operator bool() const { return getFileNo() != UINT32_MAX; }
 };
 
@@ -103,7 +106,7 @@ class Card {
   CardHeader m_tmpCh;
 
   std::string m_filename;
-  AsyncIO m_fileHandle;
+  FileIO m_fileHandle;
   std::array<Directory, 2> m_dirs;
   std::array<BlockAllocationTable, 2> m_bats;
   std::array<Directory, 2> m_tmpDirs;
@@ -435,6 +438,13 @@ public:
    * @param filesNotUsed Number of free files out.
    */
   void getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) const;
+
+  /**
+   * @brief Retrieves the current file's encoding.
+   *
+   * @param encoding File encoding out.
+   */
+  void getEncoding(uint16_t& encoding) const;
 
   /**
    * @brief Formats the memory card and assigns a new serial.

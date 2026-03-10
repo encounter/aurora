@@ -178,12 +178,6 @@ uint64_t getGCTime();
 #define S_ISDIR(m) (((m)&S_IFMT) == S_IFDIR)
 #endif
 
-#if _WIN32
-int Stat(const char* path, Sstat* statOut);
-#else
-inline int Stat(const char* path, Sstat* statOut) { return stat(path, statOut); }
-#endif
-
 /**
  * @brief calculateChecksum
  * @param data
