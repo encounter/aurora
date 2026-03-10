@@ -1,4 +1,6 @@
 #pragma once
+#include <filesystem>
+#include <fstream>
 
 #ifndef _WIN32
 #ifdef __SWITCH__
@@ -23,7 +25,10 @@ struct AsyncIOInner;
 #endif
 
 class FileIO {
-  AsyncIOInner* m_inner = nullptr;
+  std::filesystem::path m_path;
+  std::fstream m_stream;
+  uintmax_t m_size;
+
   bool isReady() const;
 public:
   FileIO() = default;
@@ -35,11 +40,8 @@ public:
   FileIO(const FileIO* other) = delete;
   FileIO& operator=(const FileIO& other) = delete;
 
-  bool asyncRead(size_t qIdx, void* buf, size_t length, off_t offset);
-  bool asyncWrite(size_t qIdx, const void* buf, size_t length, off_t offset);
-  ECardResult pollStatus(size_t qIdx, SizeReturn* szRet = nullptr) const;
-  ECardResult pollStatus() const;
-  void waitForCompletion() const;
+  bool fileRead(void* buf, size_t length, off_t offset);
+  bool fileWrite(const void* buf, size_t length, off_t offset);
   explicit operator bool() const;
 };
 

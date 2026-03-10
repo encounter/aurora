@@ -68,40 +68,37 @@ ECardResult Card::_pumpOpen() {
   if (!m_fileHandle)
     return ECardResult::NOCARD;
 
-  ECardResult res = m_fileHandle.pollStatus();
-  if (res == ECardResult::READY) {
-    m_ch._swapEndian();
-    m_maxBlock = m_ch.m_sizeMb * MbitToBlocks;
+  m_ch._swapEndian();
+  m_maxBlock = m_ch.m_sizeMb * MbitToBlocks;
 
-    m_dirs[0].swapEndian();
-    m_dirs[1].swapEndian();
-    m_bats[0].swapEndian();
-    m_bats[1].swapEndian();
+  m_dirs[0].swapEndian();
+  m_dirs[1].swapEndian();
+  m_bats[0].swapEndian();
+  m_bats[1].swapEndian();
 
-    /* Check for data integrity, restoring valid data in case of corruption if possible */
-    if (!m_dirs[0].valid() && m_dirs[1].valid())
-      m_dirs[0] = m_dirs[1];
-    else if (!m_dirs[1].valid() && m_dirs[0].valid())
-      m_dirs[1] = m_dirs[0];
-    if (!m_bats[0].valid() && m_bats[1].valid())
-      m_bats[0] = m_bats[1];
-    else if (!m_bats[1].valid() && m_bats[0].valid())
-      m_bats[1] = m_bats[0];
+  /* Check for data integrity, restoring valid data in case of corruption if possible */
+  if (!m_dirs[0].valid() && m_dirs[1].valid())
+    m_dirs[0] = m_dirs[1];
+  else if (!m_dirs[1].valid() && m_dirs[0].valid())
+    m_dirs[1] = m_dirs[0];
+  if (!m_bats[0].valid() && m_bats[1].valid())
+    m_bats[0] = m_bats[1];
+  else if (!m_bats[1].valid() && m_bats[0].valid())
+    m_bats[1] = m_bats[0];
 
-    if (m_dirs[0].data.m_updateCounter > m_dirs[1].data.m_updateCounter)
-      m_currentDir = 0;
-    else
-      m_currentDir = 1;
+  if (m_dirs[0].data.m_updateCounter > m_dirs[1].data.m_updateCounter)
+    m_currentDir = 0;
+  else
+    m_currentDir = 1;
 
-    if (m_bats[0].m_updateCounter > m_bats[1].m_updateCounter)
-      m_currentBat = 0;
-    else
-      m_currentBat = 1;
+  if (m_bats[0].m_updateCounter > m_bats[1].m_updateCounter)
+    m_currentBat = 0;
+  else
+    m_currentBat = 1;
 
-    m_opened = true;
-  }
+  m_opened = true;
 
-  return res;
+  return ECardResult::READY;
 }
 
 Card::Card(const char* game, const char* maker) {
@@ -374,7 +371,7 @@ ECardResult Card::asyncWrite(FileHandle& fh, const void* buf, size_t size) {
     if (cacheSize + blockOffset > BlockSize)
       cacheSize = BlockSize - blockOffset;
     uint32_t offset = (curBlock * BlockSize) + blockOffset;
-    if (!m_fileHandle.asyncWrite(curBlock, tmpBuf, cacheSize, offset))
+    if (!m_fileHandle.fileWrite(tmpBuf, cacheSize, offset))
       return ECardResult::FATAL_ERROR;
     tmpBuf += cacheSize;
     rem -= cacheSize;
@@ -422,7 +419,7 @@ ECardResult Card::asyncRead(FileHandle& fh, void* dst, size_t size) {
     if (cacheSize + blockOffset > BlockSize)
       cacheSize = BlockSize - blockOffset;
     uint32_t offset = (curBlock * BlockSize) + blockOffset;
-    if (!m_fileHandle.asyncRead(curBlock, tmpBuf, cacheSize, offset))
+    if (!m_fileHandle.fileRead(tmpBuf, cacheSize, offset))
       return ECardResult::FATAL_ERROR;
     tmpBuf += cacheSize;
     rem -= cacheSize;
@@ -811,25 +808,25 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
 
     m_tmpCh = m_ch;
     m_tmpCh._swapEndian();
-    m_fileHandle.asyncWrite(0, m_tmpCh.raw.data(), BlockSize, 0);
+    m_fileHandle.fileWrite(m_tmpCh.raw.data(), BlockSize, 0);
     m_tmpDirs[0] = m_dirs[0];
     m_tmpDirs[0].swapEndian();
-    m_fileHandle.asyncWrite(1, m_tmpDirs[0].raw.data(), BlockSize, BlockSize * 1);
+    m_fileHandle.fileWrite(m_tmpDirs[0].raw.data(), BlockSize, BlockSize * 1);
     m_tmpDirs[1] = m_dirs[1];
     m_tmpDirs[1].swapEndian();
-    m_fileHandle.asyncWrite(2, m_tmpDirs[1].raw.data(), BlockSize, BlockSize * 2);
+    m_fileHandle.fileWrite(m_tmpDirs[1].raw.data(), BlockSize, BlockSize * 2);
     m_tmpBats[0] = m_bats[0];
     m_tmpBats[0].swapEndian();
-    m_fileHandle.asyncWrite(3, m_tmpBats[0].raw.data(), BlockSize, BlockSize * 3);
+    m_fileHandle.fileWrite(m_tmpBats[0].raw.data(), BlockSize, BlockSize * 3);
     m_tmpBats[1] = m_bats[1];
     m_tmpBats[1].swapEndian();
-    m_fileHandle.asyncWrite(4, m_tmpBats[1].raw.data(), BlockSize, BlockSize * 4);
+    m_fileHandle.fileWrite(m_tmpBats[1].raw.data(), BlockSize, BlockSize * 4);
     if (!DummyBlock) {
       DummyBlock.reset(new uint8_t[BlockSize]);
       memset(DummyBlock.get(), 0xFF, BlockSize);
     }
     for (uint32_t i = 0; i < blockCount; ++i) {
-      m_fileHandle.asyncWrite(i + 5, DummyBlock.get(), BlockSize, BlockSize * (i + 5));
+      m_fileHandle.fileWrite(DummyBlock.get(), BlockSize, BlockSize * (i + 5));
     }
     m_dirty = false;
   }
@@ -848,23 +845,23 @@ void Card::commit() {
   if (m_fileHandle) {
     m_tmpCh = m_ch;
     m_tmpCh._swapEndian();
-    m_fileHandle.asyncWrite(0, &m_tmpCh, BlockSize, 0);
+    m_fileHandle.fileWrite(&m_tmpCh, BlockSize, 0);
     m_tmpDirs[0] = m_dirs[0];
     m_tmpDirs[0].updateChecksum();
     m_tmpDirs[0].swapEndian();
-    m_fileHandle.asyncWrite(1, m_tmpDirs[0].raw.data(), BlockSize, BlockSize * 1);
+    m_fileHandle.fileWrite(m_tmpDirs[0].raw.data(), BlockSize, BlockSize * 1);
     m_tmpDirs[1] = m_dirs[1];
     m_tmpDirs[1].updateChecksum();
     m_tmpDirs[1].swapEndian();
-    m_fileHandle.asyncWrite(2, m_tmpDirs[1].raw.data(), BlockSize, BlockSize * 2);
+    m_fileHandle.fileWrite(m_tmpDirs[1].raw.data(), BlockSize, BlockSize * 2);
     m_tmpBats[0] = m_bats[0];
     m_tmpBats[0].updateChecksum();
     m_tmpBats[0].swapEndian();
-    m_fileHandle.asyncWrite(3, m_tmpBats[0].raw.data(), BlockSize, BlockSize * 3);
+    m_fileHandle.fileWrite(m_tmpBats[0].raw.data(), BlockSize, BlockSize * 3);
     m_tmpBats[1] = m_bats[1];
     m_tmpBats[1].updateChecksum();
     m_tmpBats[1].swapEndian();
-    m_fileHandle.asyncWrite(4, m_tmpBats[1].raw.data(), BlockSize, BlockSize * 4);
+    m_fileHandle.fileWrite(m_tmpBats[1].raw.data(), BlockSize, BlockSize * 4);
     m_dirty = false;
   }
 }
@@ -874,15 +871,15 @@ bool Card::open(std::string_view filepath) {
   m_filename = filepath;
   m_fileHandle = FileIO(m_filename);
   if (m_fileHandle) {
-    if (!m_fileHandle.asyncRead(0, m_ch.raw.data(), BlockSize, 0))
+    if (!m_fileHandle.fileRead(m_ch.raw.data(), BlockSize, 0))
       return false;
-    if (!m_fileHandle.asyncRead(1, m_dirs[0].raw.data(), BlockSize, BlockSize * 1))
+    if (!m_fileHandle.fileRead(m_dirs[0].raw.data(), BlockSize, BlockSize * 1))
       return false;
-    if (!m_fileHandle.asyncRead(2, m_dirs[1].raw.data(), BlockSize, BlockSize * 2))
+    if (!m_fileHandle.fileRead(m_dirs[1].raw.data(), BlockSize, BlockSize * 2))
       return false;
-    if (!m_fileHandle.asyncRead(3, m_bats[0].raw.data(), BlockSize, BlockSize * 3))
+    if (!m_fileHandle.fileRead(m_bats[0].raw.data(), BlockSize, BlockSize * 3))
       return false;
-    if (!m_fileHandle.asyncRead(4, m_bats[1].raw.data(), BlockSize, BlockSize * 4))
+    if (!m_fileHandle.fileRead(m_bats[1].raw.data(), BlockSize, BlockSize * 4))
       return false;
     return true;
   }
@@ -893,7 +890,6 @@ void Card::close() {
   m_opened = false;
   if (m_fileHandle) {
     commit();
-    m_fileHandle.waitForCompletion();
     m_fileHandle = {};
   }
 }
@@ -901,10 +897,6 @@ void Card::close() {
 ECardResult Card::getError() const {
   if (!m_fileHandle)
     return ECardResult::NOCARD;
-
-  ECardResult pollRes = m_fileHandle.pollStatus();
-  if (pollRes != ECardResult::READY)
-    return pollRes;
 
   ECardResult openRes = const_cast<Card*>(this)->_pumpOpen();
   if (openRes != ECardResult::READY)
@@ -929,6 +921,5 @@ ECardResult Card::getError() const {
 void Card::waitForCompletion() const {
   if (!m_fileHandle)
     return;
-  m_fileHandle.waitForCompletion();
 }
 } // namespace kabufuda
