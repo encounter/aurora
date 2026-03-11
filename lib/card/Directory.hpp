@@ -2,9 +2,10 @@
 
 #include <array>
 #include <cstdint>
-#include "kabufuda/File.hpp"
 
-namespace kabufuda {
+#include "File.hpp"
+
+namespace aurora::card {
 class Directory {
   friend class Card;
 
@@ -18,7 +19,6 @@ class Directory {
     uint16_t m_checksumInv;
   };
 #pragma pack(pop)
-
 
   union {
     Data data;
@@ -42,4 +42,4 @@ public:
   File* getFile(uint32_t idx);
   int32_t indexForFile(const File* f) const;
 };
-} // namespace kabufuda
+} // namespace aurora::card

@@ -1,19 +1,19 @@
-#include "kabufuda/BlockAllocationTable.hpp"
+#include "BlockAllocationTable.hpp"
 
 #include <algorithm>
-#include <cstddef>
 #include <vector>
 
-#include "kabufuda/Util.hpp"
+#include "../internal.hpp"
+#include "Util.hpp"
 
-namespace kabufuda {
+namespace aurora::card {
 void BlockAllocationTable::swapEndian() {
-  m_checksum = SBig(m_checksum);
-  m_checksumInv = SBig(m_checksumInv);
-  m_updateCounter = SBig(m_updateCounter);
-  m_freeBlocks = SBig(m_freeBlocks);
-  m_lastAllocated = SBig(m_lastAllocated);
-  std::for_each(std::begin(m_map), std::end(m_map), [](uint16_t& val) { val = SBig(val); });
+  m_checksum = bswap(m_checksum);
+  m_checksumInv = bswap(m_checksumInv);
+  m_updateCounter = bswap(m_updateCounter);
+  m_freeBlocks = bswap(m_freeBlocks);
+  m_lastAllocated = bswap(m_lastAllocated);
+  std::for_each(std::begin(m_map), std::end(m_map), [](uint16_t& val) { val = bswap(val); });
 }
 
 void BlockAllocationTable::updateChecksum() {
@@ -27,7 +27,7 @@ bool BlockAllocationTable::valid() const {
   uint16_t ckSumInv = 0;
   const_cast<BlockAllocationTable&>(*this).swapEndian();
   calculateChecksumBE(reinterpret_cast<const uint16_t*>(raw.data() + 4), 0xFFE, &ckSum, &ckSumInv);
-  bool res = (ckSum == m_checksum && ckSumInv == m_checksumInv);
+  bool res = ckSum == m_checksum && ckSumInv == m_checksumInv;
   const_cast<BlockAllocationTable&>(*this).swapEndian();
   return res;
 }
@@ -36,9 +36,9 @@ BlockAllocationTable::BlockAllocationTable(uint32_t blockCount)
 : m_checksum{0}
 , m_checksumInv{0}
 , m_updateCounter{0}
-, m_freeBlocks{uint16_t(blockCount - FSTBlocks)}
+, m_freeBlocks{static_cast<uint16_t>(blockCount - FSTBlocks)}
 , m_lastAllocated{4}
-, m_map{{0}} {
+, m_map{{}} {
   updateChecksum();
 }
 
@@ -51,7 +51,7 @@ uint16_t BlockAllocationTable::getNextBlock(uint16_t block) const {
 
 uint16_t BlockAllocationTable::nextFreeBlock(uint16_t maxBlock, uint16_t startingBlock) const {
   if (m_freeBlocks > 0) {
-    maxBlock = std::min(maxBlock, uint16_t(BATSize));
+    maxBlock = std::min(maxBlock, static_cast<uint16_t>(BATSize));
     for (uint16_t i = startingBlock; i < maxBlock; ++i)
       if (m_map[i - FSTBlocks] == 0)
         return i;
@@ -103,4 +103,4 @@ uint16_t BlockAllocationTable::allocateBlocks(uint16_t count, uint16_t maxBlocks
   }
   return firstBlock;
 }
-} // namespace kabufuda
+} // namespace aurora::card

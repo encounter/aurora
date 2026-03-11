@@ -1,4 +1,4 @@
-#include "kabufuda/Card.hpp"
+#include "Card.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -6,25 +6,26 @@
 #include <filesystem>
 #include <memory>
 
-#include "kabufuda/SRAM.hpp"
+#include "../internal.hpp"
+#include "SRAM.hpp"
 
-namespace kabufuda {
+namespace aurora::card {
 
 #define ROUND_UP_8192(val) (((val) + 8191) & ~8191)
 
 static void NullFileAccess() { fprintf(stderr, "Attempted to access null file\n"); }
 
 void Card::CardHeader::_swapEndian() {
-  m_formatTime = SBig(m_formatTime);
-  m_sramBias = SBig(m_sramBias);
-  m_sramLanguage = SBig(m_sramLanguage);
-  m_unknown = SBig(m_unknown);
-  m_deviceId = SBig(m_deviceId);
-  m_sizeMb = SBig(m_sizeMb);
-  m_encoding = SBig(m_encoding);
-  m_updateCounter = SBig(m_updateCounter);
-  m_checksum = SBig(m_checksum);
-  m_checksumInv = SBig(m_checksumInv);
+  m_formatTime = bswap(m_formatTime);
+  m_sramBias = bswap(m_sramBias);
+  m_sramLanguage = bswap(m_sramLanguage);
+  m_unknown = bswap(m_unknown);
+  m_deviceId = bswap(m_deviceId);
+  m_sizeMb = bswap(m_sizeMb);
+  m_encoding = bswap(m_encoding);
+  m_updateCounter = bswap(m_updateCounter);
+  m_checksum = bswap(m_checksum);
+  m_checksumInv = bswap(m_checksumInv);
 }
 
 Card::Card() { m_ch.raw.fill(0xFF); }
@@ -202,7 +203,7 @@ ECardResult Card::createFile(const char* filename, size_t size, FileHandle& hand
   File* f = dir.getFirstFreeFile(m_game, m_maker, filename);
   uint16_t block = bat.allocateBlocks(neededBlocks, m_maxBlock - FSTBlocks);
   if (f && block != 0xFFFF) {
-    f->m_modifiedTime = uint32_t(getGCTime());
+    f->m_modifiedTime = static_cast<uint32_t>(getGCTime());
     f->m_firstBlock = block;
     f->m_blockCount = neededBlocks;
 
@@ -354,12 +355,12 @@ ECardResult Card::asyncWrite(FileHandle& fh, const void* buf, size_t size) {
    * since each block can be in an arbitrary location we must
    * first find our starting block.
    */
-  const uint16_t blockId = uint16_t(fh.offset / BlockSize);
+  const uint16_t blockId = static_cast<uint16_t>(fh.offset / BlockSize);
   uint16_t block = file->m_firstBlock;
   for (uint16_t i = 0; i < blockId; i++)
     block = m_bats[m_currentBat].getNextBlock(block);
 
-  const uint8_t* tmpBuf = reinterpret_cast<const uint8_t*>(buf);
+  const uint8_t* tmpBuf = static_cast<const uint8_t*>(buf);
   uint16_t curBlock = block;
   uint32_t blockOffset = fh.offset % BlockSize;
   size_t rem = size;
@@ -402,12 +403,12 @@ ECardResult Card::asyncRead(FileHandle& fh, void* dst, size_t size) {
    * since each block can be in an arbitrary location we must
    * first find our starting block.
    */
-  const uint16_t blockId = uint16_t(fh.offset / BlockSize);
+  const uint16_t blockId = static_cast<uint16_t>(fh.offset / BlockSize);
   uint16_t block = file->m_firstBlock;
   for (uint16_t i = 0; i < blockId; i++)
     block = m_bats[m_currentBat].getNextBlock(block);
 
-  uint8_t* tmpBuf = reinterpret_cast<uint8_t*>(dst);
+  uint8_t* tmpBuf = static_cast<uint8_t*>(dst);
   uint16_t curBlock = block;
   uint32_t blockOffset = fh.offset % BlockSize;
   size_t rem = size;
@@ -451,7 +452,7 @@ void Card::seek(FileHandle& fh, int32_t pos, SeekOrigin whence) {
     fh.offset += pos;
     break;
   case SeekOrigin::End:
-    fh.offset = int32_t(file->m_blockCount * BlockSize) - pos;
+    fh.offset = static_cast<int32_t>(file->m_blockCount * BlockSize) - pos;
     break;
   }
 }
@@ -474,7 +475,7 @@ bool Card::isPublic(const FileHandle& fh) const {
   if (!file)
     return false;
 
-  return bool(file->m_permissions & EPermissions::Public);
+  return static_cast<bool>(file->m_permissions & EPermissions::Public);
 }
 
 void Card::setCanCopy(const FileHandle& fh, bool copy) const {
@@ -493,7 +494,7 @@ bool Card::canCopy(const FileHandle& fh) const {
   if (!file)
     return false;
 
-  return !bool(file->m_permissions & EPermissions::NoCopy);
+  return !static_cast<bool>(file->m_permissions & EPermissions::NoCopy);
 }
 
 void Card::setCanMove(const FileHandle& fh, bool move) {
@@ -512,7 +513,7 @@ bool Card::canMove(const FileHandle& fh) const {
   if (!file)
     return false;
 
-  return !bool(file->m_permissions & EPermissions::NoMove);
+  return !static_cast<bool>(file->m_permissions & EPermissions::NoMove);
 }
 
 static uint32_t BannerSize(EImageFormat fmt) {
@@ -594,7 +595,7 @@ ECardResult Card::getStatus(uint32_t fileNo, CardStat& statOut) const {
     bool palette = false;
     for (size_t i = 0; i < statOut.x44_offsetIcon.size(); ++i) {
       statOut.x44_offsetIcon[i] = cur;
-      const EImageFormat fmt = statOut.GetIconFormat(int(i));
+      const EImageFormat fmt = statOut.GetIconFormat(static_cast<int>(i));
       if (fmt == EImageFormat::C8) {
         palette = true;
       }
@@ -749,9 +750,9 @@ void Card::getSerial(uint64_t& serial) {
 
   std::array<uint32_t, 8> serialBuf{};
   for (size_t i = 0; i < serialBuf.size(); i++) {
-    serialBuf[i] = SBig(*reinterpret_cast<uint32_t*>(m_ch.raw.data() + (i * 4)));
+    serialBuf[i] = bswap(*reinterpret_cast<uint32_t*>(m_ch.raw.data() + (i * 4)));
   }
-  serial = uint64_t(serialBuf[0] ^ serialBuf[2] ^ serialBuf[4] ^ serialBuf[6]) << 32 |
+  serial = static_cast<uint64_t>(serialBuf[0] ^ serialBuf[2] ^ serialBuf[4] ^ serialBuf[6]) << 32 |
            (serialBuf[1] ^ serialBuf[3] ^ serialBuf[5] ^ serialBuf[7]);
 
   m_ch._swapEndian();
@@ -767,35 +768,33 @@ void Card::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) const {
   filesNotUsed = m_dirs[m_currentDir].numFreeFiles();
 }
 
-void Card::getEncoding(uint16_t& encoding) const {
-  encoding = m_ch.m_encoding;
-}
+void Card::getEncoding(uint16_t& encoding) const { encoding = m_ch.m_encoding; }
 
 static std::unique_ptr<uint8_t[]> DummyBlock;
 
 void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   m_ch.raw.fill(0xFF);
 
-  uint64_t rand = uint64_t(getGCTime());
+  uint64_t rand = static_cast<uint64_t>(getGCTime());
   m_ch.m_formatTime = rand;
   for (size_t i = 0; i < m_ch.m_serial.size(); i++) {
-    rand = (((rand * uint64_t(0x41c64e6d)) + uint64_t(0x3039)) >> 16);
-    m_ch.m_serial[i] = uint8_t(g_SRAM.flash_id[uint32_t(id)][i] + uint32_t(rand));
-    rand = (((rand * uint64_t(0x41c64e6d)) + uint64_t(0x3039)) >> 16);
-    rand &= uint64_t(0x7fffULL);
+    rand = (((rand * static_cast<uint64_t>(0x41c64e6d)) + static_cast<uint64_t>(0x3039)) >> 16);
+    m_ch.m_serial[i] = static_cast<uint8_t>(g_SRAM.flash_id[uint32_t(id)][i] + uint32_t(rand));
+    rand = (((rand * static_cast<uint64_t>(0x41c64e6d)) + static_cast<uint64_t>(0x3039)) >> 16);
+    rand &= static_cast<uint64_t>(0x7fffULL);
   }
 
-  m_ch.m_sramBias = int32_t(SBig(g_SRAM.counter_bias));
-  m_ch.m_sramLanguage = uint32_t(SBig(g_SRAM.lang));
+  m_ch.m_sramBias = static_cast<int32_t>(bswap(g_SRAM.counter_bias));
+  m_ch.m_sramLanguage = static_cast<uint32_t>(g_SRAM.lang);
   m_ch.m_unknown = 0; /* 1 works for slot A, 0 both */
   m_ch.m_deviceId = 0;
-  m_ch.m_sizeMb = uint16_t(size);
+  m_ch.m_sizeMb = static_cast<uint16_t>(size);
   m_maxBlock = m_ch.m_sizeMb * MbitToBlocks;
-  m_ch.m_encoding = uint16_t(encoding);
+  m_ch.m_encoding = static_cast<uint16_t>(encoding);
   _updateChecksum();
   m_dirs[0] = Directory();
   m_dirs[1] = m_dirs[0];
-  m_bats[0] = BlockAllocationTable(uint32_t(size) * MbitToBlocks);
+  m_bats[0] = BlockAllocationTable(static_cast<uint32_t>(size) * MbitToBlocks);
   m_bats[1] = m_bats[0];
   m_currentDir = 1;
   m_currentBat = 1;
@@ -804,7 +803,7 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   m_fileHandle = FileIO(m_filename.c_str(), true);
 
   if (m_fileHandle) {
-    const uint32_t blockCount = (uint32_t(size) * MbitToBlocks) - 5;
+    const uint32_t blockCount = (static_cast<uint32_t>(size) * MbitToBlocks) - 5;
 
     m_tmpCh = m_ch;
     m_tmpCh._swapEndian();
@@ -836,7 +835,8 @@ ProbeResults Card::probeCardFile(std::string_view filename) {
   std::filesystem::path path(filename);
   if (!std::filesystem::exists(path))
     return {ECardResult::NOCARD, 0, 0};
-  return {ECardResult::READY, uint32_t(std::filesystem::file_size(path) / BlockSize) / MbitToBlocks, 0x2000};
+  return {ECardResult::READY, static_cast<uint32_t>(std::filesystem::file_size(path) / BlockSize) / MbitToBlocks,
+          0x2000};
 }
 
 void Card::commit() {
@@ -905,7 +905,7 @@ ECardResult Card::getError() const {
   uint16_t ckSum, ckSumInv;
   const_cast<Card&>(*this).m_ch._swapEndian();
   calculateChecksumBE(reinterpret_cast<const uint16_t*>(m_ch.raw.data()), 0xFE, &ckSum, &ckSumInv);
-  bool res = (ckSum == m_ch.m_checksum && ckSumInv == m_ch.m_checksumInv);
+  bool res = ckSum == m_ch.m_checksum && ckSumInv == m_ch.m_checksumInv;
   const_cast<Card&>(*this).m_ch._swapEndian();
 
   if (!res)
@@ -922,4 +922,4 @@ void Card::waitForCompletion() const {
   if (!m_fileHandle)
     return;
 }
-} // namespace kabufuda
+} // namespace aurora::card

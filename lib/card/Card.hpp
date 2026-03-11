@@ -4,16 +4,16 @@
 #include <cstdint>
 #include <string>
 
-#include "kabufuda/FileIO.hpp"
-#include "kabufuda/BlockAllocationTable.hpp"
-#include "kabufuda/Directory.hpp"
-#include "kabufuda/File.hpp"
-#include "kabufuda/Util.hpp"
+#include "FileIO.hpp"
+#include "BlockAllocationTable.hpp"
+#include "Directory.hpp"
+#include "File.hpp"
+#include "Util.hpp"
 
 #define CARD_FILENAME_MAX 32
 #define CARD_ICON_MAX 8
 
-namespace kabufuda {
+namespace aurora::card {
 
 class FileHandle {
   friend class Card;
@@ -502,4 +502,4 @@ public:
    */
   explicit operator bool() const { return getError() == ECardResult::READY; }
 };
-} // namespace kabufuda
+} // namespace aurora::card

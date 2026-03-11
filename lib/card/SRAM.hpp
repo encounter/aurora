@@ -26,7 +26,7 @@ must not be misrepresented as being the original software.
 distribution.
 -------------------------------------------------------------*/
 
-namespace kabufuda {
+namespace aurora::card {
 #pragma pack(push, 1)
 union SRAMFlags {
   uint8_t Hex;
@@ -70,4 +70,4 @@ union SRAM {
 #pragma pack(pop)
 
 extern const SRAM g_SRAM;
-} // namespace kabufuda
+} // namespace aurora::card

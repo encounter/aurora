@@ -2,9 +2,10 @@
 
 #include <array>
 #include <cstdint>
-#include "kabufuda/Constants.hpp"
 
-namespace kabufuda {
+#include "Constants.hpp"
+
+namespace aurora::card {
 class BlockAllocationTable {
   friend class Card;
 #pragma pack(push, 4)
@@ -26,7 +27,7 @@ class BlockAllocationTable {
   bool valid() const;
 
 public:
-  explicit BlockAllocationTable(uint32_t blockCount = (uint32_t(ECardSize::Card2043Mb) * MbitToBlocks));
+  explicit BlockAllocationTable(uint32_t blockCount = (static_cast<uint32_t>(ECardSize::Card2043Mb) * MbitToBlocks));
   ~BlockAllocationTable() = default;
 
   uint16_t getNextBlock(uint16_t block) const;
@@ -35,4 +36,4 @@ public:
   uint16_t allocateBlocks(uint16_t count, uint16_t maxBlocks);
   uint16_t numFreeBlocks() const { return m_freeBlocks; }
 };
-} // namespace kabufuda
+} // namespace aurora::card

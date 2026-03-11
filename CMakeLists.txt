@@ -9,6 +9,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(AURORA_ENABLE_GX "Enable GX implementation and WebGPU renderer" ON)
 option(AURORA_ENABLE_DVD "Enable DVD implementation backed by nod" OFF)  # TODO: need to fix tests
+option(AURORA_ENABLE_CARD "Enable CARD implementation based on kabufuda" ON)
 
 # Dependency versions
 set(AURORA_DAWN_VERSION "v20260307.161309" CACHE STRING "Dawn version tag (https://github.com/encounter/dawn-build/releases)")
@@ -65,7 +66,6 @@ include(cmake/aurora_mtx.cmake)
 include(cmake/aurora_vi.cmake)
 if(AURORA_ENABLE_CARD)
   include(cmake/aurora_card.cmake)
-  include(cmake/kabufuda.cmake)
 endif()
 if (AURORA_ENABLE_DVD)
   include(cmake/aurora_dvd.cmake)

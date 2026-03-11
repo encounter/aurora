@@ -2,9 +2,10 @@
 
 #include <array>
 #include <cstdint>
-#include "kabufuda/Constants.hpp"
 
-namespace kabufuda {
+#include "Constants.hpp"
+
+namespace aurora::card {
 class File {
   friend class IFileHandle;
   friend class Directory;
@@ -43,4 +44,4 @@ public:
   explicit File(const char* filename);
   ~File() = default;
 };
-} // namespace kabufuda
+} // namespace aurora::card

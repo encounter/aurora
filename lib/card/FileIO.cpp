@@ -1,15 +1,13 @@
-#include "kabufuda/FileIO.hpp"
+#include "FileIO.hpp"
 
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 
-namespace kabufuda {
+namespace aurora::card {
 
-bool FileIO::isReady() const {
-  return std::filesystem::exists(m_path);
-}
+bool FileIO::isReady() const { return std::filesystem::exists(m_path); }
 
 FileIO::FileIO(std::string_view filename, bool truncate) {
   m_path = filename;
@@ -22,7 +20,7 @@ FileIO::FileIO(std::string_view filename, bool truncate) {
 
     m_stream.open(filename, flags);
     m_size = std::filesystem::file_size(filename);
-  }else {
+  } else {
     m_stream.open(filename, std::ios::out | std::ios::binary);
     m_stream.flags(flags);
     m_size = 0;
@@ -52,7 +50,7 @@ bool FileIO::fileRead(void* buf, size_t length, off_t offset) {
     return false;
 
   m_stream.seekg(offset);
-  m_stream.read(reinterpret_cast<char*>(buf), length);
+  m_stream.read(static_cast<char*>(buf), length);
 
   return true;
 }
@@ -62,7 +60,7 @@ bool FileIO::fileWrite(const void* buf, size_t length, off_t offset) {
     return false;
 
   m_stream.seekp(offset);
-  m_stream.write(reinterpret_cast<const char*>(buf), length);
+  m_stream.write(static_cast<const char*>(buf), length);
 
   if (m_size < offset + length)
     m_size = std::filesystem::file_size(m_path);
@@ -72,4 +70,4 @@ bool FileIO::fileWrite(const void* buf, size_t length, off_t offset) {
 
 FileIO::operator bool() const { return isReady(); }
 
-} // namespace kabufuda
+} // namespace aurora::card

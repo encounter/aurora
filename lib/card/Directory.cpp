@@ -1,17 +1,18 @@
-#include "kabufuda/Directory.hpp"
+#include "Directory.hpp"
 
 #include <algorithm>
 #include <cstring>
 
-#include "kabufuda/Util.hpp"
+#include "../internal.hpp"
+#include "Util.hpp"
 
-namespace kabufuda {
+namespace aurora::card {
 void Directory::swapEndian() {
   std::for_each(std::begin(data.m_files), std::end(data.m_files), [](File& f) { f.swapEndian(); });
 
-  data.m_updateCounter = SBig(data.m_updateCounter);
-  data.m_checksum = SBig(data.m_checksum);
-  data.m_checksumInv = SBig(data.m_checksumInv);
+  data.m_updateCounter = bswap(data.m_updateCounter);
+  data.m_checksum = bswap(data.m_checksum);
+  data.m_checksumInv = bswap(data.m_checksumInv);
 }
 
 void Directory::updateChecksum() {
@@ -138,4 +139,4 @@ int32_t Directory::indexForFile(const File* f) const {
 
   return it - std::cbegin(data.m_files);
 }
-} // namespace kabufuda
+} // namespace aurora::card

@@ -1,9 +1,10 @@
 #pragma once
 
 #include <cstdint>
-#include "kabufuda/Util.hpp"
 
-namespace kabufuda {
+#include "Util.hpp"
+
+namespace aurora::card {
 constexpr uint32_t BlockSize = 0x2000;
 constexpr uint32_t MaxFiles = 127;
 constexpr uint32_t FSTBlocks = 5;
@@ -71,4 +72,4 @@ enum class EEncoding : uint16_t {
   ASCII, /**< Standard ASCII Encoding */
   SJIS   /**< SJIS Encoding for japanese */
 };
-} // namespace kabufuda
+} // namespace aurora::card
