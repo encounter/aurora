@@ -264,4 +264,7 @@ uint32_t align_uniform(uint32_t value);
 const Viewport& get_viewport() noexcept;
 void set_viewport(float left, float top, float width, float height, float znear, float zfar) noexcept;
 void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept;
+
+void push_debug_group(std::string label);
+void insert_debug_marker(std::string label);
 } // namespace aurora::gfx

@@ -4,6 +4,7 @@
 
 // Forward declare FIFO write functions
 namespace aurora::gx::fifo {
+void write_data(const void* data, u32 length);
 void write_u8(u8 val);
 void write_u16(u16 val);
 void write_u32(u32 val);
@@ -13,6 +14,7 @@ void write_f32(f32 val);
 
 // FIFO write macros - route through software FIFO buffer
 #define GX_WRITE_U8(ub) aurora::gx::fifo::write_u8(static_cast<u8>(ub))
+#define GX_WRITE_DATA(data, length) aurora::gx::fifo::write_data(data, length)
 #define GX_WRITE_U16(us) aurora::gx::fifo::write_u16(static_cast<u16>(us))
 #define GX_WRITE_U32(ui) aurora::gx::fifo::write_u32(static_cast<u32>(ui))
 #define GX_WRITE_U64(ui) aurora::gx::fifo::write_u64(static_cast<u64>(ui))

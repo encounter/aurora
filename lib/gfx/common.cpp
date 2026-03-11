@@ -11,6 +11,7 @@
 #include <fstream>
 #include <mutex>
 #include <thread>
+#include <ranges>
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
@@ -25,6 +26,7 @@ using webgpu::g_queue;
 
 #ifdef AURORA_GFX_DEBUG_GROUPS
 std::vector<std::string> g_debugGroupStack;
+std::vector<std::string> g_debugMarkers;
 #endif
 
 constexpr uint64_t UniformBufferSize = 3145728;  // 3mb
@@ -49,6 +51,7 @@ enum class CommandType {
   SetViewport,
   SetScissor,
   Draw,
+  DebugMarker,
 };
 struct SetScissorCommand {
   uint32_t x;
@@ -68,6 +71,7 @@ struct Command {
     Viewport setViewport;
     SetScissorCommand setScissor;
     ShaderDrawCommand draw;
+    size_t debugMarkerIndex;
   } data;
 };
 } // namespace aurora::gfx
@@ -615,6 +619,19 @@ void render(wgpu::CommandEncoder& cmd) {
   }
   g_renderPasses.clear();
   g_cachedBindGroups.clear();
+
+#if defined(AURORA_GFX_DEBUG_GROUPS)
+  if (!g_debugGroupStack.empty()) {
+    for (auto & it : std::ranges::reverse_view(g_debugGroupStack)) {
+      Log.warn("Debug group was not popped at end of frame: {}", it);
+    }
+    g_debugGroupStack.clear();
+  }
+
+  if (g_debugMarkers.size() > 0) {
+    g_debugMarkers.clear();
+  }
+#endif
 }
 
 void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
@@ -665,6 +682,11 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
         gx::render(g_state.gx, draw.gx, pass);
         break;
       }
+    } break;
+    case CommandType::DebugMarker: {
+#if defined(AURORA_GFX_DEBUG_GROUPS)
+      pass.InsertDebugMarker(wgpu::StringView(g_debugMarkers[cmd.data.debugMarkerIndex]));
+#endif
     } break;
     }
   }
@@ -791,8 +813,24 @@ wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
 }
 
 uint32_t align_uniform(uint32_t value) { return ALIGN(value, g_cachedLimits.minUniformBufferOffsetAlignment); }
+
+void insert_debug_marker(std::string label) {
+#if defined(AURORA_GFX_DEBUG_GROUPS)
+  auto idx = g_debugMarkers.size();
+  g_debugMarkers.emplace_back(std::move(label));
+  push_command(CommandType::DebugMarker, {
+    .debugMarkerIndex = idx
+  });
+#endif
+}
+
 } // namespace aurora::gfx
 
+void aurora::gfx::push_debug_group(std::string label) {
+#if defined(AURORA_GFX_DEBUG_GROUPS)
+  g_debugGroupStack.push_back(std::move(label));
+#endif
+}
 void push_debug_group(const char* label) {
 #ifdef AURORA_GFX_DEBUG_GROUPS
   aurora::gfx::g_debugGroupStack.emplace_back(label);
@@ -800,6 +838,11 @@ void push_debug_group(const char* label) {
 }
 void pop_debug_group() {
 #ifdef AURORA_GFX_DEBUG_GROUPS
+  if (aurora::gfx::g_debugGroupStack.empty()) {
+    aurora::gfx::Log.error("Debug group stack underflowed!");
+    return;
+  }
+
   aurora::gfx::g_debugGroupStack.pop_back();
 #endif
 }

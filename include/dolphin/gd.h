@@ -1,6 +1,7 @@
 #ifndef _DOLPHIN_GD_H_
 #define _DOLPHIN_GD_H_
 
+#include <dolphin/gd/GDAurora.h>
 #include <dolphin/gd/GDBase.h>
 #include <dolphin/gd/GDFile.h>
 #include <dolphin/gd/GDGeometry.h>

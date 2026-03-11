@@ -1690,6 +1690,17 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   });
 }
 
+std::string read_string(const u8* data, u32& pos, u32 size, bool bigEndian) {
+  CHECK(pos + 2 <= size, "Aurora string length read overrun");
+  const u16 length = read_u16(data + pos, bigEndian);
+  pos += 2;
+
+  CHECK(pos + length <= size, "Aurora string read overrun");
+  std::string str(reinterpret_cast<const char*>(data) + pos, length);
+  pos += length;
+  return str;
+}
+
 void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
   CHECK(pos + 2 <= size, "Aurora cmd read overrun");
   u16 subCmd = read_u16(data + pos, bigEndian);
@@ -1711,7 +1722,17 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     g_gxState.arrays[attrIdx].size = (u32)arraySize;
     g_gxState.arrays[attrIdx].cachedRange = {};
     g_gxState.stateDirty = true;
-  } else {
+  } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_PUSH) {
+    auto label = read_string(data, pos, size, bigEndian);
+    gfx::push_debug_group(std::move(label));
+  } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_POP) {
+    pop_debug_group();
+  } else if (subCmd == GX_LOAD_AURORA_DEBUG_MARKER_INSERT) {
+    auto label = read_string(data, pos, size, bigEndian);
+    gfx::insert_debug_marker(std::move(label));
+  }
+
+  else {
     Log.error("Unknown Aurora subcommand: {:04X}", subCmd);
   }
 }

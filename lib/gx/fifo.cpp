@@ -36,6 +36,13 @@ void init() {
   sDlWritePos = 0;
 }
 
+void write_data(const void* data, u32 length) {
+  const u8* dataPtr = static_cast<const u8*>(data);
+  for (u32 i = 0; i < length; i++) {
+    write_u8(dataPtr[i]);
+  }
+}
+
 void write_u8(u8 val) { write_byte(val); }
 
 void write_u16(u16 val) {
