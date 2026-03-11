@@ -12,7 +12,7 @@ option(AURORA_ENABLE_DVD "Enable DVD implementation backed by nod" OFF)  # TODO:
 option(AURORA_ENABLE_CARD "Enable CARD implementation based on kabufuda" ON)
 
 # Dependency versions
-set(AURORA_DAWN_VERSION "v20260307.161309" CACHE STRING "Dawn version tag (https://github.com/encounter/dawn-build/releases)")
+set(AURORA_DAWN_VERSION "v20260309.222352" CACHE STRING "Dawn version tag (https://github.com/encounter/dawn-build/releases)")
 set(AURORA_SDL3_VERSION "3.4.2" CACHE STRING "SDL3 version tag (https://github.com/libsdl-org/SDL/releases)")
 set(AURORA_NOD_VERSION "v2.0.0-alpha.8" CACHE STRING "nod version tag (https://github.com/encounter/nod/releases)")
 
