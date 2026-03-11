@@ -856,8 +856,8 @@ static void handle_bp(u32 value, bool bigEndian) {
     u32 stage1 = idx * 2 + 1;
 
     // Channel ID reverse mapping from hardware to GX
-    static const GXChannelID r2c[] = {GX_COLOR0A0, GX_COLOR1A1,   GX_COLOR0A0,   GX_COLOR1A1,
-                                      GX_COLOR0A0, GX_COLOR_ZERO, GX_COLOR_ZERO, GX_COLOR_NULL};
+    static const GXChannelID r2c[] = {GX_COLOR0A0, GX_COLOR1A1,   GX_COLOR0A0,    GX_COLOR1A1,
+                                      GX_COLOR0A0, GX_ALPHA_BUMP, GX_ALPHA_BUMPN, GX_COLOR_ZERO};
 
     if (stage0 < MaxTevStages) {
       auto& s = g_gxState.tevStages[stage0];
@@ -1126,10 +1126,10 @@ static void handle_bp(u32 value, bool bigEndian) {
   case 0x0D:
   case 0x0E: {
     u32 idx = (regId - 0x06) / 3; // matrix index (0-2)
-    u32 row = (regId - 0x06) % 3; // row index (0-2)
+    u32 column = (regId - 0x06) % 3; // column index (0-2)
     auto& info = g_gxState.indTexMtxs[idx];
 
-    // Decode 11-bit signed matrix elements (scaled by 1024)
+    // Decode one packed matrix column: [m[0][column], m[1][column]].
     s32 col0 = bp_get(value, 11, 0);
     if (col0 & 0x400)
       col0 |= ~0x7FF; // sign-extend from 11 bits
@@ -1137,13 +1137,13 @@ static void handle_bp(u32 value, bool bigEndian) {
     if (col1 & 0x400)
       col1 |= ~0x7FF;
 
-    auto& r = row == 0 ? info.mtx.m0 : (row == 1 ? info.mtx.m1 : info.mtx.m2);
-    r.x = static_cast<float>(col0) / 1024.0f;
-    r.y = static_cast<float>(col1) / 1024.0f;
+    auto& packedColumn = column == 0 ? info.mtx.m0 : (column == 1 ? info.mtx.m1 : info.mtx.m2);
+    packedColumn.x = static_cast<float>(col0) / 1024.0f;
+    packedColumn.y = static_cast<float>(col1) / 1024.0f;
 
     // Accumulate 2-bit scale exponent part (adjScale = scaleExp + 17, split across 3 registers)
     u32 scaleBits = bp_get(value, 2, 22);
-    u32 shift = row * 2;
+    u32 shift = column * 2;
     info.adjScaleRaw = (info.adjScaleRaw & ~(3u << shift)) | (scaleBits << shift);
     info.scaleExp = static_cast<s8>(info.adjScaleRaw) - 17;
 

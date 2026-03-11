@@ -106,6 +106,21 @@ TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mi
   return handle;
 }
 
+static bool setup_swizzle(wgpu::TextureComponentSwizzleDescriptor & swizzle, u32 format) {
+  switch (format) {
+  case GX_TF_I4:
+  case GX_TF_I8:
+    swizzle.swizzle.r = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.g = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.b = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.a = wgpu::ComponentSwizzle::R;
+    return true;
+  // TODO: IA4/IA8 can be RG8Unorm with swizzle RRRG.
+  default:
+    return false;
+  }
+}
+
 TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format,
                                      const char* label) noexcept {
   const auto wgpuFormat = to_wgpu(format);
@@ -124,12 +139,18 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
       .sampleCount = 1,
   };
   const auto viewLabel = fmt::format("{} view", label);
-  const wgpu::TextureViewDescriptor textureViewDescriptor{
+  wgpu::TextureViewDescriptor textureViewDescriptor{
       .label = viewLabel.c_str(),
       .format = wgpuFormat,
       .dimension = wgpu::TextureViewDimension::e2D,
       .mipLevelCount = mips,
   };
+
+  wgpu::TextureComponentSwizzleDescriptor swizzle{};
+  if (setup_swizzle(swizzle, format)) {
+    textureViewDescriptor.nextInChain = &swizzle;
+  }
+
   auto texture = g_device.CreateTexture(&textureDescriptor);
   auto textureView = texture.CreateView(&textureViewDescriptor);
   return std::make_shared<TextureRef>(std::move(texture), std::move(textureView), size, wgpuFormat, mips, format,

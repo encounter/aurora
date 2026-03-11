@@ -202,7 +202,7 @@ struct AlphaCompare {
 };
 static_assert(std::has_unique_object_representations_v<AlphaCompare>);
 struct IndTexMtxInfo {
-  aurora::Mat3x2<float> mtx;
+  Mat3x2<float> mtx;
   s8 scaleExp = 0;
   // Accumulated adjScale bits from BP registers (2 bits per row, 3 rows)
   u8 adjScaleRaw = 0;
@@ -404,6 +404,8 @@ struct ShaderConfig {
   std::array<TcgConfig, MaxTexCoord> tcgs;
   AlphaCompare alphaCompare;
   std::array<TextureConfig, MaxTextures> textureConfig;
+  std::array<IndStage, MaxIndStages> indStages{};
+  u32 numIndStages = 0;
   u32 currentPnMtx = 0;
 
   bool operator==(const ShaderConfig& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
@@ -432,6 +434,9 @@ struct ShaderInfo {
   std::bitset<MaxTevRegs> writesTevReg;
   std::bitset<MaxPTTexMtx> usesPTTexMtx;
   std::bitset<MaxVtxAttr> indexAttr;
+  std::bitset<MaxIndStages> usedIndStages;
+  std::bitset<MaxTextures> sampledIndTextures;
+  std::bitset<MaxIndTexMtxs> usedIndTexMtxs;
   u32 uniformSize = 0;
   bool usesFog : 1 = false;
   bool lightingEnabled : 1 = false;

@@ -1,8 +1,25 @@
 #include "shader_info.hpp"
 
+#include <cmath>
+
 namespace aurora::gx {
 namespace {
 Module Log("aurora::gx");
+
+bool is_alpha_bump_channel(GXChannelID id) { return id == GX_ALPHA_BUMP || id == GX_ALPHA_BUMPN; }
+
+Vec4<float> texture_size_bias(const gfx::TextureBind& tex) {
+  auto width = static_cast<float>(tex.texObj.width);
+  auto height = static_cast<float>(tex.texObj.height);
+
+  // TODO: actual logical EFB copy size
+  if (tex.texObj.ref && tex.texObj.ref->isRenderTexture) {
+    width = 608.0f;
+    height = 448.0f;
+  }
+
+  return {width, height, tex.texObj.lodBias, 0.0f};
+}
 
 void color_arg_reg_info(GXTevColorArg arg, const TevStage& stage, ShaderInfo& info) {
   switch (arg) {
@@ -39,7 +56,10 @@ void color_arg_reg_info(GXTevColorArg arg, const TevStage& stage, ShaderInfo& in
     break;
   case GX_CC_RASC:
   case GX_CC_RASA:
-    info.sampledColorChannels.set(color_channel(stage.channelId));
+    if (stage.channelId != GX_COLOR_NULL && stage.channelId != GX_COLOR_ZERO &&
+        !is_alpha_bump_channel(stage.channelId)) {
+      info.sampledColorChannels.set(color_channel(stage.channelId));
+    }
     break;
   case GX_CC_KONST:
     switch (stage.kcSel) {
@@ -109,7 +129,10 @@ void alpha_arg_reg_info(GXTevAlphaArg arg, const TevStage& stage, ShaderInfo& in
     info.sampledTextures.set(stage.texMapId);
     break;
   case GX_CA_RASA:
-    info.sampledColorChannels.set(color_channel(stage.channelId));
+    if (stage.channelId != GX_COLOR_NULL && stage.channelId != GX_COLOR_ZERO &&
+        !is_alpha_bump_channel(stage.channelId)) {
+      info.sampledColorChannels.set(color_channel(stage.channelId));
+    }
     break;
   case GX_CA_KONST:
     switch (stage.kaSel) {
@@ -186,6 +209,40 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
       info.writesTevReg.set(stage.alphaOp.outReg);
     }
   }
+  for (int i = 0; i < config.tevStageCount; ++i) {
+    const auto& stage = config.tevStages[i];
+    const bool usesIndStage = stage.indTexMtxId != GX_ITM_OFF || is_alpha_bump_channel(stage.channelId);
+    const bool usesTevTexCoord = stage.indTexMtxId != GX_ITM_OFF || stage.indTexWrapS != GX_ITW_OFF ||
+                                 stage.indTexWrapT != GX_ITW_OFF || stage.indTexAddPrev;
+    if (usesTevTexCoord && stage.texCoordId != GX_TEXCOORD_NULL) {
+      info.sampledTexCoords.set(stage.texCoordId);
+    }
+    if (usesTevTexCoord && stage.texMapId != GX_TEXMAP_NULL &&
+        (stage.indTexMtxId != GX_ITM_OFF || stage.indTexAddPrev)) {
+      info.sampledTextures.set(stage.texMapId);
+    }
+    if (!usesIndStage) {
+      continue;
+    }
+    // Skip if not enabled
+    if (stage.indTexStage >= config.numIndStages) {
+      continue;
+    }
+    info.usedIndStages.set(stage.indTexStage);
+    const auto& indStage = config.indStages[stage.indTexStage];
+    info.sampledTextures.set(indStage.texMapId);
+    info.sampledTexCoords.set(indStage.texCoordId);
+    info.sampledIndTextures.set(indStage.texMapId);
+    // Track which indirect matrix is used
+    if (stage.indTexMtxId >= GX_ITM_0 && stage.indTexMtxId <= GX_ITM_2) {
+      info.usedIndTexMtxs.set(stage.indTexMtxId - GX_ITM_0);
+    } else if (stage.indTexMtxId >= GX_ITM_S0 && stage.indTexMtxId <= GX_ITM_S2) {
+      info.usedIndTexMtxs.set(stage.indTexMtxId - GX_ITM_S0);
+    } else if (stage.indTexMtxId >= GX_ITM_T0 && stage.indTexMtxId <= GX_ITM_T2) {
+      info.usedIndTexMtxs.set(stage.indTexMtxId - GX_ITM_T0);
+    }
+  }
+
   info.uniformSize += info.loadsTevReg.count() * sizeof(Vec4<float>);
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
     if (info.sampledColorChannels.test(i)) {
@@ -235,7 +292,10 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
     info.usesFog = true;
     info.uniformSize += sizeof(Fog);
   }
-  info.uniformSize += info.sampledTextures.count() * sizeof(u32);
+  if (info.usedIndTexMtxs.any()) {
+    info.uniformSize += MaxIndTexMtxs * sizeof(Mat2x4<float>);
+  }
+  info.uniformSize += info.sampledTextures.count() * sizeof(Vec4<float>);
   info.uniformSize = gfx::align_uniform(info.uniformSize);
   return info;
 }
@@ -306,13 +366,20 @@ gfx::Range build_uniform(const ShaderInfo& info) noexcept {
     Fog fog{.color = state.color, .a = state.a, .b = state.b, .c = state.c};
     buf.append(fog);
   }
+  if (info.usedIndTexMtxs.any()) {
+    for (int i = 0; i < MaxIndTexMtxs; ++i) {
+      const auto& mtx = g_gxState.indTexMtxs[i];
+      buf.append(Vec4{mtx.mtx.m0.x, mtx.mtx.m0.y, mtx.mtx.m1.x, mtx.mtx.m1.y});
+      buf.append(Vec4{mtx.mtx.m2.x, mtx.mtx.m2.y, std::exp2f(mtx.scaleExp), 0.0f});
+    }
+  }
   for (int i = 0; i < info.sampledTextures.size(); ++i) {
     if (!info.sampledTextures.test(i)) {
       continue;
     }
     const auto& tex = get_texture(static_cast<GXTexMapID>(i));
     CHECK(tex, "unbound texture {}", i);
-    buf.append(tex.texObj.lodBias);
+    buf.append(texture_size_bias(tex));
   }
   g_gxState.stateDirty = false;
   return range;

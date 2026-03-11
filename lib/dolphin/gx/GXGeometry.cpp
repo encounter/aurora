@@ -198,6 +198,23 @@ void GXSetVtxAttrFmt(GXVtxFmt vtxfmt, GXAttr attr, GXCompCnt cnt, GXCompType typ
   __gx->dirtyVAT |= static_cast<u8>(1 << vtxfmt);
 }
 
+void GXSetVtxAttrFmtv(GXVtxFmt vtxfmt, const GXVtxAttrFmtList* list) {
+  CHECK(vtxfmt >= GX_VTXFMT0 && vtxfmt < GX_MAX_VTXFMT, "invalid vtxfmt {}", underlying(vtxfmt));
+  CHECK(list != nullptr, "null vtx attr fmt list");
+
+  u32* va = &__gx->vatA[vtxfmt];
+  u32* vb = &__gx->vatB[vtxfmt];
+  u32* vc = &__gx->vatC[vtxfmt];
+  while (list->attr != GX_VA_NULL) {
+    CHECK(list->attr >= GX_VA_POS && list->attr < GX_VA_MAX_ATTR, "invalid attr {}", underlying(list->attr));
+    SETVAT(va, vb, vc, list->attr, list->cnt, list->type, list->frac);
+    ++list;
+  }
+
+  __gx->dirtyState |= 0x10;
+  __gx->dirtyVAT |= static_cast<u8>(1 << vtxfmt);
+}
+
 void GXSetArray(GXAttr attr, const void* data, u32 size, u8 stride) {
   GXAttr cpAttr = static_cast<GXAttr>(attr);
   if (attr == GX_VA_NBT) {

@@ -8,6 +8,12 @@
 extern "C" {
 #endif
 
+void GXGetVtxDesc(GXAttr attr, GXAttrType* type);
+void GXGetVtxDescv(GXVtxDescList* vcd);
+void GXGetVtxAttrFmtv(GXVtxFmt fmt, GXVtxAttrFmtList* vat);
+void GXGetLineWidth(u8* width, GXTexOffset* texOffsets);
+void GXGetPointSize(u8* pointSize, GXTexOffset* texOffsets);
+void GXGetCullMode(GXCullMode* mode);
 GXBool GXGetTexObjMipMap(GXTexObj* tex_obj);
 GXTexFmt GXGetTexObjFmt(GXTexObj* tex_obj);
 u16 GXGetTexObjHeight(GXTexObj* tex_obj);
@@ -21,7 +27,6 @@ void GXGetLightColor(GXLightObj* lt_obj, GXColor* color);
 void GXGetVtxAttrFmt(GXVtxFmt idx, GXAttr attr, GXCompCnt* compCnt, GXCompType* compType, u8* shift);
 u32 GXGetTexObjTlut(const GXTexObj* tex_obj);
 
-void GXGetProjectionv(f32* ptr);
 void GXGetViewportv(f32* vp);
 void GXGetScissor(u32* left, u32* top, u32* wd, u32* ht);
 

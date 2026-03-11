@@ -40,6 +40,55 @@ static inline std::string_view chan_comp(GXTevColorChan chan) noexcept {
   }
 }
 
+static bool is_alpha_bump_channel(GXChannelID id) noexcept { return id == GX_ALPHA_BUMP || id == GX_ALPHA_BUMPN; }
+
+static std::string tev_mask_expr(const std::string& value, u32 mask) {
+  // t_IndTexCoord is already expanded into the 0..255 indirect sample domain.
+  return fmt::format("(f32(u32({}) & 0x{:X}u) / 255.0)", value, mask);
+}
+
+static std::string alpha_bump_sel(size_t stageIdx, const ShaderConfig& config, const TevStage& stage) {
+  if (stage.indTexStage >= config.numIndStages || stage.indTexAlphaSel == GX_ITBA_OFF) {
+    return "0.0";
+  }
+
+  std::string baseCoord;
+  switch (stage.indTexAlphaSel) {
+    DEFAULT_FATAL("invalid indTexAlphaSel {} for stage {}", underlying(stage.indTexAlphaSel), stageIdx);
+  case GX_ITBA_S:
+    baseCoord = fmt::format("t_IndTexCoord{}.x", underlying(stage.indTexStage));
+    break;
+  case GX_ITBA_T:
+    baseCoord = fmt::format("t_IndTexCoord{}.y", underlying(stage.indTexStage));
+    break;
+  case GX_ITBA_U:
+    baseCoord = fmt::format("t_IndTexCoord{}.z", underlying(stage.indTexStage));
+    break;
+  case GX_ITBA_OFF:
+    return "0.0";
+  }
+
+  switch (stage.indTexFormat) {
+    DEFAULT_FATAL("invalid indirect format {} for stage {}", underlying(stage.indTexFormat), stageIdx);
+  case GX_ITF_8:
+    return tev_mask_expr(baseCoord, 0xF8u);
+  case GX_ITF_5:
+    return tev_mask_expr(baseCoord, 0xE0u);
+  case GX_ITF_4:
+    return tev_mask_expr(baseCoord, 0xF0u);
+  case GX_ITF_3:
+    return tev_mask_expr(baseCoord, 0xF8u);
+  }
+}
+
+static bool uses_texture_sample(const TevStage& stage) noexcept {
+  const auto& c = stage.colorPass;
+  const auto& a = stage.alphaPass;
+  return c.a == GX_CC_TEXC || c.a == GX_CC_TEXA || c.b == GX_CC_TEXC || c.b == GX_CC_TEXA || c.c == GX_CC_TEXC ||
+         c.c == GX_CC_TEXA || c.d == GX_CC_TEXC || c.d == GX_CC_TEXA || a.a == GX_CA_TEXA || a.b == GX_CA_TEXA ||
+         a.c == GX_CA_TEXA || a.d == GX_CA_TEXA;
+}
+
 u8 color_channel(GXChannelID id) {
   switch (id) {
     DEFAULT_FATAL("unimplemented color channel {}", id);
@@ -89,18 +138,32 @@ static std::string color_arg_reg(GXTevColorArg arg, size_t stageIdx, const Shade
     return fmt::format("vec3f(sampled{}.{})", stageIdx, chan_comp(swap.alpha));
   }
   case GX_CC_RASC: {
-    CHECK(stage.channelId != GX_COLOR_NULL, "unmapped color channel for stage {}", stageIdx);
-    if (stage.channelId == GX_COLOR_ZERO) {
+    // CHECK(stage.channelId != GX_COLOR_NULL, "unmapped color channel for stage {}", stageIdx);
+    if (stage.channelId == GX_COLOR_ZERO || stage.channelId == GX_COLOR_NULL) {
       return "vec3f(0.0)";
+    }
+    if (is_alpha_bump_channel(stage.channelId)) {
+      std::string alpha = alpha_bump_sel(stageIdx, config, stage);
+      if (stage.channelId == GX_ALPHA_BUMPN) {
+        alpha = fmt::format("({} * (255.0 / 248.0))", alpha);
+      }
+      return fmt::format("vec3f({})", alpha);
     }
     u32 idx = color_channel(stage.channelId);
     const auto& swap = config.tevSwapTable[stage.tevSwapRas];
     return fmt::format("rast{}.{}{}{}", idx, chan_comp(swap.red), chan_comp(swap.green), chan_comp(swap.blue));
   }
   case GX_CC_RASA: {
-    CHECK(stage.channelId != GX_COLOR_NULL, "unmapped color channel for stage {}", stageIdx);
-    if (stage.channelId == GX_COLOR_ZERO) {
+    // CHECK(stage.channelId != GX_COLOR_NULL, "unmapped color channel for stage {}", stageIdx);
+    if (stage.channelId == GX_COLOR_ZERO || stage.channelId == GX_COLOR_NULL) {
       return "vec3f(0.0)";
+    }
+    if (is_alpha_bump_channel(stage.channelId)) {
+      std::string alpha = alpha_bump_sel(stageIdx, config, stage);
+      if (stage.channelId == GX_ALPHA_BUMPN) {
+        alpha = fmt::format("({} * (255.0 / 248.0))", alpha);
+      }
+      return fmt::format("vec3f({})", alpha);
     }
     u32 idx = color_channel(stage.channelId);
     const auto& swap = config.tevSwapTable[stage.tevSwapRas];
@@ -196,9 +259,16 @@ static std::string alpha_arg_reg(GXTevAlphaArg arg, size_t stageIdx, const Shade
     return fmt::format("sampled{}.{}", stageIdx, chan_comp(swap.alpha));
   }
   case GX_CA_RASA: {
-    CHECK(stage.channelId != GX_COLOR_NULL, "unmapped color channel for stage {}", stageIdx);
-    if (stage.channelId == GX_COLOR_ZERO) {
+    // CHECK(stage.channelId != GX_COLOR_NULL, "unmapped color channel for stage {}", stageIdx);
+    if (stage.channelId == GX_COLOR_ZERO || stage.channelId == GX_COLOR_NULL) {
       return "0.0";
+    }
+    if (is_alpha_bump_channel(stage.channelId)) {
+      std::string alpha = alpha_bump_sel(stageIdx, config, stage);
+      if (stage.channelId == GX_ALPHA_BUMPN) {
+        alpha = fmt::format("({} * (255.0 / 248.0))", alpha);
+      }
+      return alpha;
     }
     u32 idx = color_channel(stage.channelId);
     const auto& swap = config.tevSwapTable[stage.tevSwapRas];
@@ -287,13 +357,13 @@ static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view sc
         a, b, c, zero, d);
   case GX_TEV_COMP_BGR24_GT:
     return fmt::format(
-        "select({3}, {2}, round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) > round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
-        "65536.0)))) + {4}",
+        "select({3}, {2}, round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) > round(dot({1}.rgb * 255.0, "
+        "vec3(1.0, 256.0, 65536.0)))) + {4}",
         a, b, c, zero, d);
   case GX_TEV_COMP_BGR24_EQ:
     return fmt::format(
-        "select({3}, {2}, round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) == round(dot({1}.rgb * 255.0, vec3(1.0, 256.0, "
-        "65536.0)))) + {4}",
+        "select({3}, {2}, round(dot({0}.rgb * 255.0, vec3(1.0, 256.0, 65536.0))) == round(dot({1}.rgb * 255.0, "
+        "vec3(1.0, 256.0, 65536.0)))) + {4}",
         a, b, c, zero, d);
   case GX_TEV_COMP_RGB8_GT:
     return fmt::format("select({3}, {2}, round({0} * 255.0) > round({1} * 255.0)) + {4}", a, b, c, zero, d);
@@ -652,6 +722,33 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         Log.info("    texCoordId: {}", stage.texCoordId);
         Log.info("    texMapId: {}", stage.texMapId);
         Log.info("    channelId: {}", stage.channelId);
+        Log.info("    tevSwapRas: {}", stage.tevSwapRas);
+        Log.info("    tevSwapTex: {}", stage.tevSwapTex);
+        Log.info("    indTexStage: {}", stage.indTexStage);
+        Log.info("    indTexFormat: {}", stage.indTexFormat);
+        Log.info("    indTexBiasSel: {}", stage.indTexBiasSel);
+        Log.info("    indTexAlphaSel: {}", stage.indTexAlphaSel);
+        Log.info("    indTexMtxId: {}", stage.indTexMtxId);
+        Log.info("    indTexWrapS: {}", stage.indTexWrapS);
+        Log.info("    indTexWrapT: {}", stage.indTexWrapT);
+        Log.info("    indTexUseOrigLOD: {}", stage.indTexUseOrigLOD);
+        Log.info("    indTexAddPrev: {}", stage.indTexAddPrev);
+      }
+      Log.info("  numIndStages: {}", config.numIndStages);
+      for (u32 i = 0; i < config.numIndStages; ++i) {
+        const auto& stage = config.indStages[i];
+        Log.info("  indStages[{}]: texCoordId {} texMapId {} scaleS {} scaleT {}", i, stage.texCoordId, stage.texMapId,
+                 stage.scaleS, stage.scaleT);
+      }
+      for (size_t i = 0; i < info.usedIndTexMtxs.size(); ++i) {
+        if (!info.usedIndTexMtxs.test(i)) {
+          continue;
+        }
+        const auto& mtx = g_gxState.indTexMtxs[i];
+        Log.info("  indTexMtxs[{}]: scaleExp {} adjScaleRaw {}", i, static_cast<int>(mtx.scaleExp), mtx.adjScaleRaw);
+        Log.info("    row0: [{}, {}]", mtx.mtx.m0.x, mtx.mtx.m0.y);
+        Log.info("    row1: [{}, {}]", mtx.mtx.m1.x, mtx.mtx.m1.y);
+        Log.info("    row2: [{}, {}]", mtx.mtx.m2.x, mtx.mtx.m2.y);
       }
       for (int i = 0; i < config.colorChannels.size(); ++i) {
         const auto& chan = config.colorChannels[i];
@@ -763,8 +860,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
     vtxXfrAttrsPre += fmt::format(
         "\n    var pos_mtx = ubuf.postex_mtx[{0}];"
         "\n    var nrm_mtx = ubuf.nrm_mtx[{0}];",
-        config.currentPnMtx
-    );
+        config.currentPnMtx);
   }
 
   vtxXfrAttrsPre += fmt::format(
@@ -1088,15 +1184,225 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       fragmentFnPre += fmt::format("\n    var tex{0}_uv = in.tex{0}_uv.xy;", i);
     }
   }
-  for (int i = 0; i < config.tevStages.size(); ++i) {
-    const auto& stage = config.tevStages[i];
-    if (stage.texMapId == GX_TEXMAP_NULL ||
-        stage.texCoordId == GX_TEXCOORD_NULL
-        // TODO should check this per-stage probably
-        || !info.sampledTextures.test(stage.texMapId)) {
+  // Multiple TEV stages may reference the same indirect stage,
+  // so we sample each indirect texture only once.
+  const auto ind_scale = [](const GXIndTexScale s) -> std::string_view {
+    switch (s) {
+    case GX_ITS_1:
+      return "1.0"sv;
+    case GX_ITS_2:
+      return "(1.0 / 2.0)"sv;
+    case GX_ITS_4:
+      return "(1.0 / 4.0)"sv;
+    case GX_ITS_8:
+      return "(1.0 / 8.0)"sv;
+    case GX_ITS_16:
+      return "(1.0 / 16.0)"sv;
+    case GX_ITS_32:
+      return "(1.0 / 32.0)"sv;
+    case GX_ITS_64:
+      return "(1.0 / 64.0)"sv;
+    case GX_ITS_128:
+      return "(1.0 / 128.0)"sv;
+    case GX_ITS_256:
+      return "(1.0 / 256.0)"sv;
+    default:
+      FATAL("unhandled indirect scale {}", underlying(s));
+    }
+  };
+  for (int i = 0; i < info.usedIndStages.size(); ++i) {
+    if (!info.usedIndStages.test(i)) {
       continue;
     }
-    std::string uvIn = fmt::format("tex{0}_uv", underlying(stage.texCoordId));
+    const auto& indStage = config.indStages[i];
+    std::string scaleExpr;
+    if (indStage.scaleS == GX_ITS_1 && indStage.scaleT == GX_ITS_1) {
+      scaleExpr = fmt::format("tex{0}_uv", underlying(indStage.texCoordId));
+    } else {
+      scaleExpr = fmt::format("tex{0}_uv * vec2f({1}, {2})", underlying(indStage.texCoordId),
+                              ind_scale(indStage.scaleS), ind_scale(indStage.scaleT));
+    }
+    fragmentFnPre += fmt::format(
+        "\n    // Indirect stage {0}"
+        "\n    var t_IndTexCoord{0} = 255.0 * textureSampleBias(tex{1}, tex{1}_samp, {2}, "
+        "ubuf.tex{1}_size_bias.z).abg;",
+        i, underlying(indStage.texMapId), scaleExpr);
+  }
+  if (info.usedIndStages.any()) {
+    fragmentFnPre += "\n    var t_TexCoord = vec2f(0.0);";
+  }
+  for (int i = 0; i < config.tevStageCount; ++i) {
+    const auto& stage = config.tevStages[i];
+    const bool needsIndirectCoord = stage.indTexMtxId != GX_ITM_OFF;
+    const bool hasIndirectStage = stage.indTexStage < config.numIndStages;
+    const bool needsTevTexCoord =
+        needsIndirectCoord || stage.indTexWrapS != GX_ITW_OFF || stage.indTexWrapT != GX_ITW_OFF || stage.indTexAddPrev;
+    const bool needsTextureSample = uses_texture_sample(stage);
+    if (!needsTevTexCoord && !needsTextureSample) {
+      continue;
+    }
+    const bool hasBaseTexCoord = stage.texCoordId != GX_TEXCOORD_NULL;
+    const bool hasBaseTexture = stage.texMapId != GX_TEXMAP_NULL;
+    const bool hasBaseCoord = hasBaseTexCoord && hasBaseTexture;
+    std::string uvIn;
+    if (needsTevTexCoord) {
+      fragmentFnPre += fmt::format("\n    // TEV stage {} indirect", i);
+
+      // Apply indirect texture matrix (produces a texel-space offset)
+      std::string indirectOffsetTexel;
+      if (needsIndirectCoord && hasIndirectStage) {
+        std::string_view fmtShift;
+        switch (stage.indTexFormat) {
+        case GX_ITF_8:
+          break;
+        case GX_ITF_5:
+          fmtShift = " / 8.0"sv;
+          break;
+        case GX_ITF_4:
+          fmtShift = " / 16.0"sv;
+          break;
+        case GX_ITF_3:
+          fmtShift = " / 32.0"sv;
+          break;
+        default:
+          FATAL("unhandled indirect format {}", underlying(stage.indTexFormat));
+        }
+        if (fmtShift.empty()) {
+          fragmentFnPre += fmt::format("\n    var ind{0}_coord = t_IndTexCoord{1};", i, underlying(stage.indTexStage));
+        } else {
+          fragmentFnPre += fmt::format("\n    var ind{0}_coord = floor(t_IndTexCoord{1}{2});", i,
+                                       underlying(stage.indTexStage), fmtShift);
+        }
+
+        if (stage.indTexBiasSel != GX_ITB_NONE) {
+          auto bias = stage.indTexFormat == GX_ITF_8 ? "-128.0"sv : "1.0"sv;
+          auto biasS = "0.0"sv, biasT = "0.0"sv, biasU = "0.0"sv;
+          if (stage.indTexBiasSel == GX_ITB_S || stage.indTexBiasSel == GX_ITB_ST || stage.indTexBiasSel == GX_ITB_SU ||
+              stage.indTexBiasSel == GX_ITB_STU) {
+            biasS = "1.0"sv;
+          }
+          if (stage.indTexBiasSel == GX_ITB_T || stage.indTexBiasSel == GX_ITB_ST || stage.indTexBiasSel == GX_ITB_TU ||
+              stage.indTexBiasSel == GX_ITB_STU) {
+            biasT = "1.0"sv;
+          }
+          if (stage.indTexBiasSel == GX_ITB_U || stage.indTexBiasSel == GX_ITB_SU || stage.indTexBiasSel == GX_ITB_TU ||
+              stage.indTexBiasSel == GX_ITB_STU) {
+            biasU = "1.0"sv;
+          }
+          fragmentFnPre += fmt::format("\n    ind{0}_coord = ind{0}_coord + vec3f({1}, {2}, {3}) * {4};", i, biasS,
+                                       biasT, biasU, bias);
+        }
+
+        if (stage.indTexMtxId >= GX_ITM_0 && stage.indTexMtxId <= GX_ITM_2) {
+          // Static 2x3 matrix: dot(mat_row, vec3(S,T,U)) * scale
+          u32 mtxIdx = stage.indTexMtxId - GX_ITM_0;
+          fragmentFnPre += fmt::format("\n    var ind{0}_mtx = ubuf.ind_mtx[{1}];", i, mtxIdx);
+          indirectOffsetTexel = fmt::format(
+              "vec2f("
+              "dot(vec3f(ind{0}_mtx[0][0], ind{0}_mtx[0][2], ind{0}_mtx[1][0]), ind{0}_coord), "
+              "dot(vec3f(ind{0}_mtx[0][1], ind{0}_mtx[0][3], ind{0}_mtx[1][1]), ind{0}_coord)"
+              ") * ind{0}_mtx[1][2]",
+              i);
+        } else if (stage.indTexMtxId >= GX_ITM_S0 && stage.indTexMtxId <= GX_ITM_S2 && hasBaseCoord) {
+          // Dynamic S: result = uv * texDim * ind_coord.x * scale / 256
+          u32 mtxIdx = stage.indTexMtxId - GX_ITM_S0;
+          u32 regTexCoord = underlying(stage.texCoordId);
+          u32 regTexMap = underlying(stage.texMapId);
+          indirectOffsetTexel = fmt::format(
+              "tex{1}_uv * ubuf.tex{2}_size_bias.xy * ind{0}_coord.x"
+              " * ubuf.ind_mtx[{3}][1][2] / 256.0",
+              i, regTexCoord, regTexMap, mtxIdx);
+        } else if (stage.indTexMtxId >= GX_ITM_T0 && stage.indTexMtxId <= GX_ITM_T2 && hasBaseCoord) {
+          // Dynamic T: result = uv * texDim * ind_coord.y * scale / 256
+          u32 mtxIdx = stage.indTexMtxId - GX_ITM_T0;
+          u32 regTexCoord = underlying(stage.texCoordId);
+          u32 regTexMap = underlying(stage.texMapId);
+          indirectOffsetTexel = fmt::format(
+              "tex{1}_uv * ubuf.tex{2}_size_bias.xy * ind{0}_coord.y"
+              " * ubuf.ind_mtx[{3}][1][2] / 256.0",
+              i, regTexCoord, regTexMap, mtxIdx);
+        }
+      }
+
+      // Don't convert to/from texel space if we can avoid it
+      const bool useSimpleCoords = stage.indTexMtxId == GX_ITM_OFF && !stage.indTexAddPrev;
+
+      // Wrap base coord and combine with the indirect translation.
+      auto wrap_comp = [](GXIndTexWrap wrap, std::string&& coord) -> std::string {
+        switch (wrap) {
+        case GX_ITW_OFF:
+          return std::move(coord);
+        case GX_ITW_256:
+          return fmt::format("({} % 256.0)", coord);
+        case GX_ITW_128:
+          return fmt::format("({} % 128.0)", coord);
+        case GX_ITW_64:
+          return fmt::format("({} % 64.0)", coord);
+        case GX_ITW_32:
+          return fmt::format("({} % 32.0)", coord);
+        case GX_ITW_16:
+          return fmt::format("({} % 16.0)", coord);
+        case GX_ITW_0:
+          return "0.0";
+        default:
+          FATAL("unhandled indirect wrap {}", underlying(wrap));
+        }
+      };
+      std::string baseCoordExpr;
+      if (hasBaseCoord) {
+        u32 texCoordId = underlying(stage.texCoordId);
+        u32 texMapId = underlying(stage.texMapId);
+        if (useSimpleCoords) {
+          baseCoordExpr = fmt::format("tex{}_uv", texCoordId);
+        } else {
+          fragmentFnPre +=
+              fmt::format("\n    var ind{0}_texel = tex{1}_uv * ubuf.tex{2}_size_bias.xy;", i, texCoordId, texMapId);
+          baseCoordExpr = fmt::format("ind{}_texel", i);
+        }
+      }
+      std::string wrappedExpr = baseCoordExpr;
+      if (!baseCoordExpr.empty() && (stage.indTexWrapS != GX_ITW_OFF || stage.indTexWrapT != GX_ITW_OFF)) {
+        wrappedExpr = fmt::format("vec2f({}, {})", wrap_comp(stage.indTexWrapS, fmt::format("{}.x", baseCoordExpr)),
+                                  wrap_comp(stage.indTexWrapT, fmt::format("{}.y", baseCoordExpr)));
+      }
+
+      std::string finalCoord;
+      if (!wrappedExpr.empty() && !indirectOffsetTexel.empty()) {
+        finalCoord = fmt::format("{} + ({})", wrappedExpr, indirectOffsetTexel);
+      } else if (!wrappedExpr.empty()) {
+        finalCoord = wrappedExpr;
+      } else {
+        finalCoord = indirectOffsetTexel;
+      }
+
+      if (!finalCoord.empty()) {
+        if (stage.indTexAddPrev) {
+          fragmentFnPre += fmt::format("\n    t_TexCoord += {};", finalCoord);
+        } else {
+          fragmentFnPre += fmt::format("\n    t_TexCoord = {};", finalCoord);
+        }
+
+        if (needsTextureSample && hasBaseTexture) {
+          u32 texMapId = underlying(stage.texMapId);
+          if (useSimpleCoords) {
+            fragmentFnPre += fmt::format("\n    var ind{0}_uv = t_TexCoord;", i);
+          } else {
+            fragmentFnPre += fmt::format("\n    var ind{0}_uv = t_TexCoord / ubuf.tex{1}_size_bias.xy;", i, texMapId);
+          }
+          uvIn = fmt::format("ind{0}_uv", i);
+        }
+      }
+    }
+    if (!needsTextureSample) {
+      continue;
+    }
+
+    CHECK(stage.texMapId != GX_TEXMAP_NULL, "unmapped texture for stage {}", i);
+    CHECK(stage.texCoordId != GX_TEXCOORD_NULL, "unmapped texcoord for stage {}", i);
+    if (uvIn.empty()) {
+      // No indirect texturing
+      uvIn = fmt::format("tex{0}_uv", underlying(stage.texCoordId));
+    }
     const auto& texConfig = config.textureConfig[stage.texMapId];
     if (is_palette_format(texConfig.loadFmt)) {
       std::string_view suffix;
@@ -1118,7 +1424,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
                                    i, underlying(stage.texMapId), uvIn, suffix);
     } else {
       fragmentFnPre +=
-          fmt::format("\n    var sampled{0} = textureSampleBias(tex{1}, tex{1}_samp, {2}, ubuf.tex{1}_lod);", i,
+          fmt::format("\n    var sampled{0} = textureSampleBias(tex{1}, tex{1}_samp, {2}, ubuf.tex{1}_size_bias.z);", i,
                       underlying(stage.texMapId), uvIn);
     }
     fragmentFnPre += texture_conversion(texConfig, i, stage.texMapId);
@@ -1167,12 +1473,15 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
     }
     fragmentFn += "\n    prev = vec4f(mix(prev.rgb, ubuf.fog.color.rgb, clamp(fogZ, 0.0, 1.0)), prev.a);";
   }
+  if (info.usedIndTexMtxs.any()) {
+    uniBufAttrs += "\n    ind_mtx: array<mat2x4f, 3>,";
+  }
   size_t texBindIdx = 0;
   for (int i = 0; i < info.sampledTextures.size(); ++i) {
     if (!info.sampledTextures.test(i)) {
       continue;
     }
-    uniBufAttrs += fmt::format("\n    tex{}_lod: f32,", i);
+    uniBufAttrs += fmt::format("\n    tex{}_size_bias: vec4f,", i);
 
     sampBindings += fmt::format(
         "\n@group(1) @binding({})\n"

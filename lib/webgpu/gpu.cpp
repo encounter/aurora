@@ -445,6 +445,8 @@ bool initialize(AuroraBackend auroraBackend) {
       const auto feature = supportedFeatures.features[i];
       if (feature == wgpu::FeatureName::TextureCompressionBC) {
         requiredFeatures.push_back(feature);
+      } else if (feature == wgpu::FeatureName::TextureComponentSwizzle) {
+        requiredFeatures.push_back(feature);
       }
     }
 #ifdef WEBGPU_DAWN

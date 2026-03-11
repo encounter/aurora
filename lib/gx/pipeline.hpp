@@ -16,7 +16,7 @@ struct DrawData {
   u32 dstAlpha;
 };
 
-constexpr u32 GXPipelineConfigVersion = 6;
+constexpr u32 GXPipelineConfigVersion = 7;
 struct PipelineConfig {
   u32 version = GXPipelineConfigVersion;
   ShaderConfig shaderConfig;

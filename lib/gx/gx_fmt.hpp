@@ -334,6 +334,21 @@ inline std::string format_as(const GXTevKAlphaSel& sel) {
   }
 }
 
+inline std::string format_as(const GXTevSwapSel& sel) {
+  switch (sel) {
+  case GX_TEV_SWAP0:
+    return "GX_TEV_SWAP0";
+  case GX_TEV_SWAP1:
+    return "GX_TEV_SWAP1";
+  case GX_TEV_SWAP2:
+    return "GX_TEV_SWAP2";
+  case GX_TEV_SWAP3:
+    return "GX_TEV_SWAP3";
+  default:
+    return fmt::format("GXTevSwapSel({})", underlying(sel));
+  }
+}
+
 inline std::string format_as(const GXTexMapID& id) {
   switch (id) {
   case GX_TEXMAP0:
@@ -566,6 +581,147 @@ inline std::string format_as(const GXTexCoordID& id) {
     return "GX_TEXCOORD_NULL";
   default:
     return fmt::format("GXTexCoordID({})", underlying(id));
+  }
+}
+
+inline std::string format_as(const GXIndTexStageID& id) {
+  switch (id) {
+  case GX_INDTEXSTAGE0:
+    return "GX_INDTEXSTAGE0";
+  case GX_INDTEXSTAGE1:
+    return "GX_INDTEXSTAGE1";
+  case GX_INDTEXSTAGE2:
+    return "GX_INDTEXSTAGE2";
+  case GX_INDTEXSTAGE3:
+    return "GX_INDTEXSTAGE3";
+  default:
+    return fmt::format("GXIndTexStageID({})", underlying(id));
+  }
+}
+
+inline std::string format_as(const GXIndTexFormat& fmt_) {
+  switch (fmt_) {
+  case GX_ITF_8:
+    return "GX_ITF_8";
+  case GX_ITF_5:
+    return "GX_ITF_5";
+  case GX_ITF_4:
+    return "GX_ITF_4";
+  case GX_ITF_3:
+    return "GX_ITF_3";
+  default:
+    return fmt::format("GXIndTexFormat({})", underlying(fmt_));
+  }
+}
+
+inline std::string format_as(const GXIndTexBiasSel& sel) {
+  switch (sel) {
+  case GX_ITB_NONE:
+    return "GX_ITB_NONE";
+  case GX_ITB_S:
+    return "GX_ITB_S";
+  case GX_ITB_T:
+    return "GX_ITB_T";
+  case GX_ITB_ST:
+    return "GX_ITB_ST";
+  case GX_ITB_U:
+    return "GX_ITB_U";
+  case GX_ITB_SU:
+    return "GX_ITB_SU";
+  case GX_ITB_TU:
+    return "GX_ITB_TU";
+  case GX_ITB_STU:
+    return "GX_ITB_STU";
+  default:
+    return fmt::format("GXIndTexBiasSel({})", underlying(sel));
+  }
+}
+
+inline std::string format_as(const GXIndTexAlphaSel& sel) {
+  switch (sel) {
+  case GX_ITBA_OFF:
+    return "GX_ITBA_OFF";
+  case GX_ITBA_S:
+    return "GX_ITBA_S";
+  case GX_ITBA_T:
+    return "GX_ITBA_T";
+  case GX_ITBA_U:
+    return "GX_ITBA_U";
+  default:
+    return fmt::format("GXIndTexAlphaSel({})", underlying(sel));
+  }
+}
+
+inline std::string format_as(const GXIndTexMtxID& id) {
+  switch (id) {
+  case GX_ITM_OFF:
+    return "GX_ITM_OFF";
+  case GX_ITM_0:
+    return "GX_ITM_0";
+  case GX_ITM_1:
+    return "GX_ITM_1";
+  case GX_ITM_2:
+    return "GX_ITM_2";
+  case GX_ITM_S0:
+    return "GX_ITM_S0";
+  case GX_ITM_S1:
+    return "GX_ITM_S1";
+  case GX_ITM_S2:
+    return "GX_ITM_S2";
+  case GX_ITM_T0:
+    return "GX_ITM_T0";
+  case GX_ITM_T1:
+    return "GX_ITM_T1";
+  case GX_ITM_T2:
+    return "GX_ITM_T2";
+  default:
+    return fmt::format("GXIndTexMtxID({})", underlying(id));
+  }
+}
+
+inline std::string format_as(const GXIndTexWrap& wrap) {
+  switch (wrap) {
+  case GX_ITW_OFF:
+    return "GX_ITW_OFF";
+  case GX_ITW_256:
+    return "GX_ITW_256";
+  case GX_ITW_128:
+    return "GX_ITW_128";
+  case GX_ITW_64:
+    return "GX_ITW_64";
+  case GX_ITW_32:
+    return "GX_ITW_32";
+  case GX_ITW_16:
+    return "GX_ITW_16";
+  case GX_ITW_0:
+    return "GX_ITW_0";
+  default:
+    return fmt::format("GXIndTexWrap({})", underlying(wrap));
+  }
+}
+
+inline std::string format_as(const GXIndTexScale& scale) {
+  switch (scale) {
+  case GX_ITS_1:
+    return "GX_ITS_1";
+  case GX_ITS_2:
+    return "GX_ITS_2";
+  case GX_ITS_4:
+    return "GX_ITS_4";
+  case GX_ITS_8:
+    return "GX_ITS_8";
+  case GX_ITS_16:
+    return "GX_ITS_16";
+  case GX_ITS_32:
+    return "GX_ITS_32";
+  case GX_ITS_64:
+    return "GX_ITS_64";
+  case GX_ITS_128:
+    return "GX_ITS_128";
+  case GX_ITS_256:
+    return "GX_ITS_256";
+  default:
+    return fmt::format("GXIndTexScale({})", underlying(scale));
   }
 }
 

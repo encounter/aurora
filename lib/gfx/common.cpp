@@ -29,7 +29,7 @@ std::vector<std::string> g_debugGroupStack;
 std::vector<std::string> g_debugMarkers;
 #endif
 
-constexpr uint64_t UniformBufferSize = 3145728;  // 3mb
+constexpr uint64_t UniformBufferSize = 8388608;  // 8mb
 constexpr uint64_t VertexBufferSize = 3145728;   // 3mb
 constexpr uint64_t IndexBufferSize = 1048576;    // 1mb
 constexpr uint64_t StorageBufferSize = 8388608;  // 8mb
