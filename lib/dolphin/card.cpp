@@ -4,14 +4,14 @@
 
 #include "dolphin/types.h"
 
-#include <kabufuda/Card.hpp>
+#include "../card/Card.hpp"
 #include "../logging.hpp"
 
 namespace {
 aurora::Module Log("aurora::card");
-std::array<kabufuda::Card, 2> CardChannels = {{
-    kabufuda::Card{nullptr, nullptr},
-    kabufuda::Card{nullptr, nullptr},
+std::array<aurora::card::Card, 2> CardChannels = {{
+    aurora::card::Card{nullptr, nullptr},
+    aurora::card::Card{nullptr, nullptr},
 }};
 std::string cardPath;
 
@@ -24,17 +24,17 @@ bool Initialized = false;
 
 extern "C" {
 
-void CopyKabuFileHandleToDolphin(int chan, kabufuda::FileHandle& handle, CARDFileInfo* fileInfo) {
+void CopyKabuFileHandleToDolphin(int chan, aurora::card::FileHandle& handle, CARDFileInfo* fileInfo) {
   fileInfo->chan = chan;
   fileInfo->fileNo = handle.getFileNo();
   fileInfo->offset = handle.getOffset();
 }
 
-kabufuda::FileHandle CreateKabuFileHandleFromDolphin(CARDFileInfo* fileInfo) {
-  return kabufuda::FileHandle{(u32)fileInfo->fileNo, fileInfo->offset};
+aurora::card::FileHandle CreateKabuFileHandleFromDolphin(CARDFileInfo* fileInfo) {
+  return aurora::card::FileHandle{(u32)fileInfo->fileNo, fileInfo->offset};
 }
 
-void CopyKabuStatsToDolphin(kabufuda::CardStat& kabuStats, CARDStat* stats) {
+void CopyKabuStatsToDolphin(aurora::card::CardStat& kabuStats, CARDStat* stats) {
   memcpy(stats->fileName, kabuStats.x0_fileName, std::size(kabuStats.x0_fileName));
   memcpy(stats->gameName, kabuStats.x28_gameName.data(), kabuStats.x28_gameName.size());
   memcpy(stats->company, kabuStats.x2c_company.data(), kabuStats.x2c_company.size());
@@ -53,7 +53,7 @@ void CopyKabuStatsToDolphin(kabufuda::CardStat& kabuStats, CARDStat* stats) {
   stats->offsetData = kabuStats.x68_offsetData;
 }
 
-void CopyDolphinStatsToKabu(kabufuda::CardStat& kabuStats, CARDStat* stats) {
+void CopyDolphinStatsToKabu(aurora::card::CardStat& kabuStats, CARDStat* stats) {
   memcpy(kabuStats.x0_fileName, stats->fileName, std::size(kabuStats.x0_fileName));
   memcpy(kabuStats.x28_gameName.data(), stats->gameName, kabuStats.x28_gameName.size());
   memcpy(kabuStats.x2c_company.data(), stats->company, kabuStats.x2c_company.size());
@@ -79,16 +79,16 @@ void CARDInit(const char* game, const char* maker) {
   Initialized = true;
   Log.info("CARD API Initialized BUILT <{} {}>", __DATE__, __TIME__);
 
-  CardChannels[0] = kabufuda::Card{game, maker};
-  CardChannels[1] = kabufuda::Card{game, maker};
+  CardChannels[0] = aurora::card::Card{game, maker};
+  CardChannels[1] = aurora::card::Card{game, maker};
 
   cardPath = fmt::format("{}{}.raw", game, maker);
 
   // TODO: SlotB support
   if (!std::filesystem::exists(cardPath)) {
     CardChannels[0].open(cardPath);
-    CardChannels[0].format(kabufuda::ECardSlot::SlotA);
-  }else {
+    CardChannels[0].format(aurora::card::ECardSlot::SlotA);
+  } else {
     CardChannels[0].open(cardPath);
   }
 
@@ -168,9 +168,9 @@ s32 CARDCreate(s32 chan, const char* fileName, u32 size, CARDFileInfo* fileInfo)
     return CARD_RESULT_NOCARD;
   auto card = GET_CARD(chan);
 
-  kabufuda::FileHandle handle;
+  aurora::card::FileHandle handle;
   auto res = card->createFile(fileName, size, handle);
-  if (res == kabufuda::ECardResult::READY)
+  if (res == aurora::card::ECardResult::READY)
     CopyKabuFileHandleToDolphin(chan, handle, fileInfo);
   else
     Log.error("Failed to create file: {}", fileName);
@@ -197,7 +197,7 @@ s32 CARDDelete(s32 chan, const char* fileName) {
   auto card = GET_CARD(chan);
   auto res = card->deleteFile(fileName);
 
-  if (res != kabufuda::ECardResult::READY)
+  if (res != aurora::card::ECardResult::READY)
     Log.error("Failed to delete file: {}", fileName);
 
   return (s32)res;
@@ -221,14 +221,13 @@ s32 CARDFastDelete(s32 chan, s32 fileNo) {
 
   auto card = GET_CARD(chan);
   auto res = card->deleteFile(fileNo);
-  if (res != kabufuda::ECardResult::READY)
+  if (res != aurora::card::ECardResult::READY)
     Log.error("Failed to delete file at idx: {}", fileNo);
 
   return (s32)res;
 }
 
-s32 CARDFastDeleteAsync(s32 chan, s32 fileNo, CARDCallback callback)
-{
+s32 CARDFastDeleteAsync(s32 chan, s32 fileNo, CARDCallback callback) {
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
@@ -246,9 +245,9 @@ s32 CARDFastOpen(s32 chan, s32 fileNo, CARDFileInfo* fileInfo) {
 
   auto card = GET_CARD(chan);
 
-  kabufuda::FileHandle handle;
+  aurora::card::FileHandle handle;
   auto res = card->openFile(fileNo, handle);
-  if (res == kabufuda::ECardResult::READY)
+  if (res == aurora::card::ECardResult::READY)
     CopyKabuFileHandleToDolphin(chan, handle, fileInfo);
   else
     Log.error("Failed to open file at idx: {}", fileNo);
@@ -264,7 +263,7 @@ s32 CARDFormat(s32 chan) {
     return CARD_RESULT_NOCARD;
 
   auto card = GET_CARD(chan);
-  card->format((kabufuda::ECardSlot)chan);
+  card->format((aurora::card::ECardSlot)chan);
   return CARD_RESULT_READY;
 }
 
@@ -361,9 +360,9 @@ s32 CARDGetStatus(s32 chan, s32 fileNo, CARDStat* stat) {
     return CARD_RESULT_NOCARD;
   auto card = GET_CARD(chan);
 
-  kabufuda::CardStat kabuStat;
+  aurora::card::CardStat kabuStat;
   auto res = card->getStatus(fileNo, kabuStat);
-  if (res == kabufuda::ECardResult::READY)
+  if (res == aurora::card::ECardResult::READY)
     CopyKabuStatsToDolphin(kabuStat, stat);
   else
     Log.error("Failed to get status of file at idx: {}", fileNo);
@@ -381,7 +380,7 @@ s32 CARDGetXferredBytes(s32 chan) {
   CARD_STUB
   return CARD_RESULT_READY;
 }
-// these two funcs are out of scope for kabufuda. stubbed for now
+// these two funcs are out of scope for aurora::card. stubbed for now
 s32 CARDMount(s32 chan, void* workArea, CARDCallback detachCallback) {
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
@@ -403,9 +402,9 @@ s32 CARDOpen(s32 chan, const char* fileName, CARDFileInfo* fileInfo) {
     return CARD_RESULT_NOCARD;
   auto card = GET_CARD(chan);
 
-  kabufuda::FileHandle handle;
+  aurora::card::FileHandle handle;
   auto res = card->openFile(fileName, handle);
-  if (res == kabufuda::ECardResult::READY)
+  if (res == aurora::card::ECardResult::READY)
     CopyKabuFileHandleToDolphin(chan, handle, fileInfo);
   else
     Log.error("Failed to open file: {}", fileName);
@@ -417,7 +416,7 @@ BOOL CARDProbe(s32 chan) {
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
-  kabufuda::ProbeResults probeData = kabufuda::Card::probeCardFile(cardPath);
+  aurora::card::ProbeResults probeData = aurora::card::Card::probeCardFile(cardPath);
   return (s32)probeData.x0_error;
 }
 
@@ -426,7 +425,7 @@ s32 CARDProbeEx(s32 chan, s32* memSize, s32* sectorSize) {
     return CARD_RESULT_FATAL_ERROR;
   }
 
-  kabufuda::ProbeResults probeData = kabufuda::Card::probeCardFile(cardPath);
+  aurora::card::ProbeResults probeData = aurora::card::Card::probeCardFile(cardPath);
   *memSize = probeData.x4_cardSize;
   *sectorSize = probeData.x8_sectorSize;
 
@@ -479,10 +478,10 @@ s32 CARDSetStatus(s32 chan, s32 fileNo, CARDStat* stat) {
     return CARD_RESULT_NOCARD;
   auto card = GET_CARD(chan);
 
-  kabufuda::CardStat kabuStat;
+  aurora::card::CardStat kabuStat;
   CopyDolphinStatsToKabu(kabuStat, stat);
   auto res = card->setStatus(fileNo, kabuStat);
-  if (res != kabufuda::ECardResult::READY)
+  if (res != aurora::card::ECardResult::READY)
     Log.error("Failed to set status of file at idx: {}", fileNo);
 
   return (s32)res;
@@ -529,12 +528,12 @@ s32 CARDClose(CARDFileInfo* fileInfo) {
   auto handle = CreateKabuFileHandleFromDolphin(fileInfo);
   auto res = card->closeFile(handle);
 
-  if (res != kabufuda::ECardResult::READY)
+  if (res != aurora::card::ECardResult::READY)
     Log.error("Failed to close file at idx: {}", fileInfo->fileNo);
 
   return (s32)res;
 }
-  
+
 s32 CARDRead(CARDFileInfo* fileInfo, void* addr, s32 length, s32 offset) {
   if (fileInfo->chan < 0 || fileInfo->chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
@@ -543,12 +542,12 @@ s32 CARDRead(CARDFileInfo* fileInfo, void* addr, s32 length, s32 offset) {
     return CARD_RESULT_NOCARD;
   auto card = GET_CARD(fileInfo->chan);
 
-  kabufuda::FileHandle handle = CreateKabuFileHandleFromDolphin(fileInfo);
+  aurora::card::FileHandle handle = CreateKabuFileHandleFromDolphin(fileInfo);
 
-  card->seek(handle, offset, kabufuda::SeekOrigin::Begin);
+  card->seek(handle, offset, aurora::card::SeekOrigin::Begin);
   auto res = card->asyncRead(handle, addr, length);
 
-  if (res != kabufuda::ECardResult::READY)
+  if (res != aurora::card::ECardResult::READY)
     Log.error("Failed to read {} bytes from card", length);
 
   return (s32)res;
@@ -559,7 +558,7 @@ s32 CARDReadAsync(CARDFileInfo* fileInfo, void* addr, s32 length, s32 offset, CA
   callback(fileInfo->chan, res);
   return res;
 }
-  
+
 s32 CARDWrite(CARDFileInfo* fileInfo, void* addr, s32 length, s32 offset) {
   if (fileInfo->chan < 0 || fileInfo->chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
@@ -568,21 +567,20 @@ s32 CARDWrite(CARDFileInfo* fileInfo, void* addr, s32 length, s32 offset) {
     return CARD_RESULT_NOCARD;
   auto card = GET_CARD(fileInfo->chan);
 
-  kabufuda::FileHandle handle = CreateKabuFileHandleFromDolphin(fileInfo);
+  aurora::card::FileHandle handle = CreateKabuFileHandleFromDolphin(fileInfo);
 
-  card->seek(handle, offset, kabufuda::SeekOrigin::Begin);
+  card->seek(handle, offset, aurora::card::SeekOrigin::Begin);
   auto res = card->asyncWrite(handle, addr, length);
 
-  if (res != kabufuda::ECardResult::READY)
+  if (res != aurora::card::ECardResult::READY)
     Log.error("Failed to write {} bytes to card", length);
 
   return (s32)res;
 }
-  
+
 s32 CARDWriteAsync(CARDFileInfo* fileInfo, void* addr, s32 length, s32 offset, CARDCallback callback) {
   auto res = CARDWrite(fileInfo, addr, length, offset);
   callback(fileInfo->chan, res);
   return res;
 }
-
 }

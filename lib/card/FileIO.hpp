@@ -1,17 +1,15 @@
 #pragma once
 
-#include <filesystem>
-#include <fstream>
 #include <cstddef>
+#include <string>
 
-#include "Util.hpp"
+#include <SDL3/SDL_iostream.h>
 
 namespace aurora::card {
 
 class FileIO {
-  std::filesystem::path m_path;
-  std::fstream m_stream;
-  uintmax_t m_size;
+  std::string m_path;
+  SDL_IOStream* m_stream = nullptr;
 
   bool isReady() const;
 
@@ -20,9 +18,9 @@ public:
   explicit FileIO(std::string_view filename, bool truncate = false);
   ~FileIO();
 
-  FileIO(FileIO&& other);
-  FileIO& operator=(FileIO&& other);
-  FileIO(const FileIO* other) = delete;
+  FileIO(FileIO&& other) noexcept;
+  FileIO& operator=(FileIO&& other) noexcept;
+  FileIO(const FileIO& other) = delete;
   FileIO& operator=(const FileIO& other) = delete;
 
   bool fileRead(void* buf, size_t length, off_t offset);
