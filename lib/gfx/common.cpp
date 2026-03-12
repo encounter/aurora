@@ -386,8 +386,8 @@ void initialize() {
     g_hasPipelineThread = false;
   } else {
     g_pipelineThreadEnd = false;
-    g_pipelineThread = std::thread(pipeline_worker);
     g_hasPipelineThread = true;
+    g_pipelineThread = std::thread(pipeline_worker);
   }
 
   // For uniform & storage buffer offset alignments
