@@ -88,6 +88,7 @@ void CARDInit(const char* game, const char* maker) {
   if (!std::filesystem::exists(cardPath)) {
     CardChannels[0].open(cardPath);
     CardChannels[0].format(aurora::card::ECardSlot::SlotA);
+    CardChannels[0].commit();
   } else {
     CardChannels[0].open(cardPath);
   }
@@ -170,9 +171,10 @@ s32 CARDCreate(s32 chan, const char* fileName, u32 size, CARDFileInfo* fileInfo)
 
   aurora::card::FileHandle handle;
   auto res = card->createFile(fileName, size, handle);
-  if (res == aurora::card::ECardResult::READY)
+  if (res == aurora::card::ECardResult::READY) {
     CopyKabuFileHandleToDolphin(chan, handle, fileInfo);
-  else
+    card->commit();
+  } else
     Log.error("Failed to create file: {}", fileName);
 
   return (s32)res;
@@ -197,8 +199,11 @@ s32 CARDDelete(s32 chan, const char* fileName) {
   auto card = GET_CARD(chan);
   auto res = card->deleteFile(fileName);
 
-  if (res != aurora::card::ECardResult::READY)
+  if (res != aurora::card::ECardResult::READY) {
     Log.error("Failed to delete file: {}", fileName);
+  } else {
+    card->commit();
+  }
 
   return (s32)res;
 }
@@ -221,8 +226,11 @@ s32 CARDFastDelete(s32 chan, s32 fileNo) {
 
   auto card = GET_CARD(chan);
   auto res = card->deleteFile(fileNo);
-  if (res != aurora::card::ECardResult::READY)
+  if (res != aurora::card::ECardResult::READY) {
     Log.error("Failed to delete file at idx: {}", fileNo);
+  } else {
+    card->commit();
+  }
 
   return (s32)res;
 }
@@ -264,6 +272,7 @@ s32 CARDFormat(s32 chan) {
 
   auto card = GET_CARD(chan);
   card->format((aurora::card::ECardSlot)chan);
+  card->commit();
   return CARD_RESULT_READY;
 }
 
@@ -481,8 +490,11 @@ s32 CARDSetStatus(s32 chan, s32 fileNo, CARDStat* stat) {
   aurora::card::CardStat kabuStat;
   CopyDolphinStatsToKabu(kabuStat, stat);
   auto res = card->setStatus(fileNo, kabuStat);
-  if (res != aurora::card::ECardResult::READY)
+  if (res != aurora::card::ECardResult::READY) {
     Log.error("Failed to set status of file at idx: {}", fileNo);
+  } else {
+    card->commit();
+  }
 
   return (s32)res;
 }
@@ -572,8 +584,11 @@ s32 CARDWrite(CARDFileInfo* fileInfo, void* addr, s32 length, s32 offset) {
   card->seek(handle, offset, aurora::card::SeekOrigin::Begin);
   auto res = card->asyncWrite(handle, addr, length);
 
-  if (res != aurora::card::ECardResult::READY)
+  if (res != aurora::card::ECardResult::READY) {
     Log.error("Failed to write {} bytes to card", length);
+  } else {
+    card->commit();
+  }
 
   return (s32)res;
 }
