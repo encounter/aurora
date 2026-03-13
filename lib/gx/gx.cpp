@@ -23,7 +23,6 @@ const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.t
 
 static inline wgpu::BlendFactor to_blend_factor(GXBlendFactor fac, bool isDst) {
   switch (fac) {
-    DEFAULT_FATAL("invalid blend factor {}", underlying(fac));
   case GX_BL_ZERO:
     return wgpu::BlendFactor::Zero;
   case GX_BL_ONE:
@@ -48,12 +47,14 @@ static inline wgpu::BlendFactor to_blend_factor(GXBlendFactor fac, bool isDst) {
     return wgpu::BlendFactor::DstAlpha;
   case GX_BL_INVDSTALPHA:
     return wgpu::BlendFactor::OneMinusDstAlpha;
+  default:
+    Log.warn("invalid blend factor {}, using {}", underlying(fac), isDst ? "dst=Zero" : "src=One");
+    return isDst ? wgpu::BlendFactor::Zero : wgpu::BlendFactor::One;
   }
 }
 
 static inline wgpu::CompareFunction to_compare_function(GXCompare func) {
   switch (func) {
-    DEFAULT_FATAL("invalid depth fn {}", underlying(func));
   case GX_NEVER:
     return wgpu::CompareFunction::Never;
   case GX_LESS:
@@ -70,20 +71,22 @@ static inline wgpu::CompareFunction to_compare_function(GXCompare func) {
     return UseReversedZ ? wgpu::CompareFunction::LessEqual : wgpu::CompareFunction::GreaterEqual;
   case GX_ALWAYS:
     return wgpu::CompareFunction::Always;
+  default:
+    Log.warn("invalid depth fn {}, using Always", underlying(func));
+    return wgpu::CompareFunction::Always;
   }
 }
 
 static inline wgpu::BlendState to_blend_state(GXBlendMode mode, GXBlendFactor srcFac, GXBlendFactor dstFac,
                                               GXLogicOp op, u32 dstAlpha) {
-  wgpu::BlendComponent colorBlendComponent;
+  wgpu::BlendComponent colorBlendComponent{
+      .operation = wgpu::BlendOperation::Add,
+      .srcFactor = wgpu::BlendFactor::One,
+      .dstFactor = wgpu::BlendFactor::Zero,
+  };
+
   switch (mode) {
-    DEFAULT_FATAL("unsupported blend mode {}", underlying(mode));
   case GX_BM_NONE:
-    colorBlendComponent = {
-        .operation = wgpu::BlendOperation::Add,
-        .srcFactor = wgpu::BlendFactor::One,
-        .dstFactor = wgpu::BlendFactor::Zero,
-    };
     break;
   case GX_BM_BLEND:
     colorBlendComponent = {
@@ -101,7 +104,6 @@ static inline wgpu::BlendState to_blend_state(GXBlendMode mode, GXBlendFactor sr
     break;
   case GX_BM_LOGIC:
     switch (op) {
-      DEFAULT_FATAL("unsupported logic op {}", underlying(op));
     case GX_LO_CLEAR:
       colorBlendComponent = {
           .operation = wgpu::BlendOperation::Add,
@@ -123,20 +125,24 @@ static inline wgpu::BlendState to_blend_state(GXBlendMode mode, GXBlendFactor sr
           .dstFactor = wgpu::BlendFactor::One,
       };
       break;
+    default:
+      Log.warn("unsupported logic op {}, using COPY", underlying(op));
+      break;
     }
     break;
+  default:
+    Log.warn("unsupported blend mode {}, using NONE", underlying(mode));
+    break;
   }
+
   wgpu::BlendComponent alphaBlendComponent{
       .operation = wgpu::BlendOperation::Add,
       .srcFactor = wgpu::BlendFactor::One,
       .dstFactor = wgpu::BlendFactor::Zero,
   };
   if (dstAlpha != UINT32_MAX) {
-    alphaBlendComponent = wgpu::BlendComponent{
-        .operation = wgpu::BlendOperation::Add,
-        .srcFactor = wgpu::BlendFactor::Constant,
-        .dstFactor = wgpu::BlendFactor::Zero,
-    };
+    // Avoid constant blend factor in PSO state for now; some D3D12 paths reject it with E_INVALIDARG.
+    // We still keep dstAlpha value for logging/diagnostics and potential shader-side handling.
   }
   return {
       .color = colorBlendComponent,
@@ -238,7 +244,75 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderIn
           },
       .fragment = &fragmentState,
   };
-  return g_device.CreateRenderPipeline(&descriptor);
+  const auto uncapturedErrorCountBefore = webgpu::g_uncapturedErrorCount.load(std::memory_order_relaxed);
+  auto pipeline = g_device.CreateRenderPipeline(&descriptor);
+  const auto uncapturedErrorCountAfter = webgpu::g_uncapturedErrorCount.load(std::memory_order_relaxed);
+  const bool uncapturedError = uncapturedErrorCountAfter != uncapturedErrorCountBefore;
+  if (pipeline && !uncapturedError) {
+    return pipeline;
+  }
+
+  Log.error(
+      "GX pipeline create failed; retrying fallback. prim={} cull={} blendMode={} srcFac={} dstFac={} logicOp={} depthCmp={} depthFn={} depthUpd={} dstAlpha={} colorUpd={} alphaUpd={} tevStages={} sampled={} stride={} attrs={} msaa={} surfFmt={} depthFmt={} pipeline_valid={} uncaptured_error={}",
+      underlying(config.primitive), underlying(config.cullMode), underlying(config.blendMode),
+      underlying(config.blendFacSrc), underlying(config.blendFacDst), underlying(config.blendOp), config.depthCompare,
+      underlying(config.depthFunc), config.depthUpdate, config.dstAlpha, config.colorUpdate, config.alphaUpdate,
+      config.shaderConfig.tevStageCount, info.sampledTextures.count(),
+      vtxBuffers.empty() ? 0u : static_cast<u32>(vtxBuffers[0].arrayStride),
+      vtxBuffers.empty() ? 0u : static_cast<u32>(vtxBuffers[0].attributeCount), g_graphicsConfig.msaaSamples,
+      underlying(g_graphicsConfig.surfaceConfiguration.format), underlying(g_graphicsConfig.depthFormat),
+      static_cast<bool>(pipeline), uncapturedError);
+
+  const std::array fallbackColorTargets{wgpu::ColorTargetState{
+      .format = g_graphicsConfig.surfaceConfiguration.format,
+      .writeMask = to_write_mask(config.colorUpdate, config.alphaUpdate),
+  }};
+  const wgpu::FragmentState fallbackFragmentState{
+      .module = shader,
+      .entryPoint = "fs_main",
+      .targetCount = fallbackColorTargets.size(),
+      .targets = fallbackColorTargets.data(),
+  };
+  const wgpu::PrimitiveState fallbackPrimitive{
+      .topology = wgpu::PrimitiveTopology::TriangleList,
+      .stripIndexFormat = wgpu::IndexFormat::Undefined,
+      .frontFace = wgpu::FrontFace::CW,
+      .cullMode = wgpu::CullMode::None,
+  };
+  const wgpu::RenderPipelineDescriptor fallbackDescriptor{
+      .label = "GX Pipeline Fallback",
+      .layout = pipelineLayout,
+      .vertex =
+          {
+              .module = shader,
+              .entryPoint = "vs_main",
+              .bufferCount = static_cast<uint32_t>(vtxBuffers.size()),
+              .buffers = vtxBuffers.data(),
+          },
+      .primitive = fallbackPrimitive,
+      .depthStencil = nullptr,
+      .multisample =
+          wgpu::MultisampleState{
+              .count = 1,
+              .mask = UINT32_MAX,
+          },
+      .fragment = &fallbackFragmentState,
+  };
+
+  const auto fallbackErrorCountBefore = webgpu::g_uncapturedErrorCount.load(std::memory_order_relaxed);
+  pipeline = g_device.CreateRenderPipeline(&fallbackDescriptor);
+  const auto fallbackErrorCountAfter = webgpu::g_uncapturedErrorCount.load(std::memory_order_relaxed);
+  const bool fallbackError = fallbackErrorCountAfter != fallbackErrorCountBefore;
+  if (pipeline && !fallbackError) {
+    Log.warn("Using GX fallback pipeline for this draw state");
+    return pipeline;
+  }
+  if (pipeline && fallbackError) {
+    Log.warn("GX fallback pipeline reported uncaptured error; discarding");
+  }
+
+  Log.error("GX fallback pipeline creation also failed");
+  return {};
 }
 
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept {
@@ -630,3 +704,7 @@ wgpu::SamplerDescriptor aurora::gfx::TextureBind::get_descriptor() const noexcep
       .maxAnisotropy = wgpu_aniso(texObj.maxAniso),
   };
 } // namespace aurora::gx
+
+
+
+
