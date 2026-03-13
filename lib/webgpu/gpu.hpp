@@ -4,6 +4,7 @@
 
 #include "wgpu.hpp"
 
+#include <atomic>
 #include <array>
 #include <cstdint>
 
@@ -35,6 +36,7 @@ extern TextureWithSampler g_depthBuffer;
 extern wgpu::RenderPipeline g_CopyPipeline;
 extern wgpu::BindGroup g_CopyBindGroup;
 extern wgpu::Instance g_instance;
+extern std::atomic<uint64_t> g_uncapturedErrorCount;
 
 bool initialize(AuroraBackend backend);
 void shutdown();
@@ -42,3 +44,4 @@ bool refresh_surface(bool recreate = true);
 void resize_swapchain(uint32_t width, uint32_t height, bool force = false);
 TextureWithSampler create_render_texture(bool multisampled);
 } // namespace aurora::webgpu
+
