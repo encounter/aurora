@@ -38,6 +38,7 @@ wgpu::BindGroup g_CopyBindGroup;
 
 static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
+std::atomic<uint64_t> g_uncapturedErrorCount{0};
 static wgpu::AdapterInfo g_adapterInfo;
 
 TextureWithSampler create_render_texture(bool multisampled) {
@@ -484,7 +485,8 @@ bool initialize(AuroraBackend auroraBackend) {
     });
     deviceDescriptor.SetUncapturedErrorCallback(
         [](const wgpu::Device& device, wgpu::ErrorType type, wgpu::StringView message) {
-          FATAL("WebGPU error {}: {}", underlying(type), message);
+          g_uncapturedErrorCount.fetch_add(1, std::memory_order_relaxed);
+          Log.error("WebGPU uncaptured error {}: {}", underlying(type), message);
         });
     deviceDescriptor.SetDeviceLostCallback(wgpu::CallbackMode::AllowSpontaneous,
                                            [](const wgpu::Device& device, wgpu::DeviceLostReason reason,
@@ -624,3 +626,4 @@ void resize_swapchain(uint32_t width, uint32_t height, bool force) {
   create_copy_bind_group();
 }
 } // namespace aurora::webgpu
+
