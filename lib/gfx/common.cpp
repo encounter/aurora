@@ -715,7 +715,10 @@ bool bind_pipeline(PipelineRef ref, const wgpu::RenderPassEncoder& pass) {
 static inline Range push(ByteBuffer& target, const uint8_t* data, size_t length, size_t alignment) {
   size_t padding = 0;
   if (alignment != 0) {
-    padding = alignment - length % alignment;
+    const size_t remainder = length % alignment;
+    if (remainder != 0) {
+      padding = alignment - remainder;
+    }
   }
   auto begin = target.size();
   if (length == 0) {
@@ -732,7 +735,10 @@ static inline Range push(ByteBuffer& target, const uint8_t* data, size_t length,
 static inline Range map(ByteBuffer& target, size_t length, size_t alignment) {
   size_t padding = 0;
   if (alignment != 0) {
-    padding = alignment - length % alignment;
+    const size_t remainder = length % alignment;
+    if (remainder != 0) {
+      padding = alignment - remainder;
+    }
   }
   if (length == 0) {
     length = alignment;

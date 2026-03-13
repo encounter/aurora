@@ -1342,9 +1342,12 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
     else if (addr >= 0xB0 && addr <= 0xBF) {
       u32 attrIdx = addr - 0xB0 + GX_VA_POS;
       if (attrIdx < GX_VA_MAX_ATTR) {
-        g_gxState.arrays[attrIdx].stride = static_cast<u8>(value);
-        g_gxState.arrays[attrIdx].cachedRange = {};
-        g_gxState.stateDirty = true;
+        auto& array = g_gxState.arrays[attrIdx];
+        const auto newStride = static_cast<u8>(value);
+        if (array.stride != newStride) {
+          array.stride = newStride;
+          g_gxState.stateDirty = true;
+        }
       }
     }
     break;
@@ -1718,10 +1721,16 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
 
     CHECK(arraySize <= std::numeric_limits<decltype(g_gxState.arrays[attrIdx].size)>::max(), "Array size too large!");
 
-    g_gxState.arrays[attrIdx].data = reinterpret_cast<void*>(arrayAddr);
-    g_gxState.arrays[attrIdx].size = (u32)arraySize;
-    g_gxState.arrays[attrIdx].cachedRange = {};
-    g_gxState.stateDirty = true;
+    auto& array = g_gxState.arrays[attrIdx];
+    const auto newData = reinterpret_cast<void*>(arrayAddr);
+    const auto newSize = static_cast<u32>(arraySize);
+    if (array.data != newData || array.size != newSize) {
+      array.data = newData;
+      array.size = newSize;
+      // Only drop the cached upload when the backing array actually changes.
+      array.cachedRange = {};
+      g_gxState.stateDirty = true;
+    }
   } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_PUSH) {
     auto label = read_string(data, pos, size, bigEndian);
     gfx::push_debug_group(std::move(label));
