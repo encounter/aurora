@@ -2,6 +2,7 @@
 
 #ifdef AURORA_ENABLE_GX
 #include "gfx/common.hpp"
+#include "gx/fifo.hpp"
 #include "imgui.hpp"
 #include "webgpu/gpu.hpp"
 #include <webgpu/webgpu_cpp.h>
@@ -208,6 +209,7 @@ bool begin_frame() noexcept {
 
 void end_frame() noexcept {
 #ifdef AURORA_ENABLE_GX
+  gx::fifo::drain();
   const auto encoderDescriptor = wgpu::CommandEncoderDescriptor{
       .label = "Redraw encoder",
   };
