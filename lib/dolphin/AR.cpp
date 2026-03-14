@@ -109,3 +109,7 @@ void ARQPostRequest(ARQRequest* request, u32 owner, u32 type, u32 priority, uint
 void ARQInit() {
   // Nothing to do on PC - ARAM is initialized in ARInit
 }
+
+void* ARGetStorageAddress() {
+  return sAramBuffer;
+}

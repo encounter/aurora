@@ -53,6 +53,11 @@ u32 ARGetSize(void);
 u32 ARGetInternalSize(void);
 void ARClear(u32 flag);
 
+/**
+ * Aurora extension: gets the memory address where ARAM is stored, for direct access.
+ */
+void* ARGetStorageAddress();
+
 // ARQ
 void ARQInit(void);
 void ARQReset(void);
