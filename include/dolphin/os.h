@@ -212,9 +212,9 @@ BOOL OSRestoreInterrupts(BOOL level);
 u32 OSGetSoundMode(void);
 void OSSetSoundMode(u32 mode);
 
-DECL_WEAK void OSReport(const char* msg, ...);
-DECL_WEAK void OSVReport(const char* msg, va_list list);
-DECL_WEAK void OSPanic NORETURN(const char* file, int line, const char* msg, ...);
+DECL_WEAK void OSReport(FORMAT_STRING_PARAM const char* msg, ...) FORMAT_STRING_FUNC(printf, 1, 2);
+DECL_WEAK void OSVReport(FORMAT_STRING_PARAM const char* msg, va_list list) FORMAT_STRING_FUNC(printf, 1, 2);
+DECL_WEAK void OSPanic NORETURN(const char* file, int line, FORMAT_STRING_PARAM const char* msg, ...) FORMAT_STRING_FUNC(printf, 3, 4);
 void OSFatal NORETURN(GXColor fg, GXColor bg, const char* msg);
 
 #define OSRoundUp32B(x)   (((uintptr_t)(x) + 32 - 1) & ~(32 - 1))
