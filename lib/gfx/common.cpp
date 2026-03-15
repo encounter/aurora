@@ -112,6 +112,7 @@ static absl::flat_hash_map<PipelineRef, wgpu::RenderPipeline> g_pipelines;
 static std::deque<std::pair<PipelineRef, NewPipelineCallback>> g_priorityPipelines;
 static std::deque<std::pair<PipelineRef, NewPipelineCallback>> g_backgroundPipelines;
 static absl::flat_hash_set<PipelineRef> g_pendingPipelines;
+static absl::flat_hash_set<PipelineRef> g_failedPipelines;
 static absl::flat_hash_map<BindGroupRef, wgpu::BindGroup> g_cachedBindGroups;
 static absl::flat_hash_map<SamplerRef, wgpu::Sampler> g_cachedSamplers;
 
@@ -167,7 +168,7 @@ static PipelineRef find_pipeline(ShaderType type, const PipelineConfig& config, 
   bool found = false;
   {
     std::scoped_lock guard{g_pipelineMutex};
-    found = g_pipelines.contains(hash);
+    found = g_pipelines.contains(hash) || g_failedPipelines.contains(hash);
     if (!found && g_pendingPipelines.contains(hash)) {
       found = true;
       // Promote from background to priority if requested during a frame
@@ -182,12 +183,18 @@ static PipelineRef find_pipeline(ShaderType type, const PipelineConfig& config, 
     }
     if (!found) {
       if (!g_hasPipelineThread && g_pipelinesPerFrame < BuildPipelinesPerFrame) {
-        g_pipelines.try_emplace(hash, cb());
-        if (serialize) {
-          serialize_pipeline_config(type, config);
+        auto pipeline = cb();
+        if (pipeline) {
+          g_pipelines.try_emplace(hash, std::move(pipeline));
+          if (serialize) {
+            serialize_pipeline_config(type, config);
+          }
+          createdPipelines++;
+        } else {
+          Log.error("Failed to create pipeline 0x{:016X}", static_cast<unsigned long long>(hash));
+          g_failedPipelines.insert(hash);
         }
         ++g_pipelinesPerFrame;
-        createdPipelines++;
         found = true;
       } else {
         bool isFrameRequest = g_currentRenderPass != UINT32_MAX;
@@ -305,16 +312,24 @@ static void pipeline_worker() {
       source.pop_front();
     }
     auto result = cb.second();
+    const bool pipelineCreated = static_cast<bool>(result);
     {
       std::lock_guard lock{g_pipelineMutex};
-      g_pipelines.try_emplace(cb.first, std::move(result));
+      if (pipelineCreated) {
+        g_pipelines.try_emplace(cb.first, std::move(result));
+      } else {
+        Log.error("Failed to create pipeline 0x{:016X}", static_cast<unsigned long long>(cb.first));
+        g_failedPipelines.insert(cb.first);
+      }
       g_pendingPipelines.erase(cb.first);
       hasMore = !g_priorityPipelines.empty() || !g_backgroundPipelines.empty();
     }
     if (!g_hasPipelineThread) {
       ++g_pipelinesPerFrame;
     }
-    ++createdPipelines;
+    if (pipelineCreated) {
+      ++createdPipelines;
+    }
     --queuedPipelines;
   }
 }
@@ -442,6 +457,7 @@ void shutdown() {
   g_priorityPipelines.clear();
   g_backgroundPipelines.clear();
   g_pendingPipelines.clear();
+  g_failedPipelines.clear();
   g_vertexBuffer = {};
   g_uniformBuffer = {};
   g_indexBuffer = {};
@@ -705,6 +721,9 @@ bool bind_pipeline(PipelineRef ref, const wgpu::RenderPassEncoder& pass) {
   std::lock_guard guard{g_pipelineMutex};
   const auto it = g_pipelines.find(ref);
   if (it == g_pipelines.end()) {
+    return false;
+  }
+  if (!it->second) {
     return false;
   }
   pass.SetPipeline(it->second);

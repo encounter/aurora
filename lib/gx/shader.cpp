@@ -332,8 +332,8 @@ static std::string alpha_arg_reg(GXTevAlphaArg arg, size_t stageIdx, const Shade
   }
 }
 
-static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view scale, std::string_view a, std::string_view b,
-                          std::string_view c, std::string_view d, std::string_view zero) {
+static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view scale, std::string a, std::string b,
+                          std::string c, std::string d, std::string_view zero) {
   switch (op) {
     DEFAULT_FATAL("unimplemented tev op {}", underlying(op));
   case GX_TEV_ADD:
@@ -372,14 +372,14 @@ static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view sc
   }
 }
 
-static std::string tev_color_op(GXTevOp op, std::string_view bias, std::string_view scale, bool clamp, std::string_view a,
-                                std::string_view b, std::string_view c, std::string_view d) {
+static std::string tev_color_op(GXTevOp op, std::string_view bias, std::string_view scale, bool clamp, std::string a,
+                                std::string b, std::string c, std::string d) {
   std::string expr = tev_op(op, bias, scale, a, b, c, d, "vec3(0)"sv);
   return clamp ? fmt::format("clamp({}, vec3f(0.0), vec3f(1.0))", expr) : expr;
 }
 
-static std::string tev_alpha_op(GXTevOp op, std::string_view bias, std::string_view scale, bool clamp, std::string_view a,
-                                std::string_view b, std::string_view c, std::string_view d) {
+static std::string tev_alpha_op(GXTevOp op, std::string_view bias, std::string_view scale, bool clamp, std::string a,
+                                std::string b, std::string c, std::string d) {
   std::string expr = tev_op(op, bias, scale, a, b, c, d, "0.0"sv);
   return clamp ? fmt::format("clamp({}, 0.0, 1.0)", expr) : expr;
 }
@@ -882,13 +882,26 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   uniBufAttrs += fmt::format("\n    nrm_mtx: array<mat3x4f, {}>,", MaxPnMtx);
   std::string fragmentFnPre;
   std::string fragmentFn;
-
-  static char const* regName[] = {"prev", "tevreg0", "tevreg1", "tevreg2"};
-
   for (u32 idx = 0; idx < config.tevStageCount; ++idx) {
     const auto& stage = config.tevStages[idx];
     {
-      std::string_view outReg = regName[stage.colorOp.outReg];
+      std::string outReg;
+      switch (stage.colorOp.outReg) {
+        DEFAULT_FATAL("invalid colorOp outReg {}", underlying(stage.colorOp.outReg));
+      case GX_TEVPREV:
+        outReg = "prev";
+        break;
+      case GX_TEVREG0:
+        outReg = "tevreg0";
+        break;
+      case GX_TEVREG1:
+        outReg = "tevreg1";
+        break;
+      case GX_TEVREG2:
+        outReg = "tevreg2";
+        break;
+      }
+
       std::string op = tev_color_op(
           stage.colorOp.op, tev_bias(stage.colorOp.bias), tev_scale(stage.colorOp.scale), stage.colorOp.clamp,
           color_arg_reg(stage.colorPass.a, idx, config, stage), color_arg_reg(stage.colorPass.b, idx, config, stage),
@@ -896,25 +909,30 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       fragmentFn += fmt::format("\n    // TEV stage {2}\n    {0} = vec4f({1}, {0}.a);", outReg, op, idx);
     }
     {
-      std::string_view outReg = regName[stage.alphaOp.outReg];
+      std::string outReg;
+      switch (stage.alphaOp.outReg) {
+        DEFAULT_FATAL("invalid alphaOp outReg {}", underlying(stage.alphaOp.outReg));
+      case GX_TEVPREV:
+        outReg = "prev.a";
+        break;
+      case GX_TEVREG0:
+        outReg = "tevreg0.a";
+        break;
+      case GX_TEVREG1:
+        outReg = "tevreg1.a";
+        break;
+      case GX_TEVREG2:
+        outReg = "tevreg2.a";
+        break;
+      }
+
       std::string op = tev_alpha_op(
           stage.alphaOp.op, tev_bias(stage.alphaOp.bias), tev_scale(stage.alphaOp.scale), stage.alphaOp.clamp,
           alpha_arg_reg(stage.alphaPass.a, idx, config, stage), alpha_arg_reg(stage.alphaPass.b, idx, config, stage),
           alpha_arg_reg(stage.alphaPass.c, idx, config, stage), alpha_arg_reg(stage.alphaPass.d, idx, config, stage));
-      fragmentFn += fmt::format("\n    {0}.a = {1};", outReg, op);
+      fragmentFn += fmt::format("\n    {0} = {1};", outReg, op);
     }
   }
-
-  {
-    const auto& lastStage = config.tevStages[config.tevStageCount - 1];
-    if (lastStage.colorOp.outReg != 0) {
-      fragmentFn += fmt::format("\n    prev.rgb = {0}.rgb;", regName[lastStage.colorOp.outReg]);
-    }
-    if (lastStage.alphaOp.outReg != 0) {
-      fragmentFn += fmt::format("\n    prev.a = {0}.a;", regName[lastStage.alphaOp.outReg]);
-    }
-  }
-
   if (info.loadsTevReg.test(0)) {
     uniBufAttrs += "\n    tevprev: vec4f,";
     fragmentFnPre += "\n    var prev = ubuf.tevprev;";
@@ -1390,16 +1408,20 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       std::string_view suffix;
       if (!is_palette_format(texConfig.copyFmt)) {
         switch (texConfig.loadFmt) {
-          DEFAULT_FATAL("unimplemented palette format {}", texConfig.loadFmt);
         case GX_TF_C4:
           suffix = "I4"sv;
           break;
-          //        case GX_TF_C8:
-          //          suffix = "I8";
-          //          break;
-          //        case GX_TF_C14X2:
-          //          suffix = "I14X2";
-          //          break;
+        case GX_TF_C8:
+          suffix = "I8"sv;
+          break;
+        case GX_TF_C14X2:
+          Log.warn("palette format C14X2 requested; using I8 palette sampling fallback");
+          suffix = "I8"sv;
+          break;
+        default:
+          Log.warn("unimplemented palette format {}; using I8 fallback", texConfig.loadFmt);
+          suffix = "I8"sv;
+          break;
         }
       }
       fragmentFnPre += fmt::format("\n    var sampled{0} = textureSamplePalette{3}(tex{1}, tex{1}_samp, {2}, tlut{1});",
@@ -1801,6 +1823,9 @@ fn intensityF32(rgb: vec3f) -> f32 {{
 fn intensityI4(rgb: vec3f) -> i32 {{
     return i32(intensityF32(rgb) * 16.f);
 }}
+fn intensityI8(rgb: vec3f) -> i32 {{
+    return i32(clamp(intensityF32(rgb), 0.0, 1.0) * 255.f);
+}}
 fn textureSamplePalette(tex: texture_2d<i32>, samp: sampler, uv: vec2f, tlut: texture_2d<f32>) -> vec4f {{
     // Gather index values
     var i = textureGather(0, tex, samp, uv);
@@ -1825,6 +1850,27 @@ fn textureSamplePaletteI4(tex: texture_2d<f32>, samp: sampler, uv: vec2f, tlut: 
     var i1 = intensityI4(vec3f(iR[1], iG[1], iB[1]));
     var i2 = intensityI4(vec3f(iR[2], iG[2], iB[2]));
     var i3 = intensityI4(vec3f(iR[3], iG[3], iB[3]));
+    // Load palette colors
+    var c0 = textureLoad(tlut, vec2i(i0, 0), 0);
+    var c1 = textureLoad(tlut, vec2i(i1, 0), 0);
+    var c2 = textureLoad(tlut, vec2i(i2, 0), 0);
+    var c3 = textureLoad(tlut, vec2i(i3, 0), 0);
+    // Perform bilinear filtering
+    var f = fract(uv * vec2f(textureDimensions(tex)) + 0.5);
+    var t0 = mix(c3, c2, f.x);
+    var t1 = mix(c0, c1, f.x);
+    return mix(t0, t1, f.y);
+}}
+fn textureSamplePaletteI8(tex: texture_2d<f32>, samp: sampler, uv: vec2f, tlut: texture_2d<f32>) -> vec4f {{
+    // Gather RGB channels
+    var iR = textureGather(0, tex, samp, uv);
+    var iG = textureGather(1, tex, samp, uv);
+    var iB = textureGather(2, tex, samp, uv);
+    // Perform intensity conversion
+    var i0 = intensityI8(vec3f(iR[0], iG[0], iB[0]));
+    var i1 = intensityI8(vec3f(iR[1], iG[1], iB[1]));
+    var i2 = intensityI8(vec3f(iR[2], iG[2], iB[2]));
+    var i3 = intensityI8(vec3f(iR[3], iG[3], iB[3]));
     // Load palette colors
     var c0 = textureLoad(tlut, vec2i(i0, 0), 0);
     var c1 = textureLoad(tlut, vec2i(i1, 0), 0);
