@@ -3,21 +3,38 @@
 #include "internal.hpp"
 #include <dolphin/os.h>
 
-static int YearDays[MONTH_MAX] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+static const int YearDays[MONTH_MAX] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
 
-static int LeapYearDays[MONTH_MAX] = {0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335};
-
+static const int LeapYearDays[MONTH_MAX] = {0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335};
 
 namespace chrono = std::chrono;
 using TickDuration = chrono::duration<s64, std::ratio<1, OS_TIMER_CLOCK>>;
+
+static chrono::time_point<chrono::system_clock> startupTime = chrono::system_clock::now();
+static chrono::time_point<chrono::steady_clock> startupSteadyTime = chrono::steady_clock::now();
 
 OSTick OSGetTick() {
     return OSGetTime() & 0xFFFFFFFF;
 }
 
 OSTime OSGetTime() {
-    auto clockTime = chrono::steady_clock::now().time_since_epoch();
-    auto ticksTotal = chrono::duration_cast<TickDuration>(clockTime);
+    // System time is provided in the number of timer ticks since 2000-01-01 00:00:00
+
+    using Decananoseconds = chrono::duration<s64, std::ratio<1, 100'000'000>>;
+
+    static const auto gcnEpoch = chrono::local_days{chrono::year{2000} / chrono::January / 1};
+
+    auto startupOffset = chrono::steady_clock::now() - startupSteadyTime;
+    auto nowTime = chrono::zoned_time(std::chrono::current_zone(), startupTime + startupOffset).get_local_time();
+    auto clockTime = nowTime - gcnEpoch;
+
+    // The current time is around the order of 1e17 ns, which is about 1/22 of INT64_MAX. The
+    // effective ratio of ticks/nanoseconds is 81/200, which means if we try to convert directly
+    // from ns to ticks we cause an overflow when we multiply by 81. As a workaround, we first
+    // convert to units of 10 ns. This brings the effective multiplicand from 81 down to 8.1 which
+    // should be good for the next 300 or so years, at which point chrono::system_clock::now() would
+    // have broken already anyway.
+    auto ticksTotal = chrono::duration_cast<TickDuration>(chrono::duration_cast<Decananoseconds>(clockTime));
     return ticksTotal.count();
 }
 
@@ -35,7 +52,7 @@ static int IsLeapYear(int year) {
 }
 
 static int GetYearDays(int year, int mon) {
-    int* md = (IsLeapYear(year)) ? LeapYearDays : YearDays;
+    const int* md = (IsLeapYear(year)) ? LeapYearDays : YearDays;
 
     return md[mon];
 }
@@ -53,7 +70,7 @@ static void GetDates(int days, OSCalendarTime* td) {
     int year;
     int n;
     int month;
-    int * md;
+    const int* md;
 
     ASSERT(0 <= days);
 
