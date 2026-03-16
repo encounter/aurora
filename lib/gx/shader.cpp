@@ -1478,6 +1478,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   if (info.usedIndTexMtxs.any()) {
     uniBufAttrs += "\n    ind_mtx: array<mat2x4f, 3>,";
   }
+  size_t sampBindIdx = 0;
   size_t texBindIdx = 0;
   for (int i = 0; i < info.sampledTextures.size(); ++i) {
     if (!info.sampledTextures.test(i)) {
@@ -1488,7 +1489,8 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
     sampBindings += fmt::format(
         "\n@group(1) @binding({})\n"
         "var tex{}_samp: sampler;",
-        texBindIdx, i);
+        sampBindIdx, i);
+    ++sampBindIdx;
 
     const auto& texConfig = config.textureConfig[i];
     if (is_palette_format(texConfig.loadFmt)) {
