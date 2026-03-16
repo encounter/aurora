@@ -7,6 +7,6 @@ struct SDL_Window;
 
 namespace aurora::webgpu::utils {
 
-std::unique_ptr<wgpu::ChainedStruct> SetupWindowAndGetSurfaceDescriptor(SDL_Window* window);
+std::shared_ptr<wgpu::ChainedStruct> SetupWindowAndGetSurfaceDescriptor(SDL_Window* window);
 
 } // namespace aurora::webgpu::utils
