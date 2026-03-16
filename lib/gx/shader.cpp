@@ -332,8 +332,8 @@ static std::string alpha_arg_reg(GXTevAlphaArg arg, size_t stageIdx, const Shade
   }
 }
 
-static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view scale, std::string_view a, std::string_view b,
-                          std::string_view c, std::string_view d, std::string_view zero) {
+static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view scale, std::string_view a,
+                          std::string_view b, std::string_view c, std::string_view d, std::string_view zero) {
   switch (op) {
     DEFAULT_FATAL("unimplemented tev op {}", underlying(op));
   case GX_TEV_ADD:
@@ -372,16 +372,19 @@ static std::string tev_op(GXTevOp op, std::string_view bias, std::string_view sc
   }
 }
 
-static std::string tev_color_op(GXTevOp op, std::string_view bias, std::string_view scale, bool clamp, std::string_view a,
-                                std::string_view b, std::string_view c, std::string_view d) {
-  std::string expr = tev_op(op, bias, scale, a, b, c, d, "vec3(0)"sv);
-  return clamp ? fmt::format("clamp({}, vec3f(0.0), vec3f(1.0))", expr) : expr;
+static std::string tev_color_op(GXTevOp op, std::string_view bias, std::string_view scale, bool clamp,
+                                std::string_view a, std::string_view b, std::string_view c, std::string_view d) {
+  const auto overflow = [](std::string_view reg) { return fmt::format("tev_overflow_vec3f({})", reg); };
+  std::string expr = tev_op(op, bias, scale, overflow(a), overflow(b), overflow(c), d, "vec3(0)"sv);
+  return clamp ? fmt::format("clamp({}, vec3f(0.0), vec3f(1.0))", expr)
+               : fmt::format("clamp({}, vec3f(-4.0), vec3f(4.0))", expr);
 }
 
-static std::string tev_alpha_op(GXTevOp op, std::string_view bias, std::string_view scale, bool clamp, std::string_view a,
-                                std::string_view b, std::string_view c, std::string_view d) {
-  std::string expr = tev_op(op, bias, scale, a, b, c, d, "0.0"sv);
-  return clamp ? fmt::format("clamp({}, 0.0, 1.0)", expr) : expr;
+static std::string tev_alpha_op(GXTevOp op, std::string_view bias, std::string_view scale, bool clamp,
+                                std::string_view a, std::string_view b, std::string_view c, std::string_view d) {
+  const auto overflow = [](std::string_view reg) { return fmt::format("tev_overflow_f32({})", reg); };
+  std::string expr = tev_op(op, bias, scale, overflow(a), overflow(b), overflow(c), d, "0.0"sv);
+  return clamp ? fmt::format("clamp({}, 0.0, 1.0)", expr) : fmt::format("clamp({}, -4.0, 4.0)", expr);
 }
 
 static std::string_view tev_bias(GXTevBias bias) {
@@ -1489,7 +1492,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
     }
     ++texBindIdx;
   }
-
+  fragmentFn += "\n    prev = tev_overflow_vec4f(prev);";
   if (config.alphaCompare) {
     bool comp0Valid = true;
     bool comp1Valid = true;
@@ -1779,6 +1782,18 @@ fn fetch_rgba6(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
 fn fetch_rgba8(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
   var v = raw_fetch_u8_4(p, idx);
   return vec4f(v) / 255.0f;
+}}
+
+fn tev_overflow_f32(in: f32) -> f32 {{
+  return f32(i32(in * 255.0f) & 255) / 255.0f;
+}}
+
+fn tev_overflow_vec3f(in: vec3f) -> vec3f {{
+  return vec3f(vec3i(in * 255.0f) & vec3i(255, 255, 255)) / 255.0f;
+}}
+
+fn tev_overflow_vec4f(in: vec4f) -> vec4f {{
+  return vec4f(vec4i(in * 255.0f) & vec4i(255, 255, 255, 255)) / 255.0f;
 }}
 
 {10}
