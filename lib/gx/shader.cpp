@@ -992,7 +992,6 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       usesVtxColor = true;
     }
 
-    // TODO handle alpha lighting
     if (cc.lightingEnabled) {
       std::string ambSrc, matSrc, lightAttnFn, lightDiffFn;
       if (cc.ambSrc == GX_SRC_VTX) {
@@ -1105,6 +1104,24 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       }
     } else {
       fragmentFnPre += fmt::format("\n    var rast{0} = ubuf.cc{0}_mat;", i);
+    }
+
+    if (cca.lightingEnabled) {
+      // TODO handle alpha lighting
+    } else if (cca.matSrc == GX_SRC_VTX) {
+      if (!cc.lightingEnabled && cc.matSrc == GX_SRC_VTX) {
+        // Already written above
+      } else if (UsePerPixelLighting) {
+        fragmentFnPre += fmt::format("\n    rast{0}.a = in.clr{0}.a;", vtxColorIdx);
+      } else {
+        if (!cc.lightingEnabled) {
+          vtxOutAttrs += fmt::format("\n    @location({}) cc{}: vec4f,", vtxOutIdx++, i);
+          vtxXfrAttrs += fmt::format("\n    out.cc{} = {};", i, vtx_attr(config, GXAttr(GX_VA_CLR0 + vtxColorIdx)));
+        }
+        fragmentFnPre += fmt::format("\n    rast{0}.a = in.cc{0}.a;", i);
+      }
+    } else if (cc.lightingEnabled || cc.matSrc != GX_SRC_REG) {
+      fragmentFnPre += fmt::format("\n    rast{0}.a = ubuf.cc{0}a_mat.a;", vtxColorIdx);
     }
 
     if (usesVtxColor) {
