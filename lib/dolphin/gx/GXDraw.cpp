@@ -428,7 +428,7 @@ static f32 idata[12][3] = {
     { -0.8506508f, -0.5257311f,  0.0f },
 };
 
-static u8 index[20][3] = {
+static u8 uindex[20][3] = {
     {  0,  4,  1 },
     {  0,  9,  4 },
     {  9,  5,  4 },
@@ -456,7 +456,7 @@ void GXDrawIcosahedron(void) {
 
     GetVertState();
     for (i = 19; i >= 0; i--) {
-        SubDivTriangle(0, i, idata, index);
+        SubDivTriangle(0, i, idata, uindex);
     }
     RestoreVertState();
 }
@@ -466,7 +466,7 @@ void GXDrawSphere1(u8 depth) {
 
     GetVertState();
     for (i = 19; i >= 0; i--) {
-        SubDivTriangle(depth, i, idata, index);
+        SubDivTriangle(depth, i, idata, uindex);
     }
     RestoreVertState();
 }
