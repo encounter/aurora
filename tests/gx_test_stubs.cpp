@@ -64,7 +64,7 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
   return {};
 }
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept { return {}; }
-gfx::Range build_uniform(const ShaderInfo& info) noexcept { return {}; }
+gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart) noexcept { return {}; }
 u8 color_channel(GXChannelID id) noexcept { return 0; }
 } // namespace aurora::gx
 

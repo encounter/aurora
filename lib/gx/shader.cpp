@@ -438,7 +438,7 @@ static std::string_view tev_scale(GXTevScale scale) {
 }
 
 static inline std::string vtx_attr(const ShaderConfig& config, GXAttr attr) {
-  const auto type = config.vtxAttrs[attr];
+  const auto type = config.attrs[attr].attrType;
   if (type == GX_NONE) {
     if (attr == GX_VA_NRM) {
       // Default normal
@@ -513,85 +513,86 @@ constexpr std::array<std::string_view, GX_CA_ZERO + 1> TevAlphaArgNames{
     "APREV"sv, "A0"sv, "A1"sv, "A2"sv, "TEXA"sv, "RASA"sv, "KONST"sv, "ZERO"sv,
 };
 
-constexpr std::array<std::string_view, MaxVtxAttr> VtxAttributeNames{
-    "pn_mtx",        "tex0_mtx",      "tex1_mtx",      "tex2_mtx",    "tex3_mtx", "tex4_mtx", "tex5_mtx",
-    "tex6_mtx",      "tex7_mtx",      "pos",           "nrm",         "clr0",     "clr1",     "tex0_uv",
-    "tex1_uv",       "tex2_uv",       "tex3_uv",       "tex4_uv",     "tex5_uv",  "tex6_uv",  "tex7_uv",
-    "pos_mtx_array", "nrm_mtx_array", "tex_mtx_array", "light_array", "nbt",
+constexpr std::array<std::string_view, MaxIndexAttr> VtxArrayNames{
+    "v_arr_pos"sv,     "v_arr_nrm"sv,     "v_arr_clr0"sv,    "v_arr_clr1"sv,    "v_arr_tex0_uv"sv, "v_arr_tex1_uv"sv,
+    "v_arr_tex2_uv"sv, "v_arr_tex3_uv"sv, "v_arr_tex4_uv"sv, "v_arr_tex5_uv"sv, "v_arr_tex6_uv"sv, "v_arr_tex7_uv"sv,
 };
 
-struct StorageLoadResult {
-  std::string attrLoad;
-};
-
-auto dl_load(u32 attrIdx) -> std::string {
-  const auto [div, rem] = std::div(attrIdx, 4);
-  return fmt::format("in_dl{}[{}]", div, rem);
+auto fetch_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le) -> std::string {
+  switch (mapping.compType) {
+  case GX_U8:
+    return fmt::format("fetch_u8_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
+  case GX_S8:
+    return fmt::format("fetch_s8_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
+  case GX_U16:
+    return fmt::format("fetch_u16_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
+  case GX_S16:
+    return fmt::format("fetch_s16_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
+  case GX_F32:
+    return fmt::format("fetch_f32_{}(&{}, {}, {})", mapping.cnt, buf, offs, le);
+  case GX_RGBA8:
+    return fmt::format("unpack4x8unorm(load_u32_raw(&{}, {}))", buf, offs);
+  default:
+    Log.fatal("fetch_attr: Unimplemented {}", static_cast<GXCompType>(mapping.compType));
+  }
 }
 
-auto storage_load(const StorageConfig& mapping, u32 attrIdx) -> StorageLoadResult {
-  const std::string_view attrName = VtxAttributeNames[mapping.attr];
+auto fetch_color_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le) -> std::string {
+  switch (mapping.compType) {
+  case GX_RGB565:
+    return fmt::format("fetch_rgb565(&{}, {}, {})", buf, offs, le);
+  case GX_RGB8:
+    return fmt::format("fetch_rgb8(&{}, {}, {})", buf, offs, le);
+  case GX_RGBX8:
+    return fmt::format("fetch_rgbx8(&{}, {}, {})", buf, offs, le);
+  case GX_RGBA4:
+    return fmt::format("fetch_rgba4(&{}, {}, {})", buf, offs, le);
+  case GX_RGBA6:
+    return fmt::format("fetch_rgba6(&{}, {}, {})", buf, offs, le);
+  case GX_RGBA8:
+    return fmt::format("fetch_rgba8(&{}, {}, {})", buf, offs, le);
+  default:
+    Log.fatal("fetch_color_attr: Unimplemented {}", static_cast<GXCompType>(mapping.compType));
+  }
+}
 
-  uint8_t compCnt = 0;
-  GXCompType compType = GX_U8;
+auto attr_load(const ShaderConfig& config, const AttrConfig& mapping) -> std::string {
+  auto buf = "vbuf"sv;
+  auto offs = fmt::format("ubuf.vtx_start + vidx * {}u + {}u", config.vtxStride, mapping.offset);
+  auto le = false; // Vertex buffer is always big endian (for now)
+  if (mapping.attrType == GX_INDEX8) {
+    offs = fmt::format("raw_fetch_u8_1(&{}, {}) * {}u", buf, offs, mapping.stride);
+    buf = VtxArrayNames[mapping.attr - GX_VA_POS];
+    le = mapping.le;
+  } else if (mapping.attrType == GX_INDEX16) {
+    offs = fmt::format("raw_fetch_u16_1(&{}, {}, {}) * {}u", buf, offs, le, mapping.stride);
+    buf = VtxArrayNames[mapping.attr - GX_VA_POS];
+    le = mapping.le;
+  }
   switch (mapping.attr) {
-  case GX_VA_POS:
-    switch (mapping.cnt) {
-    case GX_POS_XY:
-      compCnt = 2;
-      break;
-    case GX_POS_XYZ:
-      compCnt = 3;
-      break;
-    default:
-      Log.fatal("storage_load: Unsupported {} component count {}", mapping.attr, mapping.cnt);
+  case GX_VA_PNMTXIDX:
+  case GX_VA_TEX0MTXIDX:
+  case GX_VA_TEX1MTXIDX:
+  case GX_VA_TEX2MTXIDX:
+  case GX_VA_TEX3MTXIDX:
+  case GX_VA_TEX4MTXIDX:
+  case GX_VA_TEX5MTXIDX:
+  case GX_VA_TEX6MTXIDX:
+  case GX_VA_TEX7MTXIDX:
+    return fmt::format("raw_fetch_u8_1(&{}, {})", buf, offs);
+  case GX_VA_POS: {
+    const auto posLoad = fetch_attr(mapping, buf, offs, le);
+    if (mapping.cnt == 2) {
+      return fmt::format("vec3f({}, 0.0)", posLoad);
     }
-    switch (mapping.compType) {
-    case GX_U8:
-    case GX_S8:
-    case GX_U16:
-    case GX_S16:
-    case GX_F32:
-      compType = mapping.compType;
-      break;
-    default:
-      Log.fatal("storage_load: Unsupported {} component type {}", mapping.attr, mapping.compType);
-    }
-    break;
+    return posLoad;
+  }
   case GX_VA_NRM:
-    switch (mapping.cnt) {
-    case GX_NRM_XYZ:
-      compCnt = 3;
-      break;
-    default:
-      Log.fatal("storage_load: Unsupported {} component count {}", mapping.attr, mapping.cnt);
-    }
-    switch (mapping.compType) {
-    case GX_S8:
-    case GX_S16:
-    case GX_F32:
-      compType = mapping.compType;
-      break;
-    default:
-      Log.fatal("storage_load: Unsupported {} component type {}", mapping.attr, mapping.compType);
-    }
-    break;
+    // TODO check for NBT/NBT3
+    return fetch_attr(mapping, buf, offs, le);
   case GX_VA_CLR0:
   case GX_VA_CLR1:
-    // special handling
-    switch (mapping.compType) {
-    case GX_RGB565:
-    case GX_RGB8:
-    case GX_RGBX8:
-    case GX_RGBA4:
-    case GX_RGBA6:
-    case GX_RGBA8:
-      compType = mapping.compType;
-      break;
-    default:
-      Log.fatal("storage_load: Unsupported {} component type {}", mapping.attr, mapping.compType);
-    }
-    break;
+    return fetch_color_attr(mapping, buf, offs, le);
   case GX_VA_TEX0:
   case GX_VA_TEX1:
   case GX_VA_TEX2:
@@ -599,90 +600,16 @@ auto storage_load(const StorageConfig& mapping, u32 attrIdx) -> StorageLoadResul
   case GX_VA_TEX4:
   case GX_VA_TEX5:
   case GX_VA_TEX6:
-  case GX_VA_TEX7:
-    switch (mapping.cnt) {
-    case GX_TEX_S:
-      compCnt = 1;
-      break;
-    case GX_TEX_ST:
-      compCnt = 2;
-      break;
-    default:
-      Log.fatal("storage_load: Unsupported {} component count {}", mapping.attr, mapping.cnt);
+  case GX_VA_TEX7: {
+    const auto texLoad = fetch_attr(mapping, buf, offs, le);
+    if (mapping.cnt == 1) {
+      return fmt::format("vec2f({}, 0.0)", texLoad);
     }
-    switch (mapping.compType) {
-    case GX_U8:
-    case GX_S8:
-    case GX_U16:
-    case GX_S16:
-    case GX_F32:
-      compType = mapping.compType;
-      break;
-    default:
-      Log.fatal("storage_load: Unsupported {} component type {}", mapping.attr, mapping.compType);
-    }
-    break;
+    return texLoad;
+  }
   default:
-    Log.fatal("storage_load: Unsupported attribute {}", mapping.attr);
+    Log.fatal("attr_load: Unimplemented {}", mapping.attr);
   }
-
-  const auto le = mapping.le ? "true" : "false";
-  const auto idxFetch = dl_load(attrIdx);
-
-  std::string_view arrType;
-  std::string attrLoad;
-
-  if (mapping.attr >= GX_VA_CLR0 && mapping.attr <= GX_VA_CLR1) {
-    switch (compType) {
-    case GX_RGB565:
-      attrLoad = fmt::format("fetch_rgb565(&v_arr_{}, {}, {})", attrName, idxFetch, le);
-      break;
-    case GX_RGB8:
-      attrLoad = fmt::format("fetch_rgb8(&v_arr_{}, {}, {})", attrName, idxFetch, le);
-      break;
-    case GX_RGBX8:
-      attrLoad = fmt::format("fetch_rgbx8(&v_arr_{}, {}, {})", attrName, idxFetch, le);
-      break;
-    case GX_RGBA4:
-      attrLoad = fmt::format("fetch_rgba4(&v_arr_{}, {}, {})", attrName, idxFetch, le);
-      break;
-    case GX_RGBA6:
-      attrLoad = fmt::format("fetch_rgba6(&v_arr_{}, {}, {})", attrName, idxFetch, le);
-      break;
-    case GX_RGBA8:
-      attrLoad = fmt::format("fetch_rgba8(&v_arr_{}, {}, {})", attrName, idxFetch, le);
-      break;
-    default:
-      Log.fatal("storage_load: Unimplemented {}", compType);
-    }
-  } else {
-    switch (compType) {
-    case GX_U8:
-      attrLoad = fmt::format("fetch_u8_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
-      break;
-    case GX_S8:
-      attrLoad = fmt::format("fetch_s8_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
-      break;
-    case GX_U16:
-      attrLoad = fmt::format("fetch_u16_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
-      break;
-    case GX_S16:
-      attrLoad = fmt::format("fetch_s16_{}(&v_arr_{}, {}, {}, {})", compCnt, attrName, idxFetch, mapping.frac, le);
-      break;
-    case GX_F32:
-      attrLoad = fmt::format("fetch_f32_{}(&v_arr_{}, {}, {})", compCnt, attrName, idxFetch, le);
-      break;
-    case GX_RGBA8:
-      attrLoad = fmt::format("unpack4x8unorm(v_arr_{}[{}])", attrName, idxFetch);
-      break;
-    default:
-      Log.fatal("storage_load: Unimplemented {}", compType);
-    }
-  }
-
-  return {
-      .attrLoad = attrLoad,
-  };
 }
 
 wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& info) noexcept {
@@ -780,81 +707,28 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   std::string vtxInAttrs;
   std::string vtxXfrAttrsPre;
   std::string vtxXfrAttrs;
-  size_t locIdx = 0;
   size_t vtxOutIdx = 0;
-  size_t uniBindingIdx = 1;
-  if (info.indexAttr.count() > 0) {
-    // Display list attributes
-    int currAttrIdx = 0;
-    for (GXAttr attr{}; attr < MaxVtxAttr; attr = static_cast<GXAttr>(attr + 1)) {
-      bool arrayIndex = false;
-      if (!info.indexAttr.test(attr)) {
-        continue;
-      }
 
-      const auto& mapping = config.attrMapping[attr];
-      if (config.vtxAttrs[attr] == GX_INDEX8 || config.vtxAttrs[attr] == GX_INDEX16) {
-        // array index
-        const auto result = storage_load(mapping, currAttrIdx);
-        vtxXfrAttrsPre += fmt::format("\n    var {} = {};", vtx_attr(config, attr), result.attrLoad);
-        std::string_view attrName = VtxAttributeNames[attr];
-        uniformBindings += fmt::format(
-            "\n@group(0) @binding({})"
-            "\nvar<storage, read> v_arr_{}: array<u32>;",
-            uniBindingIdx++, attrName);
-      } else {
-        // direct index (used for PNMTXIDX/TEXMTXIDX)
-        const auto idxFetch = dl_load(currAttrIdx);
-        vtxXfrAttrsPre += fmt::format("\n    var {} = {};", vtx_attr(config, attr), idxFetch);
-      }
-      ++currAttrIdx;
-    }
-    auto [num4xAttrArrays, rem] = std::div(currAttrIdx, 4);
-    u32 num2xAttrArrays = 0;
-    if (rem > 2) {
-      ++num4xAttrArrays;
-    } else if (rem > 0) {
-      num2xAttrArrays = 1;
-    }
-    for (u32 i = 0; i < num4xAttrArrays; ++i) {
-      if (locIdx > 0) {
-        vtxInAttrs += "\n    , ";
-      } else {
-        vtxInAttrs += "\n    ";
-      }
-      vtxInAttrs += fmt::format("@location({}) in_dl{}: vec4u", locIdx++, i);
-    }
-    for (u32 i = 0; i < num2xAttrArrays; ++i) {
-      if (locIdx > 0) {
-        vtxInAttrs += "\n    , ";
-      } else {
-        vtxInAttrs += "\n    ";
-      }
-      vtxInAttrs += fmt::format("@location({}) in_dl{}: vec2u", locIdx++, num4xAttrArrays + i);
-    }
-  }
-  for (GXAttr attr{}; attr < MaxVtxAttr; attr = GXAttr(attr + 1)) {
-    // Direct attributes
-    if (info.indexAttr.test(attr) || config.vtxAttrs[attr] != GX_DIRECT) {
+  // Load vertex attributes
+  size_t uniBindingIdx = 2;
+  vtxInAttrs += "\n    @builtin(vertex_index) vidx: u32";
+  int currAttrIdx = 0;
+  for (GXAttr attr{}; attr <= GX_VA_TEX7; attr = static_cast<GXAttr>(attr + 1)) {
+    const auto attrType = config.attrs[attr].attrType;
+    if (attrType == GX_NONE) {
       continue;
     }
-    if (locIdx > 0) {
-      vtxInAttrs += "\n    , ";
-    } else {
-      vtxInAttrs += "\n    ";
+    if (attrType == GX_INDEX8 || attrType == GX_INDEX16) {
+      // Array binding
+      uniformBindings += fmt::format(
+          "\n@group(0) @binding({})"
+          "\nvar<storage, read> {}: array<u32>;",
+          uniBindingIdx++, VtxArrayNames[attr - GX_VA_POS]);
     }
-    if (attr == GX_VA_POS) {
-      vtxInAttrs += fmt::format("@location({}) in_pos: vec3f", locIdx++);
-    } else if (attr == GX_VA_NRM) {
-      vtxInAttrs += fmt::format("@location({}) in_nrm: vec3f", locIdx++);
-    } else if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
-      vtxInAttrs += fmt::format("@location({}) in_clr{}: vec4f", locIdx++, attr - GX_VA_CLR0);
-    } else if (attr >= GX_VA_TEX0 && attr <= GX_VA_TEX7) {
-      vtxInAttrs += fmt::format("@location({}) in_tex{}_uv: vec2f", locIdx++, attr - GX_VA_TEX0);
-    } else {
-      FATAL("unhandled vtx attr {}", underlying(attr));
-    }
+    vtxXfrAttrsPre += fmt::format("\n    var {} = {};", vtx_attr(config, attr), attr_load(config, config.attrs[attr]));
+    ++currAttrIdx;
   }
+
   if (info.indexAttr.test(GX_VA_PNMTXIDX)) {
     vtxXfrAttrsPre +=
         "\n    var pos_mtx = ubuf.postex_mtx[in_pnmtxidx / 3u];"
@@ -983,7 +857,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
     // Output vertex color if necessary
     bool usesVtxColor = false;
     if (((cc.lightingEnabled && cc.ambSrc == GX_SRC_VTX) || cc.matSrc == GX_SRC_VTX ||
-         (cca.lightingEnabled && cca.matSrc == GX_SRC_VTX) || cca.matSrc == GX_SRC_VTX)) {
+         (cca.lightingEnabled && cca.ambSrc == GX_SRC_VTX) || cca.matSrc == GX_SRC_VTX)) {
       if (UsePerPixelLighting) {
         vtxOutAttrs += fmt::format("\n    @location({}) clr{}: vec4f,", vtxOutIdx++, vtxColorIdx);
         vtxXfrAttrs += fmt::format("\n    out.clr{} = {};", vtxColorIdx,
@@ -1180,7 +1054,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
 
     if (tcg.type == GX_TG_MTX3x4) {
       vtxXfrAttrs += fmt::format("\n    out.tex{0}_uvw = tc{0}_proj.xyz;", i);
-      fragmentFnPre += fmt::format("\n    var tex{0}_uv = in.tex{0}_uvw.xy / in.tex{0}_uvw.zz;", i);
+      fragmentFnPre += fmt::format("\n    var tex{0}_uv = in.tex{0}_uvw.xy;", i);
     } else {
       vtxXfrAttrs += fmt::format("\n    out.tex{0}_uv = tc{0}_proj.xy;", i);
       fragmentFnPre += fmt::format("\n    var tex{0}_uv = in.tex{0}_uv.xy;", i);
@@ -1449,7 +1323,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         fmt::format("\n    // Fog\n    var fogF = clamp((ubuf.fog.a / (ubuf.fog.b - {})) - ubuf.fog.c, 0.0, 1.0);",
                     UseReversedZ ? "(1.0 - in.pos.z)" : "in.pos.z");
     switch (config.fogType) {
-      DEFAULT_FATAL("invalid fog type {}", underlying(config.fogType));
+      DEFAULT_FATAL("invalid fog type {}", config.fogType);
     case GX_FOG_PERSP_LIN:
     case GX_FOG_ORTHO_LIN:
       fragmentFn += "\n    var fogZ = fogF;";
@@ -1544,263 +1418,304 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
 fn bswap32(v: u32, le: bool) -> u32 {{
   if (le) {{
     return v;
-  }} else {{
-    return ((v & 0xFF) << 24) | ((v & 0xFF00) << 8) | ((v & 0xFF0000) >> 8) | ((v & 0xFF000000) >> 24);
   }}
+  return ((v & 0x000000FFu) << 24u) |
+         ((v & 0x0000FF00u) << 8u) |
+         ((v & 0x00FF0000u) >> 8u) |
+         ((v & 0xFF000000u) >> 24u);
 }}
 
 fn bswap16(v: u32, le: bool) -> u32 {{
   if (le) {{
     return v;
-  }} else {{
-    return ((v & 0xFF) << 8) | ((v & 0xFF00) >> 8);
   }}
+  return ((v & 0x00FFu) << 8u) | ((v & 0xFF00u) >> 8u);
 }}
 
-// F32
-fn fetch_f32_1(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> f32 {{
-  return bitcast<f32>(bswap32(p[idx], le));
+fn load_u8(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
+  let word = p[byte_off / 4u];
+  let shift = (byte_off & 3u) * 8u;
+  return (word >> shift) & 0xFFu;
 }}
 
-fn fetch_f32_2(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec2f {{
-  return vec2f(
-    fetch_f32_1(p, idx * 2u + 0u, le),
-    fetch_f32_1(p, idx * 2u + 1u, le),
-  );
+fn load_u32_raw(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
+  let word_idx = byte_off >> 2u;
+  let sub = byte_off & 3u;
+  let lo = p[word_idx];
+  if (sub == 0u) {{
+    return lo;
+  }}
+  let hi = p[word_idx + 1u];
+  let shift = sub * 8u;
+  return (lo >> shift) | (hi << (32u - shift));
 }}
 
-fn fetch_f32_3(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec3f {{
-  return vec3f(
-    fetch_f32_1(p, idx * 3u + 0u, le),
-    fetch_f32_1(p, idx * 3u + 1u, le),
-    fetch_f32_1(p, idx * 3u + 2u, le),
-  );
+fn load_u16(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
+  let word_idx = byte_off >> 2u;
+  let sub = byte_off & 3u;
+  let word = p[word_idx];
+  if (sub <= 2u) {{
+    return bswap16(extractBits(word, sub * 8u, 16u), le);
+  }}
+  let next = p[word_idx + 1u];
+  let raw = extractBits(word, 24u, 8u) | (extractBits(next, 0u, 8u) << 8u);
+  return bswap16(raw, le);
 }}
 
-fn fetch_f32_4(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
-  return vec4f(
-    fetch_f32_1(p, idx * 4u + 0u, le),
-    fetch_f32_1(p, idx * 4u + 1u, le),
-    fetch_f32_1(p, idx * 4u + 2u, le),
-    fetch_f32_1(p, idx * 4u + 3u, le),
-  );
-}}
-
-// US8x1
-fn raw_fetch_u8_1(p: ptr<storage, array<u32>>, idx: u32) -> u32 {{
-  var word = p[idx / 4];
-  var shift = (3 - (idx & 3u)) * 8;
-  return (word >> shift) & 0xFF;
-}}
-
-fn fetch_u8_1(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> f32 {{
-  var v = raw_fetch_u8_1(p, idx);
-  return f32(v) / f32(1u << frac);
-}}
-
-fn fetch_s8_1(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> f32 {{
-  var v = (bitcast<i32>(raw_fetch_u8_1(p, idx)) << 24) >> 24;
-  return f32(v) / f32(1u << frac);
-}}
-
-// US8x2
-fn raw_fetch_u8_2(p: ptr<storage, array<u32>>, idx: u32) -> vec2u {{
-  var v0 = p[idx / 2];
-  var r = (idx % 2) != 0;
-  var o0 = select(extractBits(v0, 0, 8), extractBits(v0, 16, 8), r);
-  var o1 = select(extractBits(v0, 8, 8), extractBits(v0, 24, 8), r);
-  return vec2u(o0, o1);
-}}
-
-fn fetch_u8_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec2f {{
-  var v = raw_fetch_u8_2(p, idx);
-  return vec2f(v) / f32(1u << frac);
-}}
-
-fn fetch_s8_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec2f {{
-  var v = (bitcast<vec2i>(raw_fetch_u8_2(p, idx)) << vec2u(24)) >> vec2u(24);
-  return vec2f(v) / f32(1u << frac);
-}}
-
-// US8x3
-fn raw_fetch_u8_3(p: ptr<storage, array<u32>>, idx: u32) -> vec3u {{
-  let byte_idx = idx * 3u;
-  let word0 = p[byte_idx / 4u];
-  let word1 = p[(byte_idx + 1u) / 4u];
-  let word2 = p[(byte_idx + 2u) / 4u];
-
-  let shift0 = (byte_idx % 4u) * 8u;
-  let shift1 = ((byte_idx + 1u) % 4u) * 8u;
-  let shift2 = ((byte_idx + 2u) % 4u) * 8u;
-
-  let o0 = extractBits(word0, shift0, 8);
-  let o1 = extractBits(word1, shift1, 8);
-  let o2 = extractBits(word2, shift2, 8);
-
-  return vec3u(o0, o1, o2);
-}}
-
-fn fetch_u8_3(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec3f {{
-  var v = raw_fetch_u8_3(p, idx);
-  return vec3f(v) / f32(1u << frac);
-}}
-
-fn fetch_s8_3(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec3f {{
-  var v = (bitcast<vec3i>(raw_fetch_u8_3(p, idx)) << vec3u(24)) >> vec3u(24);
-  return vec3f(v) / f32(1u << frac);
-}}
-
-// US8x4
-fn raw_fetch_u8_4(p: ptr<storage, array<u32>>, idx: u32) -> vec4u {{
-  var word = p[idx];
-  var v0 = (word >>  0) & 0xFF;
-  var v1 = (word >>  8) & 0xFF;
-  var v2 = (word >> 16) & 0xFF;
-  var v3 = (word >> 24) & 0xFF;
-  return vec4u(v0, v1, v2, v3);
-}}
-
-fn fetch_u8_4(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec4f {{
-  var v = raw_fetch_u8_4(p, idx);
-  return vec4f(v) / f32(1u << frac);
-}}
-
-fn fetch_s8_4(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec4f {{
-  var v = (bitcast<vec4i>(raw_fetch_u8_4(p, idx)) << vec4u(24)) >> vec4u(24);
-  return vec4f(v) / f32(1u << frac);
-}}
-
-// US16x1
-fn raw_fetch_u16_1(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> u32 {{
-  var word = p[idx / 2u];
-  var shift = (1u - (idx & 1u)) * 16;
-  return bswap16((word >> shift) & 0xFFFF, le);
-}}
-
-fn fetch_u16_1(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> f32 {{
-  var v = raw_fetch_u16_1(p, idx, le);
-  return f32(v) / f32(1u << frac);
-}}
-
-fn fetch_s16_1(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> f32 {{
-  var v = (raw_fetch_u16_1(p, idx, le) << 16) >> 16;
-  return f32(v) / f32(1u << frac);
-}}
-
-// US16x2
-fn raw_fetch_u16_2(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec2u {{
-  var v0 = p[idx];
-  var o0 = bswap16(extractBits(v0, 0, 16), le);
-  var o1 = bswap16(extractBits(v0, 16, 16), le);
-  return vec2u(o0, o1);
-}}
-
-fn fetch_u16_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec2f {{
-  var v = raw_fetch_u16_2(p, idx, le);
-  return vec2f(v) / f32(1u << frac);
-}}
-
-fn fetch_s16_2(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec2f {{
-  var v = ((bitcast<vec2i>(raw_fetch_u16_2(p, idx, le))) << vec2u(16)) >> vec2u(16);
-  return vec2f(v) / f32(1u << frac);
-}}
-
-// US16x3
-fn raw_fetch_u16_3(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec3u {{
-  var n = idx * 3;
-  var d = n / 2;
-  var r = (n % 2) != 0;
-  var v0 = p[d + 0];
-  var v1 = p[d + 1];
-  var o0 = bswap16(select(extractBits(v0, 0, 16), extractBits(v0, 16, 16), r), le);
-  var o1 = bswap16(select(extractBits(v0, 16, 16), extractBits(v1, 0, 16), r), le);
-  var o2 = bswap16(select(extractBits(v1, 0, 16), extractBits(v1, 16, 16), r), le);
-  return vec3u(o0, o1, o2);
-}}
-
-fn fetch_u16_3(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec3f {{
-  var v = raw_fetch_u16_3(p, idx, le);
-  return vec3f(v) / f32(1u << frac);
-}}
-
-fn fetch_s16_3(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec3f {{
-  var v = ((bitcast<vec3i>(raw_fetch_u16_3(p, idx, le))) << vec3u(16)) >> vec3u(16);
-  return vec3f(v) / f32(1u << frac);
-}}
-
-// US16x4
-fn raw_fetch_u16_4(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4u {{
-  var word0 = p[idx / 2u + 0u];
-  var word1 = p[idx / 2u + 1u];
-  var v0 = bswap16((word0 >> 16) & 0xFFFF, le);
-  var v1 = bswap16((word0 >>  0) & 0xFFFF, le);
-  var v2 = bswap16((word1 >> 16) & 0xFFFF, le);
-  var v3 = bswap16((word1 >>  0) & 0xFFFF, le);
-  return vec4u(v0, v1, v2, v3);
-}}
-
-fn fetch_u16_4(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec4f {{
-  var v = raw_fetch_u16_4(p, idx, le);
-  return vec4f(v) / f32(1u << frac);
-}}
-
-fn fetch_s16_4(p: ptr<storage, array<u32>>, idx: u32, frac: u32, le: bool) -> vec4f {{
-  var v = (bitcast<vec4i>(raw_fetch_u16_4(p, idx, le)) << vec4u(16)) >> vec4u(16);
-  return vec4f(v) / f32(1u << frac);
-}}
-
-// Colors
-fn fetch_rgb565(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
-  var v = raw_fetch_u16_1(p, idx, le);
-  return vec4f(
-    f32((v >> 11) & 0x1F) / f32(0x1F),
-    f32((v >>  5) & 0x3F) / f32(0x3F),
-    f32((v >>  0) & 0x1F) / f32(0x1F),
-    1.0f,
-  );
-}}
-
-fn fetch_rgb8(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
-  var v = raw_fetch_u8_3(p, idx);
-  var v4 = vec4u(v.x, v.y, v.z, 255);
-  return vec4f(v4) / 255.0f;
-}}
-
-fn fetch_rgbx8(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
-  var v = raw_fetch_u8_4(p, idx);
-  var v4 = vec4u(v.x, v.y, v.z, 255);
-  return vec4f(v4) / 255.0f;
-}}
-
-fn fetch_rgba4(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
-  var v = raw_fetch_u16_1(p, idx, le);
-  return vec4f(
-    f32((v >> 12) & 0x0F) / f32(0x0F),
-    f32((v >>  8) & 0x0F) / f32(0x0F),
-    f32((v >>  4) & 0x0F) / f32(0x0F),
-    f32((v >>  0) & 0x0F) / f32(0x0F),
-  );
-}}
-
-fn fetch_rgba6(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
-  var w = raw_fetch_u8_3(p, idx);
-  var v: u32;
+fn load_u24(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
+  let raw = load_u32_raw(p, byte_off) & 0x00FFFFFFu;
   if (le) {{
-    v = (w.z << 16) | (w.y << 8) | (w.x);
-  }} else {{
-    v = (w.x << 16) | (w.y << 8) | (w.z);
+    return raw;
   }}
-  return vec4f(
-    f32((v >> 18) & 0x3F) / f32(0x3F),
-    f32((v >> 12) & 0x3F) / f32(0x3F),
-    f32((v >>  6) & 0x3F) / f32(0x3F),
-    f32((v >>  0) & 0x3F) / f32(0x3F),
+  return ((raw & 0x0000FFu) << 16u) |
+         (raw & 0x00FF00u) |
+         ((raw & 0xFF0000u) >> 16u);
+}}
+
+fn load_u32(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
+  return bswap32(load_u32_raw(p, byte_off), le);
+}}
+
+fn load_f32(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> f32 {{
+  return bitcast<f32>(load_u32(p, byte_off, le));
+}}
+
+fn raw_fetch_u8_1(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
+  return load_u8(p, byte_off);
+}}
+
+fn raw_fetch_u8_2(p: ptr<storage, array<u32>>, byte_off: u32) -> vec2u {{
+  let word_idx = byte_off >> 2u;
+  let sub = byte_off & 3u;
+  let word = p[word_idx];
+  if (sub <= 2u) {{
+    let shift = sub * 8u;
+    return vec2u(
+      extractBits(word, shift + 0u, 8u),
+      extractBits(word, shift + 8u, 8u),
+    );
+  }}
+  let next = p[word_idx + 1u];
+  return vec2u(
+    extractBits(word, 24u, 8u),
+    extractBits(next, 0u, 8u),
   );
 }}
 
-fn fetch_rgba8(p: ptr<storage, array<u32>>, idx: u32, le: bool) -> vec4f {{
-  var v = raw_fetch_u8_4(p, idx);
-  return vec4f(v) / 255.0f;
+fn raw_fetch_u8_3(p: ptr<storage, array<u32>>, byte_off: u32) -> vec3u {{
+  let raw = load_u32_raw(p, byte_off);
+  return vec3u(
+    extractBits(raw, 0u, 8u),
+    extractBits(raw, 8u, 8u),
+    extractBits(raw, 16u, 8u),
+  );
+}}
+
+fn raw_fetch_u8_4(p: ptr<storage, array<u32>>, byte_off: u32) -> vec4u {{
+  let raw = load_u32_raw(p, byte_off);
+  return vec4u(
+    extractBits(raw, 0u, 8u),
+    extractBits(raw, 8u, 8u),
+    extractBits(raw, 16u, 8u),
+    extractBits(raw, 24u, 8u),
+  );
+}}
+
+fn raw_fetch_u16_1(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
+  return load_u16(p, byte_off, le);
+}}
+
+fn raw_fetch_u16_2(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec2u {{
+  return vec2u(
+    load_u16(p, byte_off + 0u, le),
+    load_u16(p, byte_off + 2u, le),
+  );
+}}
+
+fn raw_fetch_u16_3(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec3u {{
+  return vec3u(
+    load_u16(p, byte_off + 0u, le),
+    load_u16(p, byte_off + 2u, le),
+    load_u16(p, byte_off + 4u, le),
+  );
+}}
+
+fn raw_fetch_u16_4(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec4u {{
+  return vec4u(
+    load_u16(p, byte_off + 0u, le),
+    load_u16(p, byte_off + 2u, le),
+    load_u16(p, byte_off + 4u, le),
+    load_u16(p, byte_off + 6u, le),
+  );
+}}
+
+fn raw_fetch_f32_1(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> f32 {{
+  return load_f32(p, byte_off, le);
+}}
+
+fn raw_fetch_f32_2(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec2f {{
+  return vec2f(
+    load_f32(p, byte_off + 0u, le),
+    load_f32(p, byte_off + 4u, le),
+  );
+}}
+
+fn raw_fetch_f32_3(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec3f {{
+  return vec3f(
+    load_f32(p, byte_off + 0u, le),
+    load_f32(p, byte_off + 4u, le),
+    load_f32(p, byte_off + 8u, le),
+  );
+}}
+
+fn raw_fetch_f32_4(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec4f {{
+  return vec4f(
+    load_f32(p, byte_off + 0u, le),
+    load_f32(p, byte_off + 4u, le),
+    load_f32(p, byte_off + 8u, le),
+    load_f32(p, byte_off + 12u, le),
+  );
+}}
+
+fn fetch_u8_1(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> f32 {{
+  let v = raw_fetch_u8_1(p, byte_off);
+  return f32(v) / f32(1u << frac);
+}}
+
+fn fetch_s8_1(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> f32 {{
+  let v = (bitcast<i32>(raw_fetch_u8_1(p, byte_off)) << 24) >> 24;
+  return f32(v) / f32(1u << frac);
+}}
+
+fn fetch_u8_2(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec2f {{
+  let v = raw_fetch_u8_2(p, byte_off);
+  return vec2f(v) / f32(1u << frac);
+}}
+
+fn fetch_s8_2(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec2f {{
+  let v = (bitcast<vec2i>(raw_fetch_u8_2(p, byte_off)) << vec2u(24u)) >> vec2u(24u);
+  return vec2f(v) / f32(1u << frac);
+}}
+
+fn fetch_u8_3(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec3f {{
+  let v = raw_fetch_u8_3(p, byte_off);
+  return vec3f(v) / f32(1u << frac);
+}}
+
+fn fetch_s8_3(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec3f {{
+  let v = (bitcast<vec3i>(raw_fetch_u8_3(p, byte_off)) << vec3u(24u)) >> vec3u(24u);
+  return vec3f(v) / f32(1u << frac);
+}}
+
+fn fetch_u8_4(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec4f {{
+  let v = raw_fetch_u8_4(p, byte_off);
+  return vec4f(v) / f32(1u << frac);
+}}
+
+fn fetch_s8_4(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec4f {{
+  let v = (bitcast<vec4i>(raw_fetch_u8_4(p, byte_off)) << vec4u(24u)) >> vec4u(24u);
+  return vec4f(v) / f32(1u << frac);
+}}
+
+fn fetch_u16_1(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> f32 {{
+  let v = raw_fetch_u16_1(p, byte_off, le);
+  return f32(v) / f32(1u << frac);
+}}
+
+fn fetch_s16_1(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> f32 {{
+  let v = bitcast<i32>(raw_fetch_u16_1(p, byte_off, le) << 16u) >> 16;
+  return f32(v) / f32(1u << frac);
+}}
+
+fn fetch_u16_2(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec2f {{
+  let v = raw_fetch_u16_2(p, byte_off, le);
+  return vec2f(v) / f32(1u << frac);
+}}
+
+fn fetch_s16_2(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec2f {{
+  let v = (bitcast<vec2i>(raw_fetch_u16_2(p, byte_off, le)) << vec2u(16u)) >> vec2u(16u);
+  return vec2f(v) / f32(1u << frac);
+}}
+
+fn fetch_u16_3(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec3f {{
+  let v = raw_fetch_u16_3(p, byte_off, le);
+  return vec3f(v) / f32(1u << frac);
+}}
+
+fn fetch_s16_3(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec3f {{
+  let v = (bitcast<vec3i>(raw_fetch_u16_3(p, byte_off, le)) << vec3u(16u)) >> vec3u(16u);
+  return vec3f(v) / f32(1u << frac);
+}}
+
+fn fetch_u16_4(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec4f {{
+  let v = raw_fetch_u16_4(p, byte_off, le);
+  return vec4f(v) / f32(1u << frac);
+}}
+
+fn fetch_s16_4(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec4f {{
+  let v = (bitcast<vec4i>(raw_fetch_u16_4(p, byte_off, le)) << vec4u(16u)) >> vec4u(16u);
+  return vec4f(v) / f32(1u << frac);
+}}
+
+fn fetch_f32_1(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> f32 {{
+  return raw_fetch_f32_1(p, byte_off, le);
+}}
+
+fn fetch_f32_2(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec2f {{
+  return raw_fetch_f32_2(p, byte_off, le);
+}}
+
+fn fetch_f32_3(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec3f {{
+  return raw_fetch_f32_3(p, byte_off, le);
+}}
+
+fn fetch_f32_4(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec4f {{
+  return raw_fetch_f32_4(p, byte_off, le);
+}}
+
+fn fetch_rgb565(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec4f {{
+  let v = load_u16(p, byte_off, le);
+  return vec4f(
+    f32((v >> 11u) & 0x1Fu) / f32(0x1Fu),
+    f32((v >>  5u) & 0x3Fu) / f32(0x3Fu),
+    f32((v >>  0u) & 0x1Fu) / f32(0x1Fu),
+    1.0,
+  );
+}}
+
+fn fetch_rgb8(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec4f {{
+  let v = raw_fetch_u8_3(p, byte_off);
+  return vec4f(f32(v.x), f32(v.y), f32(v.z), 255.0) / 255.0;
+}}
+
+fn fetch_rgbx8(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec4f {{
+  let v = raw_fetch_u8_4(p, byte_off);
+  return vec4f(f32(v.x), f32(v.y), f32(v.z), 255.0) / 255.0;
+}}
+
+fn fetch_rgba4(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec4f {{
+  let v = load_u16(p, byte_off, le);
+  return vec4f(
+    f32((v >> 12u) & 0x0Fu) / f32(0x0Fu),
+    f32((v >>  8u) & 0x0Fu) / f32(0x0Fu),
+    f32((v >>  4u) & 0x0Fu) / f32(0x0Fu),
+    f32((v >>  0u) & 0x0Fu) / f32(0x0Fu),
+  );
+}}
+
+fn fetch_rgba6(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec4f {{
+  let v = load_u24(p, byte_off, le);
+  return vec4f(
+    f32((v >> 18u) & 0x3Fu) / f32(0x3Fu),
+    f32((v >> 12u) & 0x3Fu) / f32(0x3Fu),
+    f32((v >>  6u) & 0x3Fu) / f32(0x3Fu),
+    f32((v >>  0u) & 0x3Fu) / f32(0x3Fu),
+  );
+}}
+
+fn fetch_rgba8(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec4f {{
+  let v = raw_fetch_u8_4(p, byte_off);
+  return vec4f(v) / 255.0;
 }}
 
 fn tev_overflow_f32(in: f32) -> f32 {{
@@ -1818,9 +1733,12 @@ fn tev_overflow_vec4f(in: vec4f) -> vec4f {{
 {10}
 
 struct Uniform {{
+    vtx_start: u32,
     proj: mat4x4f,{0}
 }};
 @group(0) @binding(0)
+var<storage, read> vbuf: array<u32>;
+@group(0) @binding(1)
 var<uniform> ubuf: Uniform;{3}{1}{2}
 
 struct VertexOutput {{

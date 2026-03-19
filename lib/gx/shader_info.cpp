@@ -172,14 +172,14 @@ void alpha_arg_reg_info(GXTevAlphaArg arg, const TevStage& stage, ShaderInfo& in
 
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   ShaderInfo info{
-      .uniformSize = sizeof(Mat4x4<float>), // proj
+      .uniformSize = 16 + sizeof(Mat4x4<float>), // vtx_start + padding + proj
   };
 
-  for (int attr = 0; attr < config.vtxAttrs.size(); attr++) {
-    if ((attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) &&
-        config.vtxAttrs[attr] == GX_DIRECT) {
+  for (int attr = 0; attr < config.attrs.size(); attr++) {
+    const auto attrType = config.attrs[attr].attrType;
+    if ((attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) && attrType == GX_DIRECT) {
       info.indexAttr.set(attr);
-    } else if (config.vtxAttrs[attr] == GX_INDEX8 || config.vtxAttrs[attr] == GX_INDEX16) {
+    } else if (attrType == GX_INDEX8 || attrType == GX_INDEX16) {
       info.indexAttr.set(attr);
     }
   }
@@ -300,8 +300,10 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   return info;
 }
 
-gfx::Range build_uniform(const ShaderInfo& info) noexcept {
+gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart) noexcept {
   auto [buf, range] = gfx::map_uniform(info.uniformSize);
+  buf.append(vtxStart);
+  buf.append_zeroes(12); // padding
   buf.append(g_gxState.proj);
 
   for (int i = 0; i < MaxPnMtx; i++) {

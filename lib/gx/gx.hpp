@@ -65,6 +65,7 @@ constexpr u32 MaxIndStages = GX_MAX_INDTEXSTAGE;
 constexpr u32 MaxIndTexMtxs = 3;
 constexpr u32 MaxVtxFmt = GX_MAX_VTXFMT;
 constexpr u32 MaxPnMtx = (GX_PNMTX9 / 3) + 1;
+constexpr u32 MaxIndexAttr = 12; // VA_POS -> VA_TEX7
 
 template <typename Arg, Arg Default>
 struct TevPass {
@@ -231,9 +232,9 @@ struct VtxAttrFmt {
   GXCompCnt cnt;
   GXCompType type;
   u8 frac;
-  u8 le = true;
   u8 _p1 = 0;
   u8 _p2 = 0;
+  u8 _p3 = 0;
 };
 static_assert(std::has_unique_object_representations_v<VtxAttrFmt>);
 struct VtxFmt {
@@ -270,10 +271,11 @@ struct AttrArray {
   const void* data;
   u32 size;
   u8 stride;
+  bool le = true;
   gfx::Range cachedRange;
 };
 inline bool operator==(const AttrArray& lhs, const AttrArray& rhs) {
-  return lhs.data == rhs.data && lhs.size == rhs.size && lhs.stride == rhs.stride;
+  return lhs.data == rhs.data && lhs.size == rhs.size && lhs.stride == rhs.stride && lhs.le == rhs.le;
 }
 inline bool operator!=(const AttrArray& lhs, const AttrArray& rhs) { return !(lhs == rhs); }
 
@@ -315,7 +317,7 @@ struct GXState {
   };
   std::array<IndStage, MaxIndStages> indStages;
   std::array<IndTexMtxInfo, MaxIndTexMtxs> indTexMtxs;
-  std::array<AttrArray, GX_VA_MAX_ATTR> arrays;
+  std::array<AttrArray, MaxVtxAttr> arrays;
   gfx::ClipRect texCopySrc;
   GXTexFmt texCopyFmt;
   absl::flat_hash_map<void*, gfx::TextureHandle> copyTextures;
@@ -384,19 +386,23 @@ struct TextureConfig {
   bool operator==(const TextureConfig& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
 };
 static_assert(std::has_unique_object_representations_v<TextureConfig>);
-struct StorageConfig {
-  GXAttr attr = GX_VA_NULL;
-  GXCompCnt cnt = static_cast<GXCompCnt>(0xFF);
-  GXCompType compType = static_cast<GXCompType>(0xFF);
+struct AttrConfig {
+  u8 attr = GX_VA_NULL;  // GXAttr
+  u8 attrType = GX_NONE; // GXAttrType
+  u8 cnt = 0xFF;         // Actual count; not GXCompCnt
+  u8 compType = 0xFF;    // GXCompType
+  u8 offset = 0;         // Offset within vertex
+  u8 stride = 0;         // Array stride
   u8 frac = 0;
-  u8 le = 1;
-  std::array<u8, 2> pad{};
+  bool le = true;
 };
 struct ShaderConfig {
-  GXFogType fogType;
-  std::array<GXAttrType, MaxVtxAttr> vtxAttrs;
-  // Mapping for indexed attributes -> storage buffer
-  std::array<StorageConfig, MaxVtxAttr> attrMapping;
+  u8 fogType = GX_FOG_NONE;
+  u8 vtxStride = 0;
+  bool lines : 1 = false;
+  u8 pad1 : 7 = 0;
+  u8 pad2 = 0;
+  std::array<AttrConfig, MaxVtxAttr> attrs;
   std::array<TevSwap, MaxTevSwap> tevSwapTable;
   std::array<TevStage, MaxTevStages> tevStages;
   u32 tevStageCount = 0;
@@ -442,7 +448,7 @@ struct ShaderInfo {
   bool lightingEnabled : 1 = false;
 };
 struct BindGroupRanges {
-  std::array<gfx::Range, GX_VA_MAX_ATTR> vaRanges{};
+  std::array<gfx::Range, MaxIndexAttr> vaRanges{};
 };
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept;
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderInfo& info,
@@ -452,4 +458,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
 GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const ShaderConfig& config) noexcept;
 GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& config,
                                const BindGroupRanges& ranges) noexcept;
+
+u8 comp_type_size(GXAttr attr, GXCompType type) noexcept;
+u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept;
 } // namespace aurora::gx

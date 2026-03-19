@@ -16,11 +16,10 @@ struct DrawData {
   u32 dstAlpha;
 };
 
-constexpr u32 GXPipelineConfigVersion = 7;
+constexpr u32 GXPipelineConfigVersion = 8;
 struct PipelineConfig {
   u32 version = GXPipelineConfigVersion;
   ShaderConfig shaderConfig;
-  GXPrimitive primitive;
   GXCompare depthFunc;
   GXCullMode cullMode;
   GXBlendMode blendMode;

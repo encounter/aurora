@@ -6,6 +6,7 @@
 #include "../internal.hpp"
 #include "../gfx/common.hpp"
 #include "../gfx/texture.hpp"
+#include "gx_fmt.hpp"
 
 #include <absl/container/flat_hash_map.h>
 #include <cfloat>
@@ -155,17 +156,8 @@ static inline wgpu::ColorWriteMask to_write_mask(bool colorUpdate, bool alphaUpd
   return writeMask;
 }
 
-static inline wgpu::PrimitiveState to_primitive_state(GXPrimitive gx_prim, GXCullMode gx_cullMode) {
-  wgpu::PrimitiveTopology primitive = wgpu::PrimitiveTopology::TriangleList;
-  switch (gx_prim) {
-    DEFAULT_FATAL("unsupported primitive type {}", underlying(gx_prim));
-  case GX_TRIANGLES:
-    break;
-  case GX_TRIANGLESTRIP:
-    primitive = wgpu::PrimitiveTopology::TriangleStrip;
-    break;
-  }
-  wgpu::CullMode cullMode = wgpu::CullMode::None;
+static inline wgpu::PrimitiveState to_primitive_state(GXCullMode gx_cullMode) {
+  auto cullMode = wgpu::CullMode::None;
   switch (gx_cullMode) {
     DEFAULT_FATAL("unsupported cull mode {}", underlying(gx_cullMode));
   case GX_CULL_FRONT:
@@ -178,9 +170,8 @@ static inline wgpu::PrimitiveState to_primitive_state(GXPrimitive gx_prim, GXCul
     break;
   }
   return {
-      .topology = primitive,
-      .stripIndexFormat = primitive == wgpu::PrimitiveTopology::TriangleStrip ? wgpu::IndexFormat::Uint16
-                                                                              : wgpu::IndexFormat::Undefined,
+      .topology = wgpu::PrimitiveTopology::TriangleList,
+      .stripIndexFormat = wgpu::IndexFormat::Undefined,
       .frontFace = wgpu::FrontFace::CW,
       .cullMode = cullMode,
   };
@@ -229,7 +220,7 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderIn
               .bufferCount = static_cast<uint32_t>(vtxBuffers.size()),
               .buffers = vtxBuffers.data(),
           },
-      .primitive = to_primitive_state(config.primitive, config.cullMode),
+      .primitive = to_primitive_state(config.cullMode),
       .depthStencil = &depthStencil,
       .multisample =
           wgpu::MultisampleState{
@@ -241,26 +232,148 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderIn
   return g_device.CreateRenderPipeline(&descriptor);
 }
 
+u8 comp_type_size(GXAttr attr, GXCompType type) noexcept {
+  switch (attr) {
+  case GX_VA_PNMTXIDX:
+  case GX_VA_TEX0MTXIDX:
+  case GX_VA_TEX1MTXIDX:
+  case GX_VA_TEX2MTXIDX:
+  case GX_VA_TEX3MTXIDX:
+  case GX_VA_TEX4MTXIDX:
+  case GX_VA_TEX5MTXIDX:
+  case GX_VA_TEX6MTXIDX:
+  case GX_VA_TEX7MTXIDX:
+    return 1;
+  case GX_VA_CLR0:
+  case GX_VA_CLR1:
+    switch (type) {
+    case GX_RGB565:
+    case GX_RGBA4:
+      return 2;
+    case GX_RGB8:
+    case GX_RGBA6:
+      return 3;
+    case GX_RGBX8:
+    case GX_RGBA8:
+      return 4;
+    }
+  default:
+    switch (type) {
+    case GX_U8:
+    case GX_S8:
+      return 1;
+    case GX_U16:
+    case GX_S16:
+      return 2;
+    case GX_F32:
+      return 4;
+    default:
+      Log.fatal("comp_type_size: Unsupported component type {}", type);
+    }
+  }
+}
+
+u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept {
+  switch (attr) {
+  case GX_VA_PNMTXIDX:
+  case GX_VA_TEX0MTXIDX:
+  case GX_VA_TEX1MTXIDX:
+  case GX_VA_TEX2MTXIDX:
+  case GX_VA_TEX3MTXIDX:
+  case GX_VA_TEX4MTXIDX:
+  case GX_VA_TEX5MTXIDX:
+  case GX_VA_TEX6MTXIDX:
+  case GX_VA_TEX7MTXIDX:
+    return 1;
+  case GX_VA_POS:
+    switch (cnt) {
+    case GX_POS_XY:
+      return 2;
+    case GX_POS_XYZ:
+      return 3;
+    default:
+      break;
+    }
+    break;
+  case GX_VA_NRM:
+    switch (cnt) {
+    case GX_NRM_XYZ:
+      return 3;
+    default:
+      break;
+    }
+    break;
+  case GX_VA_CLR0:
+  case GX_VA_CLR1:
+    return 1;
+  case GX_VA_TEX0:
+  case GX_VA_TEX1:
+  case GX_VA_TEX2:
+  case GX_VA_TEX3:
+  case GX_VA_TEX4:
+  case GX_VA_TEX5:
+  case GX_VA_TEX6:
+  case GX_VA_TEX7:
+    switch (cnt) {
+    case GX_TEX_S:
+      return 1;
+    case GX_TEX_ST:
+      return 2;
+    default:
+      break;
+    }
+    break;
+  default:
+    break;
+  }
+  Log.fatal("comp_cnt_count: Unsupported attr/cnt {} {}", attr, cnt);
+}
+
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept {
   const auto& vtxFmt = g_gxState.vtxFmts[fmt];
   config.shaderConfig.fogType = g_gxState.fog.type;
-  config.shaderConfig.vtxAttrs = g_gxState.vtxDesc;
-  for (int i = 0; i < GX_VA_MAX_ATTR; ++i) {
+  u8 vtxOffset = 0;
+  for (int i = GX_VA_PNMTXIDX; i <= GX_VA_TEX7; ++i) {
+    const auto attr = static_cast<GXAttr>(i);
     const auto type = g_gxState.vtxDesc[i];
-    if (type != GX_INDEX8 && type != GX_INDEX16) {
-      config.shaderConfig.attrMapping[i] = {};
+    auto& mapping = config.shaderConfig.attrs[i];
+    if (type == GX_NONE) {
+      mapping = {};
       continue;
     }
     const auto& attrFmt = vtxFmt.attrs[i];
-    // Map attribute to its own storage
-    config.shaderConfig.attrMapping[i] = StorageConfig{
-        .attr = static_cast<GXAttr>(i),
-        .cnt = attrFmt.cnt,
-        .compType = attrFmt.type,
+    const auto cnt = comp_cnt_count(attr, attrFmt.cnt);
+    mapping = AttrConfig{
+        .attr = static_cast<u8>(i),
+        .attrType = static_cast<u8>(type),
+        .cnt = cnt,
+        .compType = static_cast<u8>(attrFmt.type),
+        .offset = vtxOffset,
+        .stride = 0,
         .frac = attrFmt.frac,
-        .le = attrFmt.le,
+        .le = false,
     };
+    switch (type) {
+    case GX_DIRECT: {
+      vtxOffset += comp_type_size(attr, attrFmt.type) * cnt;
+      break;
+    }
+    case GX_INDEX8:
+      mapping.stride = g_gxState.arrays[i].stride;
+      mapping.le = g_gxState.arrays[i].le;
+      vtxOffset += 1;
+      break;
+    case GX_INDEX16:
+      mapping.stride = g_gxState.arrays[i].stride;
+      mapping.le = g_gxState.arrays[i].le;
+      vtxOffset += 2;
+      break;
+    default:
+      Log.fatal("populate_pipeline_config: Invalid vertex type {}", type);
+    }
   }
+  config.shaderConfig.vtxStride = vtxOffset;
+  config.shaderConfig.lines = primitive == GX_LINES || primitive == GX_LINESTRIP;
   config.shaderConfig.tevSwapTable = g_gxState.tevSwapTable;
   for (u8 i = 0; i < g_gxState.numTevStages; ++i) {
     config.shaderConfig.tevStages[i] = g_gxState.tevStages[i];
@@ -270,7 +383,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     config.shaderConfig.indStages[i] = g_gxState.indStages[i];
   }
   config.shaderConfig.numIndStages = g_gxState.numIndStages;
-  for (u8 i = 0; i < gx::MaxColorChannels; ++i) {
+  for (u8 i = 0; i < MaxColorChannels; ++i) {
     const auto& cc = g_gxState.colorChannelConfig[i];
     if (cc.lightingEnabled) {
       config.shaderConfig.colorChannels[i] = cc;
@@ -301,11 +414,10 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     }
     config.shaderConfig.textureConfig[i] = texConfig;
   }
-  bool hasPnMtxIdx = config.shaderConfig.vtxAttrs[GX_VA_PNMTXIDX] == GX_DIRECT;
+  bool hasPnMtxIdx = config.shaderConfig.attrs[GX_VA_PNMTXIDX].attrType == GX_DIRECT;
   config.shaderConfig.currentPnMtx = hasPnMtxIdx ? 0 : g_gxState.currentPnMtx;
   config = {
       .shaderConfig = config.shaderConfig,
-      .primitive = primitive,
       .depthFunc = g_gxState.depthFunc,
       .cullMode = g_gxState.cullMode,
       .blendMode = g_gxState.blendMode,
@@ -328,13 +440,16 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
                                const BindGroupRanges& ranges) noexcept {
   const auto layouts = build_bind_group_layouts(info, config);
 
-  std::array<wgpu::BindGroupEntry, GX_VA_MAX_ATTR + 1> uniformEntries;
+  std::array<wgpu::BindGroupEntry, MaxIndexAttr + 3> uniformEntries;
   memset(&uniformEntries, 0, sizeof(uniformEntries));
   uniformEntries[0].binding = 0;
-  uniformEntries[0].buffer = gfx::g_uniformBuffer;
-  uniformEntries[0].size = info.uniformSize;
-  u32 uniformBindIdx = 1;
-  for (u32 i = 0; i < GX_VA_MAX_ATTR; ++i) {
+  uniformEntries[0].buffer = gfx::g_vertexBuffer;
+  uniformEntries[0].size = wgpu::kWholeSize;
+  uniformEntries[1].binding = 1;
+  uniformEntries[1].buffer = gfx::g_uniformBuffer;
+  uniformEntries[1].size = info.uniformSize;
+  u32 uniformBindIdx = 2;
+  for (u32 i = 0; i < MaxIndexAttr; ++i) {
     const gfx::Range& range = ranges.vaRanges[i];
     if (range.size <= 0) {
       continue;
@@ -411,7 +526,7 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
 
   Hasher uniformHasher;
   uniformHasher.update(info.uniformSize);
-  uniformHasher.update(config.attrMapping);
+  uniformHasher.update(config.attrs);
   const auto uniformLayoutHash = uniformHasher.digest();
   {
     std::lock_guard lock{sBindGroupLayoutMutex};
@@ -421,9 +536,17 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
     }
   }
   if (!out.uniformLayout) {
-    std::array<wgpu::BindGroupLayoutEntry, GX_VA_MAX_ATTR + 1> uniformLayoutEntries{
+    std::array<wgpu::BindGroupLayoutEntry, MaxIndexAttr + 3> uniformLayoutEntries{
         wgpu::BindGroupLayoutEntry{
             .binding = 0,
+            .visibility = wgpu::ShaderStage::Vertex,
+            .buffer =
+                wgpu::BufferBindingLayout{
+                    .type = wgpu::BufferBindingType::ReadOnlyStorage,
+                },
+        },
+        wgpu::BindGroupLayoutEntry{
+            .binding = 1,
             .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
             .buffer =
                 wgpu::BufferBindingLayout{
@@ -433,9 +556,10 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
                 },
         },
     };
-    u32 bindIdx = 1;
-    for (int i = 0; i < GX_VA_MAX_ATTR; ++i) {
-      if (config.attrMapping[i].attr == static_cast<GXAttr>(i)) {
+    u32 bindIdx = 2;
+    for (int i = GX_VA_POS; i <= GX_VA_TEX7; ++i) {
+      const auto attrType = config.attrs[i].attrType;
+      if (attrType == GX_INDEX8 || attrType == GX_INDEX16) {
         uniformLayoutEntries[bindIdx] = wgpu::BindGroupLayoutEntry{
             .binding = bindIdx,
             .visibility = wgpu::ShaderStage::Vertex,
@@ -542,8 +666,7 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
   }
   {
     std::lock_guard lock{sBindGroupLayoutMutex};
-    sTextureBindGroupLayouts.try_emplace(textureLayoutHash,
-                                         std::make_pair(out.samplerLayout, out.textureLayout));
+    sTextureBindGroupLayouts.try_emplace(textureLayoutHash, std::make_pair(out.samplerLayout, out.textureLayout));
   }
   return out;
 }
