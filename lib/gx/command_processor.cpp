@@ -17,277 +17,6 @@
 namespace aurora::gx::fifo {
 static Module Log("aurora::gx::fifo");
 
-struct DisplayListCache {
-  ByteBuffer vtxBuf;
-
-  DisplayListCache(ByteBuffer&& vtxBuf) : vtxBuf(std::move(vtxBuf)) {}
-};
-
-static absl::flat_hash_map<HashType, DisplayListCache> sCachedDisplayLists;
-
-static u32 prepare_vtx_buffer(ByteBuffer* outBuf, GXVtxFmt vtxfmt, const u8* ptr, u16 vtxCount, bool bigEndian) {
-  struct {
-    u8 count;
-    GXCompType type;
-  } attrArrays[GX_VA_MAX_ATTR] = {};
-  u32 vtxSize = 0;
-  u32 outVtxSize = 0;
-
-  // Calculate attribute offsets and vertex size
-  for (int attr = 0; attr < GX_VA_MAX_ATTR; attr++) {
-    const auto& attrFmt = g_gxState.vtxFmts[vtxfmt].attrs[attr];
-    switch (g_gxState.vtxDesc[attr]) {
-      DEFAULT_FATAL("unhandled attribute type {}", g_gxState.vtxDesc[attr]);
-    case GX_NONE:
-      break;
-    case GX_DIRECT:
-      if (attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) {
-        ++vtxSize;
-        outVtxSize += 2;
-        break;
-      }
-
-#define COMBINE(val1, val2, val3) (((val1) << 16) | ((val2) << 8) | (val3))
-      switch (COMBINE(attr, attrFmt.cnt, attrFmt.type)) {
-        DEFAULT_FATAL("not handled: attr {}, cnt {}, type {}", static_cast<GXAttr>(attr), attrFmt.cnt, attrFmt.type);
-      case COMBINE(GX_VA_POS, GX_POS_XYZ, GX_F32):
-      case COMBINE(GX_VA_NRM, GX_NRM_XYZ, GX_F32):
-        attrArrays[attr].count = 3;
-        attrArrays[attr].type = GX_F32;
-        vtxSize += 12;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XYZ, GX_S16):
-      case COMBINE(GX_VA_NRM, GX_NRM_XYZ, GX_S16):
-        attrArrays[attr].count = 3;
-        attrArrays[attr].type = GX_S16;
-        vtxSize += 6;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XYZ, GX_U8):
-        attrArrays[attr].count = 3;
-        attrArrays[attr].type = GX_U8;
-        vtxSize += 3;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XYZ, GX_S8):
-        attrArrays[attr].count = 3;
-        attrArrays[attr].type = GX_S8;
-        vtxSize += 3;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XY, GX_S8):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_S8;
-        vtxSize += 2;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XY, GX_U16):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_U16;
-        vtxSize += 4;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XY, GX_S16):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_S16;
-        vtxSize += 4;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XY, GX_F32):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_F32;
-        vtxSize += 8;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX3, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX4, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX5, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX6, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX7, GX_TEX_ST, GX_F32):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_F32;
-        vtxSize += 8;
-        outVtxSize += 8;
-        break;
-      case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX3, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX4, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX5, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX6, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX7, GX_TEX_ST, GX_S16):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_S16;
-        vtxSize += 4;
-        outVtxSize += 8;
-        break;
-      case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX3, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX4, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX5, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX6, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX7, GX_TEX_ST, GX_U16):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_U16;
-        vtxSize += 4;
-        outVtxSize += 8;
-        break;
-      case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX3, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX4, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX5, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX6, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX7, GX_TEX_ST, GX_S8):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_S8;
-        vtxSize += 2;
-        outVtxSize += 8;
-        break;
-      case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_U8):
-      case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_U8):
-      case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_U8):
-      case COMBINE(GX_VA_TEX3, GX_TEX_ST, GX_U8):
-      case COMBINE(GX_VA_TEX4, GX_TEX_ST, GX_U8):
-      case COMBINE(GX_VA_TEX5, GX_TEX_ST, GX_U8):
-      case COMBINE(GX_VA_TEX6, GX_TEX_ST, GX_U8):
-      case COMBINE(GX_VA_TEX7, GX_TEX_ST, GX_U8):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_U8;
-        vtxSize += 2;
-        outVtxSize += 8;
-        break;
-      case COMBINE(GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8):
-      case COMBINE(GX_VA_CLR1, GX_CLR_RGBA, GX_RGBA8):
-        attrArrays[attr].count = 4;
-        attrArrays[attr].type = GX_RGBA8;
-        vtxSize += 4;
-        outVtxSize += 16;
-        break;
-      }
-#undef COMBINE
-      break;
-    case GX_INDEX8:
-      ++vtxSize;
-      outVtxSize += 2;
-      break;
-    case GX_INDEX16:
-      vtxSize += 2;
-      outVtxSize += 2;
-      break;
-    }
-  }
-  // Align to 4
-  int rem = outVtxSize % 4;
-  int padding = 0;
-  if (rem != 0) {
-    padding = 4 - rem;
-    outVtxSize += padding;
-  }
-
-  // Just checking size
-  if (outBuf == nullptr || ptr == nullptr) {
-    return vtxSize;
-  }
-
-  // Build vertex buffer
-  ByteBuffer& buf = *outBuf;
-  buf.reserve_extra(vtxCount * outVtxSize);
-  std::array<f32, 4> out{};
-  for (u32 v = 0; v < vtxCount; ++v) {
-    for (int attr = 0; attr < GX_VA_MAX_ATTR; attr++) {
-      if (g_gxState.vtxDesc[attr] == GX_INDEX8) {
-        buf.append(static_cast<u16>(*ptr));
-        ++ptr;
-      } else if (g_gxState.vtxDesc[attr] == GX_INDEX16) {
-        const auto value = *reinterpret_cast<const u16*>(ptr);
-        buf.append(bigEndian ? bswap(value) : value);
-        ptr += 2;
-      }
-      if (g_gxState.vtxDesc[attr] != GX_DIRECT) {
-        continue;
-      }
-
-      if (attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) {
-        buf.append(static_cast<u16>(*ptr));
-        ++ptr;
-        continue;
-      }
-
-      const auto& attrFmt = g_gxState.vtxFmts[vtxfmt].attrs[attr];
-      u8 count = attrArrays[attr].count;
-      switch (attrArrays[attr].type) {
-      case GX_U8:
-        for (int i = 0; i < count; ++i) {
-          const auto value = reinterpret_cast<const u8*>(ptr)[i];
-          out[i] = static_cast<f32>(value) / static_cast<f32>(1 << attrFmt.frac);
-        }
-        buf.append(out.data(), sizeof(f32) * count);
-        ptr += count;
-        break;
-      case GX_S8:
-        for (int i = 0; i < count; ++i) {
-          const auto value = reinterpret_cast<const s8*>(ptr)[i];
-          out[i] = static_cast<f32>(value) / static_cast<f32>(1 << attrFmt.frac);
-        }
-        buf.append(out.data(), sizeof(f32) * count);
-        ptr += count;
-        break;
-      case GX_U16:
-        for (int i = 0; i < count; ++i) {
-          auto value = reinterpret_cast<const u16*>(ptr)[i];
-          out[i] = static_cast<f32>(bigEndian ? bswap(value) : value) / static_cast<f32>(1 << attrFmt.frac);
-        }
-        buf.append(out.data(), sizeof(f32) * count);
-        ptr += count * sizeof(u16);
-        break;
-      case GX_S16:
-        for (int i = 0; i < count; ++i) {
-          const auto value = reinterpret_cast<const s16*>(ptr)[i];
-          out[i] = static_cast<f32>(bigEndian ? bswap(value) : value) / static_cast<f32>(1 << attrFmt.frac);
-        }
-        buf.append(out.data(), sizeof(f32) * count);
-        ptr += count * sizeof(s16);
-        break;
-      case GX_F32:
-        for (int i = 0; i < count; ++i) {
-          const auto value = reinterpret_cast<const f32*>(ptr)[i];
-          out[i] = bigEndian ? bswap(value) : value;
-        }
-        buf.append(out.data(), sizeof(f32) * count);
-        ptr += count * sizeof(f32);
-        break;
-      case GX_RGBA8:
-        out[0] = static_cast<f32>(ptr[0]) / 255.f;
-        out[1] = static_cast<f32>(ptr[1]) / 255.f;
-        out[2] = static_cast<f32>(ptr[2]) / 255.f;
-        out[3] = static_cast<f32>(ptr[3]) / 255.f;
-        buf.append(out.data(), sizeof(f32) * 4);
-        ptr += sizeof(u32);
-        break;
-      }
-      if (attr == GX_VA_POS) {
-        for (int i = count; i < 3; ++i) {
-          buf.append(0.0f);
-        }
-      }
-    }
-    if (padding > 0) {
-      buf.append_zeroes(padding);
-    }
-  }
-
-  return vtxSize;
-}
-
 static u16 prepare_idx_buffer(ByteBuffer& buf, GXPrimitive prim, u16 vtxStart, u16 vtxCount) {
   u16 numIndices = 0;
   if (prim == GX_QUADS) {
@@ -482,7 +211,8 @@ static bool copy_xf_data(u32 addr, const u8* data, u32 len, bool bigEndian) {
     u32 lightIdx = lightBase / 0x10;
     u32 startOffset = lightBase % 0x10;
     CHECK(lightIdx < 8, "XF: Light copy oob? Should never happen; lightIdx={}", lightIdx);
-    CHECK(startOffset + len <= 0x10, "XF: Light copy that crosses across light boundaries unsupported: offs={}, len={}", startOffset, len);
+    CHECK(startOffset + len <= 0x10, "XF: Light copy that crosses across light boundaries unsupported: offs={}, len={}",
+          startOffset, len);
     auto& light = g_gxState.lights[lightIdx];
     for (u32 i = 0; i < len; i++) {
       u32 field = startOffset + i;
@@ -538,7 +268,7 @@ static bool copy_xf_data(u32 addr, const u8* data, u32 len, bool bigEndian) {
   return false;
 }
 
-// Forward declarations for register handlers (implemented in later phases)
+// Forward declarations for register handlers
 static void handle_bp(u32 value, bool bigEndian);
 static void handle_cp(u8 addr, u32 value, bool bigEndian);
 static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian);
@@ -1125,7 +855,7 @@ static void handle_bp(u32 value, bool bigEndian) {
   case 0x0C:
   case 0x0D:
   case 0x0E: {
-    u32 idx = (regId - 0x06) / 3; // matrix index (0-2)
+    u32 idx = (regId - 0x06) / 3;    // matrix index (0-2)
     u32 column = (regId - 0x06) % 3; // column index (0-2)
     auto& info = g_gxState.indTexMtxs[idx];
 
@@ -1585,14 +1315,27 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   u16 vtxCount = read_u16(data + pos, bigEndian);
   pos += 2;
 
-  // Temporarily save the vertex data start position
-  const u8* vtxDataStart = data + pos;
-
-  u32 vtxSize = prepare_vtx_buffer(nullptr, fmt, nullptr, vtxCount, bigEndian);
+  u32 vtxSize = 0;
+  const auto& vtxFmt = g_gxState.vtxFmts[fmt];
+  for (int i = GX_VA_PNMTXIDX; i <= GX_VA_TEX7; ++i) {
+    switch (g_gxState.vtxDesc[i]) {
+    case GX_NONE:
+      break;
+    case GX_DIRECT: {
+      const auto attr = static_cast<GXAttr>(i);
+      const auto& attrFmt = vtxFmt.attrs[i];
+      vtxSize += comp_type_size(attr, attrFmt.type) * comp_cnt_count(attr, attrFmt.cnt);
+      break;
+    }
+    case GX_INDEX8:
+      vtxSize += 1;
+      break;
+    case GX_INDEX16:
+      vtxSize += 2;
+      break;
+    }
+  }
   u32 totalVtxBytes = vtxCount * vtxSize;
-  // Log.warn("  draw: prim {:02x} fmt {} vtxCount {} vtxSize {} totalBytes {} pos {} -> {}",
-  //          static_cast<u32>(prim), static_cast<u32>(fmt), vtxCount, vtxSize, totalVtxBytes, pos, pos +
-  //          totalVtxBytes);
   if (pos + totalVtxBytes > size) {
     // Hex dump around the draw command for debugging
     u32 cmdPos = pos - 2 - 1; // opcode byte position (before vtxCount and pos++)
@@ -1609,28 +1352,12 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
     FATAL("draw vertex data overrun: need {} bytes at pos {}, have {}", totalVtxBytes, pos, size);
   }
 
-  // Hash over the vertex format and raw command data
-  auto hash = xxh3_hash_s(&g_gxState.vtxFmts[fmt], sizeof(VtxFmt), 0);
-  hash = xxh3_hash_s(data + pos - 3, 3 + totalVtxBytes, hash); // cmd byte + vtxCount + vtxData
-
-  gfx::Range vertRange, idxRange;
-  u32 numIndices = 0;
-
-  auto it = sCachedDisplayLists.find(hash);
-  if (it != sCachedDisplayLists.end()) {
-    // Cache hit - use cached buffers
-    const auto& cache = it->second;
-    vertRange = gfx::push_verts(cache.vtxBuf.data(), cache.vtxBuf.size());
-  } else {
-    // Cache miss - build index buffer and cache both
-    ByteBuffer vtxBuf;
-    prepare_vtx_buffer(&vtxBuf, fmt, vtxDataStart, vtxCount, bigEndian);
-    vertRange = gfx::push_verts(vtxBuf.data(), vtxBuf.size());
-    sCachedDisplayLists.try_emplace(hash, std::move(vtxBuf));
-  }
-
+  // Push raw vertex data to buffer
+  gfx::Range vertRange = gfx::push_verts(data + pos, totalVtxBytes);
   pos += totalVtxBytes;
 
+  u32 numIndices = 0;
+  gfx::Range idxRange;
   if (!g_gxState.stateDirty) {
     // Try to merge with previous draw call
     if (auto* lastDraw = gfx::get_last_draw_command<DrawData>()) {
@@ -1660,22 +1387,22 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
 
   // Build pipeline, bind groups, and push draw command
   BindGroupRanges ranges{};
-  for (int i = 0; i < GX_VA_MAX_ATTR; ++i) {
+  for (int i = GX_VA_POS; i <= GX_VA_TEX7; ++i) {
     if (g_gxState.vtxDesc[i] != GX_INDEX8 && g_gxState.vtxDesc[i] != GX_INDEX16) {
       continue;
     }
     auto& array = g_gxState.arrays[i];
     if (array.cachedRange.size > 0) {
-      ranges.vaRanges[i] = array.cachedRange;
+      ranges.vaRanges[i - GX_VA_POS] = array.cachedRange;
     } else {
       const auto range = gfx::push_storage(static_cast<const uint8_t*>(array.data), array.size);
-      ranges.vaRanges[i] = range;
+      ranges.vaRanges[i - GX_VA_POS] = range;
       array.cachedRange = range;
     }
   }
 
   PipelineConfig config{};
-  populate_pipeline_config(config, GX_TRIANGLES, fmt);
+  populate_pipeline_config(config, prim, fmt);
   const auto info = build_shader_info(config.shaderConfig);
   const auto bindGroups = build_bind_groups(info, config.shaderConfig, ranges);
   const auto pipeline = gfx::pipeline_ref(config);
@@ -1685,7 +1412,7 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
       .vertRange = vertRange,
       .idxRange = idxRange,
       .dataRanges = ranges,
-      .uniformRange = build_uniform(info),
+      .uniformRange = build_uniform(info, vertRange.offset),
       .vtxCount = vtxCount,
       .indexCount = numIndices,
       .bindGroups = bindGroups,

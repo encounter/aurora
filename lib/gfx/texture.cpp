@@ -37,6 +37,7 @@ TextureFormatInfo format_info(wgpu::TextureFormat format) {
   case wgpu::TextureFormat::R16Sint:
     return {1, 1, 2, false};
   case wgpu::TextureFormat::RGBA8Unorm:
+  case wgpu::TextureFormat::BGRA8Unorm:
   case wgpu::TextureFormat::R32Float:
     return {1, 1, 4, false};
   case wgpu::TextureFormat::BC1RGBAUnorm:
