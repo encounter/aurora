@@ -1414,9 +1414,9 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         case GX_TF_C4:
           suffix = "I4"sv;
           break;
-          //        case GX_TF_C8:
-          //          suffix = "I8";
-          //          break;
+        case GX_TF_C8:
+          suffix = "I8"sv;
+          break;
           //        case GX_TF_C14X2:
           //          suffix = "I14X2";
           //          break;
@@ -1835,6 +1835,9 @@ fn intensityF32(rgb: vec3f) -> f32 {{
 fn intensityI4(rgb: vec3f) -> i32 {{
     return i32(intensityF32(rgb) * 16.f);
 }}
+fn intensityI8(rgb: vec3f) -> i32 {{
+    return i32(intensityF32(rgb));
+}}
 fn textureSamplePalette(tex: texture_2d<i32>, samp: sampler, uv: vec2f, tlut: texture_2d<f32>) -> vec4f {{
     // Gather index values
     var i = textureGather(0, tex, samp, uv);
@@ -1859,6 +1862,27 @@ fn textureSamplePaletteI4(tex: texture_2d<f32>, samp: sampler, uv: vec2f, tlut: 
     var i1 = intensityI4(vec3f(iR[1], iG[1], iB[1]));
     var i2 = intensityI4(vec3f(iR[2], iG[2], iB[2]));
     var i3 = intensityI4(vec3f(iR[3], iG[3], iB[3]));
+    // Load palette colors
+    var c0 = textureLoad(tlut, vec2i(i0, 0), 0);
+    var c1 = textureLoad(tlut, vec2i(i1, 0), 0);
+    var c2 = textureLoad(tlut, vec2i(i2, 0), 0);
+    var c3 = textureLoad(tlut, vec2i(i3, 0), 0);
+    // Perform bilinear filtering
+    var f = fract(uv * vec2f(textureDimensions(tex)) + 0.5);
+    var t0 = mix(c3, c2, f.x);
+    var t1 = mix(c0, c1, f.x);
+    return mix(t0, t1, f.y);
+}}
+fn textureSamplePaletteI8(tex: texture_2d<f32>, samp: sampler, uv: vec2f, tlut: texture_2d<f32>) -> vec4f {{
+    // Gather RGB channels
+    var iR = textureGather(0, tex, samp, uv);
+    var iG = textureGather(1, tex, samp, uv);
+    var iB = textureGather(2, tex, samp, uv);
+    // Perform intensity conversion
+    var i0 = intensityI8(vec3f(iR[0], iG[0], iB[0]));
+    var i1 = intensityI8(vec3f(iR[1], iG[1], iB[1]));
+    var i2 = intensityI8(vec3f(iR[2], iG[2], iB[2]));
+    var i3 = intensityI8(vec3f(iR[3], iG[3], iB[3]));
     // Load palette colors
     var c0 = textureLoad(tlut, vec2i(i0, 0), 0);
     var c1 = textureLoad(tlut, vec2i(i1, 0), 0);
