@@ -25,6 +25,27 @@ static bool g_useSdlRenderer = false;
 static std::vector<SDL_Texture*> g_sdlTextures;
 static std::vector<wgpu::Texture> g_wgpuTextures;
 
+static float g_currentScale = 1.0f;
+
+void update_ui_scale(float newScale) {
+  ImGuiIO& io = ImGui::GetIO();
+  ImGuiStyle& style = ImGui::GetStyle();
+
+  // Scale Styles
+  float ratio = newScale / g_currentScale;
+  style.ScaleAllSizes(ratio);
+
+  if (g_useSdlRenderer) {
+    ImGui_ImplSDLRenderer3_DestroyDeviceObjects();
+    ImGui_ImplSDLRenderer3_CreateDeviceObjects();
+  } else {
+    ImGui_ImplWGPU_InvalidateDeviceObjects();
+    ImGui_ImplWGPU_CreateDeviceObjects();
+  }
+
+  g_currentScale = newScale;
+}
+
 void create_context() noexcept {
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -65,51 +86,39 @@ void shutdown() noexcept {
 }
 
 void process_event(const SDL_Event& event) noexcept {
-  if (event.type == SDL_EVENT_MOUSE_MOTION) {
-    SDL_Event scaledEvent = event;
-    const auto density = SDL_GetWindowPixelDensity(window::get_sdl_window());
-    scaledEvent.motion.x *= density;
-    scaledEvent.motion.y *= density;
-    scaledEvent.motion.xrel *= density;
-    scaledEvent.motion.yrel *= density;
-    ImGui_ImplSDL3_ProcessEvent(&scaledEvent);
-    return;
-  }
   ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
 void new_frame(const AuroraWindowSize& size) noexcept {
+  // Check for DPI change, switching monitors, etc.
+  if (size.scale != g_currentScale && size.scale > 0.1f) {
+    update_ui_scale(size.scale);
+  }
+
   if (g_useSdlRenderer) {
     ImGui_ImplSDLRenderer3_NewFrame();
-    g_scale = size.scale;
   } else {
-    if (g_scale != size.scale) {
-      if (g_scale > 0.f) {
-        ImGui_ImplWGPU_CreateDeviceObjects();
-      }
-      g_scale = size.scale;
-    }
     ImGui_ImplWGPU_NewFrame();
   }
   ImGui_ImplSDL3_NewFrame();
 
-  // Render at full DPI
-  ImGui::GetIO().DisplaySize = {
-      static_cast<float>(size.fb_width),
-      static_cast<float>(size.fb_height),
-  };
+  ImGuiIO& io = ImGui::GetIO();
+  io.DisplaySize = {
+    static_cast<float>(size.fb_width) / size.scale,
+    static_cast<float>(size.fb_height) / size.scale,
+};
+
+  // Inform ImGui of the actual pixel density
+  io.DisplayFramebufferScale = { size.scale, size.scale };
+
   ImGui::NewFrame();
 }
 
 void render(const wgpu::RenderPassEncoder& pass) noexcept {
   ImGui::Render();
-
   auto* data = ImGui::GetDrawData();
-  // io.DisplayFramebufferScale is informational; we're rendering at full DPI
-  data->FramebufferScale = {1.f, 1.f};
   if (g_useSdlRenderer) {
     SDL_Renderer* renderer = window::get_sdl_renderer();
-    SDL_RenderClear(renderer);
     ImGui_ImplSDLRenderer3_RenderDrawData(data, renderer);
     SDL_RenderPresent(renderer);
   } else {
