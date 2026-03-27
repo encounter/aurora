@@ -1377,7 +1377,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         finalCoord = indirectOffsetTexel;
       }
 
-      if (!finalCoord.empty()) {
+      if (info.usedIndStages.any() && !finalCoord.empty()) {
         if (stage.indTexAddPrev) {
           fragmentFnPre += fmt::format("\n    t_TexCoord += {};", finalCoord);
         } else {
