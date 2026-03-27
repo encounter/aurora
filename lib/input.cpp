@@ -9,7 +9,6 @@
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
-#include <absl/strings/str_split.h>
 #include <cmath>
 
 using namespace std::string_view_literals;
@@ -56,71 +55,9 @@ Sint32 get_instance_for_player(uint32_t player) noexcept {
   return {};
 }
 
-static std::optional<std::string> remap_controller_layout(std::string mapping) {
-  std::string newMapping;
-  newMapping.reserve(mapping.size());
-  absl::btree_map<absl::string_view, absl::string_view> entries;
-  for (size_t idx = 0; const auto value : absl::StrSplit(mapping, ',')) {
-    if (idx < 2) {
-      if (idx > 0) {
-        newMapping.push_back(',');
-      }
-      newMapping.append(value);
-    } else {
-      const auto split = absl::StrSplit(value, absl::MaxSplits(':', 2));
-      auto iter = split.begin();
-      auto first = *iter++;
-      auto second = *iter;
-      entries.emplace(std::move(first), std::move(second));
-    }
-    idx++;
-  }
-  if (entries.contains("rightshoulder") && !entries.contains("leftshoulder")) {
-    Log.info("Remapping GameCube controller layout");
-    entries.insert_or_assign("back", entries["rightshoulder"]);
-    // TODO trigger buttons may differ per platform
-    entries.insert_or_assign("leftshoulder", "b11");
-    entries.insert_or_assign("rightshoulder", "b10");
-  } else if (entries.contains("leftshoulder") && entries.contains("rightshoulder") && entries.contains("back")) {
-    Log.info("Controller has standard layout");
-#if 0
-    auto a = entries["a"sv];
-    entries.insert_or_assign("a"sv, entries["b"sv]);
-    entries.insert_or_assign("b"sv, a);
-#endif
-    auto x = entries["x"];
-    entries.insert_or_assign("x", entries["y"]);
-    entries.insert_or_assign("y", x);
-  } else {
-    Log.error("Controller has unsupported layout: {}", mapping);
-    return {};
-  }
-  for (auto [k, v] : entries) {
-    newMapping.push_back(',');
-    newMapping.append(k);
-    newMapping.push_back(':');
-    newMapping.append(v);
-  }
-  return newMapping;
-}
-
 SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
   auto* ctrl = SDL_OpenGamepad(which);
   if (ctrl != nullptr) {
-    {
-      char* mapping = SDL_GetGamepadMapping(ctrl);
-      if (mapping != nullptr) {
-        auto newMapping = remap_controller_layout(mapping);
-        SDL_free(mapping);
-        if (newMapping) {
-          if (SDL_AddGamepadMapping(newMapping->c_str()) == -1) {
-            Log.error("Failed to update controller mapping: {}", SDL_GetError());
-          }
-        }
-      } else {
-        Log.error("Failed to retrieve mapping for controller");
-      }
-    }
     GameController controller;
     controller.m_controller = ctrl;
     controller.m_index = which;
@@ -131,7 +68,7 @@ SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
       SDL_CloseGamepad(ctrl);
       return -1;
     }
-    controller.m_isGameCube = controller.m_vid == 0x057E && controller.m_pid == 0x0337;
+    controller.m_isGameCube = SDL_GetGamepadType(ctrl) == SDL_GAMEPAD_TYPE_GAMECUBE;
     const auto props = SDL_GetGamepadProperties(ctrl);
     controller.m_hasRumble = SDL_GetBooleanProperty(props, SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, true);
     SDL_JoystickID instance = SDL_GetJoystickID(SDL_GetGamepadJoystick(ctrl));
