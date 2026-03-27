@@ -587,3 +587,12 @@ void PADRestoreDefaultMapping(uint32_t port) {
 }
 
 void PADBlockInput(bool block) { gBlockPAD = block; }
+
+SDL_Gamepad* PADGetSDLGamepadForIndex(u32 index) {
+  const auto* ctrl = __PADGetControllerForIndex(index);
+  if (ctrl == nullptr) {
+    return nullptr;
+  }
+
+  return ctrl->m_controller;
+}

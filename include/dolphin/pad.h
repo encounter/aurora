@@ -66,6 +66,8 @@ typedef struct PADStatus {
   s8 err;
 } PADStatus;
 
+struct SDL_Gamepad;
+
 BOOL PADInit();
 u32 PADRead(PADStatus* status);
 BOOL PADReset(u32 mask);
@@ -111,6 +113,11 @@ void PADSerializeMappings();
 PADDeadZones* PADGetDeadZones(u32 port);
 const char* PADGetButtonName(PADButton);
 const char* PADGetNativeButtonName(u32 button);
+
+/**
+ * Returns the SDL gamepad for the index into the controller map.
+ */
+SDL_Gamepad* PADGetSDLGamepadForIndex(u32 index);
 /* Returns any pressed native button */
 s32 PADGetNativeButtonPressed(u32 port);
 void PADRestoreDefaultMapping(u32 port);
