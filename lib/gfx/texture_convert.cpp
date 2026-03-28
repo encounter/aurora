@@ -118,6 +118,35 @@ static ByteBuffer DecodeTiled(uint32_t width, uint32_t height, uint32_t mips, Ar
 }
 
 template <TextureDecoder T>
+static ByteBuffer Decode2DLinear(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
+  const size_t texelCount = ComputeMippedTexelCount(width, height, mips);
+  ByteBuffer buf{texelCount * sizeof(typename T::Target)};
+
+  uint32_t w = width;
+  uint32_t h = height;
+  auto* targetMip = reinterpret_cast<typename T::Target*>(buf.data());
+  const auto* in = reinterpret_cast<const typename T::Source*>(data.data());
+  for (uint32_t mip = 0; mip < mips; ++mip) {
+    for (uint32_t y = 0; y < h; ++y) {
+      for (uint32_t x = 0; x < w; ++x) {
+        auto* target = targetMip + y * w + x;
+        T::decode_texel(target, in, 0);
+        in += sizeof(typename T::Target);
+      }
+    }
+    targetMip += w * h;
+    if (w > 1) {
+      w /= 2;
+    }
+    if (h > 1) {
+      h /= 2;
+    }
+  }
+
+  return buf;
+}
+
+template <TextureDecoder T>
 static ByteBuffer DecodeLinear(uint32_t width, ArrayRef<uint8_t> data) {
   ByteBuffer buf{width * sizeof(typename T::Target)};
   auto* target = reinterpret_cast<typename T::Target*>(buf.data());
@@ -434,6 +463,8 @@ ByteBuffer convert_texture(u32 format, uint32_t width, uint32_t height, uint32_t
     return {}; // No conversion
   case GX_TF_I4:
     return DecodeTiled<TextureDecoderI4>(width, height, mips, data);
+  case GX_TF_AURORA_I8_LINEAR:
+    return Decode2DLinear<TextureDecoderI8>(width, height, mips, data);
   case GX_TF_I8:
     return DecodeTiled<TextureDecoderI8>(width, height, mips, data);
   case GX_TF_IA4:

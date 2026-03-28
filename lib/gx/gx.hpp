@@ -362,6 +362,7 @@ static inline bool requires_load_conversion(const GXTexObj_& obj) {
   switch (obj.fmt) {
   case GX_TF_I4:
   case GX_TF_I8:
+  case GX_TF_AURORA_I8_LINEAR:
   case GX_TF_C4:
   case GX_TF_C8:
   case GX_TF_C14X2:

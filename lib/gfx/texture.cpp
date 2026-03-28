@@ -109,6 +109,7 @@ TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mi
 static bool setup_swizzle(wgpu::TextureComponentSwizzleDescriptor & swizzle, u32 format) {
   switch (format) {
   case GX_TF_I4:
+  case GX_TF_AURORA_I8_LINEAR:
   case GX_TF_I8:
     swizzle.swizzle.r = wgpu::ComponentSwizzle::R;
     swizzle.swizzle.g = wgpu::ComponentSwizzle::R;

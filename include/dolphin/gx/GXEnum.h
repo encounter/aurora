@@ -132,6 +132,8 @@ typedef enum {
 #define _GX_TF_CTF 0x20
 #define _GX_TF_ZTF 0x10
 
+#define _GX_TF_AURORA_LINEAR 0x40
+
 typedef enum {
   GX_TF_I4 = 0x0,
   GX_TF_I8 = 0x1,
@@ -163,6 +165,8 @@ typedef enum {
   GX_CTF_Z16L = 0xC | _GX_TF_ZTF | _GX_TF_CTF,
 
   GX_TF_A8 = GX_CTF_A8,
+
+  GX_TF_AURORA_I8_LINEAR = _GX_TF_AURORA_LINEAR | GX_TF_IA8,
 } GXTexFmt;
 
 typedef enum {

@@ -484,6 +484,7 @@ static inline std::string texture_conversion(const TextureConfig& tex, u32 stage
       out += fmt::format("\n    sampled{0}.a = 1.0;", stageIdx);
       break;
     case GX_TF_I4:
+    case GX_TF_AURORA_I8_LINEAR:
     case GX_TF_I8:
       // FIXME HACK
       if (!is_palette_format(tex.loadFmt)) {
@@ -496,6 +497,7 @@ static inline std::string texture_conversion(const TextureConfig& tex, u32 stage
   default:
     break;
   case GX_TF_I4:
+  case GX_TF_AURORA_I8_LINEAR:
   case GX_TF_I8:
   case GX_TF_R8_PC:
     // Splat R to RGBA

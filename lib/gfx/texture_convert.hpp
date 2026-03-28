@@ -9,6 +9,7 @@ static wgpu::TextureFormat to_wgpu(u32 format) {
   switch (format) {
   case GX_TF_I4:
   case GX_TF_I8:
+  case GX_TF_AURORA_I8_LINEAR:
   case GX_TF_R8_PC:
     return wgpu::TextureFormat::R8Unorm;
   case GX_TF_C4:
