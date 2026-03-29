@@ -41,7 +41,7 @@ void GXInitTexObjCI(GXTexObj* obj_, const void* data, u16 width, u16 height, GXC
   obj->data = data;
   obj->width = width;
   obj->height = height;
-  obj->fmt = static_cast<GXTexFmt>(format);
+  obj->fmt = format;
   obj->wrapS = wrapS;
   obj->wrapT = wrapT;
   obj->hasMips = mipmap;
