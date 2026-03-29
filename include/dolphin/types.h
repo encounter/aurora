@@ -107,4 +107,17 @@ typedef int BOOL;
 #define __REGISTER
 #endif
 
+#ifdef _MSC_VER
+#include <sal.h>
+#define FORMAT_STRING_PARAM _Printf_format_string_
+#else
+#define FORMAT_STRING_PARAM
+#endif
+
+#if defined(__GNUC__)
+#define FORMAT_STRING_FUNC(type, string_index, first_to_check) __attribute__((format(type, string_index, first_to_check)))
+#else
+#define FORMAT_STRING_FUNC(type, string_index, first_to_check)
+#endif
+
 #endif
