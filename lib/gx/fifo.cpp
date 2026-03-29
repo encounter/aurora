@@ -3,113 +3,81 @@
 #include "../internal.hpp"
 
 #include <cstring>
-#include <vector>
 
 namespace aurora::gx::fifo {
 static Module Log("aurora::gx::fifo");
 
-// Internal FIFO buffer for inline rendering
-static std::vector<u8> sInternalBuffer;
-
-// Display list recording state
-static u8* sDlBuffer = nullptr;
-static u32 sDlSize = 0;
-static u32 sDlWritePos = 0;
-static bool sInDisplayList = false;
-
-// Current write target
-static inline void write_byte(u8 val) {
-  if (sInDisplayList) {
-    if (sDlWritePos < sDlSize) {
-      sDlBuffer[sDlWritePos++] = val;
-    }
-  } else {
-    sInternalBuffer.push_back(val);
-  }
-}
+namespace detail {
+uint8_t* sBufferData = nullptr;
+uint32_t sBufferSize = 0;
+uint32_t sBufferCapacity = 0;
+bool sInDisplayList = false;
+uint8_t* sDlBuffer = nullptr;
+uint32_t sDlSize = 0;
+uint32_t sDlWritePos = 0;
+} // namespace detail
 
 void init() {
-  sInternalBuffer.reserve(64 * 1024); // 64KB initial capacity
-  sInDisplayList = false;
-  sDlBuffer = nullptr;
-  sDlSize = 0;
-  sDlWritePos = 0;
+  constexpr uint32_t initialCapacity = 64 * 1024;
+  delete[] detail::sBufferData;
+  detail::sBufferData = new uint8_t[initialCapacity];
+  detail::sBufferSize = 0;
+  detail::sBufferCapacity = initialCapacity;
+  detail::sInDisplayList = false;
+  detail::sDlBuffer = nullptr;
+  detail::sDlSize = 0;
+  detail::sDlWritePos = 0;
 }
 
-void write_data(const void* data, u32 length) {
-  const u8* dataPtr = static_cast<const u8*>(data);
-  for (u32 i = 0; i < length; i++) {
-    write_u8(dataPtr[i]);
+void write_data_grow(const void* data, uint32_t length) {
+  uint32_t needed = detail::sBufferSize + length;
+  uint32_t newCap = detail::sBufferCapacity * 2;
+  if (newCap < needed) {
+    newCap = needed;
   }
-}
-
-void write_u8(u8 val) { write_byte(val); }
-
-void write_u16(u16 val) {
-  // Big-endian byte order (matching GX hardware)
-  write_byte(static_cast<u8>(val >> 8));
-  write_byte(static_cast<u8>(val & 0xFF));
-}
-
-void write_u32(u32 val) {
-  write_byte(static_cast<u8>((val >> 24) & 0xFF));
-  write_byte(static_cast<u8>((val >> 16) & 0xFF));
-  write_byte(static_cast<u8>((val >> 8) & 0xFF));
-  write_byte(static_cast<u8>(val & 0xFF));
-}
-
-void write_u64(u64 val) {
-  write_byte(static_cast<u8>((val >> 56) & 0xFF));
-  write_byte(static_cast<u8>((val >> 48) & 0xFF));
-  write_byte(static_cast<u8>((val >> 40) & 0xFF));
-  write_byte(static_cast<u8>((val >> 32) & 0xFF));
-  write_byte(static_cast<u8>((val >> 24) & 0xFF));
-  write_byte(static_cast<u8>((val >> 16) & 0xFF));
-  write_byte(static_cast<u8>((val >> 8) & 0xFF));
-  write_byte(static_cast<u8>(val & 0xFF));
-}
-
-void write_f32(f32 val) {
-  u32 bits;
-  std::memcpy(&bits, &val, sizeof(bits));
-  write_u32(bits);
-}
-
-void begin_display_list(u8* buf, u32 size) {
-  sInDisplayList = true;
-  sDlBuffer = buf;
-  sDlSize = size;
-  sDlWritePos = 0;
-}
-
-u32 end_display_list() {
-  sInDisplayList = false;
-  u32 bytesWritten = sDlWritePos;
-  // Pad to 32-byte alignment
-  u32 padded = (bytesWritten + 31) & ~31u;
-  // Zero-fill padding
-  while (sDlWritePos < padded && sDlWritePos < sDlSize) {
-    sDlBuffer[sDlWritePos++] = 0;
+  auto* newBuf = new uint8_t[newCap];
+  if (detail::sBufferSize > 0) {
+    std::memcpy(newBuf, detail::sBufferData, detail::sBufferSize);
   }
-  sDlBuffer = nullptr;
-  sDlSize = 0;
-  sDlWritePos = 0;
+  std::memcpy(newBuf + detail::sBufferSize, data, length);
+  delete[] detail::sBufferData;
+  detail::sBufferData = newBuf;
+  detail::sBufferSize = needed;
+  detail::sBufferCapacity = newCap;
+}
+
+void begin_display_list(uint8_t* buf, uint32_t size) {
+  detail::sInDisplayList = true;
+  detail::sDlBuffer = buf;
+  detail::sDlSize = size;
+  detail::sDlWritePos = 0;
+}
+
+uint32_t end_display_list() {
+  detail::sInDisplayList = false;
+  uint32_t bytesWritten = detail::sDlWritePos;
+  uint32_t padded = (bytesWritten + 31) & ~31u;
+  while (detail::sDlWritePos < padded && detail::sDlWritePos < detail::sDlSize) {
+    detail::sDlBuffer[detail::sDlWritePos++] = 0;
+  }
+  detail::sDlBuffer = nullptr;
+  detail::sDlSize = 0;
+  detail::sDlWritePos = 0;
   return padded;
 }
 
-bool in_display_list() { return sInDisplayList; }
+bool in_display_list() { return detail::sInDisplayList; }
 
 void drain() {
-  if (sInternalBuffer.empty()) {
+  if (detail::sBufferSize == 0) {
     return;
   }
-  // Process the internal buffer through the command processor
-  process(sInternalBuffer.data(), static_cast<u32>(sInternalBuffer.size()), true);
-  sInternalBuffer.clear();
+  process(detail::sBufferData, detail::sBufferSize, true);
+  detail::sBufferSize = 0;
 }
 
-const u8* get_buffer_data() { return sInternalBuffer.data(); }
-u32 get_buffer_size() { return static_cast<u32>(sInternalBuffer.size()); }
-void clear_buffer() { sInternalBuffer.clear(); }
+const uint8_t* get_buffer_data() { return detail::sBufferData; }
+uint32_t get_buffer_size() { return detail::sBufferSize; }
+void clear_buffer() { detail::sBufferSize = 0; }
 
 } // namespace aurora::gx::fifo

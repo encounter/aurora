@@ -1,11 +1,10 @@
 #pragma once
 
-#include <dolphin/gx.h>
-#include <cstdint>
+#include "../internal.hpp"
 
 namespace aurora::gx::fifo {
 
 // Process a buffer of GX FIFO commands
-void process(const u8* data, u32 size, bool bigEndian);
+void process(const uint8_t* data, uint32_t size, bool bigEndian);
 
 } // namespace aurora::gx::fifo
