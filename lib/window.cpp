@@ -212,6 +212,12 @@ bool create_window(AuroraBackend backend) {
     width = 1280;
     height = 960;
   }
+  if (width < 640) {
+    width = 640;
+  }
+  if (height < 480) {
+    height = 480;
+  }
 
   Sint32 posX = g_config.windowPosX;
   Sint32 posY = g_config.windowPosY;
@@ -239,6 +245,7 @@ bool create_window(AuroraBackend backend) {
     Log.error("Failed to create window: {}", SDL_GetError());
     return false;
   }
+  SDL_SetWindowMinimumSize(g_window, 640, 480);
   set_window_icon();
   return true;
 }
