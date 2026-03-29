@@ -22,7 +22,7 @@ struct Module {
     if (g_config.logLevel > level) return;
 
     auto message = fmt::format(fmt, std::forward<T>(args)...);
-    log_internal(level, name, message.c_str(), message.size());
+    log_internal(level, name, message.c_str(), static_cast<unsigned int>(message.size()));
   }
 
   template <typename... T>
