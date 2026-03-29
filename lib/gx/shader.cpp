@@ -1019,7 +1019,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       vtxOutAttrs += fmt::format("\n    @location({}) tex{}_uv: vec2f,", vtxOutIdx++, i);
     }
     if (tcg.src >= GX_TG_TEX0 && tcg.src <= GX_TG_TEX7) {
-      vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 0.0, 1.0);", i,
+      vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0, 1.0);", i,
                                  vtx_attr(config, GXAttr(GX_VA_TEX0 + (tcg.src - GX_TG_TEX0))));
     } else if (tcg.src == GX_TG_POS) {
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f(in_pos, 1.0);", i);
@@ -1055,7 +1055,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
 
     if (tcg.type == GX_TG_MTX3x4) {
       vtxXfrAttrs += fmt::format("\n    out.tex{0}_uvw = tc{0}_proj.xyz;", i);
-      fragmentFnPre += fmt::format("\n    var tex{0}_uv = in.tex{0}_uvw.xy;", i);
+      fragmentFnPre += fmt::format("\n    var tex{0}_uv = in.tex{0}_uvw.xy / in.tex{0}_uvw.z;", i);
     } else {
       vtxXfrAttrs += fmt::format("\n    out.tex{0}_uv = tc{0}_proj.xy;", i);
       fragmentFnPre += fmt::format("\n    var tex{0}_uv = in.tex{0}_uv.xy;", i);
