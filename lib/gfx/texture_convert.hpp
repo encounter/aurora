@@ -15,11 +15,6 @@ static wgpu::TextureFormat to_wgpu(u32 format) {
   case GX_TF_C8:
   case GX_TF_C14X2:
     return wgpu::TextureFormat::R16Sint;
-  case GX_TF_CMPR:
-    if (webgpu::g_device.HasFeature(wgpu::FeatureName::TextureCompressionBC)) {
-      return wgpu::TextureFormat::BC1RGBAUnorm;
-    }
-    [[fallthrough]];
   default:
     return wgpu::TextureFormat::RGBA8Unorm;
   }
