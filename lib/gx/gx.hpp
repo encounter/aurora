@@ -286,6 +286,11 @@ struct GXState {
   GXProjectionType projType; // for GXGetProjectionv
   FogState fog;
   GXCullMode cullMode = GX_CULL_BACK;
+  u8 lineWidth = 0;
+  u8 pointSize = 0;
+  GXTexOffset lineTexOffset = GX_TO_ZERO;
+  GXTexOffset pointTexOffset = GX_TO_ZERO;
+  bool lineHalfAspect = false;
   GXBlendMode blendMode = GX_BM_NONE;
   GXBlendFactor blendFacSrc = GX_BL_SRCALPHA;
   GXBlendFactor blendFacDst = GX_BL_INVSRCALPHA;
@@ -387,7 +392,6 @@ struct TextureConfig {
 };
 static_assert(std::has_unique_object_representations_v<TextureConfig>);
 struct AttrConfig {
-  u8 attr = GX_VA_NULL;  // GXAttr
   u8 attrType = GX_NONE; // GXAttrType
   u8 cnt = 0xFF;         // Actual count; not GXCompCnt
   u8 compType = 0xFF;    // GXCompType
@@ -395,12 +399,13 @@ struct AttrConfig {
   u8 stride = 0;         // Array stride
   u8 frac = 0;
   bool le = true;
+  u8 _p1 = 0;
 };
 struct ShaderConfig {
   u8 fogType = GX_FOG_NONE;
   u8 vtxStride = 0;
-  bool lines : 1 = false;
-  u8 pad1 : 7 = 0;
+  u8 lineMode : 2 = 0; // 1 = GX_LINES, 2 = GX_LINESTRIP, 3 = GX_POINTS
+  u8 pad1 : 6 = 0;
   u8 pad2 = 0;
   std::array<AttrConfig, MaxVtxAttr> attrs;
   std::array<TevSwap, MaxTevSwap> tevSwapTable;
@@ -412,7 +417,6 @@ struct ShaderConfig {
   std::array<TextureConfig, MaxTextures> textureConfig;
   std::array<IndStage, MaxIndStages> indStages{};
   u32 numIndStages = 0;
-  u32 currentPnMtx = 0;
 
   bool operator==(const ShaderConfig& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
 };
@@ -446,6 +450,7 @@ struct ShaderInfo {
   u32 uniformSize = 0;
   bool usesFog : 1 = false;
   bool lightingEnabled : 1 = false;
+  bool lines : 1 = false;
 };
 struct BindGroupRanges {
   std::array<gfx::Range, MaxIndexAttr> vaRanges{};

@@ -43,6 +43,6 @@ void render(const State& state, const DrawData& data, const wgpu::RenderPassEnco
     const wgpu::Color color{0.f, 0.f, 0.f, data.dstAlpha / 255.f};
     pass.SetBlendConstant(&color);
   }
-  pass.DrawIndexed(data.indexCount);
+  pass.DrawIndexed(data.indexCount, data.instanceCount);
 }
 } // namespace aurora::gx

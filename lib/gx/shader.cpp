@@ -440,6 +440,9 @@ static std::string_view tev_scale(GXTevScale scale) {
 static inline std::string vtx_attr(const ShaderConfig& config, GXAttr attr) {
   const auto type = config.attrs[attr].attrType;
   if (type == GX_NONE) {
+    if (attr == GX_VA_PNMTXIDX) {
+      return "ubuf.current_pnmtx";
+    }
     if (attr == GX_VA_NRM) {
       // Default normal
       return "vec3f(1.0, 0.0, 0.0)"s;
@@ -556,21 +559,26 @@ auto fetch_color_attr(const AttrConfig& mapping, std::string_view buf, std::stri
   }
 }
 
-auto attr_load(const ShaderConfig& config, const AttrConfig& mapping) -> std::string {
+auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -> std::string {
+  const auto& mapping = config.attrs[attr];
+  if (mapping.attrType == GX_NONE) {
+    return vtx_attr(config, attr);
+  }
   auto buf = "vbuf"sv;
-  auto offs = fmt::format("ubuf.vtx_start + vidx * {}u + {}u", config.vtxStride, mapping.offset);
+  auto offs = fmt::format("ubuf.vtx_start + {} * {}u + {}u", vidx, config.vtxStride, mapping.offset);
   auto le = false; // Vertex buffer is always big endian (for now)
   if (mapping.attrType == GX_INDEX8) {
     offs = fmt::format("raw_fetch_u8_1(&{}, {}) * {}u", buf, offs, mapping.stride);
-    buf = VtxArrayNames[mapping.attr - GX_VA_POS];
+    buf = VtxArrayNames[attr - GX_VA_POS];
     le = mapping.le;
   } else if (mapping.attrType == GX_INDEX16) {
     offs = fmt::format("raw_fetch_u16_1(&{}, {}, {}) * {}u", buf, offs, le, mapping.stride);
-    buf = VtxArrayNames[mapping.attr - GX_VA_POS];
+    buf = VtxArrayNames[attr - GX_VA_POS];
     le = mapping.le;
   }
-  switch (mapping.attr) {
+  switch (attr) {
   case GX_VA_PNMTXIDX:
+    return fmt::format("(raw_fetch_u8_1(&{}, {}) / 3u)", buf, offs);
   case GX_VA_TEX0MTXIDX:
   case GX_VA_TEX1MTXIDX:
   case GX_VA_TEX2MTXIDX:
@@ -608,7 +616,7 @@ auto attr_load(const ShaderConfig& config, const AttrConfig& mapping) -> std::st
     return texLoad;
   }
   default:
-    Log.fatal("attr_load: Unimplemented {}", mapping.attr);
+    Log.fatal("attr_load: Unimplemented {}", attr);
   }
 }
 
@@ -709,11 +717,40 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   std::string vtxXfrAttrs;
   size_t vtxOutIdx = 0;
 
+  // Load points for line expansion
+  std::string_view vidxAttr = "vidx"sv;
+  if (config.lineMode != 0) {
+    vtxInAttrs += ",\n    @builtin(instance_index) iidx: u32";
+    uniBufAttrs +=
+        "\n    line_width: f32,"
+        "\n    line_aspect_y: f32,"
+        "\n    line_tex_offset: f32,"
+        "\n    line_texcoord_mask: u32,";
+    vtxXfrAttrsPre += fmt::format(
+        "\n    let use_b = vidx >= 2u;"
+        "\n    let vidx_a = iidx * {}u;"
+        "\n    let vidx_b = vidx_a + 1u;"
+        "\n    let in_vidx = select(vidx_a, vidx_b, use_b);"
+        "\n    let pos_a = {};"
+        "\n    let pos_b = {};"
+        "\n    let in_pos = select(pos_a, pos_b, use_b);"
+        "\n    let pnmtxidx_a = {};"
+        "\n    let pnmtxidx_b = {};"
+        "\n    let in_pnmtxidx = select(pnmtxidx_a, pnmtxidx_b, use_b);"
+        "\n    let mv_pos_a = vec4f(pos_a, 1.0) * ubuf.postex_mtx[pnmtxidx_a];"
+        "\n    let mv_pos_b = vec4f(pos_b, 1.0) * ubuf.postex_mtx[pnmtxidx_b];"
+        "\n    let mv_pos = select(mv_pos_a, mv_pos_b, use_b);",
+        config.lineMode == 1 ? 2 : 1, attr_load(config, GX_VA_POS, "vidx_a"sv),
+        attr_load(config, GX_VA_POS, "vidx_b"sv), attr_load(config, GX_VA_PNMTXIDX, "vidx_a"sv),
+        attr_load(config, GX_VA_PNMTXIDX, "vidx_b"sv));
+    vidxAttr = "in_vidx"sv;
+  } else if (config.attrs[GX_VA_PNMTXIDX].attrType == GX_NONE) {
+    vtxXfrAttrsPre += "\n    let in_pnmtxidx = ubuf.current_pnmtx;";
+  }
+
   // Load vertex attributes
   size_t uniBindingIdx = 2;
-  vtxInAttrs += "\n    @builtin(vertex_index) vidx: u32";
-  int currAttrIdx = 0;
-  for (GXAttr attr{}; attr <= GX_VA_TEX7; attr = static_cast<GXAttr>(attr + 1)) {
+  for (GXAttr attr = GX_VA_PNMTXIDX; attr <= GX_VA_TEX7; attr = static_cast<GXAttr>(attr + 1)) {
     const auto attrType = config.attrs[attr].attrType;
     if (attrType == GX_NONE) {
       continue;
@@ -725,44 +762,53 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
           "\nvar<storage, read> {}: array<u32>;",
           uniBindingIdx++, VtxArrayNames[attr - GX_VA_POS]);
     }
-    vtxXfrAttrsPre += fmt::format("\n    var {} = {};", vtx_attr(config, attr), attr_load(config, config.attrs[attr]));
-    ++currAttrIdx;
+    // in_pnmtxidx and in_pos written above for line mode
+    if ((attr != GX_VA_PNMTXIDX && attr != GX_VA_POS) || config.lineMode == 0) {
+      vtxXfrAttrsPre += fmt::format("\n    let {} = {};", vtx_attr(config, attr), attr_load(config, attr, vidxAttr));
+    }
   }
 
-  if (info.indexAttr.test(GX_VA_PNMTXIDX)) {
-    vtxXfrAttrsPre +=
-        "\n    var pos_mtx = ubuf.postex_mtx[in_pnmtxidx / 3u];"
-        "\n    var nrm_mtx = ubuf.nrm_mtx[in_pnmtxidx / 3u];"sv;
-  } else {
+  if (config.lineMode == 0) {
     vtxXfrAttrsPre += fmt::format(
-        "\n    var pos_mtx = ubuf.postex_mtx[{0}];"
-        "\n    var nrm_mtx = ubuf.nrm_mtx[{0}];",
-        config.currentPnMtx);
+        "\n    let mv_pos = vec4f({}, 1.0) * ubuf.postex_mtx[in_pnmtxidx];"
+        "\n    out.pos = vec4f(mv_pos, 1.0) * ubuf.proj;",
+        vtx_attr(config, GX_VA_POS));
+  } else {
+    vtxXfrAttrsPre +=
+        "\n    let clip_a = vec4f(mv_pos_a, 1.0) * ubuf.proj;"
+        "\n    let clip_b = vec4f(mv_pos_b, 1.0) * ubuf.proj;"
+        "\n    let ndc_a = clip_a.xy / clip_a.w;"
+        "\n    let ndc_b = clip_b.xy / clip_b.w;"
+        "\n    let delta_px = (ndc_b - ndc_a) / 2.0 * ubuf.viewport_size;"
+        "\n    let dir_px = select(vec2f(1.0, 0.0), normalize(delta_px), dot(delta_px, delta_px) > 1e-10);"
+        "\n    let perp_px = vec2f(-dir_px.y, dir_px.x);"
+        "\n    let line_width = ubuf.line_width * (ubuf.viewport_size.y / 528.0);" // Scale line width based on viewport
+        "\n    let offset_px = perp_px * (line_width / 2.0) * select(-1.0, 1.0, (vidx & 1u) != 0u);"
+        "\n    let offset_ndc = (offset_px * 2.0) / ubuf.viewport_size;"
+        "\n    let clip_base = select(clip_a, clip_b, use_b);"
+        "\n    out.pos = vec4f(clip_base.xy + offset_ndc * clip_base.w, clip_base.zw);";
   }
-
-  vtxXfrAttrsPre += fmt::format(
-      "\n    var mv_pos = vec4<f32>({}, 1.0) * pos_mtx;"
-      "\n    var nrm_tmp = vec4<f32>({}, 0.0) * nrm_mtx;"
-      "\n    var mv_nrm = select(nrm_tmp, normalize(nrm_tmp), dot(nrm_tmp, nrm_tmp) > 0.0);"
-      "\n    out.pos = vec4f(mv_pos, 1.0) * ubuf.proj;",
-      vtx_attr(config, GX_VA_POS), vtx_attr(config, GX_VA_NRM));
   if constexpr (UseReversedZ) {
     vtxXfrAttrsPre += "\n    out.pos.z = -out.pos.z;";
   } else {
     vtxXfrAttrsPre += "\n    out.pos.z += out.pos.w;";
   }
+  vtxXfrAttrsPre += fmt::format(
+      "\n    let nrm_tmp = vec4f({}, 0.0) * ubuf.nrm_mtx[in_pnmtxidx];"
+      "\n    let mv_nrm = select(nrm_tmp, normalize(nrm_tmp), dot(nrm_tmp, nrm_tmp) > 1e-10);",
+      vtx_attr(config, GX_VA_NRM));
   if constexpr (EnableNormalVisualization) {
     vtxOutAttrs += fmt::format("\n    @location({}) nrm: vec3f,", vtxOutIdx++);
     vtxXfrAttrsPre += "\n    out.nrm = mv_nrm;";
   }
 
+  uniBufAttrs += "\n    proj: mat4x4f,";
   uniBufAttrs += fmt::format("\n    postex_mtx: array<mat3x4f, {}>,", MaxPnMtx + MaxTexMtx);
   uniBufAttrs += fmt::format("\n    nrm_mtx: array<mat3x4f, {}>,", MaxPnMtx);
   std::string fragmentFnPre;
   std::string fragmentFn;
 
-  static char const* regName[] = {"prev", "tevreg0", "tevreg1", "tevreg2"};
-
+  static std::array regName{"prev"sv, "tevreg0"sv, "tevreg1"sv, "tevreg2"sv};
   for (u32 idx = 0; idx < config.tevStageCount; ++idx) {
     const auto& stage = config.tevStages[idx];
     {
@@ -1022,9 +1068,9 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0, 1.0);", i,
                                  vtx_attr(config, GXAttr(GX_VA_TEX0 + (tcg.src - GX_TG_TEX0))));
     } else if (tcg.src == GX_TG_POS) {
-      vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f(in_pos, 1.0);", i);
+      vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, vtx_attr(config, GX_VA_POS));
     } else if (tcg.src == GX_TG_NRM) {
-      vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f(in_nrm, 1.0);", i);
+      vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, vtx_attr(config, GX_VA_NRM));
     } else
       UNLIKELY FATAL("unhandled tcg src {}", underlying(tcg.src));
     if (tcg.type == GX_TG_MTX2x4 || tcg.type == GX_TG_MTX3x4) {
@@ -1052,7 +1098,14 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       vtxXfrAttrs +=
           fmt::format("\n    var tc{0}_proj = vec4f(tc{0}_tmp.xyz, 1.0) * ubuf.postmtx[{1}];", i, postMtxIdx);
     }
-
+    // Apply line tex offset
+    if (config.lineMode != 0) {
+      vtxXfrAttrs += fmt::format(
+          "\n    if ((ubuf.line_texcoord_mask & (1u << {0})) != 0u && (vidx & 1u) != 0u) {{"
+          "\n        tc{0}_proj.y += ubuf.line_tex_offset;"
+          "\n    }}",
+          i);
+    }
     if (tcg.type == GX_TG_MTX3x4) {
       vtxXfrAttrs += fmt::format("\n    out.tex{0}_uvw = tc{0}_proj.xyz;", i);
       fragmentFnPre += fmt::format("\n    var tex{0}_uv = in.tex{0}_uvw.xy / in.tex{0}_uvw.z;", i);
@@ -1735,7 +1788,8 @@ fn tev_overflow_vec4f(in: vec4f) -> vec4f {{
 
 struct Uniform {{
     vtx_start: u32,
-    proj: mat4x4f,{0}
+    current_pnmtx: u32,
+    viewport_size: vec2f,{0}
 }};
 @group(0) @binding(0)
 var<storage, read> vbuf: array<u32>;
@@ -1815,7 +1869,8 @@ fn textureSamplePaletteI8(tex: texture_2d<f32>, samp: sampler, uv: vec2f, tlut: 
 }}
 
 @vertex
-fn vs_main({5}
+fn vs_main(
+    @builtin(vertex_index) vidx: u32{5}
 ) -> VertexOutput {{
     var out: VertexOutput;{9}{6}
     return out;

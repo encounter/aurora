@@ -73,6 +73,15 @@ static u16 prepare_idx_buffer(ByteBuffer& buf, GXPrimitive prim, u16 vtxStart, u
       }
       numIndices += 3;
     }
+  } else if (prim == GX_LINES || prim == GX_LINESTRIP) {
+    buf.reserve_extra(6 * sizeof(u16));
+    buf.append<u16>(0);
+    buf.append<u16>(1);
+    buf.append<u16>(3);
+    buf.append<u16>(3);
+    buf.append<u16>(2);
+    buf.append<u16>(0);
+    numIndices = 6;
   } else
     UNLIKELY FATAL("unsupported primitive type {}", static_cast<u32>(prim));
   return numIndices;
@@ -532,7 +541,12 @@ static void handle_bp(u32 value, bool bigEndian) {
 
   // Line/point size (0x22)
   case 0x22: {
-    Log.debug("Unimplemented: BP register {:x} (line/point size)", regId);
+    g_gxState.lineWidth = static_cast<u8>(bp_get(value, 8, 0));
+    g_gxState.pointSize = static_cast<u8>(bp_get(value, 8, 8));
+    g_gxState.lineTexOffset = static_cast<GXTexOffset>(bp_get(value, 3, 16));
+    g_gxState.pointTexOffset = static_cast<GXTexOffset>(bp_get(value, 3, 19));
+    g_gxState.lineHalfAspect = bp_get(value, 1, 22) != 0;
+    g_gxState.stateDirty = true;
     break;
   }
 
@@ -1358,9 +1372,12 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
 
   u32 numIndices = 0;
   gfx::Range idxRange;
+  // Try to merge with previous draw call
   if (!g_gxState.stateDirty) {
-    // Try to merge with previous draw call
-    if (auto* lastDraw = gfx::get_last_draw_command<DrawData>()) {
+    auto* lastDraw = gfx::get_last_draw_command<DrawData>();
+    // Only if the previous draw call was a single instance draw (no lines/points handling)
+    if (lastDraw != nullptr && prim != GX_LINES && prim != GX_LINESTRIP && prim != GX_POINTS &&
+        lastDraw->instanceCount == 1) {
       ByteBuffer idxBuf;
       numIndices = prepare_idx_buffer(idxBuf, prim, lastDraw->vtxCount, vtxCount);
       idxRange = gfx::push_indices(idxBuf.data(), idxBuf.size());
@@ -1407,6 +1424,12 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   const auto bindGroups = build_bind_groups(info, config.shaderConfig, ranges);
   const auto pipeline = gfx::pipeline_ref(config);
 
+  uint32_t instanceCount = 1;
+  if (prim == GX_LINES) {
+    instanceCount = vtxCount / 2;
+  } else if (prim == GX_LINESTRIP) {
+    instanceCount = vtxCount - 1;
+  }
   gfx::push_draw_command(DrawData{
       .pipeline = pipeline,
       .vertRange = vertRange,
@@ -1415,6 +1438,7 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
       .uniformRange = build_uniform(info, vertRange.offset),
       .vtxCount = vtxCount,
       .indexCount = numIndices,
+      .instanceCount = instanceCount,
       .bindGroups = bindGroups,
       .dstAlpha = g_gxState.dstAlpha,
   });

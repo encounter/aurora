@@ -172,8 +172,13 @@ void alpha_arg_reg_info(GXTevAlphaArg arg, const TevStage& stage, ShaderInfo& in
 
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   ShaderInfo info{
-      .uniformSize = 16 + sizeof(Mat4x4<float>), // vtx_start + padding + proj
+      .uniformSize = 4 + 4 + 8 + 64, // vtx_start, current_pnmtx, viewport_size, proj
   };
+
+  if (config.lineMode != 0) {
+    info.uniformSize += 4 + 4 + 4 + 4; // line_width, line_aspect_y, line_tex_offset, line_texcoord_mask
+    info.lines = true;
+  }
 
   for (int attr = 0; attr < config.attrs.size(); attr++) {
     const auto attrType = config.attrs[attr].attrType;
@@ -300,10 +305,46 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   return info;
 }
 
+static f32 tex_offset(GXTexOffset offs) noexcept {
+  switch (offs) {
+    DEFAULT_FATAL("invalid tex offset {}", underlying(offs));
+  case GX_TO_ZERO:
+    return 0.f;
+  case GX_TO_SIXTEENTH:
+    return 1.f / 16.f;
+  case GX_TO_EIGHTH:
+    return 1.f / 8.f;
+  case GX_TO_FOURTH:
+    return 1.f / 4.f;
+  case GX_TO_HALF:
+    return 1.f / 2.f;
+  case GX_TO_ONE:
+    return 1.f;
+  }
+}
+
+static u32 line_texcoord_mask() noexcept {
+  u32 mask = 0;
+  for (int i = 0; i < MaxTexCoord; ++i) {
+    if (g_gxState.texCoordScales[i].lineOffset) {
+      mask |= 1 << i;
+    }
+  }
+  return mask;
+}
+
 gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart) noexcept {
   auto [buf, range] = gfx::map_uniform(info.uniformSize);
   buf.append(vtxStart);
-  buf.append_zeroes(12); // padding
+  buf.append(g_gxState.currentPnMtx);
+  buf.append<f32>(gfx::get_viewport().width);
+  buf.append<f32>(gfx::get_viewport().height);
+  if (info.lines) {
+    buf.append<f32>(static_cast<f32>(g_gxState.lineWidth) / 6.f);
+    buf.append<f32>(g_gxState.lineHalfAspect ? 0.5f : 1.f);
+    buf.append<f32>(tex_offset(g_gxState.lineTexOffset));
+    buf.append<u32>(line_texcoord_mask());
+  }
   buf.append(g_gxState.proj);
 
   for (int i = 0; i < MaxPnMtx; i++) {

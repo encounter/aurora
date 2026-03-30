@@ -1224,6 +1224,30 @@ TEST_F(GXFifoTest, GetLinePointCullShadowState) {
   EXPECT_EQ(cullMode, GX_CULL_FRONT);
 }
 
+TEST_F(GXFifoTest, LinePointSize_Decode) {
+  GXSetLineWidth(12, GX_TO_ZERO);
+  GXSetPointSize(34, GX_TO_ONE);
+  auto bytes = capture_fifo();
+
+  ASSERT_EQ(bytes.size(), 10u);
+  EXPECT_EQ(bytes[0], 0x61);
+  EXPECT_EQ(bytes[1], 0x22);
+  EXPECT_EQ(bytes[5], 0x61);
+  EXPECT_EQ(bytes[6], 0x22);
+
+  reset_gx_state();
+  g_gxState.lineWidth = 1;
+  g_gxState.pointSize = 2;
+  g_gxState.lineTexOffset = GX_TO_ONE;
+  g_gxState.pointTexOffset = GX_TO_ZERO;
+  decode_fifo(bytes);
+
+  EXPECT_EQ(g_gxState.lineWidth, 12u);
+  EXPECT_EQ(g_gxState.lineTexOffset, GX_TO_ZERO);
+  EXPECT_EQ(g_gxState.pointSize, 34u);
+  EXPECT_EQ(g_gxState.pointTexOffset, GX_TO_ONE);
+}
+
 // --- GXSetNumTevStages / GXSetNumTexGens / GXSetNumChans ---
 
 TEST_F(GXFifoTest, NumTevStages) {
@@ -2492,6 +2516,23 @@ TEST_F(GXFifoTest, TexCoordScale_TexOffsets) {
   const auto& tcs = g_gxState.texCoordScales[2];
   EXPECT_TRUE(tcs.lineOffset);
   EXPECT_TRUE(tcs.pointOffset);
+}
+
+TEST_F(GXFifoTest, TexCoordScale_TexOffsets_Disabled) {
+  GXEnableTexOffsets(GX_TEXCOORD2, GX_FALSE, GX_FALSE);
+  auto bytes = capture_fifo();
+
+  ASSERT_EQ(bytes.size(), 5u);
+  EXPECT_EQ(bytes[1], 0x34);
+
+  reset_gx_state();
+  g_gxState.texCoordScales[2].lineOffset = true;
+  g_gxState.texCoordScales[2].pointOffset = true;
+  decode_fifo(bytes);
+
+  const auto& tcs = g_gxState.texCoordScales[2];
+  EXPECT_FALSE(tcs.lineOffset);
+  EXPECT_FALSE(tcs.pointOffset);
 }
 
 // --- Coord isolation: writing coord 0 doesn't affect coord 1 ---

@@ -344,7 +344,6 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     const auto& attrFmt = vtxFmt.attrs[i];
     const auto cnt = comp_cnt_count(attr, attrFmt.cnt);
     mapping = AttrConfig{
-        .attr = static_cast<u8>(i),
         .attrType = static_cast<u8>(type),
         .cnt = cnt,
         .compType = static_cast<u8>(attrFmt.type),
@@ -373,7 +372,15 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     }
   }
   config.shaderConfig.vtxStride = vtxOffset;
-  config.shaderConfig.lines = primitive == GX_LINES || primitive == GX_LINESTRIP;
+  if (primitive == GX_LINES) {
+    config.shaderConfig.lineMode = 1;
+  } else if (primitive == GX_LINESTRIP) {
+    config.shaderConfig.lineMode = 2;
+  } else if (primitive == GX_POINTS) {
+    config.shaderConfig.lineMode = 3;
+  } else {
+    config.shaderConfig.lineMode = 0;
+  }
   config.shaderConfig.tevSwapTable = g_gxState.tevSwapTable;
   for (u8 i = 0; i < g_gxState.numTevStages; ++i) {
     config.shaderConfig.tevStages[i] = g_gxState.tevStages[i];
@@ -414,12 +421,10 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     }
     config.shaderConfig.textureConfig[i] = texConfig;
   }
-  bool hasPnMtxIdx = config.shaderConfig.attrs[GX_VA_PNMTXIDX].attrType == GX_DIRECT;
-  config.shaderConfig.currentPnMtx = hasPnMtxIdx ? 0 : g_gxState.currentPnMtx;
   config = {
       .shaderConfig = config.shaderConfig,
       .depthFunc = g_gxState.depthFunc,
-      .cullMode = g_gxState.cullMode,
+      .cullMode = config.shaderConfig.lineMode == 0 ? g_gxState.cullMode : GX_CULL_NONE,
       .blendMode = g_gxState.blendMode,
       .blendFacSrc = g_gxState.blendFacSrc,
       .blendFacDst = g_gxState.blendFacDst,

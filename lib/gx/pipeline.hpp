@@ -12,11 +12,12 @@ struct DrawData {
   gfx::Range uniformRange;
   uint32_t vtxCount;
   uint32_t indexCount;
+  uint32_t instanceCount;
   GXBindGroups bindGroups;
   u32 dstAlpha;
 };
 
-constexpr u32 GXPipelineConfigVersion = 8;
+constexpr u32 GXPipelineConfigVersion = 9;
 struct PipelineConfig {
   u32 version = GXPipelineConfigVersion;
   ShaderConfig shaderConfig;

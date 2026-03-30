@@ -29,7 +29,7 @@ std::vector<std::string> g_debugGroupStack;
 std::vector<std::string> g_debugMarkers;
 #endif
 
-constexpr uint64_t UniformBufferSize = 8388608;  // 8mb
+constexpr uint64_t UniformBufferSize = 12582912; // 12mb
 constexpr uint64_t VertexBufferSize = 3145728;   // 3mb
 constexpr uint64_t IndexBufferSize = 1048576;    // 1mb
 constexpr uint64_t StorageBufferSize = 8388608;  // 8mb
@@ -622,7 +622,7 @@ void render(wgpu::CommandEncoder& cmd) {
 
 #if defined(AURORA_GFX_DEBUG_GROUPS)
   if (!g_debugGroupStack.empty()) {
-    for (auto & it : std::ranges::reverse_view(g_debugGroupStack)) {
+    for (auto& it : std::ranges::reverse_view(g_debugGroupStack)) {
       Log.warn("Debug group was not popped at end of frame: {}", it);
     }
     g_debugGroupStack.clear();
@@ -824,9 +824,7 @@ void insert_debug_marker(std::string label) {
 #if defined(AURORA_GFX_DEBUG_GROUPS)
   auto idx = g_debugMarkers.size();
   g_debugMarkers.emplace_back(std::move(label));
-  push_command(CommandType::DebugMarker, {
-    .debugMarkerIndex = idx
-  });
+  push_command(CommandType::DebugMarker, {.debugMarkerIndex = idx});
 #endif
 }
 
