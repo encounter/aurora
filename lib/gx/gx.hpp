@@ -335,7 +335,7 @@ struct GXState {
   u8 numTevStages = 0;
   u8 numTexGens = 0;
   bool stateDirty = true;
-  std::array<u32, 0xFF> bpRegCache;
+  std::array<u32, 0x100> bpRegCache;
   GXState() { bpRegCache[0xFE] = 0x00FFFFFF; }
 };
 extern GXState g_gxState;
