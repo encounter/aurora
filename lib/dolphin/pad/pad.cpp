@@ -428,6 +428,9 @@ void ClampStick(int8_t* px, int8_t* py, int8_t max, int8_t xy, int8_t min) {
     return;
   }
 
+  x = (x * max) / (INT8_MAX - min);
+  y = (y * max) / (INT8_MAX - min);
+
   if (xy * y <= xy * x) {
     int32_t d = xy * x + (max - xy) * y;
     if (xy * max < d) {
