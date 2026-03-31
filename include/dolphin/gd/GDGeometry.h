@@ -507,7 +507,7 @@ extern "C" {
 
 void GDSetVtxDescv(const GXVtxDescList* attrPtr);
 void GDSetVtxAttrFmtv(GXVtxFmt vtxfmt, const GXVtxAttrFmtList* list);
-void GDSetArraySized(GXAttr attr, void* base_ptr, u32 size, u8 stride);
+void GDSetArraySized(GXAttr attr, void* base_ptr, u32 size, u8 stride, bool le);
 void GDSetArray(GXAttr attr, void* base_ptr, u8 stride);
 void GDSetArrayRaw(GXAttr attr, u32 base_ptr_raw, u8 stride);
 void GDPatchArrayPtr(void* base_ptr);

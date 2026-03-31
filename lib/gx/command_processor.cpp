@@ -1464,22 +1464,22 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
 
   // Setting of vertex array bases.
   if (subCmd >= GX_LOAD_AURORA_ARRAYBASE && subCmd <= (GX_LOAD_AURORA_ARRAYBASE | 0x0f)) {
-    CHECK(pos + 16 <= size, "GX_LOAD_AURORA_ARRAYBASE read overrun");
+    CHECK(pos + 13 <= size, "GX_LOAD_AURORA_ARRAYBASE read overrun");
     u32 attrIdx = subCmd - GX_LOAD_AURORA_ARRAYBASE + GX_VA_POS;
 
     u64 arrayAddr = read_u64(data + pos, bigEndian);
     pos += 8;
-    u64 arraySize = read_u64(data + pos, bigEndian);
-    pos += 8;
-
-    CHECK(arraySize <= std::numeric_limits<decltype(g_gxState.arrays[attrIdx].size)>::max(), "Array size too large!");
+    u32 arraySize = read_u32(data + pos, bigEndian);
+    pos += 4;
+    bool le = data[pos] == 1;
+    pos += 1;
 
     auto& array = g_gxState.arrays[attrIdx];
     const auto newData = reinterpret_cast<void*>(arrayAddr);
-    const auto newSize = static_cast<u32>(arraySize);
-    if (array.data != newData || array.size != newSize) {
+    if (array.data != newData || array.size != arraySize || array.le != le) {
       array.data = newData;
-      array.size = newSize;
+      array.size = arraySize;
+      array.le = le;
       // Only drop the cached upload when the backing array actually changes.
       array.cachedRange = {};
       g_gxState.stateDirty = true;

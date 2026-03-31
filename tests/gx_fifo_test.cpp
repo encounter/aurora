@@ -1086,10 +1086,10 @@ TEST_F(GXFifoTest, SetArray_Pos_EncodesAuroraArrayBaseAndStride) {
   u8 posData[32]{};
   u8 oldData[8]{};
 
-  GXSetArray(GX_VA_POS, posData, sizeof(posData), 12);
+  GXSetArray(GX_VA_POS, posData, sizeof(posData), 12, false);
   auto bytes = capture_fifo();
 
-  ASSERT_EQ(bytes.size(), 25u);
+  ASSERT_EQ(bytes.size(), 22u);
   EXPECT_EQ(bytes[0], GX_LOAD_AURORA);
   EXPECT_EQ(bytes[1], 0x00);
   EXPECT_EQ(bytes[2], GX_LOAD_AURORA_ARRAYBASE);
@@ -1106,10 +1106,11 @@ TEST_F(GXFifoTest, SetArray_Pos_EncodesAuroraArrayBaseAndStride) {
   };
 
   expect_be64(3, static_cast<u64>(reinterpret_cast<uintptr_t>(posData)));
-  expect_be64(11, sizeof(posData));
-  EXPECT_EQ(bytes[19], GX_LOAD_CP_REG);
-  EXPECT_EQ(bytes[20], GX_CP_REG_ARRAYSTRIDE);
-  expect_be32(21, 12);
+  expect_be32(11, sizeof(posData));
+  EXPECT_EQ(bytes[15], 0);
+  EXPECT_EQ(bytes[16], GX_LOAD_CP_REG);
+  EXPECT_EQ(bytes[17], GX_CP_REG_ARRAYSTRIDE);
+  expect_be32(18, 12);
 
   reset_gx_state();
   gxState().arrays[GX_VA_POS].data = oldData;
@@ -1123,6 +1124,7 @@ TEST_F(GXFifoTest, SetArray_Pos_EncodesAuroraArrayBaseAndStride) {
   EXPECT_EQ(gxState().arrays[GX_VA_POS].data, posData);
   EXPECT_EQ(gxState().arrays[GX_VA_POS].size, sizeof(posData));
   EXPECT_EQ(gxState().arrays[GX_VA_POS].stride, 12);
+  EXPECT_FALSE(gxState().arrays[GX_VA_POS].le);
   EXPECT_EQ(gxState().arrays[GX_VA_POS].cachedRange.offset, 0u);
   EXPECT_EQ(gxState().arrays[GX_VA_POS].cachedRange.size, 0u);
   EXPECT_TRUE(gxState().stateDirty);
@@ -1132,15 +1134,16 @@ TEST_F(GXFifoTest, SetArray_Nbt_UsesNrmCommandSlotAndState) {
   u8 nbtData[96]{};
   u8 untouchedData[24]{};
 
-  GXSetArray(GX_VA_NBT, nbtData, sizeof(nbtData), 36);
+  GXSetArray(GX_VA_NBT, nbtData, sizeof(nbtData), 36, false);
   auto bytes = capture_fifo();
 
-  ASSERT_EQ(bytes.size(), 25u);
+  ASSERT_EQ(bytes.size(), 22u);
   EXPECT_EQ(bytes[0], GX_LOAD_AURORA);
   EXPECT_EQ(bytes[1], 0x00);
   EXPECT_EQ(bytes[2], GX_LOAD_AURORA_ARRAYBASE | 0x01);
-  EXPECT_EQ(bytes[19], GX_LOAD_CP_REG);
-  EXPECT_EQ(bytes[20], GX_CP_REG_ARRAYSTRIDE | 0x01);
+  EXPECT_EQ(bytes[15], 0);
+  EXPECT_EQ(bytes[16], GX_LOAD_CP_REG);
+  EXPECT_EQ(bytes[17], GX_CP_REG_ARRAYSTRIDE | 0x01);
 
   reset_gx_state();
   gxState().arrays[GX_VA_NRM].cachedRange.offset = 12;
@@ -1154,6 +1157,7 @@ TEST_F(GXFifoTest, SetArray_Nbt_UsesNrmCommandSlotAndState) {
   EXPECT_EQ(gxState().arrays[GX_VA_NRM].data, nbtData);
   EXPECT_EQ(gxState().arrays[GX_VA_NRM].size, sizeof(nbtData));
   EXPECT_EQ(gxState().arrays[GX_VA_NRM].stride, 36);
+  EXPECT_FALSE(gxState().arrays[GX_VA_NRM].le);
   EXPECT_EQ(gxState().arrays[GX_VA_NRM].cachedRange.offset, 0u);
   EXPECT_EQ(gxState().arrays[GX_VA_NRM].cachedRange.size, 0u);
   EXPECT_TRUE(gxState().stateDirty);
@@ -1161,6 +1165,39 @@ TEST_F(GXFifoTest, SetArray_Nbt_UsesNrmCommandSlotAndState) {
   EXPECT_EQ(gxState().arrays[GX_VA_NBT].data, untouchedData);
   EXPECT_EQ(gxState().arrays[GX_VA_NBT].size, sizeof(untouchedData));
   EXPECT_EQ(gxState().arrays[GX_VA_NBT].stride, 24);
+}
+
+TEST_F(GXFifoTest, SetArray_LittleEndianFlag_UpdatesStateAndClearsCachedRange) {
+  u8 clrData[16]{};
+
+  GXSetArray(GX_VA_CLR0, clrData, sizeof(clrData), 4, true);
+  auto bytes = capture_fifo();
+
+  ASSERT_EQ(bytes.size(), 22u);
+  EXPECT_EQ(bytes[0], GX_LOAD_AURORA);
+  EXPECT_EQ(bytes[1], 0x00);
+  EXPECT_EQ(bytes[2], GX_LOAD_AURORA_ARRAYBASE | (GX_VA_CLR0 - GX_VA_POS));
+  EXPECT_EQ(bytes[15], 1);
+  EXPECT_EQ(bytes[16], GX_LOAD_CP_REG);
+  EXPECT_EQ(bytes[17], GX_CP_REG_ARRAYSTRIDE | (GX_VA_CLR0 - GX_VA_POS));
+
+  reset_gx_state();
+  gxState().arrays[GX_VA_CLR0].data = clrData;
+  gxState().arrays[GX_VA_CLR0].size = sizeof(clrData);
+  gxState().arrays[GX_VA_CLR0].stride = 4;
+  gxState().arrays[GX_VA_CLR0].le = false;
+  gxState().arrays[GX_VA_CLR0].cachedRange.offset = 3;
+  gxState().arrays[GX_VA_CLR0].cachedRange.size = 9;
+  gxState().stateDirty = false;
+  decode_fifo(bytes);
+
+  EXPECT_EQ(gxState().arrays[GX_VA_CLR0].data, clrData);
+  EXPECT_EQ(gxState().arrays[GX_VA_CLR0].size, sizeof(clrData));
+  EXPECT_EQ(gxState().arrays[GX_VA_CLR0].stride, 4);
+  EXPECT_TRUE(gxState().arrays[GX_VA_CLR0].le);
+  EXPECT_EQ(gxState().arrays[GX_VA_CLR0].cachedRange.offset, 0u);
+  EXPECT_EQ(gxState().arrays[GX_VA_CLR0].cachedRange.size, 0u);
+  EXPECT_TRUE(gxState().stateDirty);
 }
 
 // ============================================================================

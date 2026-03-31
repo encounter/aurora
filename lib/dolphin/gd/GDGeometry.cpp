@@ -245,7 +245,7 @@ void GDSetVtxAttrFmtv(GXVtxFmt vtxfmt, const GXVtxAttrFmtList* list) {
     GDWriteCPCmd(vtxfmt + CP_REG_VAT_GRP2_ID, CP_REG_VAT_GRP2(tx4Frac, tx5Cnt, tx5Type, tx5Frac, tx6Cnt, tx6Type, tx6Frac, tx7Cnt, tx7Type, tx7Frac));
 }
 
-void GDSetArraySized(GXAttr attr, void* base_ptr, u32 size, u8 stride) {
+void GDSetArraySized(GXAttr attr, void* base_ptr, u32 size, u8 stride, bool le) {
   s32 cpAttr;
   if (attr == GX_VA_NBT) {
     cpAttr = 1;
@@ -257,7 +257,8 @@ void GDSetArraySized(GXAttr attr, void* base_ptr, u32 size, u8 stride) {
 
   GDWriteAuroraCmd(cpAttr + GX_LOAD_AURORA_ARRAYBASE);
   GDWrite_u64((u64)base_ptr);
-  GDWrite_u64((u64)size);
+  GDWrite_u32(size);
+  GDWrite_u8(le ? 1 : 0);
 
   GDWriteCPCmd(cpAttr + CP_REG_ARRAYSTRIDE_ID, stride);
 }
