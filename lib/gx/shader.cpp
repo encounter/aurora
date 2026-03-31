@@ -1841,7 +1841,7 @@ fn intensityI4(rgb: vec3f) -> i32 {{
     return i32(intensityF32(rgb) * 16.f);
 }}
 fn intensityI8(rgb: vec3f) -> i32 {{
-    return i32(intensityF32(rgb));
+    return i32(rgb.x * 255.0);
 }}
 fn textureSamplePalette(tex: texture_2d<i32>, samp: sampler, uv: vec2f, tlut: texture_2d<f32>) -> vec4f {{
     // Gather index values
