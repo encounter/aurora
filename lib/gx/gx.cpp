@@ -22,6 +22,11 @@ GXState g_gxState{};
 
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[static_cast<size_t>(id)]; }
 
+void clear_copy_texture_cache() noexcept {
+  g_gxState.copyTextures.clear();
+  g_gxState.copyTextureCache.clear();
+}
+
 static inline wgpu::BlendFactor to_blend_factor(GXBlendFactor fac, bool isDst) {
   switch (fac) {
     DEFAULT_FATAL("invalid blend factor {}", underlying(fac));
@@ -677,19 +682,26 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
 }
 
 // TODO this is awkward
+extern std::mutex g_gxCachedShadersMutex;
 extern absl::flat_hash_map<gfx::ShaderRef, std::pair<wgpu::ShaderModule, gx::ShaderInfo>> g_gxCachedShaders;
 void shutdown() noexcept {
   // TODO we should probably store this all in g_state.gx instead
-  sUniformBindGroupLayouts.clear();
-  sTextureBindGroupLayouts.clear();
+  {
+    std::lock_guard lock{sBindGroupLayoutMutex};
+    sUniformBindGroupLayouts.clear();
+    sTextureBindGroupLayouts.clear();
+  }
   for (auto& item : g_gxState.textures) {
     item.texObj.ref.reset();
   }
   for (auto& item : g_gxState.tluts) {
     item.ref.reset();
   }
-  g_gxCachedShaders.clear();
-  g_gxState.copyTextures.clear();
+  {
+    std::lock_guard lock{g_gxCachedShadersMutex};
+    g_gxCachedShaders.clear();
+  }
+  clear_copy_texture_cache();
 }
 } // namespace aurora::gx
 

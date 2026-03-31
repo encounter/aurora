@@ -325,7 +325,23 @@ struct GXState {
   std::array<AttrArray, MaxVtxAttr> arrays;
   gfx::ClipRect texCopySrc;
   GXTexFmt texCopyFmt;
-  absl::flat_hash_map<void*, gfx::TextureHandle> copyTextures;
+  struct CopyTextureKey {
+    const void* dest = nullptr;
+    u32 width = 0;
+    u32 height = 0;
+    GXTexFmt format = GX_TF_I4;
+
+    bool operator==(const CopyTextureKey& rhs) const {
+      return dest == rhs.dest && width == rhs.width && height == rhs.height && format == rhs.format;
+    }
+
+    template <typename H>
+    friend H AbslHashValue(H h, const CopyTextureKey& key) {
+      return H::combine(std::move(h), key.dest, key.width, key.height, key.format);
+    }
+  };
+  absl::flat_hash_map<const void*, gfx::TextureHandle> copyTextures;
+  absl::flat_hash_map<CopyTextureKey, gfx::TextureHandle> copyTextureCache;
   bool depthCompare = true;
   bool depthUpdate = true;
   bool colorUpdate = true;
@@ -341,6 +357,7 @@ struct GXState {
 extern GXState g_gxState;
 
 void shutdown() noexcept;
+void clear_copy_texture_cache() noexcept;
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept;
 
 static inline bool requires_copy_conversion(const GXTexObj_& obj) {

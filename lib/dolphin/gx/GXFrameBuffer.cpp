@@ -126,13 +126,21 @@ void GXCopyTex(void* dest, GXBool clear) {
       .height = static_cast<uint32_t>(rect.height),
       .depthOrArrayLayers = 1,
   };
-  aurora::gfx::TextureHandle handle;
-  const auto it = g_gxState.copyTextures.find(dest);
-  if (it == g_gxState.copyTextures.end() || it->second->size != size) {
-    handle = aurora::gfx::new_render_texture(rect.width, rect.height, g_gxState.texCopyFmt, "Resolved Texture");
+  const aurora::gx::GXState::CopyTextureKey key{
+      .dest = dest,
+      .width = size.width,
+      .height = size.height,
+      .format = g_gxState.texCopyFmt,
+  };
+  auto it = g_gxState.copyTextureCache.find(key);
+  if (it == g_gxState.copyTextureCache.end()) {
+    auto handle = aurora::gfx::new_render_texture(rect.width, rect.height, g_gxState.texCopyFmt, "Resolved Texture");
+    it = g_gxState.copyTextureCache.emplace(key, handle).first;
+  }
+  auto& handle = it->second;
+  auto currentIt = g_gxState.copyTextures.find(dest);
+  if (currentIt == g_gxState.copyTextures.end() || currentIt->second != handle) {
     g_gxState.copyTextures[dest] = handle;
-  } else {
-    handle = it->second;
   }
   aurora::gfx::resolve_pass(handle, rect, clear, g_gxState.clearColor);
 }

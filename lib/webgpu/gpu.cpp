@@ -19,6 +19,10 @@
 #include <dawn/native/DawnNative.h>
 #endif
 
+namespace aurora::gx {
+void clear_copy_texture_cache() noexcept;
+}
+
 namespace aurora::webgpu {
 static Module Log("aurora::gpu");
 
@@ -599,9 +603,13 @@ void resize_swapchain(uint32_t width, uint32_t height, bool force) {
   if (!g_surface || !g_device || width == 0 || height == 0) {
     return;
   }
-  if (!force && g_graphicsConfig.surfaceConfiguration.width == width &&
-      g_graphicsConfig.surfaceConfiguration.height == height) {
+  const bool sizeChanged = g_graphicsConfig.surfaceConfiguration.width != width ||
+                           g_graphicsConfig.surfaceConfiguration.height != height;
+  if (!force && !sizeChanged) {
     return;
+  }
+  if (sizeChanged) {
+    gx::clear_copy_texture_cache();
   }
   g_graphicsConfig.surfaceConfiguration.width = width;
   g_graphicsConfig.surfaceConfiguration.height = height;
