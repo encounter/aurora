@@ -262,21 +262,21 @@ uint32_t PADRead(PADStatus* status) {
     status[i].substickX = static_cast<int8_t>(xr);
     status[i].substickY = static_cast<int8_t>(yr);
 
-    xl = std::max((Sint16)0, _get_axis_value(controller, PAD_AXIS_TRIGGER_L));
-    xr = std::max((Sint16)0, _get_axis_value(controller, PAD_AXIS_TRIGGER_R));
+    Sint16 tl = std::max((Sint16)0, _get_axis_value(controller, PAD_AXIS_TRIGGER_L));
+    Sint16 tr = std::max((Sint16)0, _get_axis_value(controller, PAD_AXIS_TRIGGER_R));
     if (/*!controller->m_isGameCube && */ controller->m_deadZones.emulateTriggers) {
-      if (xr > controller->m_deadZones.leftTriggerActivationZone) {
+      if (tl > controller->m_deadZones.leftTriggerActivationZone) {
         status[i].button |= PAD_TRIGGER_L;
       }
-      if (yr > controller->m_deadZones.rightTriggerActivationZone) {
+      if (tr > controller->m_deadZones.rightTriggerActivationZone) {
         status[i].button |= PAD_TRIGGER_R;
       }
     }
-    xr /= 128;
-    yr /= 128;
+    tl /= 128;
+    tr /= 128;
 
-    status[i].triggerLeft = static_cast<int8_t>(xr);
-    status[i].triggerRight = static_cast<int8_t>(yr);
+    status[i].triggerLeft = static_cast<int8_t>(tl);
+    status[i].triggerRight = static_cast<int8_t>(tr);
 
     if (controller->m_hasRumble) {
       rumbleSupport |= PAD_CHAN0_BIT >> i;
