@@ -73,7 +73,7 @@ static u16 prepare_idx_buffer(ByteBuffer& buf, GXPrimitive prim, u16 vtxStart, u
       }
       numIndices += 3;
     }
-  } else if (prim == GX_LINES || prim == GX_LINESTRIP) {
+  } else if (prim == GX_LINES || prim == GX_LINESTRIP || prim == GX_POINTS) {
     buf.reserve_extra(6 * sizeof(u16));
     buf.append<u16>(0);
     buf.append<u16>(1);
@@ -1429,6 +1429,8 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
     instanceCount = vtxCount / 2;
   } else if (prim == GX_LINESTRIP) {
     instanceCount = vtxCount - 1;
+  } else if (prim == GX_POINTS) {
+    instanceCount = vtxCount;
   }
   gfx::push_draw_command(DrawData{
       .pipeline = pipeline,

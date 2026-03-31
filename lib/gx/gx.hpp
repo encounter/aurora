@@ -467,7 +467,7 @@ struct ShaderInfo {
   u32 uniformSize = 0;
   bool usesFog : 1 = false;
   bool lightingEnabled : 1 = false;
-  bool lines : 1 = false;
+  u8 lineMode : 2 = 0;
 };
 struct BindGroupRanges {
   std::array<gfx::Range, MaxIndexAttr> vaRanges{};

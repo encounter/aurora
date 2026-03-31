@@ -177,7 +177,7 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
 
   if (config.lineMode != 0) {
     info.uniformSize += 4 + 4 + 4 + 4; // line_width, line_aspect_y, line_tex_offset, line_texcoord_mask
-    info.lines = true;
+    info.lineMode = config.lineMode;
   }
 
   for (int attr = 0; attr < config.attrs.size(); attr++) {
@@ -323,6 +323,16 @@ static f32 tex_offset(GXTexOffset offs) noexcept {
   }
 }
 
+static u32 point_texcoord_mask() noexcept {
+  u32 mask = 0;
+  for (int i = 0; i < MaxTexCoord; ++i) {
+    if (g_gxState.texCoordScales[i].pointOffset) {
+      mask |= 1 << i;
+    }
+  }
+  return mask;
+}
+
 static u32 line_texcoord_mask() noexcept {
   u32 mask = 0;
   for (int i = 0; i < MaxTexCoord; ++i) {
@@ -339,11 +349,18 @@ gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart) noexcept {
   buf.append(g_gxState.currentPnMtx);
   buf.append<f32>(gfx::get_viewport().width);
   buf.append<f32>(gfx::get_viewport().height);
-  if (info.lines) {
-    buf.append<f32>(static_cast<f32>(g_gxState.lineWidth) / 6.f);
-    buf.append<f32>(g_gxState.lineHalfAspect ? 0.5f : 1.f);
-    buf.append<f32>(tex_offset(g_gxState.lineTexOffset));
-    buf.append<u32>(line_texcoord_mask());
+  if (info.lineMode != 0) {
+    if (info.lineMode == 3) { // GX_POINTS
+      buf.append<f32>(static_cast<f32>(g_gxState.pointSize) / 6.f);
+      buf.append<f32>(1.0f);
+      buf.append<f32>(tex_offset(g_gxState.pointTexOffset));
+      buf.append<u32>(point_texcoord_mask());
+    } else { // GX_LINES / GX_LINESTRIP
+      buf.append<f32>(static_cast<f32>(g_gxState.lineWidth) / 6.f);
+      buf.append<f32>(g_gxState.lineHalfAspect ? 0.5f : 1.f);
+      buf.append<f32>(tex_offset(g_gxState.lineTexOffset));
+      buf.append<u32>(line_texcoord_mask());
+    }
   }
   buf.append(g_gxState.proj);
 

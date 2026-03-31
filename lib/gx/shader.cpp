@@ -717,7 +717,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
   std::string vtxXfrAttrs;
   size_t vtxOutIdx = 0;
 
-  // Load points for line expansion
+  // Load points for line/point expansion
   std::string_view vidxAttr = "vidx"sv;
   if (config.lineMode != 0) {
     vtxInAttrs += ",\n    @builtin(instance_index) iidx: u32";
@@ -726,23 +726,35 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         "\n    line_aspect_y: f32,"
         "\n    line_tex_offset: f32,"
         "\n    line_texcoord_mask: u32,";
-    vtxXfrAttrsPre += fmt::format(
-        "\n    let use_b = vidx >= 2u;"
-        "\n    let vidx_a = iidx * {}u;"
-        "\n    let vidx_b = vidx_a + 1u;"
-        "\n    let in_vidx = select(vidx_a, vidx_b, use_b);"
-        "\n    let pos_a = {};"
-        "\n    let pos_b = {};"
-        "\n    let in_pos = select(pos_a, pos_b, use_b);"
-        "\n    let pnmtxidx_a = {};"
-        "\n    let pnmtxidx_b = {};"
-        "\n    let in_pnmtxidx = select(pnmtxidx_a, pnmtxidx_b, use_b);"
-        "\n    let mv_pos_a = vec4f(pos_a, 1.0) * ubuf.postex_mtx[pnmtxidx_a];"
-        "\n    let mv_pos_b = vec4f(pos_b, 1.0) * ubuf.postex_mtx[pnmtxidx_b];"
-        "\n    let mv_pos = select(mv_pos_a, mv_pos_b, use_b);",
-        config.lineMode == 1 ? 2 : 1, attr_load(config, GX_VA_POS, "vidx_a"sv),
-        attr_load(config, GX_VA_POS, "vidx_b"sv), attr_load(config, GX_VA_PNMTXIDX, "vidx_a"sv),
-        attr_load(config, GX_VA_PNMTXIDX, "vidx_b"sv));
+    if (config.lineMode == 3) {
+      // GX_POINTS: each instance = one vertex, expand to quad
+      vtxXfrAttrsPre += fmt::format(
+          "\n    let in_vidx = iidx;"
+          "\n    let in_pos = {};"
+          "\n    let in_pnmtxidx = {};"
+          "\n    let mv_pos = vec4f(in_pos, 1.0) * ubuf.postex_mtx[in_pnmtxidx];",
+          attr_load(config, GX_VA_POS, "in_vidx"sv),
+          attr_load(config, GX_VA_PNMTXIDX, "in_vidx"sv));
+    } else {
+      // GX_LINES / GX_LINESTRIP: each instance = two vertices, expand to quad
+      vtxXfrAttrsPre += fmt::format(
+          "\n    let use_b = vidx >= 2u;"
+          "\n    let vidx_a = iidx * {}u;"
+          "\n    let vidx_b = vidx_a + 1u;"
+          "\n    let in_vidx = select(vidx_a, vidx_b, use_b);"
+          "\n    let pos_a = {};"
+          "\n    let pos_b = {};"
+          "\n    let in_pos = select(pos_a, pos_b, use_b);"
+          "\n    let pnmtxidx_a = {};"
+          "\n    let pnmtxidx_b = {};"
+          "\n    let in_pnmtxidx = select(pnmtxidx_a, pnmtxidx_b, use_b);"
+          "\n    let mv_pos_a = vec4f(pos_a, 1.0) * ubuf.postex_mtx[pnmtxidx_a];"
+          "\n    let mv_pos_b = vec4f(pos_b, 1.0) * ubuf.postex_mtx[pnmtxidx_b];"
+          "\n    let mv_pos = select(mv_pos_a, mv_pos_b, use_b);",
+          config.lineMode == 1 ? 2 : 1, attr_load(config, GX_VA_POS, "vidx_a"sv),
+          attr_load(config, GX_VA_POS, "vidx_b"sv), attr_load(config, GX_VA_PNMTXIDX, "vidx_a"sv),
+          attr_load(config, GX_VA_PNMTXIDX, "vidx_b"sv));
+    }
     vidxAttr = "in_vidx"sv;
   } else if (config.attrs[GX_VA_PNMTXIDX].attrType == GX_NONE) {
     vtxXfrAttrsPre += "\n    let in_pnmtxidx = ubuf.current_pnmtx;";
@@ -773,7 +785,18 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
         "\n    let mv_pos = vec4f({}, 1.0) * ubuf.postex_mtx[in_pnmtxidx];"
         "\n    out.pos = vec4f(mv_pos, 1.0) * ubuf.proj;",
         vtx_attr(config, GX_VA_POS));
+  } else if (config.lineMode == 3) {
+    // GX_POINTS: expand single vertex to axis-aligned screen-space square
+    vtxXfrAttrsPre +=
+        "\n    let clip = vec4f(mv_pos, 1.0) * ubuf.proj;"
+        "\n    let point_size = ubuf.line_width * (ubuf.viewport_size.y / 528.0);"
+        "\n    let x_sign = select(-1.0, 1.0, (vidx & 1u) != 0u);"
+        "\n    let y_sign = select(-1.0, 1.0, vidx >= 2u);"
+        "\n    let offset_px = vec2f(x_sign, y_sign) * (point_size / 2.0);"
+        "\n    let offset_ndc = (offset_px * 2.0) / ubuf.viewport_size;"
+        "\n    out.pos = vec4f(clip.xy + offset_ndc * clip.w, clip.zw);";
   } else {
+    // GX_LINES / GX_LINESTRIP: expand line segment perpendicular to direction
     vtxXfrAttrsPre +=
         "\n    let clip_a = vec4f(mv_pos_a, 1.0) * ubuf.proj;"
         "\n    let clip_b = vec4f(mv_pos_b, 1.0) * ubuf.proj;"
@@ -1098,8 +1121,17 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& in
       vtxXfrAttrs +=
           fmt::format("\n    var tc{0}_proj = vec4f(tc{0}_tmp.xyz, 1.0) * ubuf.postmtx[{1}];", i, postMtxIdx);
     }
-    // Apply line tex offset
-    if (config.lineMode != 0) {
+    // Apply line/point tex offset
+    if (config.lineMode == 3) {
+      // GX_POINTS: offset S for right columns, T for bottom rows
+      vtxXfrAttrs += fmt::format(
+          "\n    if ((ubuf.line_texcoord_mask & (1u << {0})) != 0u) {{"
+          "\n        if ((vidx & 1u) != 0u) {{ tc{0}_proj.x += ubuf.line_tex_offset; }}"
+          "\n        if (vidx >= 2u) {{ tc{0}_proj.y += ubuf.line_tex_offset; }}"
+          "\n    }}",
+          i);
+    } else if (config.lineMode != 0) {
+      // GX_LINES / GX_LINESTRIP: offset one axis for perpendicular side
       vtxXfrAttrs += fmt::format(
           "\n    if ((ubuf.line_texcoord_mask & (1u << {0})) != 0u && (vidx & 1u) != 0u) {{"
           "\n        tc{0}_proj.y += ubuf.line_tex_offset;"
