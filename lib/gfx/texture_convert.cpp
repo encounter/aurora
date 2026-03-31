@@ -12,6 +12,11 @@ struct RGBA8 {
   uint8_t a;
 };
 
+struct RG8 {
+  uint8_t r;
+  uint8_t g;
+};
+
 // http://www.mindcontrol.org/~hplus/graphics/expand-bits.html
 template <uint8_t v>
 constexpr uint8_t ExpandTo8(uint8_t n) {
@@ -132,24 +137,21 @@ struct TextureDecoderI8 {
 
 struct TextureDecoderIA4 {
   using Source = uint8_t;
-  using Target = RGBA8;
+  using Target = RG8;
 
   static constexpr uint32_t Frac = 1;
   static constexpr uint32_t BlockWidth = 8;
   static constexpr uint32_t BlockHeight = 4;
 
   static void decode_texel(Target* target, const Source* in, const uint32_t x) {
-    const uint8_t intensity = ExpandTo8<4>(in[x] & 0xf);
-    target[x].r = intensity;
-    target[x].g = intensity;
-    target[x].b = intensity;
-    target[x].a = ExpandTo8<4>(in[x] >> 4);
+    target[x].r = ExpandTo8<4>(in[x] & 0xf);
+    target[x].g = ExpandTo8<4>(in[x] >> 4);
   }
 };
 
 struct TextureDecoderIA8 {
   using Source = uint16_t;
-  using Target = RGBA8;
+  using Target = RG8;
 
   static constexpr uint32_t Frac = 1;
   static constexpr uint32_t BlockWidth = 4;
@@ -157,11 +159,8 @@ struct TextureDecoderIA8 {
 
   static void decode_texel(Target* target, const Source* in, const uint32_t x) {
     const auto texel = in[x];
-    const uint8_t intensity = texel >> 8;
-    target[x].r = intensity;
-    target[x].g = intensity;
-    target[x].b = intensity;
-    target[x].a = texel & 0xff;
+    target[x].r = texel >> 8;
+    target[x].g = texel & 0xff;
   }
 };
 

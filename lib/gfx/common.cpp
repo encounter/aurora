@@ -3,6 +3,8 @@
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"
 #include "../gx/pipeline.hpp"
+#include "tex_copy_conv.hpp"
+#include "tex_palette_conv.hpp"
 #include "texture.hpp"
 
 #include <atomic>
@@ -38,9 +40,6 @@ constexpr uint64_t TextureUploadSize = 25165824; // 24mb
 constexpr uint64_t StagingBufferSize =
     UniformBufferSize + VertexBufferSize + IndexBufferSize + StorageBufferSize + TextureUploadSize;
 
-struct ShaderState {
-  gx::State gx;
-};
 struct ShaderDrawCommand {
   ShaderType type;
   union {
@@ -127,7 +126,6 @@ wgpu::Buffer g_storageBuffer;
 static std::array<wgpu::Buffer, 3> g_stagingBuffers;
 static wgpu::Limits g_cachedLimits;
 
-static ShaderState g_state;
 static PipelineRef g_currentPipeline;
 
 // for imgui debug
@@ -139,10 +137,12 @@ using CommandList = std::vector<Command>;
 struct RenderPass {
   TextureHandle resolveTarget;
   ClipRect resolveRect;
-  Vec4<float> clearColor{0.f, 0.f, 0.f, 0.f};
-  float clearDepth = gx::UseReversedZ ? 0.f : 1.f;
+  Vec4<float> clearColorValue{0.f, 0.f, 0.f, 0.f};
+  float clearDepthValue = gx::UseReversedZ ? 0.f : 1.f;
   CommandList commands;
-  bool clear = true;
+  bool clearColor = true;
+  bool clearAlpha = true;
+  bool clearDepth = true;
 };
 static std::vector<RenderPass> g_renderPasses;
 static u32 g_currentRenderPass = UINT32_MAX;
@@ -259,14 +259,17 @@ void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {
   }
 }
 
-void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> clearColor) {
-  auto& currentPass = aurora::gfx::g_renderPasses[g_currentRenderPass];
+void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
+                  Vec4<float> clearColorValue, float clearDepthValue) {
+  auto& currentPass = g_renderPasses[g_currentRenderPass];
   currentPass.resolveTarget = std::move(texture);
   currentPass.resolveRect = rect;
   auto& newPass = g_renderPasses.emplace_back();
+  newPass.clearColorValue = clearColorValue;
+  newPass.clearDepthValue = clearDepthValue;
   newPass.clearColor = clearColor;
-  newPass.clearDepth = g_renderPasses[g_currentRenderPass].clearDepth;
-  newPass.clear = clear;
+  newPass.clearAlpha = clearAlpha;
+  newPass.clearDepth = clearDepth;
   ++g_currentRenderPass;
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
@@ -279,7 +282,7 @@ void push_draw_command(gx::DrawData data) {
 
 template <>
 PipelineRef pipeline_ref(gx::PipelineConfig config) {
-  return find_pipeline(ShaderType::GX, config, [=]() { return create_pipeline(g_state.gx, config); });
+  return find_pipeline(ShaderType::GX, config, [=] { return create_pipeline(config); });
 }
 
 static void pipeline_worker() {
@@ -355,7 +358,7 @@ void load_pipeline_cache() {
         if (config.version != gx::GXPipelineConfigVersion) {
           break;
         }
-        find_pipeline(type, config, [=]() { return gx::create_pipeline(g_state.gx, config); }, true);
+        find_pipeline(type, config, [=] { return gx::create_pipeline(config); }, true);
         break;
       }
       default:
@@ -380,6 +383,9 @@ void save_pipeline_cache() {
 }
 
 void initialize() {
+  tex_copy_conv::initialize();
+  tex_palette_conv::initialize();
+
   // No async pipelines for OpenGL (ES)
   if (webgpu::g_backendType == wgpu::BackendType::OpenGL || webgpu::g_backendType == wgpu::BackendType::OpenGLES ||
       webgpu::g_backendType == wgpu::BackendType::WebGPU) {
@@ -419,7 +425,7 @@ void initialize() {
   }
   map_staging_buffer();
 
-  g_state.gx = gx::construct_state();
+  gx::initialize();
 
   load_pipeline_cache();
 }
@@ -433,6 +439,8 @@ void shutdown() {
 
   save_pipeline_cache();
 
+  tex_copy_conv::shutdown();
+  tex_palette_conv::shutdown();
   gx::shutdown();
 
   g_textureUploads.clear();
@@ -449,8 +457,6 @@ void shutdown() {
   g_stagingBuffers.fill({});
   g_renderPasses.clear();
   g_currentRenderPass = UINT32_MAX;
-
-  g_state = {};
 
   queuedPipelines = 0;
   createdPipelines = 0;
@@ -496,11 +502,8 @@ void begin_frame() {
   g_stats.mergedDrawCallCount = 0;
 
   g_renderPasses.emplace_back();
-  g_renderPasses[0].clearColor = gx::g_gxState.clearColor;
-  {
-    float normalizedDepth = static_cast<float>(gx::g_gxState.clearDepth) / 16777215.f;
-    g_renderPasses[0].clearDepth = gx::UseReversedZ ? (1.f - normalizedDepth) : normalizedDepth;
-  }
+  g_renderPasses[0].clearColorValue = gx::g_gxState.clearColor;
+  g_renderPasses[0].clearDepthValue = gx::clear_depth_value();
   g_currentRenderPass = 0;
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
@@ -561,26 +564,27 @@ void render(wgpu::CommandEncoder& cmd) {
     if (i == g_renderPasses.size() - 1) {
       ASSERT(!passInfo.resolveTarget, "Final render pass must not have resolve target");
     }
+    const auto clearColorFull = passInfo.clearColor && passInfo.clearAlpha;
     const std::array attachments{
         wgpu::RenderPassColorAttachment{
             .view = webgpu::g_frameBuffer.view,
             .resolveTarget = webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.view : nullptr,
-            .loadOp = passInfo.clear ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
+            .loadOp = clearColorFull ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
             .storeOp = wgpu::StoreOp::Store,
             .clearValue =
                 {
-                    .r = passInfo.clearColor.x(),
-                    .g = passInfo.clearColor.y(),
-                    .b = passInfo.clearColor.z(),
-                    .a = passInfo.clearColor.w(),
+                    .r = passInfo.clearColorValue.x(),
+                    .g = passInfo.clearColorValue.y(),
+                    .b = passInfo.clearColorValue.z(),
+                    .a = passInfo.clearColorValue.w(),
                 },
         },
     };
     const wgpu::RenderPassDepthStencilAttachment depthStencilAttachment{
         .view = webgpu::g_depthBuffer.view,
-        .depthLoadOp = passInfo.clear ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
+        .depthLoadOp = passInfo.clearDepth ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
         .depthStoreOp = wgpu::StoreOp::Store,
-        .depthClearValue = passInfo.clearDepth,
+        .depthClearValue = passInfo.clearDepthValue,
     };
     const auto label = fmt::format("Render pass {}", i);
     const wgpu::RenderPassDescriptor renderPassDescriptor{
@@ -590,6 +594,9 @@ void render(wgpu::CommandEncoder& cmd) {
         .depthStencilAttachment = &depthStencilAttachment,
     };
     auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
+    if (!clearColorFull && (passInfo.clearColor || passInfo.clearAlpha)) {
+      webgpu::draw_clear(pass, passInfo.clearColor, passInfo.clearAlpha, false, passInfo.clearColorValue, 0.f);
+    }
     render_pass(pass, i);
     pass.End();
 
@@ -615,6 +622,9 @@ void render(wgpu::CommandEncoder& cmd) {
           .depthOrArrayLayers = 1,
       };
       cmd.CopyTextureToTexture(&src, &dst, &size);
+      // Run any pending texture conversions that depend on this resolve target
+      tex_copy_conv::execute(cmd);
+      tex_palette_conv::execute(cmd);
     }
   }
   g_renderPasses.clear();
@@ -679,7 +689,7 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
       const auto& draw = cmd.data.draw;
       switch (draw.type) {
       case ShaderType::GX:
-        gx::render(g_state.gx, draw.gx, pass);
+        gx::render(draw.gx, pass);
         break;
       }
     } break;

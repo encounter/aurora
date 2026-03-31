@@ -5,8 +5,12 @@
 #include "gx/gx.hpp"
 #include "gx/pipeline.hpp"
 #include "gx/shader_info.hpp"
+#include "gfx/common.hpp"
+#include "gfx/tex_copy_conv.hpp"
+#include "gfx/tex_palette_conv.hpp"
 #include "gfx/texture.hpp"
 #include "internal.hpp"
+#include "webgpu/gpu.hpp"
 
 #include <cstdio>
 #include <fmt/format.h>
@@ -37,6 +41,10 @@ wgpu::Buffer g_uniformBuffer;
 wgpu::Buffer g_indexBuffer;
 wgpu::Buffer g_storageBuffer;
 } // namespace aurora::gfx
+
+namespace aurora::webgpu {
+GraphicsConfig g_graphicsConfig{};
+} // namespace aurora::webgpu
 
 // --- GXState (the real instance -- tests validate this) ---
 namespace aurora::gx {
@@ -118,9 +126,24 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
   return {};
 }
 TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 fmt, const char* label) noexcept { return {}; }
+TextureHandle new_conv_texture(uint32_t width, uint32_t height, wgpu::TextureFormat wgpuFormat, u32 gxFormat,
+                               const char* label) noexcept {
+  return {};
+}
 void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {}
-void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> clearColor) {}
+void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
+                  Vec4<float> clearColorValue, float clearDepthValue) {}
 } // namespace aurora::gfx
+
+namespace aurora::gfx::tex_copy_conv {
+bool needs_conversion(GXTexFmt fmt) { return false; }
+wgpu::TextureFormat output_format(GXTexFmt fmt) { return wgpu::TextureFormat::Undefined; }
+void queue(ConvRequest req) {}
+} // namespace aurora::gfx::tex_copy_conv
+
+namespace aurora::gfx::tex_palette_conv {
+void queue(ConvRequest req) {}
+} // namespace aurora::gfx::tex_palette_conv
 
 // --- Window stub ---
 #include "../lib/window.hpp"
@@ -130,6 +153,9 @@ AuroraWindowSize get_window_size() { return {640, 480, 640, 480, 1.0f}; }
 
 // --- WebGPU C API stubs (prevent linker errors from wgpu:: destructors) ---
 extern "C" {
+void wgpuDeviceRelease(WGPUDevice) {}
+void wgpuQueueRelease(WGPUQueue) {}
+void wgpuSurfaceRelease(WGPUSurface) {}
 void wgpuBufferRelease(WGPUBuffer) {}
 void wgpuTextureRelease(WGPUTexture) {}
 void wgpuTextureViewRelease(WGPUTextureView) {}
@@ -139,9 +165,14 @@ void wgpuRenderPipelineRelease(WGPURenderPipeline) {}
 void wgpuBindGroupRelease(WGPUBindGroup) {}
 void wgpuBindGroupLayoutRelease(WGPUBindGroupLayout) {}
 void wgpuPipelineLayoutRelease(WGPUPipelineLayout) {}
+void wgpuInstanceRelease(WGPUInstance) {}
+void wgpuDeviceAddRef(WGPUDevice) {}
+void wgpuQueueAddRef(WGPUQueue) {}
+void wgpuSurfaceAddRef(WGPUSurface) {}
 void wgpuBufferAddRef(WGPUBuffer) {}
 void wgpuTextureAddRef(WGPUTexture) {}
 void wgpuTextureViewAddRef(WGPUTextureView) {}
+void wgpuInstanceAddRef(WGPUInstance) {}
 }
 
 void aurora::gfx::push_debug_group(std::string) {

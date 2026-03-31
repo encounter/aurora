@@ -1,7 +1,9 @@
 #include "gx.hpp"
 #include "__gx.h"
 
+#include "../../gfx/tex_palette_conv.hpp"
 #include "../../gfx/texture.hpp"
+#include "../../webgpu/gpu.hpp"
 
 #include <absl/container/flat_hash_map.h>
 
@@ -114,6 +116,35 @@ void GXLoadTexObj(GXTexObj* obj_, GXTexMapID id) {
     obj->dataInvalidated = false;
   }
   g_gxState.textures[id] = {*obj};
+
+  // Perform palette conversion if necessary
+  if (aurora::gx::is_palette_format(obj->fmt)) {
+    auto& bind = g_gxState.textures[id];
+    const auto& tlutObj = g_gxState.tluts[bind.texObj.tlut];
+    CHECK(tlutObj.ref, "TLUT {} not loaded for palette texture", static_cast<int>(bind.texObj.tlut));
+
+    using aurora::gfx::tex_palette_conv::Variant;
+    Variant variant;
+    if (bind.texObj.ref->format == wgpu::TextureFormat::R16Sint) {
+      // CPU-decoded static texture
+      variant = Variant::Direct;
+    } else {
+      // Float texture (copy-converted)
+      variant = obj->fmt == GX_TF_C4 ? Variant::FromFloat4 : Variant::FromFloat8;
+    }
+
+    const auto label = fmt::format("PaletteConv_{}", static_cast<int>(id));
+    auto dst = aurora::gfx::new_conv_texture(bind.texObj.width, bind.texObj.height, GX_TF_RGBA8, label.c_str());
+    aurora::gfx::tex_palette_conv::queue({
+        .variant = variant,
+        .src = bind.texObj.ref,
+        .dst = dst,
+        .tlut = tlutObj.ref,
+    });
+    bind.texObj.ref = std::move(dst);
+    bind.texObj.fmt = GX_TF_RGBA8;
+  }
+
   g_gxState.stateDirty = true; // TODO only if changed?
 }
 

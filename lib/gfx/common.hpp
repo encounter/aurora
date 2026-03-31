@@ -211,7 +211,8 @@ void end_frame(const wgpu::CommandEncoder& cmd);
 void render(wgpu::CommandEncoder& cmd);
 void render_pass(const wgpu::RenderPassEncoder& pass, uint32_t idx);
 void map_staging_buffer();
-void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> clearColor);
+void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
+                  Vec4<float> clearColorValue, float clearDepthValue);
 
 Range push_verts(const uint8_t* data, size_t length);
 template <typename T>

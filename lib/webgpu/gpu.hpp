@@ -1,6 +1,7 @@
 #pragma once
 
 #include <aurora/aurora.h>
+#include <aurora/math.hpp>
 
 #include "wgpu.hpp"
 
@@ -41,4 +42,6 @@ void shutdown();
 bool refresh_surface(bool recreate = true);
 void resize_swapchain(uint32_t width, uint32_t height, bool force = false);
 TextureWithSampler create_render_texture(bool multisampled);
+void draw_clear(const wgpu::RenderPassEncoder& pass, bool clearColor, bool clearAlpha, bool clearDepth,
+                const Vec4<float>& clearColorValue, float clearDepthValue);
 } // namespace aurora::webgpu
