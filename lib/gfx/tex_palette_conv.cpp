@@ -39,7 +39,7 @@ fn intensity(rgb: vec3f) -> f32 {
     // ITU-R BT.601 luma coefficients
     return dot(rgb, vec3f(0.257, 0.504, 0.098)) + 16.0 / 255.0;
 }
-)";
+)"sv;
 
 // Direct: R16Sint index texture + TLUT -> RGBA8
 static constexpr std::string_view ShaderDirect = R"(
@@ -53,7 +53,7 @@ static constexpr std::string_view ShaderDirect = R"(
     let idx = textureLoad(src, coord, 0).r;
     return textureLoad(tlut, vec2i(idx, 0), 0);
 }
-)";
+)"sv;
 
 // FromFloat8: f32 texture (R8Unorm) -> 8-bit index -> TLUT -> RGBA8
 static constexpr std::string_view ShaderFromFloat8 = R"(
@@ -67,7 +67,7 @@ static constexpr std::string_view ShaderFromFloat8 = R"(
     let r = textureLoad(src, coord, 0).r;
     return textureLoad(tlut, vec2i(i32(r * 255.0), 0), 0);
 }
-)";
+)"sv;
 
 // FromFloat4: f32 texture (R8Unorm) -> 4-bit index -> TLUT -> RGBA8
 static constexpr std::string_view ShaderFromFloat4 = R"(
@@ -81,7 +81,7 @@ static constexpr std::string_view ShaderFromFloat4 = R"(
     let r = textureLoad(src, coord, 0).r;
     return textureLoad(tlut, vec2i(i32(r * 15.0), 0), 0);
 }
-)";
+)"sv;
 
 struct PipelineInfo {
   wgpu::RenderPipeline pipeline;
@@ -91,6 +91,7 @@ struct PipelineInfo {
 static PipelineInfo g_directPipeline;
 static PipelineInfo g_fromFloat8Pipeline;
 static PipelineInfo g_fromFloat4Pipeline;
+static wgpu::Sampler g_sampler;
 
 static PipelineInfo create_pipeline(std::string_view fragBindingsAndShader, wgpu::TextureSampleType srcSampleType,
                                     const char* label) {
@@ -198,28 +199,28 @@ void initialize() {
       create_pipeline(ShaderFromFloat8, wgpu::TextureSampleType::UnfilterableFloat, "TexPaletteConv FromFloat8");
   g_fromFloat4Pipeline =
       create_pipeline(ShaderFromFloat4, wgpu::TextureSampleType::UnfilterableFloat, "TexPaletteConv FromFloat4");
+  constexpr wgpu::SamplerDescriptor samplerDesc{
+      .label = "TexPaletteConv Sampler",
+      .magFilter = wgpu::FilterMode::Nearest,
+      .minFilter = wgpu::FilterMode::Nearest,
+  };
+  g_sampler = g_device.CreateSampler(&samplerDesc);
 }
 
 void shutdown() {
   g_directPipeline = {};
   g_fromFloat8Pipeline = {};
   g_fromFloat4Pipeline = {};
+  g_sampler = {};
 }
 
 void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
   const auto& [pipeline, bindGroupLayout] = pipeline_for_variant(req.variant);
 
-  constexpr wgpu::SamplerDescriptor samplerDesc{
-      .label = "TexPaletteConv Sampler",
-      .magFilter = wgpu::FilterMode::Nearest,
-      .minFilter = wgpu::FilterMode::Nearest,
-  };
-  const auto sampler = g_device.CreateSampler(&samplerDesc);
-
   const std::array bindGroupEntries{
       wgpu::BindGroupEntry{
           .binding = 0,
-          .sampler = sampler,
+          .sampler = g_sampler,
       },
       wgpu::BindGroupEntry{
           .binding = 1,
@@ -235,7 +236,7 @@ void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
       .entryCount = bindGroupEntries.size(),
       .entries = bindGroupEntries.data(),
   };
-  auto bindGroup = g_device.CreateBindGroup(&bindGroupDescriptor);
+  const auto bindGroup = g_device.CreateBindGroup(&bindGroupDescriptor);
 
   const std::array colorAttachments{
       wgpu::RenderPassColorAttachment{
@@ -250,7 +251,7 @@ void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
       .colorAttachmentCount = colorAttachments.size(),
       .colorAttachments = colorAttachments.data(),
   };
-  auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
+  const auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
   pass.SetPipeline(pipeline);
   pass.SetBindGroup(0, bindGroup);
   pass.Draw(3);

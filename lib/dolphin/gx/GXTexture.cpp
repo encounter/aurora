@@ -115,6 +115,7 @@ void GXLoadTexObj(GXTexObj* obj_, GXTexMapID id) {
     aurora::gfx::write_texture(*obj->ref, {static_cast<const u8*>(obj->data), UINT32_MAX /* TODO */});
     obj->dataInvalidated = false;
   }
+  g_gxState.textures[id] = {*obj};
 
   // Perform palette conversion if necessary
   if (aurora::gx::is_palette_format(obj->fmt)) {
@@ -139,11 +140,11 @@ void GXLoadTexObj(GXTexObj* obj_, GXTexMapID id) {
         .dst = dst,
         .tlut = tlutObj.ref,
     });
-    obj->ref = std::move(dst);
-    obj->fmt = GX_TF_RGBA8;
+    auto& out = g_gxState.textures[id].texObj;
+    out.ref = std::move(dst);
+    out.fmt = GX_TF_RGBA8;
   }
 
-  g_gxState.textures[id] = {*obj};
   g_gxState.stateDirty = true; // TODO only if changed?
 }
 
