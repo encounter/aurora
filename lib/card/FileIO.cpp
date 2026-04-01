@@ -11,13 +11,10 @@ FileIO::FileIO(std::string_view filename, bool truncate) {
   m_path = filename;
   SDL_IOStream* stream = nullptr;
 
-  if (!truncate) {
-    stream = fileOpen(m_path.c_str(), "r+b");
-  } else {
-    stream = fileOpen(m_path.c_str(), "w+b");
-  }
+  stream = fileOpen(m_path.c_str(), truncate ? "w+b" : "r+b");
 
   if (stream != nullptr) {
+    SDL_FlushIO(stream);
     SDL_CloseIO(stream);
     m_ready = true;
   }
@@ -80,6 +77,7 @@ bool FileIO::fileWrite(const void* buf, size_t length, off_t offset) {
   }
 
   if (SDL_SeekIO(stream, offset, SDL_IO_SEEK_SET) < 0) {
+    SDL_FlushIO(stream);
     SDL_CloseIO(stream);
     return false;
   }
@@ -95,6 +93,7 @@ bool FileIO::fileWrite(const void* buf, size_t length, off_t offset) {
     total += written;
   }
 
+  SDL_FlushIO(stream);
   SDL_CloseIO(stream);
   return true;
 }
