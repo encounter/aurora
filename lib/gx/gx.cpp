@@ -20,11 +20,16 @@ using webgpu::g_graphicsConfig;
 
 GXState g_gxState{};
 
+static wgpu::Sampler sEmptySampler;
+static wgpu::Texture sEmptyTexture;
+static wgpu::TextureView sEmptyTextureView;
+
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[static_cast<size_t>(id)]; }
 
 void clear_copy_texture_cache() noexcept {
   g_gxState.copyTextures.clear();
   g_gxState.copyTextureCache.clear();
+  g_gxState.convTextureCache.clear();
 }
 
 static inline wgpu::BlendFactor to_blend_factor(GXBlendFactor fac, bool isDst) {
@@ -182,9 +187,8 @@ static inline wgpu::PrimitiveState to_primitive_state(GXCullMode gx_cullMode) {
   };
 }
 
-wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderInfo& info,
-                                    ArrayRef<wgpu::VertexBufferLayout> vtxBuffers, wgpu::ShaderModule shader,
-                                    const char* label) noexcept {
+wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
+                                    wgpu::ShaderModule shader, const char* label) noexcept {
   const wgpu::DepthStencilState depthStencil{
       .format = g_graphicsConfig.depthFormat,
       .depthWriteEnabled = config.depthCompare && config.depthUpdate,
@@ -203,7 +207,7 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderIn
       .targetCount = colorTargets.size(),
       .targets = colorTargets.data(),
   };
-  auto layouts = build_bind_group_layouts(info, config.shaderConfig);
+  auto layouts = build_bind_group_layouts(config.shaderConfig);
   const std::array bindGroupLayouts{
       layouts.uniformLayout,
       layouts.samplerLayout,
@@ -211,7 +215,7 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderIn
   };
   const wgpu::PipelineLayoutDescriptor pipelineLayoutDescriptor{
       .label = "GX Pipeline Layout",
-      .bindGroupLayoutCount = static_cast<uint32_t>(info.sampledTextures.any() ? bindGroupLayouts.size() : 1),
+      .bindGroupLayoutCount = bindGroupLayouts.size(),
       .bindGroupLayouts = bindGroupLayouts.data(),
   };
   auto pipelineLayout = g_device.CreatePipelineLayout(&pipelineLayoutDescriptor);
@@ -412,20 +416,6 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
   if (g_gxState.alphaCompare) {
     config.shaderConfig.alphaCompare = g_gxState.alphaCompare;
   }
-  for (u8 i = 0; i < MaxTextures; ++i) {
-    const auto& bind = g_gxState.textures[i];
-    TextureConfig texConfig{};
-    if (bind.texObj.ref) {
-      if (requires_copy_conversion(bind.texObj)) {
-        texConfig.copyFmt = bind.texObj.ref->gxFormat;
-      }
-      if (requires_load_conversion(bind.texObj)) {
-        texConfig.loadFmt = bind.texObj.fmt;
-      }
-      texConfig.renderTex = bind.texObj.ref->isRenderTexture;
-    }
-    config.shaderConfig.textureConfig[i] = texConfig;
-  }
   config = {
       .shaderConfig = config.shaderConfig,
       .depthFunc = g_gxState.depthFunc,
@@ -445,16 +435,16 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
 static std::mutex sBindGroupLayoutMutex;
 static absl::flat_hash_map<u32, wgpu::BindGroupLayout> sUniformBindGroupLayouts;
 static absl::flat_hash_map<u32, std::pair<wgpu::BindGroupLayout, wgpu::BindGroupLayout>> sTextureBindGroupLayouts;
+static wgpu::BindGroupLayout sTextureBindGroupLayout;
+static wgpu::BindGroupLayout sSamplerBindGroupLayout;
 
 GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& config,
                                const BindGroupRanges& ranges) noexcept {
-  const auto layouts = build_bind_group_layouts(info, config);
+  const auto layouts = build_bind_group_layouts(config);
 
   std::array<wgpu::BindGroupEntry, MaxIndexAttr + 3> uniformEntries;
-  memset(&uniformEntries, 0, sizeof(uniformEntries));
   uniformEntries[0].binding = 0;
   uniformEntries[0].buffer = gfx::g_vertexBuffer;
-  uniformEntries[0].size = wgpu::kWholeSize;
   uniformEntries[1].binding = 1;
   uniformEntries[1].buffer = gfx::g_uniformBuffer;
   uniformEntries[1].size = info.uniformSize;
@@ -472,39 +462,22 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
   }
 
   std::array<wgpu::BindGroupEntry, MaxTextures> samplerEntries;
-  std::array<wgpu::BindGroupEntry, MaxTextures * 2> textureEntries;
-  memset(&samplerEntries, 0, sizeof(samplerEntries));
-  memset(&textureEntries, 0, sizeof(textureEntries));
-  u32 samplerCount = 0;
+  std::array<wgpu::BindGroupEntry, MaxTextures> textureEntries;
   u32 textureCount = 0;
-  for (u32 i = 0; i < info.sampledTextures.size(); ++i) {
-    if (!info.sampledTextures.test(i)) {
-      continue;
-    }
+  for (u32 i = 0; i < MaxTextures; ++i) {
     const auto& tex = g_gxState.textures[i];
-    CHECK(tex, "unbound texture {}", i);
-    wgpu::BindGroupEntry& samplerEntry = samplerEntries[samplerCount];
-    samplerEntry.binding = samplerCount;
-    samplerEntry.size = wgpu::kWholeSize;
-    samplerEntry.sampler = gfx::sampler_ref(tex.get_descriptor());
-    ++samplerCount;
+    wgpu::BindGroupEntry& samplerEntry = samplerEntries[textureCount];
     wgpu::BindGroupEntry& textureEntry = textureEntries[textureCount];
+    samplerEntry.binding = textureCount;
     textureEntry.binding = textureCount;
-    textureEntry.size = wgpu::kWholeSize;
-    textureEntry.textureView = tex.texObj.ref->view;
-    ++textureCount;
-    // Load palette
-    const auto& texConfig = config.textureConfig[i];
-    if (is_palette_format(texConfig.loadFmt)) {
-      u32 tlut = tex.texObj.tlut;
-      CHECK(tlut >= GX_TLUT0 && tlut <= GX_BIGTLUT3, "tlut out of bounds {}", tlut);
-      CHECK(g_gxState.tluts[tlut].ref, "tlut unbound {}", tlut);
-      wgpu::BindGroupEntry& tlutEntry = textureEntries[textureCount];
-      tlutEntry.binding = textureCount;
-      tlutEntry.size = wgpu::kWholeSize;
-      tlutEntry.textureView = g_gxState.tluts[tlut].ref->view;
-      ++textureCount;
+    if (tex) {
+      samplerEntry.sampler = gfx::sampler_ref(tex.get_descriptor());
+      textureEntry.textureView = tex.texObj.ref->sampleTextureView;
+    } else {
+      samplerEntry.sampler = sEmptySampler;
+      textureEntry.textureView = sEmptyTextureView;
     }
+    ++textureCount;
   }
   const wgpu::BindGroupDescriptor uniformBindGroupDescriptor{
       .label = "GX Uniform Bind Group",
@@ -515,7 +488,7 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
   const wgpu::BindGroupDescriptor samplerBindGroupDescriptor{
       .label = "GX Sampler Bind Group",
       .layout = layouts.samplerLayout,
-      .entryCount = samplerCount,
+      .entryCount = textureCount,
       .entries = samplerEntries.data(),
   };
   const wgpu::BindGroupDescriptor textureBindGroupDescriptor{
@@ -531,11 +504,10 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
   };
 }
 
-GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const ShaderConfig& config) noexcept {
+GXBindGroupLayouts build_bind_group_layouts(const ShaderConfig& config) noexcept {
   GXBindGroupLayouts out;
 
   Hasher uniformHasher;
-  uniformHasher.update(info.uniformSize);
   uniformHasher.update(config.attrs);
   const auto uniformLayoutHash = uniformHasher.digest();
   {
@@ -562,7 +534,6 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
                 wgpu::BufferBindingLayout{
                     .type = wgpu::BufferBindingType::Uniform,
                     .hasDynamicOffset = true,
-                    .minBindingSize = info.uniformSize,
                 },
         },
     };
@@ -592,79 +563,39 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
     sUniformBindGroupLayouts.try_emplace(uniformLayoutHash, out.uniformLayout);
   }
 
-  Hasher textureHasher;
-  textureHasher.update(info.sampledTextures);
-  textureHasher.update(config.textureConfig);
-  const auto textureLayoutHash = textureHasher.digest();
-  {
-    std::lock_guard lock{sBindGroupLayoutMutex};
-    auto it2 = sTextureBindGroupLayouts.find(textureLayoutHash);
-    if (it2 != sTextureBindGroupLayouts.end()) {
-      out.samplerLayout = it2->second.first;
-      out.textureLayout = it2->second.second;
-      return out;
-    }
-  }
+  out.samplerLayout = sSamplerBindGroupLayout;
+  out.textureLayout = sTextureBindGroupLayout;
+  return out;
+}
 
-  u32 numSamplers = 0;
+void initialize() noexcept {
   u32 numTextures = 0;
   std::array<wgpu::BindGroupLayoutEntry, MaxTextures> samplerEntries;
-  std::array<wgpu::BindGroupLayoutEntry, MaxTextures * 2> textureEntries;
-  for (u32 i = 0; i < info.sampledTextures.size(); ++i) {
-    if (!info.sampledTextures.test(i)) {
-      continue;
-    }
-    const auto& texConfig = config.textureConfig[i];
-    bool copyAsPalette = is_palette_format(texConfig.copyFmt);
-    bool loadAsPalette = is_palette_format(texConfig.loadFmt);
-    samplerEntries[numSamplers] = {
-        .binding = numSamplers,
+  std::array<wgpu::BindGroupLayoutEntry, MaxTextures> textureEntries;
+  for (u32 i = 0; i < MaxTextures; ++i) {
+    samplerEntries[numTextures] = {
+        .binding = numTextures,
         .visibility = wgpu::ShaderStage::Fragment,
-        .sampler = {.type = copyAsPalette && loadAsPalette ? wgpu::SamplerBindingType::NonFiltering
-                                                           : wgpu::SamplerBindingType::Filtering},
+        .sampler = {.type = wgpu::SamplerBindingType::Filtering},
     };
-    ++numSamplers;
-    if (loadAsPalette) {
-      textureEntries[numTextures] = {
-          .binding = numTextures,
-          .visibility = wgpu::ShaderStage::Fragment,
-          .texture =
-              {
-                  .sampleType = copyAsPalette ? wgpu::TextureSampleType::Sint : wgpu::TextureSampleType::Float,
-                  .viewDimension = wgpu::TextureViewDimension::e2D,
-              },
-      };
-      ++numTextures;
-      textureEntries[numTextures] = {
-          .binding = numTextures,
-          .visibility = wgpu::ShaderStage::Fragment,
-          .texture =
-              {
-                  .sampleType = wgpu::TextureSampleType::Float,
-                  .viewDimension = wgpu::TextureViewDimension::e2D,
-              },
-      };
-      ++numTextures;
-    } else {
-      textureEntries[numTextures] = {
-          .binding = numTextures,
-          .visibility = wgpu::ShaderStage::Fragment,
-          .texture =
-              {
-                  .sampleType = wgpu::TextureSampleType::Float,
-                  .viewDimension = wgpu::TextureViewDimension::e2D,
-              },
-      };
-      ++numTextures;
-    }
+    textureEntries[numTextures] = {
+        .binding = numTextures,
+        .visibility = wgpu::ShaderStage::Fragment,
+        .texture =
+            {
+                .sampleType = wgpu::TextureSampleType::Float,
+                .viewDimension = wgpu::TextureViewDimension::e2D,
+            },
+    };
+    ++numTextures;
   }
   {
     const wgpu::BindGroupLayoutDescriptor descriptor{
         .label = "GX Sampler Bind Group Layout",
-        .entryCount = numSamplers,
+        .entryCount = numTextures,
         .entries = samplerEntries.data(),
     };
-    out.samplerLayout = g_device.CreateBindGroupLayout(&descriptor);
+    sSamplerBindGroupLayout = g_device.CreateBindGroupLayout(&descriptor);
   }
   {
     const wgpu::BindGroupLayoutDescriptor descriptor{
@@ -672,20 +603,31 @@ GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const Shader
         .entryCount = numTextures,
         .entries = textureEntries.data(),
     };
-    out.textureLayout = g_device.CreateBindGroupLayout(&descriptor);
+    sTextureBindGroupLayout = g_device.CreateBindGroupLayout(&descriptor);
   }
   {
-    std::lock_guard lock{sBindGroupLayoutMutex};
-    sTextureBindGroupLayouts.try_emplace(textureLayoutHash, std::make_pair(out.samplerLayout, out.textureLayout));
+    constexpr wgpu::SamplerDescriptor descriptor{.label = "Empty sampler"};
+    sEmptySampler = gfx::sampler_ref(descriptor);
   }
-  return out;
+  {
+    constexpr wgpu::TextureDescriptor descriptor{
+        .label = "Empty texture",
+        .usage = wgpu::TextureUsage::TextureBinding,
+        .size = {1, 1},
+        .format = wgpu::TextureFormat::RGBA8Unorm,
+    };
+    sEmptyTexture = g_device.CreateTexture(&descriptor);
+    sEmptyTextureView = sEmptyTexture.CreateView();
+  }
 }
 
 // TODO this is awkward
 extern std::mutex g_gxCachedShadersMutex;
-extern absl::flat_hash_map<gfx::ShaderRef, std::pair<wgpu::ShaderModule, gx::ShaderInfo>> g_gxCachedShaders;
+extern absl::flat_hash_map<gfx::ShaderRef, std::pair<wgpu::ShaderModule, ShaderInfo>> g_gxCachedShaders;
 void shutdown() noexcept {
   // TODO we should probably store this all in g_state.gx instead
+  sSamplerBindGroupLayout = {};
+  sTextureBindGroupLayout = {};
   {
     std::lock_guard lock{sBindGroupLayoutMutex};
     sUniformBindGroupLayouts.clear();
@@ -716,6 +658,7 @@ static wgpu::AddressMode wgpu_address_mode(GXTexWrapMode mode) {
     return wgpu::AddressMode::MirrorRepeat;
   }
 }
+
 static std::pair<wgpu::FilterMode, wgpu::MipmapFilterMode> wgpu_filter_mode(GXTexFilter filter) {
   switch (filter) {
     DEFAULT_FATAL("invalid filter mode {}", static_cast<int>(filter));
@@ -733,6 +676,7 @@ static std::pair<wgpu::FilterMode, wgpu::MipmapFilterMode> wgpu_filter_mode(GXTe
     return {wgpu::FilterMode::Linear, wgpu::MipmapFilterMode::Linear};
   }
 }
+
 static u16 wgpu_aniso(GXAnisotropy aniso) {
   switch (aniso) {
     DEFAULT_FATAL("invalid aniso {}", static_cast<int>(aniso));
@@ -744,19 +688,8 @@ static u16 wgpu_aniso(GXAnisotropy aniso) {
     return std::max<u16>(aurora::webgpu::g_graphicsConfig.textureAnisotropy, 1);
   }
 }
+
 wgpu::SamplerDescriptor aurora::gfx::TextureBind::get_descriptor() const noexcept {
-  if (gx::requires_copy_conversion(texObj) && gx::is_palette_format(texObj.ref->gxFormat)) {
-    return {
-        .label = "Generated Non-Filtering Sampler",
-        .addressModeU = wgpu_address_mode(texObj.wrapS),
-        .addressModeV = wgpu_address_mode(texObj.wrapT),
-        .addressModeW = wgpu::AddressMode::Repeat,
-        .magFilter = wgpu::FilterMode::Nearest,
-        .minFilter = wgpu::FilterMode::Nearest,
-        .mipmapFilter = wgpu::MipmapFilterMode::Nearest,
-        .maxAnisotropy = 1,
-    };
-  }
   const auto [minFilter, mipFilter] = wgpu_filter_mode(texObj.minFilter);
   const auto [magFilter, _] = wgpu_filter_mode(texObj.magFilter);
   return {

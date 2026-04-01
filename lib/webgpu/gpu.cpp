@@ -70,8 +70,6 @@ TextureWithSampler create_render_texture(bool multisampled) {
   const wgpu::TextureViewDescriptor viewDescriptor{
       .label = "Render texture view",
       .dimension = wgpu::TextureViewDimension::e2D,
-      .mipLevelCount = WGPU_MIP_LEVEL_COUNT_UNDEFINED,
-      .arrayLayerCount = WGPU_ARRAY_LAYER_COUNT_UNDEFINED,
   };
   auto view = texture.CreateView(&viewDescriptor);
 
@@ -119,8 +117,6 @@ static TextureWithSampler create_depth_texture() {
   const wgpu::TextureViewDescriptor viewDescriptor{
       .label = "Depth texture view",
       .dimension = wgpu::TextureViewDimension::e2D,
-      .mipLevelCount = WGPU_MIP_LEVEL_COUNT_UNDEFINED,
-      .arrayLayerCount = WGPU_ARRAY_LAYER_COUNT_UNDEFINED,
   };
   auto view = texture.CreateView(&viewDescriptor);
 
@@ -421,12 +417,10 @@ bool initialize(AuroraBackend auroraBackend) {
         .maxStorageBuffersPerShaderStage = supportedLimits.maxStorageBuffersPerShaderStage == 0
                                                ? WGPU_LIMIT_U32_UNDEFINED
                                                : supportedLimits.maxStorageBuffersPerShaderStage,
-        .minUniformBufferOffsetAlignment = supportedLimits.minUniformBufferOffsetAlignment < 64
-                                               ? 64
-                                               : supportedLimits.minUniformBufferOffsetAlignment,
-        .minStorageBufferOffsetAlignment = supportedLimits.minStorageBufferOffsetAlignment < 16
-                                               ? 16
-                                               : supportedLimits.minStorageBufferOffsetAlignment,
+        .minUniformBufferOffsetAlignment =
+            supportedLimits.minUniformBufferOffsetAlignment < 64 ? 64 : supportedLimits.minUniformBufferOffsetAlignment,
+        .minStorageBufferOffsetAlignment =
+            supportedLimits.minStorageBufferOffsetAlignment < 16 ? 16 : supportedLimits.minStorageBufferOffsetAlignment,
     };
     Log.info(
         "Using limits:"
@@ -603,8 +597,8 @@ void resize_swapchain(uint32_t width, uint32_t height, bool force) {
   if (!g_surface || !g_device || width == 0 || height == 0) {
     return;
   }
-  const bool sizeChanged = g_graphicsConfig.surfaceConfiguration.width != width ||
-                           g_graphicsConfig.surfaceConfiguration.height != height;
+  const bool sizeChanged =
+      g_graphicsConfig.surfaceConfiguration.width != width || g_graphicsConfig.surfaceConfiguration.height != height;
   if (!force && !sizeChanged) {
     return;
   }

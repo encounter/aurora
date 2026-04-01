@@ -17,7 +17,7 @@ struct DrawData {
   u32 dstAlpha;
 };
 
-constexpr u32 GXPipelineConfigVersion = 9;
+constexpr u32 GXPipelineConfigVersion = 10;
 struct PipelineConfig {
   u32 version = GXPipelineConfigVersion;
   ShaderConfig shaderConfig;
@@ -31,11 +31,8 @@ struct PipelineConfig {
 };
 static_assert(std::has_unique_object_representations_v<PipelineConfig>);
 
-struct State {};
-
-State construct_state();
-wgpu::RenderPipeline create_pipeline(const State& state, [[maybe_unused]] const PipelineConfig& config);
-void render(const State& state, const DrawData& data, const wgpu::RenderPassEncoder& pass);
+wgpu::RenderPipeline create_pipeline([[maybe_unused]] const PipelineConfig& config);
+void render(const DrawData& data, const wgpu::RenderPassEncoder& pass);
 
 void queue_surface(const u8* dlStart, u32 dlSize, bool bigEndian) noexcept;
 } // namespace aurora::gx

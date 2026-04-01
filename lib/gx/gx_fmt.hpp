@@ -876,3 +876,62 @@ inline std::string format_as(const GXVtxFmt& fmt) {
     return fmt::format("GXVtxFmt({})", underlying(fmt));
   }
 }
+
+inline std::string format_as(const GXTexFmt& fmt) {
+  switch (fmt) {
+  case GX_TF_I4:
+    return "GX_TF_I4";
+  case GX_TF_I8:
+    return "GX_TF_I8";
+  case GX_TF_IA4:
+    return "GX_TF_IA4";
+  case GX_TF_IA8:
+    return "GX_TF_IA8";
+  case GX_TF_RGB565:
+    return "GX_TF_RGB565";
+  case GX_TF_RGB5A3:
+    return "GX_TF_RGB5A3";
+  case GX_TF_RGBA8:
+    return "GX_TF_RGBA8";
+  case GX_TF_CMPR:
+    return "GX_TF_CMPR";
+  case GX_CTF_R4:
+    return "GX_CTF_R4";
+  case GX_CTF_RA4:
+    return "GX_CTF_RA4";
+  case GX_CTF_RA8:
+    return "GX_CTF_RA8";
+  case GX_CTF_YUVA8:
+    return "GX_CTF_YUVA8";
+  case GX_CTF_A8:
+    return "GX_CTF_A8";
+  case GX_CTF_R8:
+    return "GX_CTF_R8";
+  case GX_CTF_G8:
+    return "GX_CTF_G8";
+  case GX_CTF_B8:
+    return "GX_CTF_B8";
+  case GX_CTF_RG8:
+    return "GX_CTF_RG8";
+  case GX_CTF_GB8:
+    return "GX_CTF_GB8";
+  case GX_TF_Z8:
+    return "GX_TF_Z8";
+  case GX_TF_Z16:
+    return "GX_TF_Z16";
+  case GX_TF_Z24X8:
+    return "GX_TF_Z24X8";
+  case GX_CTF_Z4:
+    return "GX_CTF_Z4";
+  case GX_CTF_Z8M:
+    return "GX_CTF_Z8M";
+  case GX_CTF_Z8L:
+    return "GX_CTF_Z8L";
+  case GX_CTF_Z16L:
+    return "GX_CTF_Z16L";
+  case GX_TF_R8_PC:
+    return "GX_TF_R8_PC";
+  case GX_TF_RGBA8_PC:
+    return "GX_TF_RGBA8_PC";
+  }
+}

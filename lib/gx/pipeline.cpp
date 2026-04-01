@@ -2,23 +2,17 @@
 
 #include "../webgpu/gpu.hpp"
 #include "gx_fmt.hpp"
-#include "command_processor.hpp"
 #include "shader_info.hpp"
-
-#include <absl/container/flat_hash_map.h>
 
 namespace aurora::gx {
 static Module Log("aurora::gx");
 
-State construct_state() { return {}; }
-
-wgpu::RenderPipeline create_pipeline(const State& state, const PipelineConfig& config) {
-  const auto info = build_shader_info(config.shaderConfig); // TODO remove
-  const auto shader = build_shader(config.shaderConfig, info);
-  return build_pipeline(config, info, {}, shader, "GX Pipeline");
+wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
+  const auto shader = build_shader(config.shaderConfig);
+  return build_pipeline(config, {}, shader, "GX Pipeline");
 }
 
-void render(const State& state, const DrawData& data, const wgpu::RenderPassEncoder& pass) {
+void render(const DrawData& data, const wgpu::RenderPassEncoder& pass) {
   if (!gfx::bind_pipeline(data.pipeline, pass)) {
     return;
   }

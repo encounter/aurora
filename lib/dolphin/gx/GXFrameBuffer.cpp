@@ -1,8 +1,12 @@
 #include "gx.hpp"
 #include "__gx.h"
 
+#include "../../gfx/tex_copy_conv.hpp"
+#include "../../gfx/texture.hpp"
 #include "../../window.hpp"
+#include "../../gfx/clear.hpp"
 #include "../../webgpu/wgpu.hpp"
+#include "../../webgpu/gpu.hpp"
 
 extern "C" {
 GXRenderModeObj GXNtsc480IntDf = {
@@ -134,15 +138,53 @@ void GXCopyTex(void* dest, GXBool clear) {
   };
   auto it = g_gxState.copyTextureCache.find(key);
   if (it == g_gxState.copyTextureCache.end()) {
-    auto handle = aurora::gfx::new_render_texture(rect.width, rect.height, g_gxState.texCopyFmt, "Resolved Texture");
+    // Configure the texture swizzle to use alpha 1.0 if targeting RGB565 or EFB doesn't have alpha
+    const auto fmt = g_gxState.texCopyFmt == GX_TF_RGB565 || g_gxState.pixelFmt == GX_PF_RGB8_Z24 ||
+                             g_gxState.pixelFmt == GX_PF_RGB565_Z16
+                         ? GX_TF_RGB565
+                         : GX_TF_RGBA8;
+    auto handle = aurora::gfx::new_render_texture(rect.width, rect.height, fmt, "Resolved Texture");
     it = g_gxState.copyTextureCache.emplace(key, handle).first;
   }
-  auto& handle = it->second;
-  auto currentIt = g_gxState.copyTextures.find(dest);
-  if (currentIt == g_gxState.copyTextures.end() || currentIt->second != handle) {
+  const auto& handle = it->second;
+
+  if (g_gxState.alphaUpdate && g_gxState.dstAlpha != UINT32_MAX) {
+    if (!clear) {
+      // TODO: figure out the right behavior here.
+      // should the copy have a specific alpha value but the EFB remains untouched?
+    }
+    // Overwrite alpha before resolving
+    aurora::gfx::push_draw_command(aurora::gfx::clear::DrawData{
+        .pipeline = aurora::gfx::pipeline_ref(aurora::gfx::clear::PipelineConfig{
+            .clearColor = false,
+            .clearAlpha = true,
+            .clearDepth = false,
+        }),
+        .color = wgpu::Color{0.f, 0.f, 0.f, g_gxState.dstAlpha / 255.f},
+    });
+  }
+  const auto clearColor = clear && g_gxState.colorUpdate;
+  const auto clearAlpha = clear && g_gxState.alphaUpdate;
+  const auto clearDepth = clear && g_gxState.depthUpdate;
+  aurora::gfx::resolve_pass(handle, rect, clearColor, clearAlpha, clearDepth, g_gxState.clearColor,
+                            aurora::gx::clear_depth_value());
+
+  if (aurora::gfx::tex_copy_conv::needs_conversion(g_gxState.texCopyFmt)) {
+    auto convIt = g_gxState.convTextureCache.find(key);
+    if (convIt == g_gxState.convTextureCache.end()) {
+      auto convHandle =
+          aurora::gfx::new_conv_texture(rect.width, rect.height, g_gxState.texCopyFmt, "Copy Conv Texture");
+      convIt = g_gxState.convTextureCache.emplace(key, convHandle).first;
+    }
+    aurora::gfx::queue_copy_conv({
+        .fmt = g_gxState.texCopyFmt,
+        .src = handle,
+        .dst = convIt->second,
+    });
+    g_gxState.copyTextures[dest] = convIt->second;
+  } else {
     g_gxState.copyTextures[dest] = handle;
   }
-  aurora::gfx::resolve_pass(handle, rect, clear, g_gxState.clearColor);
 }
 
 // TODO GXGetYScaleFactor

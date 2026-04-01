@@ -1,8 +1,11 @@
 #include "common.hpp"
 
+#include "clear.hpp"
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"
 #include "../gx/pipeline.hpp"
+#include "tex_copy_conv.hpp"
+#include "tex_palette_conv.hpp"
 #include "texture.hpp"
 
 #include <atomic>
@@ -38,12 +41,10 @@ constexpr uint64_t TextureUploadSize = 25165824; // 24mb
 constexpr uint64_t StagingBufferSize =
     UniformBufferSize + VertexBufferSize + IndexBufferSize + StorageBufferSize + TextureUploadSize;
 
-struct ShaderState {
-  gx::State gx;
-};
 struct ShaderDrawCommand {
   ShaderType type;
   union {
+    clear::DrawData clear;
     gx::DrawData gx;
   };
 };
@@ -127,7 +128,6 @@ wgpu::Buffer g_storageBuffer;
 static std::array<wgpu::Buffer, 3> g_stagingBuffers;
 static wgpu::Limits g_cachedLimits;
 
-static ShaderState g_state;
 static PipelineRef g_currentPipeline;
 
 // for imgui debug
@@ -139,10 +139,13 @@ using CommandList = std::vector<Command>;
 struct RenderPass {
   TextureHandle resolveTarget;
   ClipRect resolveRect;
-  Vec4<float> clearColor{0.f, 0.f, 0.f, 0.f};
-  float clearDepth = gx::UseReversedZ ? 0.f : 1.f;
+  Vec4<float> clearColorValue{0.f, 0.f, 0.f, 0.f};
+  float clearDepthValue = gx::UseReversedZ ? 0.f : 1.f;
   CommandList commands;
-  bool clear = true;
+  bool clearColor = true;
+  bool clearDepth = true;
+  std::vector<tex_copy_conv::ConvRequest> copyConvs;
+  std::vector<tex_palette_conv::ConvRequest> paletteConvs;
 };
 static std::vector<RenderPass> g_renderPasses;
 static u32 g_currentRenderPass = UINT32_MAX;
@@ -259,17 +262,55 @@ void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {
   }
 }
 
-void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> clearColor) {
-  auto& currentPass = aurora::gfx::g_renderPasses[g_currentRenderPass];
+template <>
+void push_draw_command(clear::DrawData data) {
+  push_draw_command(ShaderDrawCommand{.type = ShaderType::Clear, .clear = data});
+}
+
+template <>
+PipelineRef pipeline_ref(clear::PipelineConfig config) {
+  return find_pipeline(ShaderType::Clear, config, [=] { return create_pipeline(config); });
+}
+
+void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
+                  Vec4<float> clearColorValue, float clearDepthValue) {
+  auto& currentPass = g_renderPasses[g_currentRenderPass];
   currentPass.resolveTarget = std::move(texture);
   currentPass.resolveRect = rect;
   auto& newPass = g_renderPasses.emplace_back();
-  newPass.clearColor = clearColor;
-  newPass.clearDepth = g_renderPasses[g_currentRenderPass].clearDepth;
-  newPass.clear = clear;
+  newPass.clearColorValue = clearColorValue;
+  newPass.clearDepthValue = clearDepthValue;
+  newPass.clearColor = clearColor && clearAlpha;
+  newPass.clearDepth = clearDepth;
   ++g_currentRenderPass;
+  if (!newPass.clearColor && (clearColor || clearAlpha)) {
+    // If we're only clearing color _or_ alpha, perform a clear draw
+    push_draw_command(clear::DrawData{
+        .pipeline = pipeline_ref(clear::PipelineConfig{
+            .clearColor = clearColor,
+            .clearAlpha = clearAlpha,
+            .clearDepth = false, // Depth cleared via render attachment
+        }),
+        .color =
+            wgpu::Color{
+                .r = clearColorValue.x(),
+                .g = clearColorValue.y(),
+                .b = clearColorValue.z(),
+                .a = clearColorValue.w(),
+            },
+    });
+  }
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
+}
+
+void queue_copy_conv(tex_copy_conv::ConvRequest req) {
+  CHECK(g_currentRenderPass > 0, "queue_copy_conv called without a prior resolve_pass");
+  g_renderPasses[g_currentRenderPass - 1].copyConvs.push_back(std::move(req));
+}
+
+void queue_palette_conv(tex_palette_conv::ConvRequest req) {
+  g_renderPasses[g_currentRenderPass].paletteConvs.push_back(std::move(req));
 }
 
 template <>
@@ -279,7 +320,7 @@ void push_draw_command(gx::DrawData data) {
 
 template <>
 PipelineRef pipeline_ref(gx::PipelineConfig config) {
-  return find_pipeline(ShaderType::GX, config, [=]() { return create_pipeline(g_state.gx, config); });
+  return find_pipeline(ShaderType::GX, config, [=] { return create_pipeline(config); });
 }
 
 static void pipeline_worker() {
@@ -347,6 +388,17 @@ void load_pipeline_cache() {
       u32 size = *reinterpret_cast<const u32*>(pipelineCache.data() + offset);
       offset += sizeof(u32);
       switch (type) {
+      case ShaderType::Clear: {
+        if (size != sizeof(clear::PipelineConfig)) {
+          break;
+        }
+        const auto config = *reinterpret_cast<const clear::PipelineConfig*>(pipelineCache.data() + offset);
+        if (config.version != clear::ClearPipelineConfigVersion) {
+          break;
+        }
+        find_pipeline(type, config, [=] { return clear::create_pipeline(config); }, true);
+        break;
+      }
       case ShaderType::GX: {
         if (size != sizeof(gx::PipelineConfig)) {
           break;
@@ -355,7 +407,7 @@ void load_pipeline_cache() {
         if (config.version != gx::GXPipelineConfigVersion) {
           break;
         }
-        find_pipeline(type, config, [=]() { return gx::create_pipeline(g_state.gx, config); }, true);
+        find_pipeline(type, config, [=] { return gx::create_pipeline(config); }, true);
         break;
       }
       default:
@@ -380,6 +432,9 @@ void save_pipeline_cache() {
 }
 
 void initialize() {
+  tex_copy_conv::initialize();
+  tex_palette_conv::initialize();
+
   // No async pipelines for OpenGL (ES)
   if (webgpu::g_backendType == wgpu::BackendType::OpenGL || webgpu::g_backendType == wgpu::BackendType::OpenGLES ||
       webgpu::g_backendType == wgpu::BackendType::WebGPU) {
@@ -419,7 +474,7 @@ void initialize() {
   }
   map_staging_buffer();
 
-  g_state.gx = gx::construct_state();
+  gx::initialize();
 
   load_pipeline_cache();
 }
@@ -433,6 +488,8 @@ void shutdown() {
 
   save_pipeline_cache();
 
+  tex_copy_conv::shutdown();
+  tex_palette_conv::shutdown();
   gx::shutdown();
 
   g_textureUploads.clear();
@@ -449,8 +506,6 @@ void shutdown() {
   g_stagingBuffers.fill({});
   g_renderPasses.clear();
   g_currentRenderPass = UINT32_MAX;
-
-  g_state = {};
 
   queuedPipelines = 0;
   createdPipelines = 0;
@@ -496,11 +551,8 @@ void begin_frame() {
   g_stats.mergedDrawCallCount = 0;
 
   g_renderPasses.emplace_back();
-  g_renderPasses[0].clearColor = gx::g_gxState.clearColor;
-  {
-    float normalizedDepth = static_cast<float>(gx::g_gxState.clearDepth) / 16777215.f;
-    g_renderPasses[0].clearDepth = gx::UseReversedZ ? (1.f - normalizedDepth) : normalizedDepth;
-  }
+  g_renderPasses[0].clearColorValue = gx::g_gxState.clearColor;
+  g_renderPasses[0].clearDepthValue = gx::clear_depth_value();
   g_currentRenderPass = 0;
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
@@ -526,6 +578,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
   g_stats.lastUniformSize = writeBuffer(g_uniforms, g_uniformBuffer, UniformBufferSize, "Uniform");
   g_stats.lastIndexSize = writeBuffer(g_indices, g_indexBuffer, IndexBufferSize, "Index");
   g_stats.lastStorageSize = writeBuffer(g_storage, g_storageBuffer, StorageBufferSize, "Storage");
+  g_stats.lastTextureUploadSize = g_textureUpload.size();
   {
     // Perform texture copies
     for (const auto& item : g_textureUploads) {
@@ -565,22 +618,22 @@ void render(wgpu::CommandEncoder& cmd) {
         wgpu::RenderPassColorAttachment{
             .view = webgpu::g_frameBuffer.view,
             .resolveTarget = webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.view : nullptr,
-            .loadOp = passInfo.clear ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
+            .loadOp = passInfo.clearColor ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
             .storeOp = wgpu::StoreOp::Store,
             .clearValue =
                 {
-                    .r = passInfo.clearColor.x(),
-                    .g = passInfo.clearColor.y(),
-                    .b = passInfo.clearColor.z(),
-                    .a = passInfo.clearColor.w(),
+                    .r = passInfo.clearColorValue.x(),
+                    .g = passInfo.clearColorValue.y(),
+                    .b = passInfo.clearColorValue.z(),
+                    .a = passInfo.clearColorValue.w(),
                 },
         },
     };
     const wgpu::RenderPassDepthStencilAttachment depthStencilAttachment{
         .view = webgpu::g_depthBuffer.view,
-        .depthLoadOp = passInfo.clear ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
+        .depthLoadOp = passInfo.clearDepth ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
         .depthStoreOp = wgpu::StoreOp::Store,
-        .depthClearValue = passInfo.clearDepth,
+        .depthClearValue = passInfo.clearDepthValue,
     };
     const auto label = fmt::format("Render pass {}", i);
     const wgpu::RenderPassDescriptor renderPassDescriptor{
@@ -589,6 +642,10 @@ void render(wgpu::CommandEncoder& cmd) {
         .colorAttachments = attachments.data(),
         .depthStencilAttachment = &depthStencilAttachment,
     };
+
+    for (const auto& conv : passInfo.paletteConvs) {
+      tex_palette_conv::run(cmd, conv);
+    }
     auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
     render_pass(pass, i);
     pass.End();
@@ -615,6 +672,9 @@ void render(wgpu::CommandEncoder& cmd) {
           .depthOrArrayLayers = 1,
       };
       cmd.CopyTextureToTexture(&src, &dst, &size);
+      for (const auto& conv : passInfo.copyConvs) {
+        tex_copy_conv::run(cmd, conv);
+      }
     }
   }
   g_renderPasses.clear();
@@ -678,8 +738,11 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
     case CommandType::Draw: {
       const auto& draw = cmd.data.draw;
       switch (draw.type) {
+      case ShaderType::Clear:
+        clear::render(draw.clear, pass);
+        break;
       case ShaderType::GX:
-        gx::render(g_state.gx, draw.gx, pass);
+        gx::render(draw.gx, pass);
         break;
       }
     } break;

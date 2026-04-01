@@ -216,6 +216,10 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   }
   for (int i = 0; i < config.tevStageCount; ++i) {
     const auto& stage = config.tevStages[i];
+    // Skip if not enabled
+    if (stage.indTexStage >= config.numIndStages) {
+      continue;
+    }
     const bool usesIndStage = stage.indTexMtxId != GX_ITM_OFF || is_alpha_bump_channel(stage.channelId);
     const bool usesTevTexCoord = stage.indTexMtxId != GX_ITM_OFF || stage.indTexWrapS != GX_ITW_OFF ||
                                  stage.indTexWrapT != GX_ITW_OFF || stage.indTexAddPrev;
@@ -227,10 +231,6 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
       info.sampledTextures.set(stage.texMapId);
     }
     if (!usesIndStage) {
-      continue;
-    }
-    // Skip if not enabled
-    if (stage.indTexStage >= config.numIndStages) {
       continue;
     }
     info.usedIndStages.set(stage.indTexStage);

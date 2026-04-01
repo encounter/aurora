@@ -6,9 +6,15 @@
 
 #include "gx_test_common.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 using aurora::gx::g_gxState;
+
+static bool has_bp_write(const std::vector<u8>& bytes, u8 reg) {
+  const std::array<u8, 2> pattern{0x61, reg};
+  return std::search(bytes.begin(), bytes.end(), pattern.begin(), pattern.end()) != bytes.end();
+}
 
 // ============================================================================
 // BP registers (direct FIFO writes, no dirty state flush needed)
@@ -188,6 +194,44 @@ TEST_F(GXFifoTest, DstAlpha_Disabled) {
   decode_fifo(bytes);
 
   EXPECT_EQ(g_gxState.dstAlpha, UINT32_MAX);
+}
+
+// --- GXSetPixelFmt (BP 0x43, 0x42 + genMode flush) ---
+
+TEST_F(GXFifoTest, PixelFmt_Rgb565Z16_Decode) {
+  GXSetPixelFmt(GX_PF_RGB565_Z16, GX_ZC_FAR);
+  auto bytes = flush_and_capture();
+
+  EXPECT_TRUE(has_bp_write(bytes, 0x43));
+  EXPECT_TRUE(has_bp_write(bytes, 0x00));
+
+  reset_gx_state();
+  g_gxState.pixelFmt = GX_PF_RGB8_Z24;
+  g_gxState.zFmt = GX_ZC_LINEAR;
+  decode_fifo(bytes);
+
+  EXPECT_EQ(g_gxState.pixelFmt, GX_PF_RGB565_Z16);
+  EXPECT_EQ(g_gxState.zFmt, GX_ZC_FAR);
+  EXPECT_TRUE(g_gxState.zCompLocBeforeTex);
+}
+
+TEST_F(GXFifoTest, PixelFmt_U8_Decode) {
+  GXSetPixelFmt(GX_PF_U8, GX_ZC_MID);
+  auto bytes = flush_and_capture();
+
+  EXPECT_TRUE(has_bp_write(bytes, 0x43));
+  EXPECT_TRUE(has_bp_write(bytes, 0x42));
+  EXPECT_TRUE(has_bp_write(bytes, 0x00));
+
+  reset_gx_state();
+  g_gxState.pixelFmt = GX_PF_RGB8_Z24;
+  g_gxState.zFmt = GX_ZC_LINEAR;
+  decode_fifo(bytes);
+
+  EXPECT_EQ(g_gxState.pixelFmt, GX_PF_U8);
+  EXPECT_EQ(g_gxState.zFmt, GX_ZC_MID);
+  EXPECT_EQ(g_gxState.dstAlpha, UINT32_MAX);
+  EXPECT_TRUE(g_gxState.zCompLocBeforeTex);
 }
 
 // ============================================================================

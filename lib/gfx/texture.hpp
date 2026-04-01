@@ -17,17 +17,19 @@ extern std::vector<TextureUpload> g_textureUploads;
 constexpr u32 InvalidTextureFormat = -1;
 struct TextureRef {
   wgpu::Texture texture;
-  wgpu::TextureView view;
+  wgpu::TextureView sampleTextureView;
+  wgpu::TextureView attachmentTextureView;
   wgpu::Extent3D size;
   wgpu::TextureFormat format;
   uint32_t mipCount;
   u32 gxFormat;
   bool isRenderTexture; // :shrug: for now
 
-  TextureRef(wgpu::Texture texture, wgpu::TextureView view, wgpu::Extent3D size, wgpu::TextureFormat format,
-             uint32_t mipCount, u32 gxFormat, bool isRenderTexture)
+  TextureRef(wgpu::Texture texture, wgpu::TextureView sampleTextureView, wgpu::TextureView attachmentTextureView,
+             wgpu::Extent3D size, wgpu::TextureFormat format, uint32_t mipCount, u32 gxFormat, bool isRenderTexture)
   : texture(std::move(texture))
-  , view(std::move(view))
+  , sampleTextureView(std::move(sampleTextureView))
+  , attachmentTextureView(std::move(attachmentTextureView))
   , size(size)
   , format(format)
   , mipCount(mipCount)
@@ -35,11 +37,12 @@ struct TextureRef {
   , isRenderTexture(isRenderTexture) {}
 };
 
-TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format, ArrayRef<uint8_t> data,
-                                    bool tlut, const char* label) noexcept;
-TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format,
+TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 gxFormat,
+                                    ArrayRef<uint8_t> data, bool tlut, const char* label) noexcept;
+TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 gxFormat,
                                      const char* label) noexcept;
-TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 fmt, const char* label) noexcept;
+TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept;
+TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept;
 void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept;
 }; // namespace aurora::gfx
 

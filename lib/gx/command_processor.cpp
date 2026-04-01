@@ -120,6 +120,38 @@ static inline u32 read_u32(const u8* ptr, bool bigEndian) {
          static_cast<u32>(ptr[0]);
 }
 
+static u32 bp_get(u32 reg, u32 size, u32 shift);
+
+static GXPixelFmt decode_pixel_fmt(u32 peCtrl, u32 cmode1) {
+  switch (bp_get(peCtrl, 3, 0)) {
+  case 0:
+    return GX_PF_RGB8_Z24;
+  case 1:
+    return GX_PF_RGBA6_Z24;
+  case 2:
+    return GX_PF_RGB565_Z16;
+  case 3:
+    return GX_PF_Z24;
+  case 4:
+    switch (bp_get(cmode1, 2, 9)) {
+    case 0:
+      return GX_PF_Y8;
+    case 1:
+      return GX_PF_U8;
+    case 2:
+      return GX_PF_V8;
+    default:
+      Log.warn("command_processor: unsupported cmode1 pixel subtype {}", bp_get(cmode1, 2, 9));
+      return GX_PF_Y8;
+    }
+  case 5:
+    return GX_PF_YUV420;
+  default:
+    Log.warn("command_processor: unsupported PE pixel format {}", bp_get(peCtrl, 3, 0));
+    return GX_PF_RGB8_Z24;
+  }
+}
+
 static inline u64 read_u64(const u8* ptr, bool bigEndian) {
   u64 loaded;
   // Unaligned-safe load
@@ -667,12 +699,17 @@ static void handle_bp(u32 value, bool bigEndian) {
     u8 alpha = bp_get(value, 8, 0);
     bool enabled = bp_get(value, 1, 8) != 0;
     g_gxState.dstAlpha = enabled ? alpha : UINT32_MAX;
+    g_gxState.pixelFmt = decode_pixel_fmt(g_gxState.bpRegCache[0x43], value);
+    g_gxState.stateDirty = true;
     break;
   }
 
-  // PE control (0x43) - zcomp location
+  // PE control (0x43) - pixel format, z format, zcomp location
   case 0x43: {
-    // Log.warn("Unimplemented: BP register {:x} (zcomp loc)", regId);
+    g_gxState.pixelFmt = decode_pixel_fmt(value, g_gxState.bpRegCache[0x42]);
+    g_gxState.zFmt = static_cast<GXZFmt16>(bp_get(value, 3, 3));
+    g_gxState.zCompLocBeforeTex = bp_get(value, 1, 6) != 0;
+    g_gxState.stateDirty = true;
     break;
   }
 
