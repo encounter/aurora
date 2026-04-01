@@ -137,17 +137,15 @@ static inline wgpu::BlendState to_blend_state(GXBlendMode mode, GXBlendFactor sr
     }
     break;
   }
-  wgpu::BlendComponent alphaBlendComponent{
-      .operation = wgpu::BlendOperation::Add,
-      .srcFactor = wgpu::BlendFactor::One,
-      .dstFactor = wgpu::BlendFactor::Zero,
-  };
+  wgpu::BlendComponent alphaBlendComponent;
   if (dstAlpha != UINT32_MAX) {
     alphaBlendComponent = wgpu::BlendComponent{
         .operation = wgpu::BlendOperation::Add,
         .srcFactor = wgpu::BlendFactor::Constant,
         .dstFactor = wgpu::BlendFactor::Zero,
     };
+  } else {
+    alphaBlendComponent = colorBlendComponent;
   }
   return {
       .color = colorBlendComponent,
