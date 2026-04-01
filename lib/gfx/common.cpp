@@ -305,13 +305,11 @@ void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool cl
 }
 
 void queue_copy_conv(tex_copy_conv::ConvRequest req) {
-  // Attach to the pass that was just given a resolveTarget (the one before current).
   CHECK(g_currentRenderPass > 0, "queue_copy_conv called without a prior resolve_pass");
   g_renderPasses[g_currentRenderPass - 1].copyConvs.push_back(std::move(req));
 }
 
 void queue_palette_conv(tex_palette_conv::ConvRequest req) {
-  // Attach to the current pass — conversion runs before this pass's draws.
   g_renderPasses[g_currentRenderPass].paletteConvs.push_back(std::move(req));
 }
 

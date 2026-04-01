@@ -249,7 +249,6 @@ static wgpu::RenderPipeline create_pipeline(const ConvPipeline& conv) {
 bool needs_conversion(const GXTexFmt fmt) { return g_pipelines.contains(fmt); }
 
 void initialize() {
-  // Bind group layout: sampler + source texture
   constexpr std::array bindGroupLayoutEntries{
       wgpu::BindGroupLayoutEntry{
           .binding = 0,

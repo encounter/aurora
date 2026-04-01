@@ -108,7 +108,6 @@ static PipelineInfo create_pipeline(std::string_view fragBindingsAndShader, wgpu
   };
   auto module = g_device.CreateShaderModule(&moduleDescriptor);
 
-  // Bind group layout: sampler + source texture + TLUT
   const std::array bindGroupLayoutEntries{
       wgpu::BindGroupLayoutEntry{
           .binding = 0,

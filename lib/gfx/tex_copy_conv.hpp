@@ -12,7 +12,6 @@ struct ConvRequest {
   TextureHandle dst;
 };
 
-/// Returns true if the given copy format requires a conversion draw
 bool needs_conversion(GXTexFmt fmt);
 
 void initialize();
