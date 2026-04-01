@@ -578,6 +578,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
   g_stats.lastUniformSize = writeBuffer(g_uniforms, g_uniformBuffer, UniformBufferSize, "Uniform");
   g_stats.lastIndexSize = writeBuffer(g_indices, g_indexBuffer, IndexBufferSize, "Index");
   g_stats.lastStorageSize = writeBuffer(g_storage, g_storageBuffer, StorageBufferSize, "Storage");
+  g_stats.lastTextureUploadSize = g_textureUpload.size();
   {
     // Perform texture copies
     for (const auto& item : g_textureUploads) {
