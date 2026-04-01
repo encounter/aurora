@@ -1385,21 +1385,19 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
   if (info.usedIndTexMtxs.any()) {
     uniBufAttrs += "\n    ind_mtx: array<mat2x4f, 3>,";
   }
-  size_t texBindIdx = 0;
   for (int i = 0; i < info.sampledTextures.size(); ++i) {
     if (!info.sampledTextures.test(i)) {
       continue;
     }
     uniBufAttrs += fmt::format("\n    tex{}_size_bias: vec4f,", i);
     sampBindings += fmt::format(
-        "\n@group(1) @binding({})\n"
-        "var tex{}_samp: sampler;",
-        texBindIdx, i);
+        "\n@group(1) @binding({0})\n"
+        "var tex{0}_samp: sampler;",
+        i);
     texBindings += fmt::format(
-        "\n@group(2) @binding({})\n"
-        "var tex{}: texture_2d<f32>;",
-        texBindIdx, i);
-    ++texBindIdx;
+        "\n@group(2) @binding({0})\n"
+        "var tex{0}: texture_2d<f32>;",
+        i);
   }
   fragmentFn += "\n    prev = tev_overflow_vec4f(prev);";
   if (config.alphaCompare) {

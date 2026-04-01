@@ -152,6 +152,7 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
       .mipLevelCount = mips,
       .sampleCount = 1,
   };
+  auto texture = g_device.CreateTexture(&textureDescriptor);
   const auto viewLabel = fmt::format("{} view", label);
   wgpu::TextureViewDescriptor textureViewDescriptor{
       .label = viewLabel.c_str(),
@@ -159,14 +160,13 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
       .dimension = wgpu::TextureViewDimension::e2D,
       .mipLevelCount = mips,
   };
-  wgpu::TextureComponentSwizzleDescriptor swizzle{};
+  wgpu::TextureComponentSwizzleDescriptor swizzle;
   if (setup_swizzle(swizzle, gxFormat)) {
     textureViewDescriptor.nextInChain = &swizzle;
   }
-  auto texture = g_device.CreateTexture(&textureDescriptor);
   auto textureView = texture.CreateView(&textureViewDescriptor);
-  return std::make_shared<TextureRef>(std::move(texture), std::move(textureView), size, wgpuFormat, mips, gxFormat,
-                                      false);
+  return std::make_shared<TextureRef>(std::move(texture), std::move(textureView), wgpu::TextureView{}, size, wgpuFormat,
+                                      mips, gxFormat, false);
 }
 
 TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept {
@@ -185,20 +185,29 @@ TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, 
       .mipLevelCount = 1,
       .sampleCount = 1,
   };
+  auto texture = g_device.CreateTexture(&textureDescriptor);
+
+  // Create texture view for color attachments
   const auto viewLabel = fmt::format("{} view", label);
   wgpu::TextureViewDescriptor textureViewDescriptor{
       .label = viewLabel.c_str(),
       .format = wgpuFormat,
       .dimension = wgpu::TextureViewDimension::e2D,
   };
-  wgpu::TextureComponentSwizzleDescriptor swizzle{};
+  auto attachmentTextureView = texture.CreateView(&textureViewDescriptor);
+
+  // Create texture view for sampling, with swizzle if needed
+  wgpu::TextureView sampleTextureView;
+  wgpu::TextureComponentSwizzleDescriptor swizzle;
   if (setup_swizzle(swizzle, gxFormat)) {
-    Log.info("Applying swizzle for render texture {}: {}", label, static_cast<GXTexFmt>(gxFormat));
     textureViewDescriptor.nextInChain = &swizzle;
+    sampleTextureView = texture.CreateView(&textureViewDescriptor);
+  } else {
+    sampleTextureView = attachmentTextureView;
   }
-  auto texture = g_device.CreateTexture(&textureDescriptor);
-  auto textureView = texture.CreateView(&textureViewDescriptor);
-  return std::make_shared<TextureRef>(std::move(texture), std::move(textureView), size, wgpuFormat, 1, gxFormat, true);
+
+  return std::make_shared<TextureRef>(std::move(texture), std::move(sampleTextureView),
+                                      std::move(attachmentTextureView), size, wgpuFormat, 1, gxFormat, true);
 }
 
 TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept {
@@ -217,19 +226,29 @@ TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, co
       .mipLevelCount = 1,
       .sampleCount = 1,
   };
+  auto texture = g_device.CreateTexture(&textureDescriptor);
+
+  // Create texture view for color attachments
   const auto viewLabel = fmt::format("{} view", label);
   wgpu::TextureViewDescriptor textureViewDescriptor{
       .label = viewLabel.c_str(),
       .format = wgpuFormat,
       .dimension = wgpu::TextureViewDimension::e2D,
   };
-  wgpu::TextureComponentSwizzleDescriptor swizzle{};
+  auto attachmentTextureView = texture.CreateView(&textureViewDescriptor);
+
+  // Create texture view for sampling, with swizzle if needed
+  wgpu::TextureView sampleTextureView;
+  wgpu::TextureComponentSwizzleDescriptor swizzle;
   if (setup_swizzle(swizzle, gxFormat)) {
     textureViewDescriptor.nextInChain = &swizzle;
+    sampleTextureView = texture.CreateView(&textureViewDescriptor);
+  } else {
+    sampleTextureView = attachmentTextureView;
   }
-  auto texture = g_device.CreateTexture(&textureDescriptor);
-  auto textureView = texture.CreateView(&textureViewDescriptor);
-  return std::make_shared<TextureRef>(std::move(texture), std::move(textureView), size, wgpuFormat, 1, gxFormat, false);
+
+  return std::make_shared<TextureRef>(std::move(texture), std::move(sampleTextureView),
+                                      std::move(attachmentTextureView), size, wgpuFormat, 1, gxFormat, false);
 }
 
 void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {

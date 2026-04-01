@@ -91,7 +91,6 @@ struct PipelineInfo {
 static PipelineInfo g_directPipeline;
 static PipelineInfo g_fromFloat8Pipeline;
 static PipelineInfo g_fromFloat4Pipeline;
-static std::vector<ConvRequest> g_queue;
 
 static PipelineInfo create_pipeline(std::string_view fragBindingsAndShader, wgpu::TextureSampleType srcSampleType,
                                     const char* label) {
@@ -151,9 +150,8 @@ static PipelineInfo create_pipeline(std::string_view fragBindingsAndShader, wgpu
   };
   auto pipelineLayout = g_device.CreatePipelineLayout(&layoutDescriptor);
 
-  const auto outputFormat = webgpu::g_graphicsConfig.surfaceConfiguration.format;
-  const std::array colorTargets{wgpu::ColorTargetState{
-      .format = outputFormat,
+  constexpr std::array colorTargets{wgpu::ColorTargetState{
+      .format = wgpu::TextureFormat::RGBA8Unorm,
   }};
   const wgpu::FragmentState fragmentState{
       .module = module,
@@ -203,18 +201,13 @@ void initialize() {
 }
 
 void shutdown() {
-  g_queue.clear();
   g_directPipeline = {};
   g_fromFloat8Pipeline = {};
   g_fromFloat4Pipeline = {};
 }
 
-void queue(ConvRequest req) { g_queue.push_back(std::move(req)); }
-
-void execute(const wgpu::CommandEncoder& cmd) {
-  if (g_queue.empty()) {
-    return;
-  }
+void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
+  const auto& [pipeline, bindGroupLayout] = pipeline_for_variant(req.variant);
 
   constexpr wgpu::SamplerDescriptor samplerDesc{
       .label = "TexPaletteConv Sampler",
@@ -223,51 +216,45 @@ void execute(const wgpu::CommandEncoder& cmd) {
   };
   const auto sampler = g_device.CreateSampler(&samplerDesc);
 
-  for (const auto& [variant, src, dst, tlut] : g_queue) {
-    const auto& [pipeline, bindGroupLayout] = pipeline_for_variant(variant);
+  const std::array bindGroupEntries{
+      wgpu::BindGroupEntry{
+          .binding = 0,
+          .sampler = sampler,
+      },
+      wgpu::BindGroupEntry{
+          .binding = 1,
+          .textureView = req.src->sampleTextureView,
+      },
+      wgpu::BindGroupEntry{
+          .binding = 2,
+          .textureView = req.tlut->sampleTextureView,
+      },
+  };
+  const wgpu::BindGroupDescriptor bindGroupDescriptor{
+      .layout = bindGroupLayout,
+      .entryCount = bindGroupEntries.size(),
+      .entries = bindGroupEntries.data(),
+  };
+  auto bindGroup = g_device.CreateBindGroup(&bindGroupDescriptor);
 
-    const std::array bindGroupEntries{
-        wgpu::BindGroupEntry{
-            .binding = 0,
-            .sampler = sampler,
-        },
-        wgpu::BindGroupEntry{
-            .binding = 1,
-            .textureView = src->view,
-        },
-        wgpu::BindGroupEntry{
-            .binding = 2,
-            .textureView = tlut->view,
-        },
-    };
-    const wgpu::BindGroupDescriptor bindGroupDescriptor{
-        .layout = bindGroupLayout,
-        .entryCount = bindGroupEntries.size(),
-        .entries = bindGroupEntries.data(),
-    };
-    auto bindGroup = g_device.CreateBindGroup(&bindGroupDescriptor);
-
-    const std::array colorAttachments{
-        wgpu::RenderPassColorAttachment{
-            .view = dst->view,
-            .loadOp = wgpu::LoadOp::Clear,
-            .storeOp = wgpu::StoreOp::Store,
-            .clearValue = {0.0, 0.0, 0.0, 0.0},
-        },
-    };
-    const wgpu::RenderPassDescriptor renderPassDescriptor{
-        .label = "TexPaletteConv Pass",
-        .colorAttachmentCount = colorAttachments.size(),
-        .colorAttachments = colorAttachments.data(),
-    };
-    auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
-    pass.SetPipeline(pipeline);
-    pass.SetBindGroup(0, bindGroup);
-    pass.Draw(3);
-    pass.End();
-  }
-
-  g_queue.clear();
+  const std::array colorAttachments{
+      wgpu::RenderPassColorAttachment{
+          .view = req.dst->attachmentTextureView,
+          .loadOp = wgpu::LoadOp::Clear,
+          .storeOp = wgpu::StoreOp::Store,
+          .clearValue = {0.0, 0.0, 0.0, 0.0},
+      },
+  };
+  const wgpu::RenderPassDescriptor renderPassDescriptor{
+      .label = "TexPaletteConv Pass",
+      .colorAttachmentCount = colorAttachments.size(),
+      .colorAttachments = colorAttachments.data(),
+  };
+  auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
+  pass.SetPipeline(pipeline);
+  pass.SetBindGroup(0, bindGroup);
+  pass.Draw(3);
+  pass.End();
 }
 
 } // namespace aurora::gfx::tex_palette_conv

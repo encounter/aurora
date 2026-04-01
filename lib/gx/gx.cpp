@@ -20,6 +20,10 @@ using webgpu::g_graphicsConfig;
 
 GXState g_gxState{};
 
+static wgpu::Sampler sEmptySampler;
+static wgpu::Texture sEmptyTexture;
+static wgpu::TextureView sEmptyTextureView;
+
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[static_cast<size_t>(id)]; }
 
 void clear_copy_texture_cache() noexcept {
@@ -468,7 +472,10 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
     textureEntry.binding = textureCount;
     if (tex) {
       samplerEntry.sampler = gfx::sampler_ref(tex.get_descriptor());
-      textureEntry.textureView = tex.texObj.ref->view;
+      textureEntry.textureView = tex.texObj.ref->sampleTextureView;
+    } else {
+      samplerEntry.sampler = sEmptySampler;
+      textureEntry.textureView = sEmptyTextureView;
     }
     ++textureCount;
   }
@@ -597,6 +604,20 @@ void initialize() noexcept {
         .entries = textureEntries.data(),
     };
     sTextureBindGroupLayout = g_device.CreateBindGroupLayout(&descriptor);
+  }
+  {
+    constexpr wgpu::SamplerDescriptor descriptor{.label = "Empty sampler"};
+    sEmptySampler = gfx::sampler_ref(descriptor);
+  }
+  {
+    constexpr wgpu::TextureDescriptor descriptor{
+        .label = "Empty texture",
+        .usage = wgpu::TextureUsage::TextureBinding,
+        .size = {1, 1},
+        .format = wgpu::TextureFormat::RGBA8Unorm,
+    };
+    sEmptyTexture = g_device.CreateTexture(&descriptor);
+    sEmptyTextureView = sEmptyTexture.CreateView();
   }
 }
 

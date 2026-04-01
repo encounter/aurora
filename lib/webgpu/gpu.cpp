@@ -40,9 +40,6 @@ static wgpu::BindGroupLayout g_CopyBindGroupLayout;
 wgpu::RenderPipeline g_CopyPipeline;
 wgpu::BindGroup g_CopyBindGroup;
 
-// EFB clear pipelines
-static std::array<wgpu::RenderPipeline, 8> g_ClearPipelines;
-
 static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
 static wgpu::AdapterInfo g_adapterInfo;
@@ -73,8 +70,6 @@ TextureWithSampler create_render_texture(bool multisampled) {
   const wgpu::TextureViewDescriptor viewDescriptor{
       .label = "Render texture view",
       .dimension = wgpu::TextureViewDimension::e2D,
-      .mipLevelCount = WGPU_MIP_LEVEL_COUNT_UNDEFINED,
-      .arrayLayerCount = WGPU_ARRAY_LAYER_COUNT_UNDEFINED,
   };
   auto view = texture.CreateView(&viewDescriptor);
 
@@ -122,8 +117,6 @@ static TextureWithSampler create_depth_texture() {
   const wgpu::TextureViewDescriptor viewDescriptor{
       .label = "Depth texture view",
       .dimension = wgpu::TextureViewDimension::e2D,
-      .mipLevelCount = WGPU_MIP_LEVEL_COUNT_UNDEFINED,
-      .arrayLayerCount = WGPU_ARRAY_LAYER_COUNT_UNDEFINED,
   };
   auto view = texture.CreateView(&viewDescriptor);
 
@@ -269,145 +262,6 @@ void create_copy_bind_group() {
       .entries = bindGroupEntries.data(),
   };
   g_CopyBindGroup = g_device.CreateBindGroup(&bindGroupDescriptor);
-}
-
-namespace {
-constexpr uint32_t kClearColorBit = 1 << 0;
-constexpr uint32_t kClearAlphaBit = 1 << 1;
-constexpr uint32_t kClearDepthBit = 1 << 2;
-
-uint32_t clear_pipeline_index(bool clearColor, bool clearAlpha, bool clearDepth) {
-  return (clearColor ? kClearColorBit : 0) | (clearAlpha ? kClearAlphaBit : 0) | (clearDepth ? kClearDepthBit : 0);
-}
-
-wgpu::ColorWriteMask clear_write_mask(bool clearColor, bool clearAlpha) {
-  wgpu::ColorWriteMask writeMask = wgpu::ColorWriteMask::None;
-  if (clearColor) {
-    writeMask |= wgpu::ColorWriteMask::Red | wgpu::ColorWriteMask::Green | wgpu::ColorWriteMask::Blue;
-  }
-  if (clearAlpha) {
-    writeMask |= wgpu::ColorWriteMask::Alpha;
-  }
-  return writeMask;
-}
-} // namespace
-
-void create_clear_pipelines() {
-  wgpu::ShaderSourceWGSL sourceDescriptor{};
-  sourceDescriptor.code = R"""(
-struct VertexOutput {
-    @builtin(position) pos: vec4<f32>,
-};
-
-var<private> pos: array<vec2<f32>, 3> = array<vec2<f32>, 3>(
-    vec2(-1.0, 1.0),
-    vec2(-1.0, -3.0),
-    vec2(3.0, 1.0),
-);
-
-@vertex
-fn vs_main(@builtin(vertex_index) vtxIdx: u32) -> VertexOutput {
-    var out: VertexOutput;
-    out.pos = vec4<f32>(pos[vtxIdx], 0.0, 1.0);
-    return out;
-}
-
-@fragment
-fn fs_main() -> @location(0) vec4<f32> {
-    return vec4<f32>(1.0);
-}
-)""";
-  const wgpu::ShaderModuleDescriptor moduleDescriptor{
-      .nextInChain = &sourceDescriptor,
-      .label = "EFB Clear Module",
-  };
-  auto module = g_device.CreateShaderModule(&moduleDescriptor);
-  constexpr wgpu::BlendState blendState{
-      .color =
-          wgpu::BlendComponent{
-              .operation = wgpu::BlendOperation::Add,
-              .srcFactor = wgpu::BlendFactor::Constant,
-              .dstFactor = wgpu::BlendFactor::Zero,
-          },
-      .alpha =
-          wgpu::BlendComponent{
-              .operation = wgpu::BlendOperation::Add,
-              .srcFactor = wgpu::BlendFactor::Constant,
-              .dstFactor = wgpu::BlendFactor::Zero,
-          },
-  };
-  constexpr wgpu::PipelineLayoutDescriptor layoutDescriptor{
-      .bindGroupLayoutCount = 0,
-      .bindGroupLayouts = nullptr,
-  };
-  auto pipelineLayout = g_device.CreatePipelineLayout(&layoutDescriptor);
-  for (uint32_t mask = 0; mask < g_ClearPipelines.size(); ++mask) {
-    const bool clearColor = (mask & kClearColorBit) != 0;
-    const bool clearAlpha = (mask & kClearAlphaBit) != 0;
-    const bool clearDepth = (mask & kClearDepthBit) != 0;
-    const wgpu::ColorTargetState colorTarget{
-        .format = g_graphicsConfig.surfaceConfiguration.format,
-        .blend = &blendState,
-        .writeMask = clear_write_mask(clearColor, clearAlpha),
-    };
-    const wgpu::FragmentState fragmentState{
-        .module = module,
-        .entryPoint = "fs_main",
-        .targetCount = 1,
-        .targets = &colorTarget,
-    };
-    const wgpu::DepthStencilState depthStencil{
-        .format = g_graphicsConfig.depthFormat,
-        .depthWriteEnabled = clearDepth,
-        .depthCompare = wgpu::CompareFunction::Always,
-    };
-    const auto label = fmt::format("EFB Clear Pipeline {}", mask);
-    const wgpu::RenderPipelineDescriptor pipelineDescriptor{
-        .label = label.c_str(),
-        .layout = pipelineLayout,
-        .vertex =
-            wgpu::VertexState{
-                .module = module,
-                .entryPoint = "vs_main",
-            },
-        .primitive =
-            wgpu::PrimitiveState{
-                .topology = wgpu::PrimitiveTopology::TriangleList,
-            },
-        .depthStencil = &depthStencil,
-        .multisample =
-            wgpu::MultisampleState{
-                .count = g_graphicsConfig.msaaSamples,
-                .mask = UINT32_MAX,
-            },
-        .fragment = &fragmentState,
-    };
-    g_ClearPipelines[mask] = g_device.CreateRenderPipeline(&pipelineDescriptor);
-  }
-}
-
-void draw_clear(const wgpu::RenderPassEncoder& pass, bool clearColor, bool clearAlpha, bool clearDepth,
-                const Vec4<float>& clearColorValue, float clearDepthValue) {
-  const auto pipelineIdx = clear_pipeline_index(clearColor, clearAlpha, clearDepth);
-  if (pipelineIdx == 0) {
-    return;
-  }
-  const auto& pipeline = g_ClearPipelines[pipelineIdx];
-  ASSERT(pipeline, "Missing clear pipeline for mask {}", pipelineIdx);
-  const auto& size = g_frameBuffer.size;
-  const wgpu::Color color{
-      .r = clearColorValue[0],
-      .g = clearColorValue[1],
-      .b = clearColorValue[2],
-      .a = clearColorValue[3],
-  };
-  const float viewportDepth = clearDepth ? clearDepthValue : 0.f;
-  pass.SetPipeline(pipeline);
-  pass.SetBlendConstant(&color);
-  pass.SetViewport(0.f, 0.f, static_cast<float>(size.width), static_cast<float>(size.height), viewportDepth,
-                   viewportDepth);
-  pass.SetScissorRect(0, 0, size.width, size.height);
-  pass.Draw(3);
 }
 
 static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
@@ -701,7 +555,6 @@ bool initialize(AuroraBackend auroraBackend) {
       .textureAnisotropy = g_config.maxTextureAnisotropy,
   };
   create_copy_pipeline();
-  create_clear_pipelines();
   resize_swapchain(size.fb_width, size.fb_height, true);
   return true;
 }
@@ -710,7 +563,6 @@ void shutdown() {
   g_CopyBindGroupLayout = {};
   g_CopyPipeline = {};
   g_CopyBindGroup = {};
-  g_ClearPipelines.fill({});
   g_frameBuffer = {};
   g_frameBufferResolved = {};
   g_depthBuffer = {};

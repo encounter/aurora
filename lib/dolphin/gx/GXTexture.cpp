@@ -115,17 +115,15 @@ void GXLoadTexObj(GXTexObj* obj_, GXTexMapID id) {
     aurora::gfx::write_texture(*obj->ref, {static_cast<const u8*>(obj->data), UINT32_MAX /* TODO */});
     obj->dataInvalidated = false;
   }
-  g_gxState.textures[id] = {*obj};
 
   // Perform palette conversion if necessary
   if (aurora::gx::is_palette_format(obj->fmt)) {
-    auto& bind = g_gxState.textures[id];
-    const auto& tlutObj = g_gxState.tluts[bind.texObj.tlut];
-    CHECK(tlutObj.ref, "TLUT {} not loaded for palette texture", static_cast<int>(bind.texObj.tlut));
+    const auto& tlutObj = g_gxState.tluts[obj->tlut];
+    CHECK(tlutObj.ref, "TLUT {} not loaded for palette texture", static_cast<int>(obj->tlut));
 
     using aurora::gfx::tex_palette_conv::Variant;
     Variant variant;
-    if (bind.texObj.ref->format == wgpu::TextureFormat::R16Sint) {
+    if (obj->ref->format == wgpu::TextureFormat::R16Sint) {
       // CPU-decoded static texture
       variant = Variant::Direct;
     } else {
@@ -134,17 +132,18 @@ void GXLoadTexObj(GXTexObj* obj_, GXTexMapID id) {
     }
 
     const auto label = fmt::format("PaletteConv_{}", static_cast<int>(id));
-    auto dst = aurora::gfx::new_conv_texture(bind.texObj.width, bind.texObj.height, GX_TF_RGBA8, label.c_str());
-    aurora::gfx::tex_palette_conv::queue({
+    auto dst = aurora::gfx::new_conv_texture(obj->width, obj->height, GX_TF_RGBA8, label.c_str());
+    aurora::gfx::queue_palette_conv({
         .variant = variant,
-        .src = bind.texObj.ref,
+        .src = obj->ref,
         .dst = dst,
         .tlut = tlutObj.ref,
     });
-    bind.texObj.ref = std::move(dst);
-    bind.texObj.fmt = GX_TF_RGBA8;
+    obj->ref = std::move(dst);
+    obj->fmt = GX_TF_RGBA8;
   }
 
+  g_gxState.textures[id] = {*obj};
   g_gxState.stateDirty = true; // TODO only if changed?
 }
 

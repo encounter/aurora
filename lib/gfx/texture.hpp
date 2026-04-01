@@ -17,17 +17,19 @@ extern std::vector<TextureUpload> g_textureUploads;
 constexpr u32 InvalidTextureFormat = -1;
 struct TextureRef {
   wgpu::Texture texture;
-  wgpu::TextureView view;
+  wgpu::TextureView sampleTextureView;
+  wgpu::TextureView attachmentTextureView;
   wgpu::Extent3D size;
   wgpu::TextureFormat format;
   uint32_t mipCount;
   u32 gxFormat;
   bool isRenderTexture; // :shrug: for now
 
-  TextureRef(wgpu::Texture texture, wgpu::TextureView view, wgpu::Extent3D size, wgpu::TextureFormat format,
-             uint32_t mipCount, u32 gxFormat, bool isRenderTexture)
+  TextureRef(wgpu::Texture texture, wgpu::TextureView sampleTextureView, wgpu::TextureView attachmentTextureView,
+             wgpu::Extent3D size, wgpu::TextureFormat format, uint32_t mipCount, u32 gxFormat, bool isRenderTexture)
   : texture(std::move(texture))
-  , view(std::move(view))
+  , sampleTextureView(std::move(sampleTextureView))
+  , attachmentTextureView(std::move(attachmentTextureView))
   , size(size)
   , format(format)
   , mipCount(mipCount)

@@ -200,6 +200,7 @@ struct TextureRef;
 using TextureHandle = std::shared_ptr<TextureRef>;
 
 enum class ShaderType : uint8_t {
+  Clear = 0,
   GX = 1,
 };
 
@@ -213,6 +214,15 @@ void render_pass(const wgpu::RenderPassEncoder& pass, uint32_t idx);
 void map_staging_buffer();
 void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
                   Vec4<float> clearColorValue, float clearDepthValue);
+
+namespace tex_copy_conv {
+struct ConvRequest;
+} // namespace tex_copy_conv
+namespace tex_palette_conv {
+struct ConvRequest;
+} // namespace tex_palette_conv
+void queue_copy_conv(tex_copy_conv::ConvRequest req);
+void queue_palette_conv(tex_palette_conv::ConvRequest req);
 
 Range push_verts(const uint8_t* data, size_t length);
 template <typename T>

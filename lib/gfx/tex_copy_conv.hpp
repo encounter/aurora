@@ -17,7 +17,6 @@ bool needs_conversion(GXTexFmt fmt);
 
 void initialize();
 void shutdown();
-void queue(ConvRequest req);
-void execute(const wgpu::CommandEncoder& cmd);
+void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req);
 
 } // namespace aurora::gfx::tex_copy_conv

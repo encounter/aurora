@@ -1,5 +1,6 @@
 #include "common.hpp"
 
+#include "clear.hpp"
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"
 #include "../gx/pipeline.hpp"
@@ -43,6 +44,7 @@ constexpr uint64_t StagingBufferSize =
 struct ShaderDrawCommand {
   ShaderType type;
   union {
+    clear::DrawData clear;
     gx::DrawData gx;
   };
 };
@@ -141,8 +143,9 @@ struct RenderPass {
   float clearDepthValue = gx::UseReversedZ ? 0.f : 1.f;
   CommandList commands;
   bool clearColor = true;
-  bool clearAlpha = true;
   bool clearDepth = true;
+  std::vector<tex_copy_conv::ConvRequest> copyConvs;
+  std::vector<tex_palette_conv::ConvRequest> paletteConvs;
 };
 static std::vector<RenderPass> g_renderPasses;
 static u32 g_currentRenderPass = UINT32_MAX;
@@ -259,6 +262,16 @@ void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {
   }
 }
 
+template <>
+void push_draw_command(clear::DrawData data) {
+  push_draw_command(ShaderDrawCommand{.type = ShaderType::Clear, .clear = data});
+}
+
+template <>
+PipelineRef pipeline_ref(clear::PipelineConfig config) {
+  return find_pipeline(ShaderType::Clear, config, [=] { return create_pipeline(config); });
+}
+
 void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
                   Vec4<float> clearColorValue, float clearDepthValue) {
   auto& currentPass = g_renderPasses[g_currentRenderPass];
@@ -267,12 +280,39 @@ void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool cl
   auto& newPass = g_renderPasses.emplace_back();
   newPass.clearColorValue = clearColorValue;
   newPass.clearDepthValue = clearDepthValue;
-  newPass.clearColor = clearColor;
-  newPass.clearAlpha = clearAlpha;
+  newPass.clearColor = clearColor && clearAlpha;
   newPass.clearDepth = clearDepth;
   ++g_currentRenderPass;
+  if (!newPass.clearColor && (clearColor || clearAlpha)) {
+    // If we're only clearing color _or_ alpha, perform a clear draw
+    push_draw_command(clear::DrawData{
+        .pipeline = pipeline_ref(clear::PipelineConfig{
+            .clearColor = clearColor,
+            .clearAlpha = clearAlpha,
+            .clearDepth = false, // Depth cleared via render attachment
+        }),
+        .color =
+            wgpu::Color{
+                .r = clearColorValue.x(),
+                .g = clearColorValue.y(),
+                .b = clearColorValue.z(),
+                .a = clearColorValue.w(),
+            },
+    });
+  }
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
+}
+
+void queue_copy_conv(tex_copy_conv::ConvRequest req) {
+  // Attach to the pass that was just given a resolveTarget (the one before current).
+  CHECK(g_currentRenderPass > 0, "queue_copy_conv called without a prior resolve_pass");
+  g_renderPasses[g_currentRenderPass - 1].copyConvs.push_back(std::move(req));
+}
+
+void queue_palette_conv(tex_palette_conv::ConvRequest req) {
+  // Attach to the current pass — conversion runs before this pass's draws.
+  g_renderPasses[g_currentRenderPass].paletteConvs.push_back(std::move(req));
 }
 
 template <>
@@ -350,6 +390,17 @@ void load_pipeline_cache() {
       u32 size = *reinterpret_cast<const u32*>(pipelineCache.data() + offset);
       offset += sizeof(u32);
       switch (type) {
+      case ShaderType::Clear: {
+        if (size != sizeof(clear::PipelineConfig)) {
+          break;
+        }
+        const auto config = *reinterpret_cast<const clear::PipelineConfig*>(pipelineCache.data() + offset);
+        if (config.version != clear::ClearPipelineConfigVersion) {
+          break;
+        }
+        find_pipeline(type, config, [=] { return clear::create_pipeline(config); }, true);
+        break;
+      }
       case ShaderType::GX: {
         if (size != sizeof(gx::PipelineConfig)) {
           break;
@@ -564,12 +615,11 @@ void render(wgpu::CommandEncoder& cmd) {
     if (i == g_renderPasses.size() - 1) {
       ASSERT(!passInfo.resolveTarget, "Final render pass must not have resolve target");
     }
-    const auto clearColorFull = passInfo.clearColor && passInfo.clearAlpha;
     const std::array attachments{
         wgpu::RenderPassColorAttachment{
             .view = webgpu::g_frameBuffer.view,
             .resolveTarget = webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.view : nullptr,
-            .loadOp = clearColorFull ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
+            .loadOp = passInfo.clearColor ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
             .storeOp = wgpu::StoreOp::Store,
             .clearValue =
                 {
@@ -593,10 +643,11 @@ void render(wgpu::CommandEncoder& cmd) {
         .colorAttachments = attachments.data(),
         .depthStencilAttachment = &depthStencilAttachment,
     };
-    auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
-    if (!clearColorFull && (passInfo.clearColor || passInfo.clearAlpha)) {
-      webgpu::draw_clear(pass, passInfo.clearColor, passInfo.clearAlpha, false, passInfo.clearColorValue, 0.f);
+
+    for (const auto& conv : passInfo.paletteConvs) {
+      tex_palette_conv::run(cmd, conv);
     }
+    auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
     render_pass(pass, i);
     pass.End();
 
@@ -622,9 +673,9 @@ void render(wgpu::CommandEncoder& cmd) {
           .depthOrArrayLayers = 1,
       };
       cmd.CopyTextureToTexture(&src, &dst, &size);
-      // Run any pending texture conversions that depend on this resolve target
-      tex_copy_conv::execute(cmd);
-      tex_palette_conv::execute(cmd);
+      for (const auto& conv : passInfo.copyConvs) {
+        tex_copy_conv::run(cmd, conv);
+      }
     }
   }
   g_renderPasses.clear();
@@ -688,6 +739,9 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
     case CommandType::Draw: {
       const auto& draw = cmd.data.draw;
       switch (draw.type) {
+      case ShaderType::Clear:
+        clear::render(draw.clear, pass);
+        break;
       case ShaderType::GX:
         gx::render(draw.gx, pass);
         break;
