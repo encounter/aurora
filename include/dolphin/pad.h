@@ -41,6 +41,8 @@
 #define PAD_BUTTON_MENU 0x1000
 #define PAD_BUTTON_START 0x1000
 
+const static uint32_t PAD_BUTTON_COUNT = 12;
+
 // added by Aurora, not present in original SDK
 #define PAD_AXIS_LEFT_X_POS 0
 #define PAD_AXIS_LEFT_X_NEG 1
@@ -52,6 +54,8 @@
 #define PAD_AXIS_RIGHT_Y_NEG 7
 #define PAD_AXIS_TRIGGER_L 8
 #define PAD_AXIS_TRIGGER_R 9
+
+const static uint32_t PAD_AXIS_COUNT = 10;
 
 #define PAD_CHAN0_BIT 0x80000000
 #define PAD_CHAN1_BIT 0x40000000

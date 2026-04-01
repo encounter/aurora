@@ -4,8 +4,11 @@
 #include <dolphin/si.h>
 
 #include <array>
+#include <sys/stat.h>
 
-static constexpr std::array<PADButtonMapping, 12> g_defaultButtons{{
+static const int32_t k_mappingsFileVersion = 2;
+
+static constexpr std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtons{{
     {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
     {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},
     {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
@@ -20,7 +23,7 @@ static constexpr std::array<PADButtonMapping, 12> g_defaultButtons{{
     {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
 }};
 
-static constexpr std::array<PADAxisMapping, 12> g_defaultAxes{{
+static constexpr std::array<PADAxisMapping, PAD_AXIS_COUNT> g_defaultAxes{{
     {{SDL_GAMEPAD_AXIS_LEFTX, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_LEFT_X_POS},
     {{SDL_GAMEPAD_AXIS_LEFTX, AXIS_SIGN_NEGATIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_LEFT_X_NEG},
     // SDL's gamepad y-axis is inverted from GC's
@@ -138,8 +141,9 @@ void __PADLoadMapping(aurora::input::GameController* controller) {
 
   uint32_t version = 0;
   fread(&version, 1, sizeof(uint32_t), file);
-  if (version != 1) {
-    aurora::input::Log.warn("Invalid controller mapping version!");
+  if (version != k_mappingsFileVersion) {
+    aurora::input::Log.warn("Invalid controller mapping version! (Expected {0}, found {1})",
+                            k_mappingsFileVersion, version);
     return;
   }
 
@@ -148,12 +152,15 @@ void __PADLoadMapping(aurora::input::GameController* controller) {
   fseek(file, (ftell(file) + 31) & ~31, SEEK_SET);
   uint32_t dataStart = ftell(file);
   if (isGameCube) {
-    fseek(file, dataStart + ((sizeof(PADDeadZones) + sizeof(PADButtonMapping)) * playerIndex), SEEK_SET);
+    uint32_t dzSecLen = sizeof(PADDeadZones);
+    uint32_t btnSecLen = sizeof(PADButtonMapping) * PAD_BUTTON_COUNT;
+    uint32_t axisSecLen = sizeof(PADAxisMapping) * PAD_AXIS_COUNT;
+    fseek(file, dataStart + ((dzSecLen + btnSecLen + axisSecLen) * playerIndex), SEEK_SET);
   }
 
   fread(&controller->m_deadZones, 1, sizeof(PADDeadZones), file);
-  fread(&controller->m_buttonMapping, 1, sizeof(PADButtonMapping) * controller->m_buttonMapping.size(), file);
-  fread(&controller->m_axisMapping, 1, sizeof(PADAxisMapping) * controller->m_axisMapping.size(), file);
+  fread(&controller->m_buttonMapping, 1, sizeof(PADButtonMapping) * PAD_BUTTON_COUNT, file);
+  fread(&controller->m_axisMapping, 1, sizeof(PADAxisMapping) * PAD_AXIS_COUNT, file);
   fclose(file);
 }
 
@@ -512,8 +519,8 @@ void PADSetButtonMapping(uint32_t port, PADButtonMapping mapping) {
   *iter = mapping;
 }
 
-void PADSetAllButtonMappings(uint32_t port, PADButtonMapping buttons[12]) {
-  for (uint32_t i = 0; i < 12; ++i) {
+void PADSetAllButtonMappings(uint32_t port, PADButtonMapping buttons[PAD_BUTTON_COUNT]) {
+  for (uint32_t i = 0; i < PAD_BUTTON_COUNT; ++i) {
     PADSetButtonMapping(port, buttons[i]);
   }
 }
@@ -525,7 +532,7 @@ PADButtonMapping* PADGetButtonMappings(uint32_t port, uint32_t* buttonCount) {
     return nullptr;
   }
 
-  *buttonCount = controller->m_buttonMapping.size();
+  *buttonCount = PAD_BUTTON_COUNT;
   return controller->m_buttonMapping.data();
 }
 
@@ -544,8 +551,8 @@ void PADSetAxisMapping(u32 port, PADAxisMapping mapping) {
   *iter = mapping;
 }
 
-void PADSetAllAxisMappings(u32 port, PADAxisMapping axes[10]) {
-  for (uint32_t i = 0; i < 10; ++i) {
+void PADSetAllAxisMappings(u32 port, PADAxisMapping axes[PAD_AXIS_COUNT]) {
+  for (uint32_t i = 0; i < PAD_AXIS_COUNT; ++i) {
     PADSetAxisMapping(port, axes[i]);
   }
 }
@@ -557,7 +564,7 @@ PADAxisMapping* PADGetAxisMappings(uint32_t port, uint32_t* axisCount) {
     return nullptr;
   }
 
-  *axisCount = controller->m_axisMapping.size();
+  *axisCount = PAD_AXIS_COUNT;
   return controller->m_axisMapping.data();
 }
 
@@ -566,55 +573,46 @@ void __PADWriteDeadZones(FILE* file, aurora::input::GameController& controller) 
 }
 
 void PADSerializeMappings() {
-  std::string basePath{aurora::g_config.configPath};
+  std::filesystem::path basePath{aurora::g_config.configPath};
 
-  bool wroteGameCubeAlready = false;
   for (auto& controller : aurora::input::g_GameControllers) {
     if (!controller.second.m_mappingLoaded) {
       __PADLoadMapping(&controller.second);
     }
-    FILE* file = fopen(fmt::format("{}/{}_{:04X}_{:04X}.controller", basePath,
+    std::filesystem::path filePath = basePath / fmt::format("{}_{:04X}_{:04X}.controller",
                                    aurora::input::controller_name(controller.second.m_index), controller.second.m_vid,
-                                   controller.second.m_pid)
-                           .c_str(),
-                       "wb");
+                                   controller.second.m_pid);
+    std::string filePathStr = filePath.string();
+
+    // don't truncate the file if it already exists
+    const char* openMode = std::filesystem::exists(filePath) ? "r+b" : "wb";
+    FILE* file = fopen(filePathStr.c_str(), openMode);
     if (file == nullptr) {
       return;
     }
+    fseek(file, 0, SEEK_SET);
 
+    // write header
     uint32_t magic = SBIG('CTRL');
-    uint32_t version = 1;
     fwrite(&magic, 1, sizeof(magic), file);
-    fwrite(&version, 1, sizeof(magic), file);
+    fwrite(&k_mappingsFileVersion, 1, sizeof(k_mappingsFileVersion), file);
     fwrite(&controller.second.m_isGameCube, 1, 1, file);
-    fseek(file, (ftell(file) + 31) & ~31, SEEK_SET);
-    int32_t dataStart = ftell(file);
-    if (!controller.second.m_isGameCube) {
-      __PADWriteDeadZones(file, controller.second);
-      fwrite(controller.second.m_buttonMapping.data(), 1, sizeof(PADButtonMapping) * controller.second.m_buttonMapping.size(),
-             file);
-      fwrite(controller.second.m_axisMapping.data(), 1, sizeof(PADAxisMapping) * controller.second.m_axisMapping.size(),
-             file);
-    } else {
-      if (!wroteGameCubeAlready) {
-        /* This needs to remain at 4 since the adapter only has 4 ports */
-        for (uint32_t i = 0; i < 4; ++i) {
-          /* Just use the current controller's configs for this */
-          __PADWriteDeadZones(file, controller.second);
-          fwrite(g_defaultButtons.data(), 1, sizeof(PADButtonMapping) * g_defaultButtons.size(), file);
-          fwrite(g_defaultAxes.data(), 1, sizeof(PADAxisMapping) * g_defaultAxes.size(), file);
-        }
-        fflush(file);
-        wroteGameCubeAlready = true;
-      }
+
+    // start writing data at next 32-byte aligned offset
+    int32_t dataStart = (ftell(file) + 31) & ~31;
+    fseek(file, dataStart, SEEK_SET);
+    if (controller.second.m_isGameCube) {
+      // GameCube adapters expose 4 input devices with the same vid/pid, we store all 4 in the same file
       uint32_t port = aurora::input::player_index(controller.second.m_index);
-      fseek(file, dataStart + ((sizeof(PADDeadZones) + sizeof(PADButtonMapping)) * port), SEEK_SET);
-      __PADWriteDeadZones(file, controller.second);
-      fwrite(controller.second.m_buttonMapping.data(), 1, sizeof(PADButtonMapping) * controller.second.m_buttonMapping.size(),
-             file);
-      fwrite(controller.second.m_axisMapping.data(), 1, sizeof(PADAxisMapping) * controller.second.m_axisMapping.size(),
-             file);
+      uint32_t dzSecLen = sizeof(PADDeadZones);
+      uint32_t btnSecLen = sizeof(PADButtonMapping) * PAD_BUTTON_COUNT;
+      uint32_t axisSecLen = sizeof(PADAxisMapping) * PAD_AXIS_COUNT;
+      // skip to offset in file for this particular port
+      fseek(file, dataStart + ((dzSecLen + btnSecLen + axisSecLen) * port), SEEK_SET);
     }
+    __PADWriteDeadZones(file, controller.second);
+    fwrite(controller.second.m_buttonMapping.data(), 1, sizeof(PADButtonMapping) * PAD_BUTTON_COUNT, file);
+    fwrite(controller.second.m_axisMapping.data(), 1, sizeof(PADAxisMapping) * PAD_AXIS_COUNT, file);
     fclose(file);
   }
 }
@@ -627,7 +625,7 @@ PADDeadZones* PADGetDeadZones(uint32_t port) {
   return &controller->m_deadZones;
 }
 
-static constexpr std::array<std::pair<PADButton, std::string_view>, 12> skButtonNames = {{
+static constexpr std::array<std::pair<PADButton, std::string_view>, PAD_BUTTON_COUNT> skButtonNames = {{
     {PAD_BUTTON_LEFT, "Left"sv},
     {PAD_BUTTON_RIGHT, "Right"sv},
     {PAD_BUTTON_DOWN, "Down"sv},
@@ -642,7 +640,7 @@ static constexpr std::array<std::pair<PADButton, std::string_view>, 12> skButton
     {PAD_BUTTON_START, "Start"sv},
 }};
 
-static constexpr std::array<std::pair<PADButton, std::string_view>, 12> skAxisNames = {{
+static constexpr std::array<std::pair<PADButton, std::string_view>, PAD_AXIS_COUNT> skAxisNames = {{
     {PAD_AXIS_LEFT_X_POS, "Left X+"sv},
     {PAD_AXIS_LEFT_X_NEG, "Left X-"sv},
     {PAD_AXIS_LEFT_Y_POS, "Left Y+"sv},
@@ -655,7 +653,7 @@ static constexpr std::array<std::pair<PADButton, std::string_view>, 12> skAxisNa
     {PAD_AXIS_TRIGGER_R, "Trigger R"sv},
 }};
 
-static constexpr std::array<std::pair<PADButton, std::string_view>, 12> skAxisDirLabels = {{
+static constexpr std::array<std::pair<PADButton, std::string_view>, PAD_AXIS_COUNT> skAxisDirLabels = {{
     {PAD_AXIS_LEFT_X_POS, "Right"sv},
     {PAD_AXIS_LEFT_X_NEG, "Left"sv},
     {PAD_AXIS_LEFT_Y_POS, "Up"sv},
