@@ -28,8 +28,8 @@ struct GameController {
   };
   uint16_t m_vid = 0;
   uint16_t m_pid = 0;
-  std::array<PADButtonMapping, 12> m_buttonMapping{};
-  std::array<PADAxisMapping, 12> m_axisMapping{};
+  std::array<PADButtonMapping, PAD_BUTTON_COUNT> m_buttonMapping{};
+  std::array<PADAxisMapping, PAD_AXIS_COUNT> m_axisMapping{};
   bool m_mappingLoaded = false;
   constexpr bool operator==(const GameController& other) const {
     return m_controller == other.m_controller && m_index == other.m_index;
