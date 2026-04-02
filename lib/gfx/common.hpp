@@ -154,6 +154,12 @@ private:
 } // namespace aurora
 
 namespace aurora::gfx {
+inline constexpr uint64_t UniformBufferSize = 25165824;  // 24mb
+inline constexpr uint64_t VertexBufferSize = 3145728;    // 3mb
+inline constexpr uint64_t IndexBufferSize = 1048576;     // 1mb
+inline constexpr uint64_t StorageBufferSize = 8388608;   // 8mb
+inline constexpr uint64_t TextureUploadSize = 268435456; // 256mb
+
 extern AuroraStats g_stats;
 extern wgpu::Buffer g_vertexBuffer;
 extern wgpu::Buffer g_uniformBuffer;
