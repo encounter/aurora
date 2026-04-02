@@ -127,9 +127,9 @@ std::string ResolveDolphinCardPath(ECardSlot slot, const char* regionCode, bool 
     }
 #else
     if (isGciFolder) {
-      path += fmt::format("/Library/Application Support/Dolphin/GC/{}/Card {:c}", home, slot == ECardSlot::SlotA ? 'A' : 'B', regionCode);
+      path += fmt::format("/Library/Application Support/Dolphin/GC/{}/Card {}", home, slot == ECardSlot::SlotA ? 'A' : 'B', regionCode);
     }else {
-      path += fmt::format("/Library/Application Support/Dolphin/GC/MemoryCard{:c}.{}.raw", home, slot == ECardSlot::SlotA ? 'A' : 'B', regionCode);
+      path += fmt::format("/Library/Application Support/Dolphin/GC/MemoryCard{}.{}.raw", home, slot == ECardSlot::SlotA ? 'A' : 'B', regionCode);
     }
 #endif
     if (!std::filesystem::exists(path)) {
