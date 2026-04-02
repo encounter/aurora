@@ -418,7 +418,7 @@ void C_MTXReorder(const Mtx src, ROMtx dst)
   u32 j;
   for (i = 0; i < 3; i++) {
     for (j = 0; j < 4; j++) {
-      dest[j][i] = src[i][j];
+      dst[j][i] = src[i][j];
     }
   }
 }

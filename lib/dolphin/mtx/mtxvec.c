@@ -77,7 +77,7 @@ void C_MTXROMultVecArray(const ROMtx m, const Vec *srcBase, Vec *dstBase, u32 co
 {
   u32 i;
   for (i = 0; i < count; i++) {
-    Vec* src = &srcBase[i];
+    const Vec* src = &srcBase[i];
     Vec* dst = &dstBase[i];
 
     dst->x = m[0][0] * src->x + m[0][1] * src->y + m[0][2] * src->z;
