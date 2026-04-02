@@ -81,20 +81,29 @@ void C_MTXMultVec(const Mtx m, const Vec* src, Vec* dst);
 void C_MTXMultVecArray(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count);
 void C_MTXMultVecSR(const Mtx m, const Vec* src, Vec* dst);
 void C_MTXMultVecArraySR(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count);
-void C_MTXROMultVecArray(const ROMtx *m, const Vec *srcBase, Vec *dstBase, u32 count);
+void C_MTXROMultVecArray(const ROMtx m, const Vec *srcBase, Vec *dstBase, u32 count);
 
 #ifdef GEKKO
 void PSMTXMultVec(const Mtx m, const Vec* src, Vec* dst);
 void PSMTXMultVecArray(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count);
 void PSMTXMultVecSR(const Mtx m, const Vec* src, Vec* dst);
 void PSMTXMultVecArraySR(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count);
-void PSMTXROMultVecArray(const ROMtx *m, const Vec *srcBase, Vec *dstBase, u32 count);
+void PSMTXMultS16VecArray(const Mtx m, const S16Vec* srcBase, Vec* dstBase, u32 count);
+
+void PSMTXROMultVecArray(const ROMtx m, const Vec *srcBase, Vec *dstBase, u32 count);
+void PSMTXROSkin2VecArray(const ROMtx m0, const ROMtx m1, const f32* wtBase, const Vec* srcBase,
+                          Vec* dstBase, u32 count);
+void PSMTXROMultS16VecArray(const ROMtx m, const S16Vec* srcBase, Vec* dstBase, u32 count);
 #else
 #define PSMTXMultVec MTXMultVec
 #define PSMTXMultVecArray MTXMultVecArray
 #define PSMTXMultVecSR MTXMultVecSR
 #define PSMTXMultVecArraySR MTXMultVecArraySR
+#define PSMTXMultS16VecArray MTXMultS16VecArray
+
 #define PSMTXROMultVecArray MTXROMultVecArray
+#define PSMTXROSkin2VecArray MTXROSkin2VecArray
+#define PSMTXROMultS16VecArray MTXROMultS16VecArray
 #endif
 
 #ifdef MTX_USE_PS
@@ -102,12 +111,17 @@ void PSMTXROMultVecArray(const ROMtx *m, const Vec *srcBase, Vec *dstBase, u32 c
 #define MTXMultVecArray PSMTXMultVecArray
 #define MTXMultVecSR PSMTXMultVecSR
 #define MTXMultVecArraySR PSMTXMultVecArraySR
+#define MTXMultS16VecArray PSMTXMultS16VecArray
+
 #define MTXROMultVecArray PSMTXROMultVecArray
+#define MTXROSkin2VecArray PSMTXROSkin2VecArray
+#define MTXROMultS16VecArray PSMTXROMultS16VecArray
 #else // MTX_USE_C
 #define MTXMultVec C_MTXMultVec
 #define MTXMultVecArray C_MTXMultVecArray
 #define MTXMultVecSR C_MTXMultVecSR
 #define MTXMultVecArraySR C_MTXMultVecArraySR
+
 #define MTXROMultVecArray C_MTXROMultVecArray
 #endif
 
@@ -137,6 +151,8 @@ void PSMTXScaleApply(const Mtx src, Mtx dst, f32 xS, f32 yS, f32 zS);
 void PSMTXRotRad(Mtx m, char axis, f32 rad);
 void PSMTXRotTrig(Mtx m, char axis, f32 sinA, f32 cosA);
 void PSMTXRotAxisRad(Mtx m, const Vec* axis, f32 rad);
+
+void PSMTXReorder(const Mtx src, ROMtx dest);
 #else
 #define PSMTXQuat MTXQuat
 #define PSMTXReflect MTXReflect
@@ -150,6 +166,8 @@ void PSMTXRotAxisRad(Mtx m, const Vec* axis, f32 rad);
 
 #define PSMTXRotRad MTXRotRad
 #define PSMTXRotAxisRad MTXRotAxisRad
+
+#define PSMTXReorder MTXReorder
 #endif
 
 #ifdef MTX_USE_PS
@@ -346,15 +364,6 @@ void PSQUATInverse(const Quaternion* src, Quaternion* inv);
 #define QUATSlerp C_QUATSlerp
 #define QUATSquad C_QUATSquad
 #define QUATCompA C_QUATCompA
-
-#ifdef GEKKO
-void PSMTXReorder(const Mtx src, ROMtx dest);
-void PSMTXROMultVecArray(const ROMtx m, const Vec* srcBase, Vec* dstBase, u32 count);
-void PSMTXROSkin2VecArray(const ROMtx m0, const ROMtx m1, const f32* wtBase, const Vec* srcBase,
-                          Vec* dstBase, u32 count);
-void PSMTXMultS16VecArray(const Mtx m, const S16Vec* srcBase, Vec* dstBase, u32 count);
-void PSMTXROMultS16VecArray(const ROMtx m, const S16Vec* srcBase, Vec* dstBase, u32 count);
-#endif
 
 void MTXInitStack(MtxStack* sPtr, u32 numMtx);
 MtxPtr MTXPush(MtxStack* sPtr, const Mtx m);
