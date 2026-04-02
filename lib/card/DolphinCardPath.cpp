@@ -104,9 +104,9 @@ std::string ResolveDolphinCardPath(ECardSlot slot, const char* regionCode, bool 
   }
   auto path = *dolphinPath;
   if (isGciFolder) {
-    path += fmt::format("GC/{}/Card {:c}", regionCode, slot == ECardSlot::SlotA ? 'A' : 'B');
+    path += fmt::format("GC/{}/Card {}", regionCode, slot == ECardSlot::SlotA ? 'A' : 'B');
   }else {
-    path += fmt::format("GC/MemoryCard{:c}.{}.raw", slot == ECardSlot::SlotA ? 'A' : 'B', regionCode);
+    path += fmt::format("GC/MemoryCard{}.{}.raw", slot == ECardSlot::SlotA ? 'A' : 'B', regionCode);
   }
 
   if (!std::filesystem::exists(path)) {
@@ -119,10 +119,10 @@ std::string ResolveDolphinCardPath(ECardSlot slot, const char* regionCode, bool 
     path = home;
 #ifndef __APPLE__
     if (isGciFolder) {
-      path += fmt::format("/.dolphin-emu/GC/{}/Card {:c}",
+      path += fmt::format("/.dolphin-emu/GC/{}/Card {}",
                         regionCode, slot == ECardSlot::SlotA ? 'A' : 'B');
     }else {
-      path += fmt::format("/.dolphin-emu/GC/MemoryCard{:c}.{}.raw",
+      path += fmt::format("/.dolphin-emu/GC/MemoryCard{}.{}.raw",
                         slot == ECardSlot::SlotA ? 'A' : 'B', regionCode);
     }
 #else
