@@ -87,6 +87,16 @@ std::string ResolveDolphinCardPath(ECardSlot slot, const char* regionCode, bool 
   return path;
 }
 #else
+static std::optional<std::string> GetPrefPath(const char* app) {
+  char* path = SDL_GetPrefPath(nullptr, app);
+  if (path == nullptr) {
+    return {};
+  }
+  std::string str{path};
+  SDL_free(path);
+  return str;
+}
+
 std::string ResolveDolphinCardPath(ECardSlot slot, const char* regionCode, bool isGciFolder) {
   const auto dolphinPath = GetPrefPath("dolphin-emu");
   if (!dolphinPath) {
