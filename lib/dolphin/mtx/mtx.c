@@ -412,6 +412,17 @@ void C_MTXRotRad(Mtx m, char axis, f32 rad) {
   C_MTXRotTrig(m, axis, sinA, cosA);
 }
 
+void C_MTXReorder(const Mtx src, ROMtx dst)
+{
+  u32 i;
+  u32 j;
+  for (i = 0; i < 3; i++) {
+    for (j = 0; j < 4; j++) {
+      dest[j][i] = src[i][j];
+    }
+  }
+}
+
 void C_MTXRotTrig(Mtx m, char axis, f32 sinA, f32 cosA) {
   assert(m && "MTXRotTrig():  NULL MtxPtr 'm' ");
   switch(axis) {
