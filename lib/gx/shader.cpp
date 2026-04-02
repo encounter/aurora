@@ -589,6 +589,96 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
   }
 }
 
+auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 i, bool alpha) -> std::string {
+  std::string_view swizzle = alpha ? ".a"sv : ""sv;
+  std::string outVar;
+  std::string_view posVar;
+  if (UsePerPixelLighting) {
+    outVar = fmt::format("rast{}", i);
+    posVar = "in.mv_pos"sv;
+  } else {
+    outVar = fmt::format("out.cc{}", i);
+    posVar = "mv_pos"sv;
+  }
+  std::string ambSrc, matSrc;
+  if (cc.ambSrc == GX_SRC_VTX) {
+    if (UsePerPixelLighting) {
+      ambSrc = fmt::format("in.clr{}", i);
+    } else {
+      ambSrc = vtx_attr(config, static_cast<GXAttr>(GX_VA_CLR0 + i));
+    }
+  } else if (cc.ambSrc == GX_SRC_REG) {
+    ambSrc = fmt::format("ubuf.cc{0}{1}_amb", i, alpha ? "a"sv : ""sv);
+  }
+  if (cc.matSrc == GX_SRC_VTX) {
+    if (UsePerPixelLighting) {
+      matSrc = fmt::format("in.clr{}", i);
+    } else {
+      matSrc = vtx_attr(config, static_cast<GXAttr>(GX_VA_CLR0 + i));
+    }
+  } else if (cc.matSrc == GX_SRC_REG) {
+    matSrc = fmt::format("ubuf.cc{0}{1}_mat", i, alpha ? "a"sv : ""sv);
+  }
+  if (!cc.lightingEnabled) {
+    return fmt::format("\n    {0}{2} = {1}{2};", outVar, matSrc, swizzle);
+  }
+  GXDiffuseFn diffFn = cc.diffFn;
+  std::string lightAttnFn;
+  if (cc.attnFn == GX_AF_NONE) {
+    lightAttnFn = "attn = 1.0;"s;
+  } else if (cc.attnFn == GX_AF_SPOT) {
+    lightAttnFn = fmt::format(R"""(
+          var cosine = max(0.0, dot(ldir, light.dir));
+          var cos_attn = dot(light.cos_att, vec3f(1.0, cosine, cosine * cosine));
+          var dist_attn = dot(light.dist_att, vec3f(1.0, dist, dist2));
+          attn = max(0.0, cos_attn / dist_attn);)""");
+  } else if (cc.attnFn == GX_AF_SPEC) {
+    std::string_view normal = UsePerPixelLighting ? "in.mv_nrm"sv : "mv_nrm"sv;
+    std::string dist_attn = diffFn != GX_DF_NONE
+                                ? "max(0.0, dot(normalize(light.dist_att), vec3f(1.0, attn, attn * attn)));"
+                                : "max(0.0, dot(light.dist_att, vec3f(1.0, attn, attn * attn)));";
+    lightAttnFn = fmt::format(R"""(
+          attn = select(0.0, max(0.0, dot({0}, light.dir)), dot({0}, ldir) >= 0.0);
+          var cos_attn = dot(light.cos_att, vec3f(1.0, attn, attn * attn));
+          var dist_attn = {1};
+          attn = max(0.0, cos_attn / dist_attn);)""",
+                              normal, dist_attn);
+  }
+  std::string_view lightDiffFn;
+  if (diffFn == GX_DF_NONE) {
+    lightDiffFn = "1.0"sv;
+  } else if (diffFn == GX_DF_SIGN) {
+    if (UsePerPixelLighting) {
+      lightDiffFn = "dot(ldir, in.mv_nrm)"sv;
+    } else {
+      lightDiffFn = "dot(ldir, mv_nrm)"sv;
+    }
+  } else if (diffFn == GX_DF_CLAMP) {
+    if (UsePerPixelLighting) {
+      lightDiffFn = "max(0.0, dot(ldir, in.mv_nrm))"sv;
+    } else {
+      lightDiffFn = "max(0.0, dot(ldir, mv_nrm))"sv;
+    }
+  }
+  return fmt::format(R"""(
+    {{
+      var lighting = {5};
+      for (var i = 0u; i < {1}u; i++) {{
+          if ((ubuf.lightState{0} & (1u << i)) == 0u) {{ continue; }}
+          var light = ubuf.lights[i];
+          var ldir = light.pos - {6};
+          var dist2 = dot(ldir, ldir);
+          var dist = sqrt(dist2);
+          ldir = ldir / dist;
+          var attn: f32;{2}
+          var diff = {3};
+          lighting = lighting + (attn * diff * light.color);
+      }}
+      {7}{8} = ({4} * clamp(lighting, vec4f(0.0), vec4f(1.0))){8};
+    }})""",
+                     i, GX::MaxLights, lightAttnFn, lightDiffFn, matSrc, ambSrc, posVar, outVar, swizzle);
+}
+
 wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
   const auto hash = xxh3_hash(config);
   {
@@ -872,7 +962,6 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     }
   }
 
-  int vtxColorIdx = 0;
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
     if (!info.sampledColorChannels.test(i)) {
       continue;
@@ -894,151 +983,23 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     }
 
     // Output vertex color if necessary
-    bool usesVtxColor = false;
-    if (((cc.lightingEnabled && cc.ambSrc == GX_SRC_VTX) || cc.matSrc == GX_SRC_VTX ||
-         (cca.lightingEnabled && cca.ambSrc == GX_SRC_VTX) || cca.matSrc == GX_SRC_VTX)) {
-      if (UsePerPixelLighting) {
-        vtxOutAttrs += fmt::format("\n    @location({}) clr{}: vec4f,", vtxOutIdx++, vtxColorIdx);
-        vtxXfrAttrs += fmt::format("\n    out.clr{} = {};", vtxColorIdx,
-                                   vtx_attr(config, static_cast<GXAttr>(GX_VA_CLR0 + vtxColorIdx)));
+    if (UsePerPixelLighting) {
+      if ((cc.lightingEnabled && cc.ambSrc == GX_SRC_VTX) || cc.matSrc == GX_SRC_VTX ||
+          (cca.lightingEnabled && cca.ambSrc == GX_SRC_VTX) || cca.matSrc == GX_SRC_VTX) {
+        vtxOutAttrs += fmt::format("\n    @location({}) clr{}: vec4f,", vtxOutIdx++, i);
+        vtxXfrAttrs += fmt::format("\n    out.clr{} = {};", i, vtx_attr(config, static_cast<GXAttr>(GX_VA_CLR0 + i)));
       }
-      usesVtxColor = true;
     }
 
-    if (cc.lightingEnabled) {
-      std::string ambSrc, matSrc, lightAttnFn, lightDiffFn;
-      if (cc.ambSrc == GX_SRC_VTX) {
-        if (UsePerPixelLighting) {
-          ambSrc = fmt::format("in.clr{}", vtxColorIdx);
-        } else {
-          ambSrc = vtx_attr(config, static_cast<GXAttr>(GX_VA_CLR0 + vtxColorIdx));
-        }
-      } else if (cc.ambSrc == GX_SRC_REG) {
-        ambSrc = fmt::format("ubuf.cc{0}_amb", i);
-      }
-      if (cc.matSrc == GX_SRC_VTX) {
-        if (UsePerPixelLighting) {
-          matSrc = fmt::format("in.clr{}", vtxColorIdx);
-        } else {
-          matSrc = vtx_attr(config, static_cast<GXAttr>(GX_VA_CLR0 + vtxColorIdx));
-        }
-      } else if (cc.matSrc == GX_SRC_REG) {
-        matSrc = fmt::format("ubuf.cc{0}_mat", i);
-      }
-      GXDiffuseFn diffFn = cc.diffFn;
-      if (cc.attnFn == GX_AF_NONE) {
-        lightAttnFn = "attn = 1.0;";
-      } else if (cc.attnFn == GX_AF_SPOT) {
-        lightAttnFn = fmt::format(R"""(
-          var cosine = max(0.0, dot(ldir, light.dir));
-          var cos_attn = dot(light.cos_att, vec3f(1.0, cosine, cosine * cosine));
-          var dist_attn = dot(light.dist_att, vec3f(1.0, dist, dist2));
-          attn = max(0.0, cos_attn / dist_attn);)""");
-      } else if (cc.attnFn == GX_AF_SPEC) {
-        std::string normal = UsePerPixelLighting ? "in.mv_nrm" : "mv_nrm";
-        std::string dist_attn = diffFn != GX_DF_NONE
-                                    ? "max(0.0, dot(normalize(light.dist_att), vec3f(1.0, attn, attn * attn)));"
-                                    : "max(0.0, dot(light.dist_att, vec3f(1.0, attn, attn * attn)));";
-        lightAttnFn = fmt::format(R"""(
-          attn = select(0.0, max(0.0, dot({0}, light.dir)), dot({0}, ldir) >= 0.0);
-          var cos_attn = dot(light.cos_att, vec3f(1.0, attn, attn * attn));
-          var dist_attn = {1};
-          attn = max(0.0, cos_attn / dist_attn);)""",
-                                  normal, dist_attn);
-      }
-      if (diffFn == GX_DF_NONE) {
-        lightDiffFn = "1.0";
-      } else if (diffFn == GX_DF_SIGN) {
-        if (UsePerPixelLighting) {
-          lightDiffFn = "dot(ldir, in.mv_nrm)";
-        } else {
-          lightDiffFn = "dot(ldir, mv_nrm)";
-        }
-      } else if (diffFn == GX_DF_CLAMP) {
-        if (UsePerPixelLighting) {
-          lightDiffFn = "max(0.0, dot(ldir, in.mv_nrm))";
-        } else {
-          lightDiffFn = "max(0.0, dot(ldir, mv_nrm))";
-        }
-      }
-      std::string alphaSrc;
-      if (cca.matSrc == GX_SRC_VTX) {
-        if (UsePerPixelLighting) {
-          alphaSrc = fmt::format("in.clr{}", vtxColorIdx);
-        } else {
-          alphaSrc = vtx_attr(config, static_cast<GXAttr>(GX_VA_CLR0 + vtxColorIdx));
-        }
-      } else {
-        alphaSrc = fmt::format("ubuf.cc{0}a_mat", i);
-      }
-
-      std::string outVar, posVar;
-      if (UsePerPixelLighting) {
-        outVar = fmt::format("rast{}", i);
-        posVar = "in.mv_pos";
-      } else {
-        outVar = fmt::format("out.cc{}", i);
-        posVar = "mv_pos";
-      }
-      auto lightFunc =
-          fmt::format(R"""(
-    {{
-      var lighting = {5};
-      for (var i = 0u; i < {1}u; i++) {{
-          if ((ubuf.lightState{0} & (1u << i)) == 0u) {{ continue; }}
-          var light = ubuf.lights[i];
-          var ldir = light.pos - {7};
-          var dist2 = dot(ldir, ldir);
-          var dist = sqrt(dist2);
-          ldir = ldir / dist;
-          var attn: f32;{2}
-          var diff = {3};
-          lighting = lighting + (attn * diff * light.color);
-      }}
-      {6} = vec4f(({4} * clamp(lighting, vec4f(0.0), vec4f(1.0))).xyz, {8}.a);
-    }})""",
-                      i, GX::MaxLights, lightAttnFn, lightDiffFn, matSrc, ambSrc, outVar, posVar, alphaSrc);
-      if (UsePerPixelLighting) {
-        fragmentFnPre += fmt::format("\n    var rast{}: vec4f;", i);
-        fragmentFnPre += lightFunc;
-      } else {
-        vtxOutAttrs += fmt::format("\n    @location({}) cc{}: vec4f,", vtxOutIdx++, i);
-        vtxXfrAttrs += lightFunc;
-        fragmentFnPre += fmt::format("\n    var rast{0} = in.cc{0};", i);
-      }
-    } else if (cc.matSrc == GX_SRC_VTX) {
-      if (UsePerPixelLighting) {
-        // Color will already be written to clr{}
-        fragmentFnPre += fmt::format("\n    var rast{0} = in.clr{0};", vtxColorIdx);
-      } else {
-        vtxOutAttrs += fmt::format("\n    @location({}) cc{}: vec4f,", vtxOutIdx++, i);
-        vtxXfrAttrs += fmt::format("\n    out.cc{} = {};", i, vtx_attr(config, GXAttr(GX_VA_CLR0 + vtxColorIdx)));
-        fragmentFnPre += fmt::format("\n    var rast{0} = in.cc{0};", i);
-      }
+    if (UsePerPixelLighting) {
+      fragmentFnPre += fmt::format("\n    var rast{}: vec4f;", i);
+      fragmentFnPre += lighting_func(config, cc, i, false);
+      fragmentFnPre += lighting_func(config, cca, i, true);
     } else {
-      fragmentFnPre += fmt::format("\n    var rast{0} = ubuf.cc{0}_mat;", i);
-    }
-
-    if (cca.lightingEnabled) {
-      // TODO handle alpha lighting
-    } else if (cca.matSrc == GX_SRC_VTX) {
-      if (!cc.lightingEnabled && cc.matSrc == GX_SRC_VTX) {
-        // Already written above
-      } else if (UsePerPixelLighting) {
-        fragmentFnPre += fmt::format("\n    rast{0}.a = in.clr{0}.a;", vtxColorIdx);
-      } else {
-        if (!cc.lightingEnabled) {
-          vtxOutAttrs += fmt::format("\n    @location({}) cc{}: vec4f,", vtxOutIdx++, i);
-          vtxXfrAttrs += fmt::format("\n    out.cc{} = {};", i, vtx_attr(config, GXAttr(GX_VA_CLR0 + vtxColorIdx)));
-        }
-        fragmentFnPre += fmt::format("\n    rast{0}.a = in.cc{0}.a;", i);
-      }
-    } else if (cc.lightingEnabled || cc.matSrc != GX_SRC_REG) {
-      fragmentFnPre += fmt::format("\n    rast{0}.a = ubuf.cc{0}a_mat.a;", vtxColorIdx);
-    }
-
-    if (usesVtxColor) {
-      ++vtxColorIdx;
+      vtxOutAttrs += fmt::format("\n    @location({}) cc{}: vec4f,", vtxOutIdx++, i);
+      vtxXfrAttrs += lighting_func(config, cc, i, false);
+      vtxXfrAttrs += lighting_func(config, cca, i, true);
+      fragmentFnPre += fmt::format("\n    var rast{0} = in.cc{0};", i);
     }
   }
   for (int i = 0; i < info.sampledKColors.size(); ++i) {
