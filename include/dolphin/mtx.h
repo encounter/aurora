@@ -81,17 +81,20 @@ void C_MTXMultVec(const Mtx m, const Vec* src, Vec* dst);
 void C_MTXMultVecArray(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count);
 void C_MTXMultVecSR(const Mtx m, const Vec* src, Vec* dst);
 void C_MTXMultVecArraySR(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count);
+void C_MTXROMultVecArray(const ROMtx *m, const Vec *srcBase, Vec *dstBase, u32 count);
 
 #ifdef GEKKO
 void PSMTXMultVec(const Mtx m, const Vec* src, Vec* dst);
 void PSMTXMultVecArray(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count);
 void PSMTXMultVecSR(const Mtx m, const Vec* src, Vec* dst);
 void PSMTXMultVecArraySR(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count);
+void PSMTXROMultVecArray(const ROMtx *m, const Vec *srcBase, Vec *dstBase, u32 count);
 #else
 #define PSMTXMultVec MTXMultVec
 #define PSMTXMultVecArray MTXMultVecArray
 #define PSMTXMultVecSR MTXMultVecSR
 #define PSMTXMultVecArraySR MTXMultVecArraySR
+#define PSMTXROMultVecArray MTXROMultVecArray
 #endif
 
 #ifdef MTX_USE_PS
@@ -99,11 +102,13 @@ void PSMTXMultVecArraySR(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 coun
 #define MTXMultVecArray PSMTXMultVecArray
 #define MTXMultVecSR PSMTXMultVecSR
 #define MTXMultVecArraySR PSMTXMultVecArraySR
+#define MTXROMultVecArray PSMTXROMultVecArray
 #else // MTX_USE_C
 #define MTXMultVec C_MTXMultVec
 #define MTXMultVecArray C_MTXMultVecArray
 #define MTXMultVecSR C_MTXMultVecSR
 #define MTXMultVecArraySR C_MTXMultVecArraySR
+#define MTXROMultVecArray C_MTXROMultVecArray
 #endif
 
 void C_MTXQuat(Mtx m, const Quaternion* q);
@@ -117,6 +122,8 @@ void C_MTXScaleApply(const Mtx src, Mtx dst, f32 xS, f32 yS, f32 zS);
 void C_MTXRotRad(Mtx m, char axis, f32 rad);
 void C_MTXRotTrig(Mtx m, char axis, f32 sinA, f32 cosA);
 void C_MTXRotAxisRad(Mtx m, const Vec* axis, f32 rad);
+
+void C_MTXReorder(const Mtx src, ROMtx dst);
 
 #ifdef GEKKO
 void PSMTXQuat(Mtx m, const Quaternion* q);
@@ -159,6 +166,8 @@ void PSMTXRotAxisRad(Mtx m, const Vec* axis, f32 rad);
 #define MTXRotDeg(m, axis, deg) PSMTXRotRad(m, axis, MTXDegToRad(deg))
 #define MTXRotAxisDeg(m, axis, deg) PSMTXRotAxisRad(m, axis, MTXDegToRad(deg))
 
+#define MTXReorder PSMTXReorder
+
 #else // MTX_USE_C
 #define MTXQuat C_MTXQuat
 #define MTXReflect C_MTXReflect
@@ -172,6 +181,8 @@ void PSMTXRotAxisRad(Mtx m, const Vec* axis, f32 rad);
 
 #define MTXRotDeg(m, axis, deg) C_MTXRotRad(m, axis, MTXDegToRad(deg))
 #define MTXRotAxisDeg(m, axis, deg) C_MTXRotAxisRad(m, axis, MTXDegToRad(deg))
+
+#define MTXReorder C_MTXReorder
 
 #endif
 

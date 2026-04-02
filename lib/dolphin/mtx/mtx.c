@@ -412,17 +412,6 @@ void C_MTXRotRad(Mtx m, char axis, f32 rad) {
   C_MTXRotTrig(m, axis, sinA, cosA);
 }
 
-void C_MTXReorder(const Mtx src, ROMtx dst)
-{
-  u32 i;
-  u32 j;
-  for (i = 0; i < 3; i++) {
-    for (j = 0; j < 4; j++) {
-      dst[j][i] = src[i][j];
-    }
-  }
-}
-
 void C_MTXRotTrig(Mtx m, char axis, f32 sinA, f32 cosA) {
   assert(m && "MTXRotTrig():  NULL MtxPtr 'm' ");
   switch(axis) {
@@ -514,6 +503,17 @@ void C_MTXRotAxisRad(Mtx m, const Vec* axis, f32 rad) {
   m[2][1] = ((z * (t * y)) + (s * x));
   m[2][2] = (c + (t * zSq));
   m[2][3] = 0;
+}
+
+void C_MTXReorder(const Mtx src, ROMtx dst)
+{
+  u32 i;
+  u32 j;
+  for (i = 0; i < 3; i++) {
+    for (j = 0; j < 4; j++) {
+      dst[j][i] = src[i][j];
+    }
+  }
 }
 
 void C_MTXLookAt(Mtx m, const Point3d* camPos, const Vec* camUp, const Point3d* target) {
