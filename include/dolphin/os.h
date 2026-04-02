@@ -28,6 +28,7 @@ typedef u32 OSTick;
 #include <dolphin/os/OSModule.h>
 #include <dolphin/os/OSThread.h>
 #include <dolphin/os/OSMutex.h>
+#include <dolphin/os/OSFastCast.h>
 #include <dolphin/os/OSFont.h>
 #include <dolphin/os/OSReset.h>
 #include <dolphin/os/OSResetSW.h>
