@@ -5,6 +5,7 @@
 #include "dolphin/types.h"
 
 #include "../card/Card.hpp"
+#include "../card/DolphinCardPath.hpp"
 #include "../logging.hpp"
 
 namespace {
@@ -72,6 +73,29 @@ void CopyDolphinStatsToKabu(aurora::card::CardStat& kabuStats, CARDStat* stats) 
   kabuStats.x68_offsetData = stats->offsetData;
 }
 
+void CARDDetectDolphin() {
+  if (Initialized) {
+    Log.fatal("CARDDetectDolphin() called after CARDInit()!");
+  }
+
+  std::string dolphinPath = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotA, "USA", false);
+
+  if (dolphinPath.empty()) {
+    Log.error("Failed to detect Dolphin Card!");
+    return;
+  }
+
+  Log.info("Detected Dolphin Card at: {}", dolphinPath);
+  cardPath = dolphinPath;
+}
+
+void CARDSetBasePath(const std::string_view& path) {
+  if (Initialized) {
+    Log.fatal("CARDSetBasePath() called after CARDInit()!");
+  }
+  cardPath = path;
+}
+
 void CARDInit(const char* game, const char* maker) {
   if (Initialized) {
     return;
@@ -82,7 +106,15 @@ void CARDInit(const char* game, const char* maker) {
   CardChannels[0] = aurora::card::Card{game, maker};
   CardChannels[1] = aurora::card::Card{game, maker};
 
-  cardPath = fmt::format("{}{}.raw", game, maker);
+  if (cardPath.empty()) {
+    std::string cardWorkingDir;
+    if (aurora::g_config.configPath != nullptr)
+      cardWorkingDir = aurora::g_config.configPath;
+    else
+      cardWorkingDir = std::filesystem::current_path().string();
+
+    cardPath = fmt::format("{}/{}{}.raw", cardWorkingDir, game, maker);
+  }
 
   // TODO: SlotB support
   if (!std::filesystem::exists(cardPath)) {
@@ -93,7 +125,7 @@ void CARDInit(const char* game, const char* maker) {
     CardChannels[0].open(cardPath);
   }
 
-  Log.info("Loaded GC Card Disk: {}", cardPath);
+  Log.info("Loaded GC Card Image: {}", cardPath);
 }
 
 void CARDSetGameAndMaker(const s32 chan, const char* game, const char* maker) {
