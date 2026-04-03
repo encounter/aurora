@@ -344,8 +344,8 @@ s32 CARDGetSectorSize(s32 chan, u32* size) {
   }
   if (!CARD_READY(chan))
     return CARD_RESULT_NOCARD;
-  // TODO:
-  CARD_STUB
+  
+  *size = 8192;
   return CARD_RESULT_READY;
 }
 
