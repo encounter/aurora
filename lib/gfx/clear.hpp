@@ -15,10 +15,10 @@ constexpr uint32_t ClearPipelineConfigVersion = 2;
 struct PipelineConfig {
   uint32_t version = ClearPipelineConfigVersion;
   uint32_t msaaSamples = 1;
-  bool clearColor : 1 = true;
-  bool clearAlpha : 1 = true;
-  bool clearDepth : 1 = true;
-  uint32_t _pad : 29 = 0;
+  bool clearColor = true;
+  bool clearAlpha = true;
+  bool clearDepth = true;
+  uint8_t _pad = 0;
 };
 static_assert(std::has_unique_object_representations_v<PipelineConfig>);
 
