@@ -10,6 +10,7 @@
 
 #include <aurora/gfx.h>
 #include <aurora/math.hpp>
+#include <dolphin/gx/GXEnum.h>
 #include <webgpu/webgpu_cpp.h>
 #define XXH_STATIC_LINKING_ONLY
 #include <xxhash.h>
@@ -213,15 +214,17 @@ void render(wgpu::CommandEncoder& cmd);
 void render_pass(const wgpu::RenderPassEncoder& pass, uint32_t idx);
 void map_staging_buffer();
 void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
-                  Vec4<float> clearColorValue, float clearDepthValue);
+                  Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat = GX_TF_RGBA8);
 
-namespace tex_copy_conv {
-struct ConvRequest;
-} // namespace tex_copy_conv
+void begin_offscreen(uint32_t width, uint32_t height);
+void end_offscreen();
+bool is_offscreen() noexcept;
+uint32_t get_sample_count() noexcept;
+void clear_offscreen_cache();
+
 namespace tex_palette_conv {
 struct ConvRequest;
 } // namespace tex_palette_conv
-void queue_copy_conv(tex_copy_conv::ConvRequest req);
 void queue_palette_conv(tex_palette_conv::ConvRequest req);
 
 Range push_verts(const uint8_t* data, size_t length);

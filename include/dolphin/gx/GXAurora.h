@@ -1,6 +1,8 @@
 #ifndef DOLPHIN_GXAURORA_H
 #define DOLPHIN_GXAURORA_H
 
+#include <dolphin/types.h>
+
 #if __cplusplus
 extern "C" {
 #endif
@@ -57,6 +59,19 @@ void GXPopDebugGroup();
  * Sends a debug marker to the backend graphics API. These may show in debugging tools such as RenderDoc.
  */
 void GXInsertDebugMarker(const char* label);
+
+/**
+ * Create an offscreen framebuffer and switch rendering to it.
+ * All subsequent GX rendering will target this framebuffer until GXRestoreFrameBuffer() is called.
+ * Use GXCopyTex to resolve the offscreen content into a texture.
+ */
+void GXCreateFrameBuffer(u32 width, u32 height);
+
+/**
+ * Restore rendering to the main EFB framebuffer.
+ * Must be called after GXCreateFrameBuffer() to resume normal rendering.
+ */
+void GXRestoreFrameBuffer(void);
 
 #if __cplusplus
 }

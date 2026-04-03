@@ -933,5 +933,7 @@ inline std::string format_as(const GXTexFmt& fmt) {
     return "GX_TF_R8_PC";
   case GX_TF_RGBA8_PC:
     return "GX_TF_RGBA8_PC";
+  default:
+    return fmt::format("GXTexFmt({})", underlying(fmt));
   }
 }
