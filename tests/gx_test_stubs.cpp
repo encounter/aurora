@@ -139,15 +139,12 @@ TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, 
 TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept { return {}; }
 void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {}
 void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
-                  Vec4<float> clearColorValue, float clearDepthValue) {}
-void queue_copy_conv(tex_copy_conv::ConvRequest req) {}
+                  Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat) {}
 void queue_palette_conv(tex_palette_conv::ConvRequest req) {}
 } // namespace aurora::gfx
 
 namespace aurora::gfx::tex_copy_conv {
 bool needs_conversion(GXTexFmt fmt) { return false; }
-wgpu::TextureFormat output_format(GXTexFmt fmt) { return wgpu::TextureFormat::Undefined; }
-void queue(ConvRequest req) {}
 } // namespace aurora::gfx::tex_copy_conv
 
 namespace aurora::gfx::tex_palette_conv {

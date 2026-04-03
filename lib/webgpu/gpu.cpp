@@ -21,7 +21,10 @@
 
 namespace aurora::gx {
 void clear_copy_texture_cache() noexcept;
-}
+} // namespace aurora::gx
+namespace aurora::gfx {
+void clear_offscreen_cache();
+} // namespace aurora::gfx
 
 namespace aurora::webgpu {
 static Module Log("aurora::gpu");
@@ -604,6 +607,7 @@ void resize_swapchain(uint32_t width, uint32_t height, bool force) {
   }
   if (sizeChanged) {
     gx::clear_copy_texture_cache();
+    gfx::clear_offscreen_cache();
   }
   g_graphicsConfig.surfaceConfiguration.width = width;
   g_graphicsConfig.surfaceConfiguration.height = height;

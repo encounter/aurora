@@ -85,8 +85,9 @@ void GXSetTexCopySrc(u16 left, u16 top, u16 wd, u16 ht) { g_gxState.texCopySrc =
 void GXSetDispCopyDst(u16 wd, u16 ht) {}
 
 void GXSetTexCopyDst(u16 wd, u16 ht, GXTexFmt fmt, GXBool mipmap) {
-  // TODO texture copy scaling (mipmap)
   g_gxState.texCopyFmt = fmt;
+  g_gxState.texCopyDstWidth = wd;
+  g_gxState.texCopyDstHeight = ht;
 }
 
 // TODO GXSetDispCopyFrame2Field
@@ -125,25 +126,29 @@ void GXCopyDisp(void* dest, GXBool clear) {}
 
 void GXCopyTex(void* dest, GXBool clear) {
   const auto& rect = g_gxState.texCopySrc;
-  const wgpu::Extent3D size{
-      .width = static_cast<uint32_t>(rect.width),
-      .height = static_cast<uint32_t>(rect.height),
-      .depthOrArrayLayers = 1,
-  };
+  const u32 dstWidth = g_gxState.texCopyDstWidth;
+  const u32 dstHeight = g_gxState.texCopyDstHeight;
+  const auto texCopyFmt = g_gxState.texCopyFmt;
+
   const aurora::gx::GXState::CopyTextureKey key{
       .dest = dest,
-      .width = size.width,
-      .height = size.height,
-      .format = g_gxState.texCopyFmt,
+      .width = dstWidth,
+      .height = dstHeight,
+      .format = texCopyFmt,
   };
   auto it = g_gxState.copyTextureCache.find(key);
   if (it == g_gxState.copyTextureCache.end()) {
-    // Configure the texture swizzle to use alpha 1.0 if targeting RGB565 or EFB doesn't have alpha
-    const auto fmt = g_gxState.texCopyFmt == GX_TF_RGB565 || g_gxState.pixelFmt == GX_PF_RGB8_Z24 ||
-                             g_gxState.pixelFmt == GX_PF_RGB565_Z16
-                         ? GX_TF_RGB565
-                         : GX_TF_RGBA8;
-    auto handle = aurora::gfx::new_render_texture(rect.width, rect.height, fmt, "Resolved Texture");
+    aurora::gfx::TextureHandle handle;
+    if (aurora::gfx::tex_copy_conv::needs_conversion(texCopyFmt)) {
+      handle = aurora::gfx::new_conv_texture(dstWidth, dstHeight, texCopyFmt, "Copy Conv Texture");
+    } else {
+      // Configure the texture swizzle to use alpha 1.0 if targeting RGB565 or EFB doesn't have alpha
+      const auto fmt = texCopyFmt == GX_TF_RGB565 || g_gxState.pixelFmt == GX_PF_RGB8_Z24 ||
+                               g_gxState.pixelFmt == GX_PF_RGB565_Z16
+                           ? GX_TF_RGB565
+                           : GX_TF_RGBA8;
+      handle = aurora::gfx::new_render_texture(dstWidth, dstHeight, fmt, "Resolved Texture");
+    }
     it = g_gxState.copyTextureCache.emplace(key, handle).first;
   }
   const auto& handle = it->second;
@@ -167,24 +172,9 @@ void GXCopyTex(void* dest, GXBool clear) {
   const auto clearAlpha = clear && g_gxState.alphaUpdate;
   const auto clearDepth = clear && g_gxState.depthUpdate;
   aurora::gfx::resolve_pass(handle, rect, clearColor, clearAlpha, clearDepth, g_gxState.clearColor,
-                            aurora::gx::clear_depth_value());
+                            aurora::gx::clear_depth_value(), texCopyFmt);
 
-  if (aurora::gfx::tex_copy_conv::needs_conversion(g_gxState.texCopyFmt)) {
-    auto convIt = g_gxState.convTextureCache.find(key);
-    if (convIt == g_gxState.convTextureCache.end()) {
-      auto convHandle =
-          aurora::gfx::new_conv_texture(rect.width, rect.height, g_gxState.texCopyFmt, "Copy Conv Texture");
-      convIt = g_gxState.convTextureCache.emplace(key, convHandle).first;
-    }
-    aurora::gfx::queue_copy_conv({
-        .fmt = g_gxState.texCopyFmt,
-        .src = handle,
-        .dst = convIt->second,
-    });
-    g_gxState.copyTextures[dest] = convIt->second;
-  } else {
-    g_gxState.copyTextures[dest] = handle;
-  }
+  g_gxState.copyTextures[dest] = handle;
 }
 
 // TODO GXGetYScaleFactor
