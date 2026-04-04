@@ -185,3 +185,45 @@ void aurora::gfx::push_debug_group(std::string) {}
 void push_debug_group(const char*) {}
 void pop_debug_group() {}
 void aurora::gfx::insert_debug_marker(std::string) {}
+
+// --- Texture replacement stubs ---
+// Please let me know if these should be replaced with real tests
+namespace aurora::gfx::texture_replacement {
+namespace {
+constexpr u32 mip_count(const GXTexObj_& obj) noexcept {
+  return obj.hasMips ? std::max<u32>(static_cast<u32>(obj.maxLod) + 1, 1) : 1;
+}
+
+u32 summed_mip_size(u32 width, u32 height, u32 bytesPerPixel, u32 mips) noexcept {
+  u32 total = 0;
+  for (u32 mip = 0; mip < mips; ++mip) {
+    total += width * height * bytesPerPixel;
+    width = std::max(width >> 1, 1u);
+    height = std::max(height >> 1, 1u);
+  }
+  return total;
+}
+} // namespace
+
+u32 compute_texture_upload_size(const GXTexObj_& obj) noexcept {
+  if (obj.dataSize != 0) {
+    return obj.dataSize;
+  }
+
+  const u32 mips = mip_count(obj);
+  switch (obj.fmt) {
+  case GX_TF_R8_PC:
+    return summed_mip_size(obj.width, obj.height, 1, mips);
+  case GX_TF_RGBA8_PC:
+    return summed_mip_size(obj.width, obj.height, 4, mips);
+  default:
+    return GXGetTexBufferSize(obj.width, obj.height, obj.fmt, obj.hasMips, static_cast<u8>(mips - 1));
+  }
+}
+
+void initialize() noexcept {}
+void shutdown() noexcept {}
+void register_tlut(const GXTlutObj*, const void*, GXTlutFmt, u16) noexcept {}
+void load_tlut(const GXTlutObj*, u32) noexcept {}
+bool try_bind_replacement(GXTexObj_&, GXTexMapID) noexcept { return false; }
+} // namespace aurora::gfx::texture_replacement
