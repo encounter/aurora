@@ -81,7 +81,6 @@ void C_MTXROMultVecArray(const ROMtx m, const Vec *srcBase, Vec *dstBase, u32 co
   assert(m && "MTXROMultVecArray():  NULL MtxPtr 'm' ");
   assert(srcBase && "MTXROMultVecArray():  NULL VecPtr 'srcBase' ");
   assert(dstBase && "MTXROMultVecArray():  NULL VecPtr 'dstBase' ");
-  assert(count > 1 && "MTXROMultVecArray():  count must be greater than 1.");
 
   for(i = 0; i < count; i++) {
     vTmp.x = (m[0][0] * srcBase->x) + (m[1][0] * srcBase->y) + (m[2][0] * srcBase->z) + m[3][0];
