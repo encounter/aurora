@@ -7,24 +7,29 @@
 extern "C" {
 #endif
 
-#define OS_RESET_RESTART  0
+#define OS_RESET_RESTART 0
 #define OS_RESET_HOTRESET 1
 #define OS_RESET_SHUTDOWN 2
 
 typedef struct OSResetFunctionInfo OSResetFunctionInfo;
 typedef struct OSResetFunctionQueue {
-    OSResetFunctionInfo* head;
-    OSResetFunctionInfo* tail;
+  OSResetFunctionInfo* head;
+  OSResetFunctionInfo* tail;
 } OSResetFunctionQueue;
 
 typedef BOOL (*OSResetFunction)(BOOL);
 
 struct OSResetFunctionInfo {
-    OSResetFunction func;
-    u32 priority;
-    OSResetFunctionInfo* next;
-    OSResetFunctionInfo* prev;
+  OSResetFunction func;
+  u32 priority;
+  OSResetFunctionInfo* next;
+  OSResetFunctionInfo* prev;
 };
+
+#define OS_RESET_RESTART 0
+#define OS_RESET_HOTRESET 1
+#define OS_RESET_SHUTDOWN 2
+#define OS_RESETCODE_RESTART 0x80000000
 
 void OSRegisterResetFunction(OSResetFunctionInfo* info);
 void OSUnregisterResetFunction(OSResetFunctionInfo* info);
