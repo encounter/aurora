@@ -154,7 +154,7 @@ void queue(ConvRequest req) {}
 // --- Window stub ---
 #include "../lib/window.hpp"
 namespace aurora::window {
-AuroraWindowSize get_window_size() { return {640, 480, 640, 480, 1.0f}; }
+AuroraWindowSize get_window_size() { return {640, 480, 640, 480, 640, 480, 1.0f}; }
 } // namespace aurora::window
 
 // --- WebGPU C API stubs (prevent linker errors from wgpu:: destructors) ---
