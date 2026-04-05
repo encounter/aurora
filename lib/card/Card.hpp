@@ -102,11 +102,18 @@ class Card {
   };
 #pragma pack(pop)
 
+  enum class CardType {
+    Image,
+    Folder
+  };
+
   CardHeader m_ch;
   CardHeader m_tmpCh;
 
   std::string m_filename;
   FileIO m_fileHandle;
+  CardType m_type;
+
   std::array<Directory, 2> m_dirs;
   std::array<BlockAllocationTable, 2> m_bats;
   std::array<Directory, 2> m_tmpDirs;
@@ -118,6 +125,9 @@ class Card {
   char m_game[5] = {'\0'};
   char m_maker[3] = {'\0'};
 
+  // GCI Folder data
+  File m_gciFileHeader = {};
+
   void _updateDirAndBat(const Directory& dir, const BlockAllocationTable& bat);
   void _updateChecksum();
   File* _fileFromHandle(const FileHandle& fh) const;
@@ -126,6 +136,16 @@ class Card {
   bool m_dirty = false;
   bool m_opened = false;
   ECardResult _pumpOpen();
+
+  // type specific funcs
+  ECardResult _openFileFromImage(const char* filename, FileHandle& handleOut);
+  ECardResult _openFileFromFolder(const char* filename, FileHandle& handleOut);
+
+  ECardResult _openFileFromImage(uint32_t fileno, FileHandle& handleOut);
+  ECardResult _openFileFromFolder(uint32_t fileno, FileHandle& handleOut);
+
+  ECardResult _createFileFromImage(const char* filename, size_t size, FileHandle& handleOut);
+  ECardResult _createFileFromFolder(const char* filename, size_t size, FileHandle& handleOut);
 
 public:
   Card();
@@ -246,7 +266,7 @@ public:
    * @param buf  The buffer to write to the file.
    * @param size The size of the given buffer.
    */
-  ECardResult asyncWrite(FileHandle& fh, const void* buf, size_t size);
+  ECardResult fileWrite(FileHandle& fh, const void* buf, size_t size);
 
   /**
    * @brief read
@@ -255,7 +275,7 @@ public:
    * @param dst  A buffer to read data into.
    * @param size The size of the buffer to read into.
    */
-  ECardResult asyncRead(FileHandle& fh, void* dst, size_t size);
+  ECardResult fileRead(FileHandle& fh, void* dst, size_t size);
 
   /**
    * @brief seek

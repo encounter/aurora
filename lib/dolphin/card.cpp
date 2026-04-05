@@ -9,7 +9,7 @@
 #include "../logging.hpp"
 
 namespace {
-aurora::Module Log("aurora::card");
+static aurora::Module Log("aurora::card");
 std::array<aurora::card::Card, 2> CardChannels = {{
     aurora::card::Card{nullptr, nullptr},
     aurora::card::Card{nullptr, nullptr},
@@ -659,7 +659,7 @@ s32 CARDRead(const CARDFileInfo* fileInfo, void* addr, s32 length, const s32 off
   aurora::card::FileHandle handle = CreateKabuFileHandleFromDolphin(fileInfo);
 
   card->seek(handle, offset, aurora::card::SeekOrigin::Begin);
-  auto res = card->asyncRead(handle, addr, length);
+  auto res = card->fileRead(handle, addr, length);
 
   if (res != aurora::card::ECardResult::READY)
     Log.error("Failed to read {} bytes from card", length);
@@ -685,7 +685,7 @@ s32 CARDWrite(const CARDFileInfo* fileInfo, const void* addr, const s32 length, 
   aurora::card::FileHandle handle = CreateKabuFileHandleFromDolphin(fileInfo);
 
   card->seek(handle, offset, aurora::card::SeekOrigin::Begin);
-  auto res = card->asyncWrite(handle, addr, length);
+  auto res = card->fileWrite(handle, addr, length);
 
   if (res != aurora::card::ECardResult::READY) {
     Log.error("Failed to write {} bytes to card", length);

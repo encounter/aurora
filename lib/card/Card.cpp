@@ -5,11 +5,13 @@
 #include <cstring>
 #include <filesystem>
 #include <memory>
+#include <SDL3/SDL_filesystem.h>
 
 #include "../internal.hpp"
 #include "SRAM.hpp"
 
 namespace aurora::card {
+static aurora::Module Log("aurora::card");
 
 #define ROUND_UP_8192(val) (((val) + 8191) & ~8191)
 
@@ -115,7 +117,7 @@ Card::Card(const char* game, const char* maker) {
 
 Card::~Card() { close(); }
 
-ECardResult Card::openFile(const char* filename, FileHandle& handleOut) {
+ECardResult Card::_openFileFromImage(const char* filename, FileHandle& handleOut) {
   const ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY) {
     return openRes;
@@ -135,8 +137,19 @@ ECardResult Card::openFile(const char* filename, FileHandle& handleOut) {
 
   return ECardResult::FATAL_ERROR;
 }
+ECardResult Card::_openFileFromFolder(const char* filename, FileHandle& handleOut) {
+  return ECardResult::FATAL_ERROR;
+}
 
-ECardResult Card::openFile(uint32_t fileno, FileHandle& handleOut) {
+ECardResult Card::openFile(const char* filename, FileHandle& handleOut) {
+  if (m_type == CardType::Folder)
+    return _openFileFromFolder(filename, handleOut);
+  if (m_type == CardType::Image)
+    return _openFileFromImage(filename, handleOut);
+  return ECardResult::FATAL_ERROR;
+}
+
+ECardResult Card::_openFileFromImage(uint32_t fileno, FileHandle& handleOut) {
   ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
@@ -147,6 +160,18 @@ ECardResult Card::openFile(uint32_t fileno, FileHandle& handleOut) {
     return ECardResult::NOFILE;
   handleOut = FileHandle(fileno);
   return ECardResult::READY;
+}
+
+ECardResult Card::_openFileFromFolder(uint32_t fileno, FileHandle& handleOut) {
+  return ECardResult::FATAL_ERROR;
+}
+
+ECardResult Card::openFile(uint32_t fileno, FileHandle& handleOut) {
+  if (m_type == CardType::Folder)
+    return _openFileFromFolder(fileno, handleOut);
+  if (m_type == CardType::Image)
+    return _openFileFromImage(fileno, handleOut);
+  return ECardResult::FATAL_ERROR;
 }
 
 void Card::_updateDirAndBat(const Directory& dir, const BlockAllocationTable& bat) {
@@ -179,7 +204,7 @@ File* Card::_fileFromHandle(const FileHandle& fh) const {
   return const_cast<Directory&>(m_dirs[m_currentDir]).getFile(fh.idx);
 }
 
-ECardResult Card::createFile(const char* filename, size_t size, FileHandle& handleOut) {
+ECardResult Card::_createFileFromImage(const char* filename, size_t size, FileHandle& handleOut) {
   ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
@@ -212,6 +237,18 @@ ECardResult Card::createFile(const char* filename, size_t size, FileHandle& hand
     return ECardResult::READY;
   }
 
+  return ECardResult::FATAL_ERROR;
+}
+
+ECardResult Card::_createFileFromFolder(const char* filename, size_t size, FileHandle& handleOut) {
+  return ECardResult::FATAL_ERROR;
+}
+
+ECardResult Card::createFile(const char* filename, size_t size, FileHandle& handleOut) {
+  if (m_type == CardType::Folder)
+    return _createFileFromFolder(filename, size, handleOut);
+  if (m_type == CardType::Image)
+    return _createFileFromImage(filename, size, handleOut);
   return ECardResult::FATAL_ERROR;
 }
 
@@ -338,7 +375,7 @@ ECardResult Card::renameFile(const char* oldName, const char* newName) {
   return ECardResult::READY;
 }
 
-ECardResult Card::asyncWrite(FileHandle& fh, const void* buf, size_t size) {
+ECardResult Card::fileWrite(FileHandle& fh, const void* buf, size_t size) {
   ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
@@ -387,7 +424,7 @@ ECardResult Card::asyncWrite(FileHandle& fh, const void* buf, size_t size) {
   return ECardResult::READY;
 }
 
-ECardResult Card::asyncRead(FileHandle& fh, void* dst, size_t size) {
+ECardResult Card::fileRead(FileHandle& fh, void* dst, size_t size) {
   ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
@@ -868,7 +905,21 @@ void Card::commit() {
 
 bool Card::open(std::string_view filepath) {
   m_opened = false;
+
+  SDL_PathInfo info;
+  if (SDL_GetPathInfo(filepath.data(), &info)) {
+    m_type = info.type == SDL_PATHTYPE_DIRECTORY ? CardType::Folder : CardType::Image;
+  }else {
+    Log.error("Supplied path does not exist! Unable to open card: {}", filepath);
+    return false;
+  }
+
   m_filename = filepath;
+
+  if (m_type == CardType::Folder) {
+    return true;
+  }
+
   m_fileHandle = FileIO(m_filename);
   if (m_fileHandle) {
     if (!m_fileHandle.fileRead(m_ch.raw.data(), BlockSize, 0))
