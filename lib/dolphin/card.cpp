@@ -120,7 +120,7 @@ void CARDSetBasePath(const std::string_view& path, u32 slot) {
 
   std::filesystem::path filePath(path);
 
-  if (filePath.has_filename()) {
+  if (filePath.has_filename() && !std::filesystem::is_directory(filePath)) {
     filePath = filePath.remove_filename();
     Log.warn("Path supplied a filename, discarding. New Path: {}", filePath.string());
   }
