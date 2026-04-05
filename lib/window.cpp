@@ -343,4 +343,17 @@ void set_fullscreen(bool fullscreen) {
 
 bool get_fullscreen() { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0u; }
 
+void set_window_size(uint32_t width, uint32_t height) {
+  TRY_WARN(SDL_RestoreWindow(g_window), "Failed to un-maximize window: {}", SDL_GetError());
+  TRY_WARN(SDL_SetWindowSize(g_window, width, height), "Failed to set window size: {}", SDL_GetError());
+}
+
+void set_window_position(uint32_t x, uint32_t y) {
+  TRY_WARN(SDL_SetWindowPosition(g_window, x, y), "Failed to set window position: {}", SDL_GetError());
+}
+
+void center_window() {
+  TRY_WARN(SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED), "Failed to center window: {}", SDL_GetError());
+}
+
 } // namespace aurora::window
