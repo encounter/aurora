@@ -20,4 +20,6 @@ SDL_Renderer* get_sdl_renderer();
 void set_title(const char* title);
 void set_fullscreen(bool fullscreen);
 bool get_fullscreen();
+void lock_aspect_ratio(int width, int height);
+void unlock_aspect_ratio();
 }; // namespace aurora::window

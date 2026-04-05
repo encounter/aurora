@@ -95,8 +95,8 @@ void new_frame(const AuroraWindowSize& size) noexcept {
 
   // Render at full DPI
   ImGui::GetIO().DisplaySize = {
-      static_cast<float>(size.fb_width),
-      static_cast<float>(size.fb_height),
+      static_cast<float>(size.native_fb_width),
+      static_cast<float>(size.native_fb_height),
   };
   ImGui::NewFrame();
 }
