@@ -70,9 +70,9 @@ void process_event(const SDL_Event& event) noexcept {
 
 void new_frame(const AuroraWindowSize& size) noexcept {
   const float framebufferScaleX =
-      size.width > 0 ? static_cast<float>(size.fb_width) / static_cast<float>(size.width) : 1.0f;
+      size.width > 0 ? static_cast<float>(size.native_fb_width) / static_cast<float>(size.width) : 1.0f;
   const float framebufferScaleY =
-      size.height > 0 ? static_cast<float>(size.fb_height) / static_cast<float>(size.height) : 1.0f;
+      size.height > 0 ? static_cast<float>(size.native_fb_height) / static_cast<float>(size.height) : 1.0f;
 
   if (g_useSdlRenderer) {
     ImGui_ImplSDLRenderer3_NewFrame();
