@@ -18,7 +18,6 @@ wgpu::ColorWriteMask clear_write_mask(bool clearColor, bool clearAlpha) {
 namespace aurora::gfx::clear {
 
 using webgpu::g_device;
-using webgpu::g_frameBuffer;
 using webgpu::g_graphicsConfig;
 
 wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
@@ -103,23 +102,22 @@ fn fs_main() -> @location(0) vec4<f32> {
       .depthStencil = &depthStencil,
       .multisample =
           wgpu::MultisampleState{
-              .count = g_graphicsConfig.msaaSamples,
-              .mask = UINT32_MAX,
+              .count = config.msaaSamples,
           },
       .fragment = &fragmentState,
   };
   return g_device.CreateRenderPipeline(&pipelineDescriptor);
 }
 
-void render(const DrawData& data, const wgpu::RenderPassEncoder& pass) {
+void render(const DrawData& data, const wgpu::RenderPassEncoder& pass, const wgpu::Extent3D& targetSize) {
   if (!bind_pipeline(data.pipeline, pass)) {
     return;
   }
 
-  const auto& size = g_frameBuffer.size;
   pass.SetBlendConstant(&data.color);
-  pass.SetViewport(0.f, 0.f, static_cast<float>(size.width), static_cast<float>(size.height), data.depth, data.depth);
-  pass.SetScissorRect(0, 0, size.width, size.height);
+  pass.SetViewport(0.f, 0.f, static_cast<float>(targetSize.width), static_cast<float>(targetSize.height), data.depth,
+                   data.depth);
+  pass.SetScissorRect(0, 0, targetSize.width, targetSize.height);
   pass.Draw(3);
 }
 } // namespace aurora::gfx::clear

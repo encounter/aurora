@@ -20,6 +20,12 @@ static constexpr std::string_view ShaderPreamble = R"(
 @group(0) @binding(0) var src_samp: sampler;
 @group(0) @binding(1) var src: texture_2d<f32>;
 
+struct UVTransform {
+    offset: vec2f,
+    scale: vec2f,
+};
+@group(0) @binding(2) var<uniform> uv_xf: UVTransform;
+
 struct VertexOutput {
     @builtin(position) pos: vec4f,
     @location(0) uv: vec2f,
@@ -39,7 +45,7 @@ var<private> uvs: array<vec2f, 3> = array(
 @vertex fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {
     var out: VertexOutput;
     out.pos = vec4f(positions[vi], 0.0, 1.0);
-    out.uv = uvs[vi];
+    out.uv = uvs[vi] * uv_xf.scale + uv_xf.offset;
     return out;
 }
 
@@ -50,6 +56,13 @@ fn intensity(rgb: vec3f) -> f32 {
 
 fn quantize4(v: f32) -> f32 {
     return floor(v * 16.0) / 15.0;
+}
+)"sv;
+
+// Passthrough blit (for scaling)
+static constexpr std::string_view FragPassthrough = R"(
+@fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+    return textureSample(src, src_samp, in.uv);
 }
 )"sv;
 
@@ -197,6 +210,7 @@ static constexpr std::array ConvPipelines{
 static wgpu::BindGroupLayout g_bindGroupLayout;
 static wgpu::Sampler g_sampler;
 static absl::flat_hash_map<GXTexFmt, wgpu::RenderPipeline> g_pipelines;
+static wgpu::RenderPipeline g_blitPipeline;
 
 static wgpu::RenderPipeline create_pipeline(const ConvPipeline& conv) {
   std::string shaderSource;
@@ -267,6 +281,14 @@ void initialize() {
                   .viewDimension = wgpu::TextureViewDimension::e2D,
               },
       },
+      wgpu::BindGroupLayoutEntry{
+          .binding = 2,
+          .visibility = wgpu::ShaderStage::Vertex,
+          .buffer =
+              wgpu::BufferBindingLayout{
+                  .type = wgpu::BufferBindingType::Uniform,
+              },
+      },
   };
   const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
       .label = "TexCopyConv Bind Group Layout",
@@ -275,6 +297,8 @@ void initialize() {
   };
   g_bindGroupLayout = g_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
 
+  g_blitPipeline = create_pipeline(
+      {GX_TF_RGBA8, FragPassthrough, webgpu::g_graphicsConfig.surfaceConfiguration.format, "TexCopyConv Blit"});
   for (const auto& conv : ConvPipelines) {
     g_pipelines[conv.fmt] = create_pipeline(conv);
     if (conv.outputFormat != to_wgpu(conv.fmt)) {
@@ -292,16 +316,12 @@ void initialize() {
 
 void shutdown() {
   g_pipelines.clear();
+  g_blitPipeline = {};
   g_bindGroupLayout = {};
   g_sampler = {};
 }
 
-void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
-  const auto it = g_pipelines.find(req.fmt);
-  if (it == g_pipelines.end()) {
-    Log.fatal("No copy conversion pipeline for format {}", static_cast<int>(req.fmt));
-  }
-
+static void execute(const wgpu::CommandEncoder& cmd, const ConvRequest& req, const wgpu::RenderPipeline& pipeline) {
   const std::array bindGroupEntries{
       wgpu::BindGroupEntry{
           .binding = 0,
@@ -309,7 +329,13 @@ void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
       },
       wgpu::BindGroupEntry{
           .binding = 1,
-          .textureView = req.src->sampleTextureView,
+          .textureView = req.srcView,
+      },
+      wgpu::BindGroupEntry{
+          .binding = 2,
+          .buffer = g_uniformBuffer,
+          .offset = req.uniformRange.offset,
+          .size = req.uniformRange.size,
       },
   };
   const wgpu::BindGroupDescriptor bindGroupDescriptor{
@@ -333,10 +359,20 @@ void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
       .colorAttachments = colorAttachments.data(),
   };
   const auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
-  pass.SetPipeline(it->second);
+  pass.SetPipeline(pipeline);
   pass.SetBindGroup(0, bindGroup);
   pass.Draw(3);
   pass.End();
 }
+
+void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
+  const auto it = g_pipelines.find(req.fmt);
+  if (it == g_pipelines.end()) {
+    Log.fatal("No copy conversion pipeline for format {}", static_cast<int>(req.fmt));
+  }
+  execute(cmd, req, it->second);
+}
+
+void blit(const wgpu::CommandEncoder& cmd, const ConvRequest& req) { execute(cmd, req, g_blitPipeline); }
 
 } // namespace aurora::gfx::tex_copy_conv

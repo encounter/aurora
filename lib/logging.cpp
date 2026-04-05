@@ -23,7 +23,8 @@ void log_internal(const AuroraLogLevel level, const char* module, const char* me
 }
 } // namespace aurora
 
-auto fmt::formatter<AuroraLogLevel>::format(const AuroraLogLevel level, format_context& ctx) const -> format_context::iterator {
+auto fmt::formatter<AuroraLogLevel>::format(const AuroraLogLevel level, format_context& ctx) const
+    -> format_context::iterator {
   std::string_view name = "unknown";
   switch (level) {
   case LOG_DEBUG:

@@ -29,7 +29,6 @@ const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.t
 void clear_copy_texture_cache() noexcept {
   g_gxState.copyTextures.clear();
   g_gxState.copyTextureCache.clear();
-  g_gxState.convTextureCache.clear();
 }
 
 static inline wgpu::BlendFactor to_blend_factor(GXBlendFactor fac, bool isDst) {
@@ -231,8 +230,7 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu:
       .depthStencil = &depthStencil,
       .multisample =
           wgpu::MultisampleState{
-              .count = g_graphicsConfig.msaaSamples,
-              .mask = UINT32_MAX,
+              .count = config.msaaSamples,
           },
       .fragment = &fragmentState,
   };
@@ -415,6 +413,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     config.shaderConfig.alphaCompare = g_gxState.alphaCompare;
   }
   config = {
+      .msaaSamples = gfx::get_sample_count(),
       .shaderConfig = config.shaderConfig,
       .depthFunc = g_gxState.depthFunc,
       .cullMode = config.shaderConfig.lineMode == 0 ? g_gxState.cullMode : GX_CULL_NONE,

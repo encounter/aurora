@@ -14,19 +14,20 @@ struct DrawData {
   uint32_t indexCount;
   uint32_t instanceCount;
   GXBindGroups bindGroups;
-  u32 dstAlpha;
+  uint32_t dstAlpha;
 };
 
-constexpr u32 GXPipelineConfigVersion = 10;
+constexpr uint32_t GXPipelineConfigVersion = 11;
 struct PipelineConfig {
-  u32 version = GXPipelineConfigVersion;
+  uint32_t version = GXPipelineConfigVersion;
+  uint32_t msaaSamples = 1;
   ShaderConfig shaderConfig;
   GXCompare depthFunc;
   GXCullMode cullMode;
   GXBlendMode blendMode;
   GXBlendFactor blendFacSrc, blendFacDst;
   GXLogicOp blendOp;
-  u32 dstAlpha;
+  uint32_t dstAlpha;
   bool depthCompare, depthUpdate, alphaUpdate, colorUpdate;
 };
 static_assert(std::has_unique_object_representations_v<PipelineConfig>);
@@ -34,5 +35,5 @@ static_assert(std::has_unique_object_representations_v<PipelineConfig>);
 wgpu::RenderPipeline create_pipeline([[maybe_unused]] const PipelineConfig& config);
 void render(const DrawData& data, const wgpu::RenderPassEncoder& pass);
 
-void queue_surface(const u8* dlStart, u32 dlSize, bool bigEndian) noexcept;
+void queue_surface(const u8* dlStart, uint32_t dlSize, bool bigEndian) noexcept;
 } // namespace aurora::gx

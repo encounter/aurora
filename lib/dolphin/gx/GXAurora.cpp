@@ -5,6 +5,9 @@
 #include "__gx.h"
 #include "gx.hpp"
 
+#include "../../gfx/common.hpp"
+#include "../../gx/fifo.hpp"
+
 static void GXWriteString(const char* label) {
   auto length = strlen(label);
 
@@ -29,4 +32,14 @@ void GXPopDebugGroup() {
 void GXInsertDebugMarker(const char* label) {
   GX_WRITE_AURORA(GX_LOAD_AURORA_DEBUG_MARKER_INSERT);
   GXWriteString(label);
+}
+
+void GXCreateFrameBuffer(u32 width, u32 height) {
+  aurora::gx::fifo::drain();
+  aurora::gfx::begin_offscreen(width, height);
+}
+
+void GXRestoreFrameBuffer() {
+  aurora::gx::fifo::drain();
+  aurora::gfx::end_offscreen();
 }

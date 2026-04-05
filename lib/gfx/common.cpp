@@ -13,6 +13,7 @@
 #include <deque>
 #include <fstream>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <ranges>
 
@@ -137,18 +138,55 @@ std::atomic_ref createdPipelines{g_stats.createdPipelines};
 
 using CommandList = std::vector<Command>;
 struct RenderPass {
+  wgpu::TextureView colorView;
+  wgpu::TextureView resolveView; // MSAA resolve target; null if msaaSamples == 1
+  wgpu::TextureView depthView;
+  wgpu::Texture copySourceTexture;
+  wgpu::TextureView copySourceView;
+  wgpu::Extent3D targetSize;
+  uint32_t msaaSamples = 1;
+
   TextureHandle resolveTarget;
+  GXTexFmt resolveFormat = GX_TF_RGBA8;
   ClipRect resolveRect;
+  Range resolveUniformRange;
   Vec4<float> clearColorValue{0.f, 0.f, 0.f, 0.f};
   float clearDepthValue = gx::UseReversedZ ? 0.f : 1.f;
   CommandList commands;
   bool clearColor = true;
   bool clearDepth = true;
-  std::vector<tex_copy_conv::ConvRequest> copyConvs;
   std::vector<tex_palette_conv::ConvRequest> paletteConvs;
 };
 static std::vector<RenderPass> g_renderPasses;
 static u32 g_currentRenderPass = UINT32_MAX;
+static bool g_inOffscreen = false;
+static std::optional<RenderPass> g_suspendedEfbPass;
+static webgpu::TextureWithSampler g_offscreenColor;
+static webgpu::TextureWithSampler g_offscreenDepth;
+
+static void set_efb_targets(RenderPass& pass) {
+  pass.colorView = webgpu::g_frameBuffer.view;
+  pass.resolveView = webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.view : nullptr;
+  pass.depthView = webgpu::g_depthBuffer.view;
+  pass.copySourceTexture =
+      webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.texture : webgpu::g_frameBuffer.texture;
+  pass.copySourceView =
+      webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.view : webgpu::g_frameBuffer.view;
+  pass.targetSize = webgpu::g_frameBuffer.size;
+  pass.msaaSamples = webgpu::g_graphicsConfig.msaaSamples;
+}
+
+struct OffscreenDepthKey {
+  uint32_t width;
+  uint32_t height;
+
+  bool operator==(const OffscreenDepthKey& rhs) const { return width == rhs.width && height == rhs.height; }
+  template <typename H>
+  friend H AbslHashValue(H h, const OffscreenDepthKey& key) {
+    return H::combine(std::move(h), key.width, key.height);
+  }
+};
+static absl::flat_hash_map<OffscreenDepthKey, webgpu::TextureWithSampler> g_offscreenDepthCache;
 std::vector<TextureUpload> g_textureUploads;
 
 static ByteBuffer g_serializedPipelines{};
@@ -273,20 +311,46 @@ PipelineRef pipeline_ref(clear::PipelineConfig config) {
 }
 
 void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
-                  Vec4<float> clearColorValue, float clearDepthValue) {
-  auto& currentPass = g_renderPasses[g_currentRenderPass];
-  currentPass.resolveTarget = std::move(texture);
-  currentPass.resolveRect = rect;
-  auto& newPass = g_renderPasses.emplace_back();
-  newPass.clearColorValue = clearColorValue;
-  newPass.clearDepthValue = clearDepthValue;
-  newPass.clearColor = clearColor && clearAlpha;
-  newPass.clearDepth = clearDepth;
+                  Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat) {
+  // Resolve current render pass
+  auto& prevPass = g_renderPasses[g_currentRenderPass];
+  prevPass.resolveTarget = std::move(texture);
+  prevPass.resolveRect = rect;
+  prevPass.resolveFormat = resolveFormat;
+  // Push UV transform uniform for tex_copy_conv (crop region in UV space)
+  const auto srcW = static_cast<float>(prevPass.targetSize.width);
+  const auto srcH = static_cast<float>(prevPass.targetSize.height);
+  const std::array uvTransform{
+      static_cast<float>(rect.x) / srcW,
+      static_cast<float>(rect.y) / srcH,
+      static_cast<float>(rect.width) / srcW,
+      static_cast<float>(rect.height) / srcH,
+  };
+  prevPass.resolveUniformRange = push_uniform(uvTransform);
+
+  // Populate new render pass from previous
+  const auto msaaSamples = prevPass.msaaSamples;
+  RenderPass newPass{
+      .colorView = prevPass.colorView,
+      .resolveView = prevPass.resolveView,
+      .depthView = prevPass.depthView,
+      .copySourceTexture = prevPass.copySourceTexture,
+      .copySourceView = prevPass.copySourceView,
+      .targetSize = prevPass.targetSize,
+      .msaaSamples = msaaSamples,
+      .clearColorValue = clearColorValue,
+      .clearDepthValue = clearDepthValue,
+      .clearColor = clearColor && clearAlpha,
+      .clearDepth = clearDepth,
+  };
+  g_renderPasses.emplace_back(std::move(newPass));
   ++g_currentRenderPass;
+
   if (!newPass.clearColor && (clearColor || clearAlpha)) {
     // If we're only clearing color _or_ alpha, perform a clear draw
     push_draw_command(clear::DrawData{
         .pipeline = pipeline_ref(clear::PipelineConfig{
+            .msaaSamples = msaaSamples,
             .clearColor = clearColor,
             .clearAlpha = clearAlpha,
             .clearDepth = false, // Depth cleared via render attachment
@@ -304,13 +368,129 @@ void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool cl
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
 }
 
-void queue_copy_conv(tex_copy_conv::ConvRequest req) {
-  CHECK(g_currentRenderPass > 0, "queue_copy_conv called without a prior resolve_pass");
-  g_renderPasses[g_currentRenderPass - 1].copyConvs.push_back(std::move(req));
-}
-
 void queue_palette_conv(tex_palette_conv::ConvRequest req) {
   g_renderPasses[g_currentRenderPass].paletteConvs.push_back(std::move(req));
+}
+
+bool is_offscreen() noexcept { return g_inOffscreen; }
+
+uint32_t get_sample_count() noexcept {
+  CHECK(g_currentRenderPass != UINT32_MAX, "get_sample_count called outside of a frame");
+  return g_renderPasses[g_currentRenderPass].msaaSamples;
+}
+
+void clear_offscreen_cache() { g_offscreenDepthCache.clear(); }
+
+static webgpu::TextureWithSampler get_offscreen_depth(uint32_t width, uint32_t height) {
+  OffscreenDepthKey key{width, height};
+  auto it = g_offscreenDepthCache.find(key);
+  if (it != g_offscreenDepthCache.end()) {
+    return it->second;
+  }
+  const auto format = webgpu::g_graphicsConfig.depthFormat;
+  const wgpu::Extent3D size{width, height, 1};
+  const wgpu::TextureDescriptor desc{
+      .label = "Offscreen Depth",
+      .usage = wgpu::TextureUsage::RenderAttachment,
+      .dimension = wgpu::TextureDimension::e2D,
+      .size = size,
+      .format = format,
+      .mipLevelCount = 1,
+      .sampleCount = 1,
+  };
+  auto texture = g_device.CreateTexture(&desc);
+  auto view = texture.CreateView();
+  webgpu::TextureWithSampler result{
+      .texture = std::move(texture),
+      .view = std::move(view),
+      .size = size,
+      .format = format,
+  };
+  auto [insertIt, _] = g_offscreenDepthCache.emplace(key, result);
+  return insertIt->second;
+}
+
+void begin_offscreen(uint32_t width, uint32_t height) {
+  CHECK(g_currentRenderPass != UINT32_MAX, "begin_offscreen called outside of a frame");
+
+  // If the current EFB pass has no resolve target, its output is unobservable.
+  // Suspend it so that we can resume it after the offscreen pass.
+  if (!g_inOffscreen) {
+    auto& currentPass = g_renderPasses[g_currentRenderPass];
+    if (!currentPass.resolveTarget) {
+      g_suspendedEfbPass = std::move(currentPass);
+      g_renderPasses.pop_back();
+      --g_currentRenderPass;
+    }
+  }
+
+  // Create offscreen color target
+  const wgpu::Extent3D size{width, height, 1};
+  const auto colorFormat = webgpu::g_graphicsConfig.surfaceConfiguration.format;
+  const wgpu::TextureDescriptor colorDesc{
+      .label = "Offscreen Color",
+      .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc |
+               wgpu::TextureUsage::CopyDst,
+      .dimension = wgpu::TextureDimension::e2D,
+      .size = size,
+      .format = colorFormat,
+      .mipLevelCount = 1,
+      .sampleCount = 1,
+  };
+  auto colorTexture = g_device.CreateTexture(&colorDesc);
+  auto colorView = colorTexture.CreateView();
+  g_offscreenColor = {
+      .texture = std::move(colorTexture),
+      .view = std::move(colorView),
+      .size = size,
+      .format = colorFormat,
+  };
+  g_offscreenDepth = get_offscreen_depth(width, height);
+
+  // Start a new pass with offscreen targets
+  RenderPass newPass{
+      .colorView = g_offscreenColor.view,
+      .depthView = g_offscreenDepth.view,
+      .copySourceTexture = g_offscreenColor.texture,
+      .copySourceView = g_offscreenColor.view,
+      .targetSize = size,
+      .msaaSamples = 1,
+      .clearColorValue = {0.f, 0.f, 0.f, 0.f},
+      .clearDepthValue = gx::UseReversedZ ? 0.f : 1.f,
+      .clearColor = true,
+      .clearDepth = true,
+  };
+  g_renderPasses.emplace_back(std::move(newPass));
+  ++g_currentRenderPass;
+
+  g_inOffscreen = true;
+
+  push_command(CommandType::SetViewport, Command::Data{.setViewport = {0.f, 0.f, static_cast<float>(width),
+                                                                       static_cast<float>(height), 0.f, 1.f}});
+  push_command(CommandType::SetScissor, Command::Data{.setScissor = {0, 0, width, height}});
+}
+
+void end_offscreen() {
+  CHECK(g_inOffscreen, "end_offscreen called without begin_offscreen");
+
+  g_inOffscreen = false;
+  g_offscreenColor = {};
+  g_offscreenDepth = {};
+
+  // Resume suspended EFB pass, or start a new one (load existing content)
+  if (g_suspendedEfbPass) {
+    g_renderPasses.emplace_back(std::move(*g_suspendedEfbPass));
+    g_suspendedEfbPass.reset();
+  } else {
+    auto& pass = g_renderPasses.emplace_back();
+    pass.clearColor = false;
+    pass.clearDepth = false;
+  }
+  ++g_currentRenderPass;
+  set_efb_targets(g_renderPasses[g_currentRenderPass]);
+
+  push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
+  push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
 }
 
 template <>
@@ -506,6 +686,10 @@ void shutdown() {
   g_stagingBuffers.fill({});
   g_renderPasses.clear();
   g_currentRenderPass = UINT32_MAX;
+  g_offscreenDepthCache.clear();
+  g_offscreenColor = {};
+  g_offscreenDepth = {};
+  g_inOffscreen = false;
 
   queuedPipelines = 0;
   createdPipelines = 0;
@@ -549,8 +733,10 @@ void begin_frame() {
 
   g_stats.drawCallCount = 0;
   g_stats.mergedDrawCallCount = 0;
+  g_suspendedEfbPass.reset();
 
   g_renderPasses.emplace_back();
+  set_efb_targets(g_renderPasses[0]);
   g_renderPasses[0].clearColorValue = gx::g_gxState.clearColor;
   g_renderPasses[0].clearDepthValue = gx::clear_depth_value();
   g_currentRenderPass = 0;
@@ -563,6 +749,7 @@ void begin_frame() {
 }
 
 void end_frame(const wgpu::CommandEncoder& cmd) {
+  ASSERT(!g_inOffscreen, "end_frame called while offscreen rendering is active");
   uint64_t bufferOffset = 0;
   const auto writeBuffer = [&](ByteBuffer& buf, wgpu::Buffer& out, uint64_t size, std::string_view label) {
     const auto writeSize = buf.size(); // Only need to copy this many bytes
@@ -611,13 +798,20 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
 void render(wgpu::CommandEncoder& cmd) {
   for (u32 i = 0; i < g_renderPasses.size(); ++i) {
     const auto& passInfo = g_renderPasses[i];
+    for (const auto& conv : passInfo.paletteConvs) {
+      tex_palette_conv::run(cmd, conv);
+    }
     if (i == g_renderPasses.size() - 1) {
       ASSERT(!passInfo.resolveTarget, "Final render pass must not have resolve target");
+    } else if (!passInfo.resolveTarget) {
+      // Skip intermediate render passes without resolve target
+      continue;
     }
+
     const std::array attachments{
         wgpu::RenderPassColorAttachment{
-            .view = webgpu::g_frameBuffer.view,
-            .resolveTarget = webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.view : nullptr,
+            .view = passInfo.colorView,
+            .resolveTarget = passInfo.resolveView,
             .loadOp = passInfo.clearColor ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
             .storeOp = wgpu::StoreOp::Store,
             .clearValue =
@@ -630,7 +824,7 @@ void render(wgpu::CommandEncoder& cmd) {
         },
     };
     const wgpu::RenderPassDepthStencilAttachment depthStencilAttachment{
-        .view = webgpu::g_depthBuffer.view,
+        .view = passInfo.depthView,
         .depthLoadOp = passInfo.clearDepth ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
         .depthStoreOp = wgpu::StoreOp::Store,
         .depthClearValue = passInfo.clearDepthValue,
@@ -643,37 +837,43 @@ void render(wgpu::CommandEncoder& cmd) {
         .depthStencilAttachment = &depthStencilAttachment,
     };
 
-    for (const auto& conv : passInfo.paletteConvs) {
-      tex_palette_conv::run(cmd, conv);
-    }
     auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
     render_pass(pass, i);
     pass.End();
 
     if (passInfo.resolveTarget) {
-      wgpu::TexelCopyTextureInfo src{
-          .origin =
-              wgpu::Origin3D{
-                  .x = static_cast<uint32_t>(passInfo.resolveRect.x),
-                  .y = static_cast<uint32_t>(passInfo.resolveRect.y),
-              },
+      const auto& dstSize = passInfo.resolveTarget->size;
+      const bool needsConversion = tex_copy_conv::needs_conversion(passInfo.resolveFormat);
+      const bool needsScaling = dstSize.width != static_cast<uint32_t>(passInfo.resolveRect.width) ||
+                                dstSize.height != static_cast<uint32_t>(passInfo.resolveRect.height);
+      const tex_copy_conv::ConvRequest convReq{
+          .fmt = passInfo.resolveFormat,
+          .srcView = passInfo.copySourceView,
+          .uniformRange = passInfo.resolveUniformRange,
+          .dst = passInfo.resolveTarget,
       };
-      if (webgpu::g_graphicsConfig.msaaSamples > 1) {
-        src.texture = webgpu::g_frameBufferResolved.texture;
+      if (needsConversion) {
+        tex_copy_conv::run(cmd, convReq);
+      } else if (needsScaling) {
+        tex_copy_conv::blit(cmd, convReq);
       } else {
-        src.texture = webgpu::g_frameBuffer.texture;
-      }
-      const wgpu::TexelCopyTextureInfo dst{
-          .texture = passInfo.resolveTarget->texture,
-      };
-      const wgpu::Extent3D size{
-          .width = static_cast<uint32_t>(passInfo.resolveRect.width),
-          .height = static_cast<uint32_t>(passInfo.resolveRect.height),
-          .depthOrArrayLayers = 1,
-      };
-      cmd.CopyTextureToTexture(&src, &dst, &size);
-      for (const auto& conv : passInfo.copyConvs) {
-        tex_copy_conv::run(cmd, conv);
+        const wgpu::TexelCopyTextureInfo src{
+            .texture = passInfo.copySourceTexture,
+            .origin =
+                wgpu::Origin3D{
+                    .x = static_cast<uint32_t>(passInfo.resolveRect.x),
+                    .y = static_cast<uint32_t>(passInfo.resolveRect.y),
+                },
+        };
+        const wgpu::TexelCopyTextureInfo dst{
+            .texture = passInfo.resolveTarget->texture,
+        };
+        const wgpu::Extent3D size{
+            .width = static_cast<uint32_t>(passInfo.resolveRect.width),
+            .height = static_cast<uint32_t>(passInfo.resolveRect.height),
+            .depthOrArrayLayers = 1,
+        };
+        cmd.CopyTextureToTexture(&src, &dst, &size);
       }
     }
   }
@@ -728,7 +928,7 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
     } break;
     case CommandType::SetScissor: {
       const auto& sc = cmd.data.setScissor;
-      const auto& size = webgpu::g_frameBuffer.size;
+      const auto& size = g_renderPasses[idx].targetSize;
       const auto x = std::clamp(sc.x, 0u, size.width);
       const auto y = std::clamp(sc.y, 0u, size.height);
       const auto w = std::clamp(sc.w, 0u, size.width - x);
@@ -739,7 +939,7 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
       const auto& draw = cmd.data.draw;
       switch (draw.type) {
       case ShaderType::Clear:
-        clear::render(draw.clear, pass);
+        clear::render(draw.clear, pass, g_renderPasses[idx].targetSize);
         break;
       case ShaderType::GX:
         gx::render(draw.gx, pass);

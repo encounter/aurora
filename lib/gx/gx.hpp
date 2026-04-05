@@ -328,6 +328,8 @@ struct GXState {
   std::array<AttrArray, MaxVtxAttr> arrays;
   gfx::ClipRect texCopySrc;
   GXTexFmt texCopyFmt;
+  u16 texCopyDstWidth = 0;
+  u16 texCopyDstHeight = 0;
   struct CopyTextureKey {
     const void* dest = nullptr;
     u32 width = 0;
@@ -345,7 +347,6 @@ struct GXState {
   };
   absl::flat_hash_map<const void*, gfx::TextureHandle> copyTextures;
   absl::flat_hash_map<CopyTextureKey, gfx::TextureHandle> copyTextureCache;
-  absl::flat_hash_map<CopyTextureKey, gfx::TextureHandle> convTextureCache;
   bool depthCompare = true;
   bool depthUpdate = true;
   bool colorUpdate = true;
