@@ -3,6 +3,7 @@
 
 #include <dolphin/types.h>
 #include <dolphin/os/OSException.h>
+#include <dolphin/os/OSTime.h>
 
 #ifdef __cplusplus
 extern "C" {
