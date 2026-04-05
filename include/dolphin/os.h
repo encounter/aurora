@@ -18,9 +18,6 @@ void OSVAttention(const char* fmt, va_list args);
 extern "C" {
 #endif
 
-typedef s64 OSTime;
-typedef u32 OSTick;
-
 #include <dolphin/os/OSAlloc.h>
 #include <dolphin/os/OSCache.h>
 #include <dolphin/os/OSContext.h>
@@ -100,8 +97,8 @@ u8 __gUnknown800030E3 AT_ADDRESS(OS_BASE_CACHED | 0x30E3);
 #endif
 
 #define OS_TIMER_CLOCK_DIVIDER 4
-#define OS_BUS_CLOCK   162'000'000
-#define OS_CORE_CLOCK  162'000'000
+#define OS_BUS_CLOCK   162000000
+#define OS_CORE_CLOCK  162000000
 #define OS_TIMER_CLOCK (OS_BUS_CLOCK/OS_TIMER_CLOCK_DIVIDER)
 
 #define OSTicksToSeconds(ticks)      ((ticks)   / (OS_TIMER_CLOCK))
