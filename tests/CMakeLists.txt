@@ -74,3 +74,16 @@ if (TARGET aurora::dvd)
 
   gtest_discover_tests(dvd_tests)
 endif ()
+
+add_executable(os_alloc_tests
+  os_alloc_test.cpp
+  os_test_globals.cpp
+  ../lib/dolphin/os/OSAlloc.cpp
+  ../lib/logging.cpp
+)
+target_include_directories(os_alloc_tests PRIVATE
+  ../include
+)
+target_compile_definitions(os_alloc_tests PRIVATE AURORA TARGET_PC)
+target_link_libraries(os_alloc_tests PRIVATE gtest gtest_main fmt::fmt)
+gtest_discover_tests(os_alloc_tests)
