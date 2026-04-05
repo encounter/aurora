@@ -344,7 +344,7 @@ void set_fullscreen(bool fullscreen) {
 bool get_fullscreen() { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0u; }
 
 void set_window_size(uint32_t width, uint32_t height) {
-  TRY_WARN(SDL_SetRestoreWindow(g_window), "Failed to un-maximize window: {}", SDL_GetError());
+  TRY_WARN(SDL_RestoreWindow(g_window), "Failed to un-maximize window: {}", SDL_GetError());
   TRY_WARN(SDL_SetWindowSize(g_window, width, height), "Failed to set window size: {}", SDL_GetError());
 }
 
