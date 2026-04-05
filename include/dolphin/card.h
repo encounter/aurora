@@ -235,8 +235,8 @@ s32 CARDRenameAsync(s32 chan, const char* oldName, const char* newName, CARDCall
 #if TARGET_PC
 void CARDInit(const char* game, const char* maker);
 void CARDSetGameAndMaker(const s32 chan, const char* game, const char* maker);
-void CARDDetectDolphin();
-void CARDSetBasePath(const std::string_view& path);
+void CARDDetectDolphin(u32 slot = -1);
+void CARDSetBasePath(const std::string_view& path, u32 slot = -1);
 #else
 void CARDInit(void);
 #endif
