@@ -5,6 +5,8 @@
 #include "fmt/format.h"
 #include "../internal.hpp"
 #include "zstd.h"
+#define XXH_STATIC_LINKING_ONLY
+#include <xxhash.h>
 
 namespace aurora::webgpu {
 static Module Log("aurora::gpu::cache");
@@ -162,7 +164,8 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
   try {
     SqliteTransaction tx;
 
-    sqlite_check(sqlite3_bind_blob64(load_stmt, 1, key, keySize, SQLITE_STATIC));
+    const auto keyHash = XXH128(key, keySize, 0);
+    sqlite_check(sqlite3_bind_blob(load_stmt, 1, &keyHash, sizeof(keyHash), SQLITE_TRANSIENT));
 
     const auto ret = sqlite3_step(load_stmt);
     size_t foundSize;
@@ -191,7 +194,6 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
     }
 
     sqlite3_reset(load_stmt);
-    sqlite_check(sqlite3_bind_null(load_stmt, 1));
 
     return foundSize;
   } catch (SqliteError& e) {
@@ -225,9 +227,10 @@ void store_to_cache(void const* key, size_t keySize, void const* value, size_t v
       return;
     }
 
-    sqlite_check(sqlite3_bind_blob64(store_stmt, 1, key, keySize, SQLITE_STATIC));
+    const auto keyHash = XXH128(key, keySize, 0);
+    sqlite_check(sqlite3_bind_blob64(store_stmt, 1, &keyHash, sizeof(keyHash), SQLITE_TRANSIENT));
     sqlite_check(sqlite3_bind_blob64(store_stmt, 2, compress_buffer.data(), compressRet, SQLITE_STATIC));
-    sqlite_check(sqlite3_bind_int64(store_stmt, 3, valueSize));
+    sqlite_check(sqlite3_bind_int64(store_stmt, 3, static_cast<sqlite3_int64>(valueSize)));
 
     const auto ret = sqlite3_step(store_stmt);
     if (ret != SQLITE_DONE) {
@@ -237,7 +240,6 @@ void store_to_cache(void const* key, size_t keySize, void const* value, size_t v
     }
 
     sqlite_check(sqlite3_reset(store_stmt));
-    sqlite_check(sqlite3_bind_null(store_stmt, 1));
     sqlite_check(sqlite3_bind_null(store_stmt, 2));
 
     tx.commit();
