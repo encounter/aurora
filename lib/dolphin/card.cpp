@@ -422,7 +422,7 @@ s32 CARDGetSectorSize(s32 chan, u32* size) {
   }
   if (!CARD_READY(chan))
     return CARD_RESULT_NOCARD;
-  
+
   *size = 8192;
   return CARD_RESULT_READY;
 }
@@ -436,6 +436,15 @@ s32 CARDGetSerialNo(s32 chan, u64* serialNo) {
 
   auto card = GET_CARD(chan);
   card->getSerial(*serialNo);
+  return CARD_RESULT_READY;
+}
+
+s32 __CARDGetStatusEx(s32 chan, s32 fileNo, CARDDir* dirent) {
+  if (chan < 0 || chan >= 2) {
+    return CARD_RESULT_FATAL_ERROR;
+  }
+  // TODO:
+  CARD_STUB
   return CARD_RESULT_READY;
 }
 
@@ -575,6 +584,15 @@ s32 CARDSetStatus(s32 chan, s32 fileNo, CARDStat* stat) {
   }
 
   return (s32)res;
+}
+
+s32 __CARDSetStatusEx(s32 chan, s32 fileNo, struct CARDDir* dirent) {
+  if (chan < 0 || chan >= 2) {
+    return CARD_RESULT_FATAL_ERROR;
+  }
+  // TODO:
+  CARD_STUB
+  return CARD_RESULT_READY;
 }
 
 s32 CARDSetStatusAsync(s32 chan, s32 fileNo, CARDStat* stat, CARDCallback callback) {

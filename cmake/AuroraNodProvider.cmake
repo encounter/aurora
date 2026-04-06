@@ -41,6 +41,15 @@ if (_aurora_nod_provider STREQUAL "vendor")
   if (NOT TARGET nod::nod)
     message(STATUS "aurora: Building nod (provider=vendor, linkage=${AURORA_NOD_LINKAGE})")
 
+    # Corrosion may default to the host Rust target triple (commonly x86_64 on
+    # Windows). Force Rust to i686 for true Win32 builds so nod and its vendored
+    # compression libraries are built for the same architecture as the C/C++ build.
+    if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+      set(Rust_CARGO_TARGET "i686-pc-windows-msvc" CACHE STRING "Rust target triple" FORCE)
+      set(Rust_RUSTUP_INSTALL_MISSING_TARGET ON CACHE BOOL "Allow Corrosion to install missing Rust targets" FORCE)
+      message(STATUS "aurora: forcing Rust_CARGO_TARGET=${Rust_CARGO_TARGET} for Win32 nod build")
+    endif ()
+
     # Control whether nod builds shared, static, or both.
     # Save/restore BUILD_SHARED_LIBS to avoid leaking into other subdirectories.
     set(_aurora_nod_saved_bsl "${BUILD_SHARED_LIBS}")
