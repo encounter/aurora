@@ -53,6 +53,18 @@ set_property(CACHE AURORA_NOD_LINKAGE PROPERTY STRINGS shared static)
 
 add_subdirectory(extern)
 
+set(ZSTD_BUILD_STATIC ON)
+set(ZSTD_BUILD_SHARED OFF)
+
+include(FetchContent)
+FetchContent_Declare(zstd
+  URL https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
+  URL_HASH SHA256=eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  SOURCE_SUBDIR build/cmake
+)
+FetchContent_MakeAvailable(zstd)
+
 include(cmake/aurora_core.cmake)
 include(cmake/aurora_os.cmake)
 if (AURORA_ENABLE_GX)
@@ -159,7 +171,8 @@ if (AURORA_ENABLE_GX)
   target_compile_definitions(aurora_shared PUBLIC AURORA_ENABLE_GX)
   # imgui code is compiled into aurora_shared; link PRIVATE to avoid duplicating the static lib
   # into downstream targets. Propagate only the include directories for header access.
-  target_link_libraries(aurora_shared PRIVATE imgui sqlite3)
+  target_link_libraries(aurora_shared PRIVATE imgui sqlite3 libzstd_static)
+  target_include_directories(aurora_shared PRIVATE ${zstd_SOURCE_DIR}/lib)
   target_include_directories(aurora_shared PUBLIC $<TARGET_PROPERTY:imgui,INTERFACE_INCLUDE_DIRECTORIES>)
   if (EMSCRIPTEN)
     target_link_options(aurora_shared PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)

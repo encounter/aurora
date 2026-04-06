@@ -4,6 +4,7 @@
 #include "sqlite3.h"
 #include "fmt/format.h"
 #include "../internal.hpp"
+#include "zstd.h"
 
 namespace aurora::webgpu {
 static Module Log("aurora::gpu::cache");
@@ -13,6 +14,7 @@ static sqlite3_stmt* load_stmt;
 static sqlite3_stmt* store_stmt;
 static bool cache_broken;
 static std::mutex cache_mutex;
+static std::vector<uint8_t> compress_buffer;
 
 constexpr int CACHE_SCHEMA = 1;
 
@@ -106,7 +108,7 @@ static void ensure_schema_up_to_date() {
 
   cmd = fmt::format(
     "DROP TABLE IF EXISTS cache;\n"
-    "CREATE TABLE cache(key BLOB PRIMARY KEY NOT NULL, value BLOB NOT NULL);\n"
+    "CREATE TABLE cache(key BLOB PRIMARY KEY NOT NULL, value BLOB NOT NULL, size INTEGER NOT NULL);\n"
     "DELETE FROM aurora_schema;"
     "INSERT INTO aurora_schema VALUES ({});", CACHE_SCHEMA);
   ret = sqlite3_exec(db, cmd.c_str(), nullptr, nullptr, nullptr);
@@ -137,8 +139,8 @@ static bool cache_init() {
 
     ensure_schema_up_to_date();
 
-    sqlite_check(sqlite3_prepare_v3(db, "SELECT value FROM cache WHERE key = ?", -1, SQLITE_PREPARE_PERSISTENT, &load_stmt, nullptr));
-    sqlite_check(sqlite3_prepare_v3(db, "REPLACE INTO cache (key, value) VALUES (?, ?)", -1, SQLITE_PREPARE_PERSISTENT, &store_stmt, nullptr));
+    sqlite_check(sqlite3_prepare_v3(db, "SELECT value, size FROM cache WHERE key = ?", -1, SQLITE_PREPARE_PERSISTENT, &load_stmt, nullptr));
+    sqlite_check(sqlite3_prepare_v3(db, "REPLACE INTO cache (key, value, size) VALUES (?, ?, ?)", -1, SQLITE_PREPARE_PERSISTENT, &store_stmt, nullptr));
   } catch (SqliteError& e) {
     Log.error("SQLite DB init failed: {}", e.what());
     init_abort();
@@ -167,10 +169,16 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
     if (ret == SQLITE_ROW) {
       // Hit
       const auto foundPtr = sqlite3_column_blob(load_stmt, 0);
-      foundSize = sqlite3_column_bytes(load_stmt, 0);
+      foundSize = sqlite3_column_int64(load_stmt, 1);
 
       if (value && valueSize == foundSize) {
-        memcpy(value, foundPtr, foundSize);
+        const auto compSize = sqlite3_column_bytes(load_stmt, 0);
+
+        const auto zstdRet = ZSTD_decompress(value, valueSize, foundPtr, compSize);
+        if (ZSTD_isError(zstdRet)) {
+          Log.error("zstd decompression error: {}", ZSTD_getErrorName(zstdRet));
+          foundSize = 0;
+        }
       }
 
     } else if (ret == SQLITE_DONE) {
@@ -202,8 +210,24 @@ void store_to_cache(void const* key, size_t keySize, void const* value, size_t v
   try {
     SqliteTransaction tx(true);
 
+    const auto bound = ZSTD_compressBound(valueSize);
+    if (ZSTD_isError(bound)) {
+      Log.error("Failed to calculate ZSTD_compressBound: {}", ZSTD_getErrorName(bound));
+      return;
+    }
+
+    if (compress_buffer.size() < bound)
+      compress_buffer.resize(bound);
+
+    auto compressRet = ZSTD_compress(compress_buffer.data(), compress_buffer.size(), value, valueSize, 0);
+    if (ZSTD_isError(compressRet)) {
+      Log.error("ZSTD compression error: {}", ZSTD_getErrorName(compressRet));
+      return;
+    }
+
     sqlite_check(sqlite3_bind_blob64(store_stmt, 1, key, keySize, SQLITE_STATIC));
-    sqlite_check(sqlite3_bind_blob64(store_stmt, 2, value, valueSize, SQLITE_STATIC));
+    sqlite_check(sqlite3_bind_blob64(store_stmt, 2, compress_buffer.data(), compressRet, SQLITE_STATIC));
+    sqlite_check(sqlite3_bind_int64(store_stmt, 3, valueSize));
 
     const auto ret = sqlite3_step(store_stmt);
     if (ret != SQLITE_DONE) {
@@ -224,6 +248,9 @@ void store_to_cache(void const* key, size_t keySize, void const* value, size_t v
 }
 
 void cache_shutdown() {
+  compress_buffer.clear();
+  sqlite3_finalize(load_stmt);
+  sqlite3_finalize(store_stmt);
   sqlite3_close(db);
   db = nullptr;
 }
