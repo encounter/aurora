@@ -5,6 +5,7 @@
 #include "dolphin/types.h"
 
 #include "../card/Card.hpp"
+#include "../card/DolphinCardPath.hpp"
 #include "../logging.hpp"
 
 namespace {
@@ -13,13 +14,16 @@ std::array<aurora::card::Card, 2> CardChannels = {{
     aurora::card::Card{nullptr, nullptr},
     aurora::card::Card{nullptr, nullptr},
 }};
-std::string cardPath;
+std::array<std::string, 2> cardPaths;
 
 #define GET_CARD(slot) &CardChannels[slot]
-#define CARD_READY(slot) std::filesystem::exists(cardPath)
+#define CARD_READY(slot) std::filesystem::exists(CardChannels[slot].cardFilename())
 #define CARD_STUB Log.debug("{} is stubbed.", __FUNCTION__);
 
+#define CARD_REGION "USA"
+
 bool Initialized = false;
+bool UseGciFolder = false;
 } // namespace
 
 extern "C" {
@@ -72,6 +76,63 @@ void CopyDolphinStatsToKabu(aurora::card::CardStat& kabuStats, CARDStat* stats) 
   kabuStats.x68_offsetData = stats->offsetData;
 }
 
+std::string GetCardFullPath(const std::string& path, aurora::card::ECardSlot slot) {
+  if (path.empty())
+    return "";
+
+  if (UseGciFolder) {
+    // TODO: probably not this
+    return fmt::format("{}/{}/Card {}", path, CARD_REGION, slot == aurora::card::ECardSlot::SlotA ? "A" : "B");
+  }else {
+    return fmt::format("{}/MemoryCard{}.{}.raw", path, slot == aurora::card::ECardSlot::SlotA ? "A" : "B", CARD_REGION);
+  }
+}
+
+void CARDDetectDolphin(u32 slot) {
+  if (Initialized) {
+    Log.fatal("CARDDetectDolphin() called after CARDInit()!");
+  }
+
+  if (slot == 0 || slot == 1) {
+    cardPaths[slot] = aurora::card::ResolveDolphinCardPath((aurora::card::ECardSlot)slot, CARD_REGION, UseGciFolder);
+    if (cardPaths[slot].empty()) {
+      Log.error("Failed to detect Dolphin Card!");
+      return;
+    }
+    Log.info("Detected Dolphin Card at: {}", cardPaths[slot]);
+  }else {
+    cardPaths[0] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotA, CARD_REGION, UseGciFolder);
+    cardPaths[1] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotB, CARD_REGION, UseGciFolder);
+
+    if (cardPaths[0].empty() && cardPaths[1].empty()) {
+      Log.error("Failed to detect Dolphin Card!");
+      return;
+    }
+
+    Log.info("Detected Dolphin Card at: {} and {}", cardPaths[0], cardPaths[1]);
+  }
+}
+
+void CARDSetBasePath(const std::string_view& path, u32 slot) {
+  if (Initialized) {
+    Log.fatal("CARDSetBasePath() called after CARDInit()!");
+  }
+
+  std::filesystem::path filePath(path);
+
+  if (filePath.has_filename() && !std::filesystem::is_directory(filePath)) {
+    filePath = filePath.remove_filename();
+    Log.warn("Path supplied a filename, discarding. New Path: {}", filePath.string());
+  }
+
+  if (slot == 0 || slot == 1) {
+    cardPaths[slot] = GetCardFullPath(filePath.string(), (aurora::card::ECardSlot)slot);
+  }else {
+    cardPaths[0] = GetCardFullPath(filePath.string(), aurora::card::ECardSlot::SlotA);
+    cardPaths[1] = GetCardFullPath(filePath.string(), aurora::card::ECardSlot::SlotB);
+  }
+}
+
 void CARDInit(const char* game, const char* maker) {
   if (Initialized) {
     return;
@@ -82,18 +143,35 @@ void CARDInit(const char* game, const char* maker) {
   CardChannels[0] = aurora::card::Card{game, maker};
   CardChannels[1] = aurora::card::Card{game, maker};
 
-  cardPath = fmt::format("{}{}.raw", game, maker);
+  std::string cardWorkingDir;
+  if (aurora::g_config.configPath != nullptr)
+    cardWorkingDir = aurora::g_config.configPath;
+  else
+    cardWorkingDir = std::filesystem::current_path().string();
 
-  // TODO: SlotB support
-  if (!std::filesystem::exists(cardPath)) {
-    CardChannels[0].open(cardPath);
-    CardChannels[0].format(aurora::card::ECardSlot::SlotA);
-    CardChannels[0].commit();
-  } else {
-    CardChannels[0].open(cardPath);
+  bool loadedCard = false;
+
+  for (int i = 0; i < 2; ++i) {
+    // use default working directory if no path was supplied for card
+    if (cardPaths[i].empty()) {
+      cardPaths[i] = GetCardFullPath(cardWorkingDir, (aurora::card::ECardSlot)i);
+    }
+
+    const auto& curPath = cardPaths[i];
+
+    if (std::filesystem::exists(curPath)) {
+      CardChannels[i].open(curPath);
+      loadedCard = true;
+      Log.info("Loaded GC Card Image: {}", curPath);
+    }
   }
 
-  Log.info("Loaded GC Card Disk: {}", cardPath);
+  // create a SlotA card if no cards were loaded
+  if (!loadedCard) {
+    CardChannels[0].open(cardPaths[0]);
+    CardChannels[0].format(aurora::card::ECardSlot::SlotA);
+    CardChannels[0].commit();
+  }
 }
 
 void CARDSetGameAndMaker(const s32 chan, const char* game, const char* maker) {
@@ -425,7 +503,7 @@ BOOL CARDProbe(s32 chan) {
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
-  aurora::card::ProbeResults probeData = aurora::card::Card::probeCardFile(cardPath);
+  aurora::card::ProbeResults probeData = aurora::card::Card::probeCardFile(cardPaths[chan]);
   return (s32)probeData.x0_error;
 }
 
@@ -434,7 +512,7 @@ s32 CARDProbeEx(s32 chan, s32* memSize, s32* sectorSize) {
     return CARD_RESULT_FATAL_ERROR;
   }
 
-  aurora::card::ProbeResults probeData = aurora::card::Card::probeCardFile(cardPath);
+  aurora::card::ProbeResults probeData = aurora::card::Card::probeCardFile(cardPaths[chan]);
   *memSize = probeData.x4_cardSize;
   *sectorSize = probeData.x8_sectorSize;
 

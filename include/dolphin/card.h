@@ -1,6 +1,7 @@
 #ifndef _DOLPHIN_CARD_H_
 #define _DOLPHIN_CARD_H_
 
+#include <string_view>
 #include <dolphin/os.h>
 #include <dolphin/dsp.h>
 #include <dolphin/dvd.h>
@@ -234,6 +235,8 @@ s32 CARDRenameAsync(s32 chan, const char* oldName, const char* newName, CARDCall
 #if TARGET_PC
 void CARDInit(const char* game, const char* maker);
 void CARDSetGameAndMaker(const s32 chan, const char* game, const char* maker);
+void CARDDetectDolphin(u32 slot = -1);
+void CARDSetBasePath(const std::string_view& path, u32 slot = -1);
 #else
 void CARDInit(void);
 #endif
