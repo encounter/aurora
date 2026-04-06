@@ -80,6 +80,8 @@ if (NOT CMAKE_CROSSCOMPILING)
   add_subdirectory(tests)
 endif ()
 
+add_subdirectory(sqlite3)
+
 # =============================================================================
 # aurora_shared: Single SHARED library bundling all Aurora components.
 # Used for DLL isolation — keeps JSystem's global operator new/delete
@@ -122,6 +124,7 @@ if (AURORA_ENABLE_GX)
     # aurora_core GX sources
     lib/imgui.cpp
     lib/webgpu/gpu.cpp
+    lib/webgpu/gpu_cache.cpp
     # aurora_gx sources
     lib/gfx/clear.cpp
     lib/gfx/common.cpp
@@ -156,7 +159,7 @@ if (AURORA_ENABLE_GX)
   target_compile_definitions(aurora_shared PUBLIC AURORA_ENABLE_GX)
   # imgui code is compiled into aurora_shared; link PRIVATE to avoid duplicating the static lib
   # into downstream targets. Propagate only the include directories for header access.
-  target_link_libraries(aurora_shared PRIVATE imgui)
+  target_link_libraries(aurora_shared PRIVATE imgui sqlite3)
   target_include_directories(aurora_shared PUBLIC $<TARGET_PROPERTY:imgui,INTERFACE_INCLUDE_DIRECTORIES>)
   if (EMSCRIPTEN)
     target_link_options(aurora_shared PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)

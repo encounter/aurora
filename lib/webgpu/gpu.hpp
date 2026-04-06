@@ -44,4 +44,9 @@ void resize_swapchain(uint32_t width, uint32_t height, bool force = false);
 TextureWithSampler create_render_texture(bool multisampled);
 void draw_clear(const wgpu::RenderPassEncoder& pass, bool clearColor, bool clearAlpha, bool clearDepth,
                 const Vec4<float>& clearColorValue, float clearDepthValue);
+
+size_t load_from_cache(void const * key, size_t keySize, void * value, size_t valueSize, void * userdata);
+void store_to_cache(void const * key, size_t keySize, void const * value, size_t valueSize, void * userdata);
+void cache_shutdown();
+
 } // namespace aurora::webgpu
