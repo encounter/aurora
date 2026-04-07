@@ -393,7 +393,9 @@ bool aurora_dvd_open(const char* disc_path) {
 
 void aurora_dvd_close(void) { clearState(); }
 
-const uint8_t* aurora_dvd_get_dol(s32& out_size) {
+void DVDInit(void) {}
+
+const uint8_t* DVDGetDOLLocation(s32& out_size) {
   if (s_partition == nullptr) {
     out_size = 0;
     return nullptr;
@@ -409,8 +411,6 @@ const uint8_t* aurora_dvd_get_dol(s32& out_size) {
   out_size = meta.raw_dol.size;
   return meta.raw_dol.data;
 }
-
-void DVDInit(void) {}
 
 int DVDReadAbsAsyncPrio(DVDCommandBlock* block, void* addr, s32 length, s32 offset, DVDCBCallback callback, s32 prio) {
   (void)prio;

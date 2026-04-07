@@ -20,13 +20,6 @@ bool aurora_dvd_open(const char* disc_path);
  */
 void aurora_dvd_close(void);
 
-/**
- * Get a pointer to the partition's dol data
- * The pointer is valid for the lifetime of the open disc.
- * Sets data to pointer to dol, returns dol size
- */
-const uint8_t* aurora_dvd_get_dol(s32& out_size);
-
 #ifdef __cplusplus
 }
 #endif
