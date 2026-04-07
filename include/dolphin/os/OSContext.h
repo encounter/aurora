@@ -135,6 +135,7 @@ extern "C" {
 #define OS_CONTEXT_STATE_FPSAVED 0x01u
 
 typedef struct OSContext {
+#ifndef TARGET_PC
     /* 0x000 */ u32 gpr[32];
     /* 0x080 */ u32 cr;
     /* 0x084 */ u32 lr;
@@ -150,6 +151,9 @@ typedef struct OSContext {
     /* 0x1A4 */ u32 gqr[8];
     /* 0x1C4 */ u32 psf_pad;
     /* 0x1C8 */ f64 psf[32];
+#else
+    char storage[0x2C8];
+#endif
 } OSContext;
 
 u32 OSGetStackPointer(void);
