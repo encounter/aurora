@@ -123,7 +123,7 @@ namespace aurora::gfx {
 wgpu::SamplerDescriptor TextureBind::get_descriptor() const noexcept { return wgpu::SamplerDescriptor{}; }
 } // namespace aurora::gfx
 
-// --- Texture creation/write stubs ---
+// --- Texture creation/write/replacement stubs ---
 namespace aurora::gfx {
 TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 gxFormat,
                                     ArrayRef<uint8_t> data, bool tlut, const char* label) noexcept {
@@ -150,6 +150,13 @@ bool needs_conversion(GXTexFmt fmt) { return false; }
 namespace aurora::gfx::tex_palette_conv {
 void queue(ConvRequest req) {}
 } // namespace aurora::gfx::tex_palette_conv
+
+namespace aurora::gfx::texture_replacement {
+u32 compute_texture_upload_size(const GXTexObj_& obj) noexcept { return 0; }
+void register_tlut(const GXTlutObj*, const void*, GXTlutFmt, u16) noexcept {}
+void load_tlut(const GXTlutObj*, u32) noexcept {}
+bool try_bind_replacement(GXTexObj_&, GXTexMapID) noexcept { return false; }
+} // namespace aurora::gfx::texture_replacement
 
 // --- Window stub ---
 #include "../lib/window.hpp"

@@ -3,9 +3,12 @@
 
 #include "../../gfx/tex_palette_conv.hpp"
 #include "../../gfx/texture.hpp"
+#include "../../gfx/texture_replacement.hpp"
 #include "../../webgpu/gpu.hpp"
 
 #include <absl/container/flat_hash_map.h>
+
+using namespace aurora::gfx;
 
 extern "C" {
 void GXInitTexObj(GXTexObj* obj_, const void* data, u16 width, u16 height, GXTexFmt format, GXTexWrapMode wrapS,
@@ -32,6 +35,7 @@ void GXInitTexObj(GXTexObj* obj_, const void* data, u16 width, u16 height, GXTex
   obj->maxAniso = GX_ANISO_4;
   obj->tlut = GX_TLUT0;
   obj->dataInvalidated = true;
+  obj->dataSize = texture_replacement::compute_texture_upload_size(*obj);
 }
 
 void GXInitTexObjCI(GXTexObj* obj_, const void* data, u16 width, u16 height, GXCITexFmt format, GXTexWrapMode wrapS,
@@ -58,6 +62,7 @@ void GXInitTexObjCI(GXTexObj* obj_, const void* data, u16 width, u16 height, GXC
   obj->doEdgeLod = false;
   obj->maxAniso = GX_ANISO_4;
   obj->dataInvalidated = true;
+  obj->dataSize = texture_replacement::compute_texture_upload_size(*obj);
 }
 
 void GXInitTexObjLOD(GXTexObj* obj_, GXTexFilter minFilt, GXTexFilter magFilt, float minLod, float maxLod,
@@ -71,6 +76,7 @@ void GXInitTexObjLOD(GXTexObj* obj_, GXTexFilter minFilt, GXTexFilter magFilt, f
   obj->biasClamp = biasClamp;
   obj->doEdgeLod = doEdgeLod;
   obj->maxAniso = maxAniso;
+  obj->dataSize = texture_replacement::compute_texture_upload_size(*obj);
 }
 
 void GXInitTexObjData(GXTexObj* obj_, const void* data) {
@@ -103,16 +109,23 @@ void GXInitTexObjTlut(GXTexObj* obj_, u32 tlut) {
 void GXLoadTexObj(GXTexObj* obj_, GXTexMapID id) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
   const auto it = g_gxState.copyTextures.find(obj->data);
-  if (it != g_gxState.copyTextures.end()) {
+  const bool isCopyTexture = it != g_gxState.copyTextures.end();
+  if (isCopyTexture) {
     obj->ref = it->second;
     obj->dataInvalidated = false;
-  } else if (!obj->ref) {
+  } else {
+    if (texture_replacement::try_bind_replacement(*obj, id)) {
+      return;
+    }
+  }
+  if (!obj->ref) {
     const auto name = fmt::format("GXLoadTexObj_{}", obj->fmt);
     obj->ref =
         aurora::gfx::new_dynamic_texture_2d(obj->width, obj->height, u32(obj->maxLod) + 1, obj->fmt, name.c_str());
   }
   if (obj->dataInvalidated) {
-    aurora::gfx::write_texture(*obj->ref, {static_cast<const u8*>(obj->data), UINT32_MAX /* TODO */});
+    obj->dataSize = texture_replacement::compute_texture_upload_size(*obj);
+    aurora::gfx::write_texture(*obj->ref, {static_cast<const u8*>(obj->data), obj->dataSize});
     obj->dataInvalidated = false;
   }
   g_gxState.textures[id] = {*obj};
@@ -235,10 +248,12 @@ void GXInitTlutObj(GXTlutObj* obj_, const void* data, GXTlutFmt format, u16 entr
   obj->ref = aurora::gfx::new_static_texture_2d(
       entries, 1, 1, texFmt, aurora::ArrayRef{static_cast<const u8*>(data), static_cast<size_t>(entries) * 2}, true,
       "GXInitTlutObj");
+  texture_replacement::register_tlut(obj_, data, format, entries);
 }
 
 void GXLoadTlut(const GXTlutObj* obj_, u32 idx) {
   g_gxState.tluts[idx] = *reinterpret_cast<const GXTlutObj_*>(obj_);
+  texture_replacement::load_tlut(obj_, idx);
   // TODO stateDirty?
 }
 
