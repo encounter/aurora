@@ -181,6 +181,7 @@ typedef struct CARDStat {
 #define CARDIsValidBlockNo(card, blockNo) ((blockNo) >= CARD_NUM_SYSTEM_BLOCK && (blockNo) < (card)->cBlock)
 
 #define CARD_READ_SIZE 512
+
 #define CARD_COMMENT_SIZE 64
 
 #define CARD_ICON_WIDTH 32
@@ -235,8 +236,12 @@ s32 CARDRenameAsync(s32 chan, const char* oldName, const char* newName, CARDCall
 #if TARGET_PC
 void CARDInit(const char* game, const char* maker);
 void CARDSetGameAndMaker(const s32 chan, const char* game, const char* maker);
-void CARDDetectDolphin(u32 slot = -1);
-void CARDSetBasePath(const std::string_view& path, u32 slot = -1);
+
+// pass -1 to set both
+void CARDDetectDolphin(s32 chan);
+// pass -1 to set both
+void CARDSetBasePath(const char*, s32 chan);
+
 #else
 void CARDInit(void);
 #endif
@@ -303,8 +308,8 @@ s32 CARDProgram(CARDFileInfo* fileInfo, void* buf, s32 length, s32 offset);
 s32 CARDGetXferredBytes(s32 chan);
 
 // CARDRead
-s32 CARDReadAsync(CARDFileInfo* fileInfo, void* buf, s32 length, s32 offset, CARDCallback callback);
-s32 CARDRead(CARDFileInfo*  fileInfo, void*  buf, s32 length, s32 offset);
+s32 CARDReadAsync(const CARDFileInfo* fileInfo, void* addr, s32 length, s32 offset, CARDCallback callback);
+s32 CARDRead(const CARDFileInfo*  fileInfo, void*  addr, s32 length, s32 offset);
 s32 CARDCancel(CARDFileInfo* fileInfo);
 
 // CARDRename
@@ -312,12 +317,12 @@ s32 CARDRename(s32 chan, const char* oldName, const char* newName);
 
 // CARDStat
 s32 CARDGetStatus(s32 chan, s32 fileNo, CARDStat* stat);
-s32 CARDSetStatusAsync(s32 chan, s32 fileNo, CARDStat* stat, CARDCallback callback);
-s32 CARDSetStatus(s32 chan, s32 fileNo, CARDStat*  stat);
+s32 CARDSetStatusAsync(s32 chan, s32 fileNo, const CARDStat* stat, CARDCallback callback);
+s32 CARDSetStatus(s32 chan, s32 fileNo, const CARDStat*  stat);
 
 // CARDWrite
-s32 CARDWriteAsync(CARDFileInfo*  fileInfo, void* buf, s32 length, s32 offset, CARDCallback callback);
-s32 CARDWrite(CARDFileInfo* fileInfo, void* buf, s32 length, s32 offset);
+s32 CARDWriteAsync(const CARDFileInfo*  fileInfo, const void* addr, s32 length, s32 offset, CARDCallback callback);
+s32 CARDWrite(const CARDFileInfo* fileInfo, const void* addr, s32 length, s32 offset);
 
 #ifdef __cplusplus
 }
