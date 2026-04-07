@@ -395,7 +395,7 @@ void aurora_dvd_close(void) { clearState(); }
 
 void DVDInit(void) {}
 
-const uint8_t* DVDGetDOLLocation(s32& out_size) {
+const u8* DVDGetDOLLocation(s32& out_size) {
   if (s_partition == nullptr) {
     out_size = 0;
     return nullptr;
