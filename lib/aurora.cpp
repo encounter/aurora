@@ -17,6 +17,7 @@
 
 namespace aurora {
 AuroraConfig g_config;
+uint32_t g_sdlCustomEventsStart;
 
 namespace {
 Module Log("aurora");
@@ -77,6 +78,9 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
     g_config.maxTextureAnisotropy = 16;
   }
   ASSERT(window::initialize(), "Error initializing window");
+
+  g_sdlCustomEventsStart = SDL_RegisterEvents(2);
+  ASSERT(g_sdlCustomEventsStart, "Failed to allocate user events: {}", SDL_GetError());
 
 #ifdef AURORA_ENABLE_GX
   /* Attempt to create a window using the calling application's desired backend */

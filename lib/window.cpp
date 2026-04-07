@@ -27,7 +27,6 @@ namespace aurora::window {
 namespace {
 Module Log("aurora::window");
 
-uint32_t g_sdlResizeAspectRatioEvent;
 SDL_Window* g_window;
 SDL_Renderer* g_renderer;
 bool g_aspectRatioLocked;
@@ -160,12 +159,18 @@ const AuroraEvent* poll_events() {
           .type = AURORA_EXIT,
       });
     default:
-      if (event.type == g_sdlResizeAspectRatioEvent) {
+      if (event.type == g_sdlCustomEventsStart) {
+        // Future resize event
         resize_swapchain();
         g_events.push_back(AuroraEvent{
             .type = AURORA_WINDOW_RESIZED,
             .windowSize = get_window_size(),
         });
+      } else if (event.type == g_sdlCustomEventsStart + 1) {
+        // Refresh surface (vsync changed)
+#ifdef AURORA_ENABLE_GX
+        webgpu::refresh_surface(false);
+#endif
       }
       break;
     }
@@ -314,10 +319,6 @@ bool initialize() {
         SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, SDL_GetError());
   }
 
-  TRY(
-    (g_sdlResizeAspectRatioEvent = SDL_RegisterEvents(1)),
-    "Failed to allocate user events: {}", SDL_GetError());
-
   return true;
 }
 
@@ -388,8 +389,7 @@ void center_window() {
 }
 
 static void push_future_resize_event() {
-  SDL_Event event = {};
-  event.type = g_sdlResizeAspectRatioEvent;
+  SDL_Event event{.type = g_sdlCustomEventsStart};
   TRY_WARN(SDL_PushEvent(&event), "Failed to push SDL event for future resize: {}", SDL_GetError());
 }
 

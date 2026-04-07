@@ -124,6 +124,7 @@ auto underlying(T value) -> std::underlying_type_t<T> {
 
 namespace aurora {
 extern AuroraConfig g_config;
+extern uint32_t g_sdlCustomEventsStart;
 
 template <typename T>
 class ArrayRef {

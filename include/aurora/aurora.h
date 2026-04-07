@@ -80,6 +80,7 @@ typedef struct {
   AuroraBackend desiredBackend;
   uint32_t msaa;
   uint16_t maxTextureAnisotropy;
+  bool vsync;
   bool startFullscreen;
   bool allowJoystickBackgroundEvents;
   bool allowTextureReplacements;

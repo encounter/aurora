@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <aurora/aurora.h>
+#include <aurora/gfx.h>
 #include <magic_enum.hpp>
 #include <webgpu/webgpu.h>
 #include <webgpu/webgpu_cpp.h>
@@ -46,6 +47,31 @@ wgpu::BindGroup g_CopyBindGroup;
 static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
 static wgpu::AdapterInfo g_adapterInfo;
+static wgpu::SurfaceCapabilities g_surfaceCapabilities;
+
+static wgpu::PresentMode best_present_mode(bool vsync) {
+  const auto supports = [](const wgpu::PresentMode candidate) {
+    for (size_t i = 0; i < g_surfaceCapabilities.presentModeCount; ++i) {
+      if (g_surfaceCapabilities.presentModes[i] == candidate) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (vsync) {
+    if (supports(wgpu::PresentMode::FifoRelaxed)) {
+      return wgpu::PresentMode::FifoRelaxed;
+    }
+  } else {
+    if (supports(wgpu::PresentMode::Mailbox)) {
+      return wgpu::PresentMode::Mailbox;
+    }
+    if (supports(wgpu::PresentMode::Immediate)) {
+      return wgpu::PresentMode::Immediate;
+    }
+  }
+  return wgpu::PresentMode::Fifo;
+}
 
 TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled) {
   const wgpu::Extent3D size{
@@ -70,13 +96,13 @@ TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool m
   };
   auto texture = g_device.CreateTexture(&textureDescriptor);
 
-  const wgpu::TextureViewDescriptor viewDescriptor{
+  constexpr wgpu::TextureViewDescriptor viewDescriptor{
       .label = "Render texture view",
       .dimension = wgpu::TextureViewDimension::e2D,
   };
   auto view = texture.CreateView(&viewDescriptor);
 
-  const wgpu::SamplerDescriptor samplerDescriptor{
+  constexpr wgpu::SamplerDescriptor samplerDescriptor{
       .label = "Render sampler",
       .addressModeU = wgpu::AddressMode::ClampToEdge,
       .addressModeV = wgpu::AddressMode::ClampToEdge,
@@ -441,7 +467,7 @@ bool initialize(AuroraBackend auroraBackend) {
         requiredLimits.minUniformBufferOffsetAlignment, requiredLimits.minStorageBufferOffsetAlignment);
     std::vector requiredFeatures{wgpu::FeatureName::TextureComponentSwizzle};
 #ifdef WEBGPU_DAWN
-    const std::array enableToggles{
+    constexpr std::array enableToggles{
     /* clang-format off */
 #if _WIN32
       "use_dxc",
@@ -520,22 +546,21 @@ bool initialize(AuroraBackend auroraBackend) {
   }
   g_queue = g_device.GetQueue();
 
-  wgpu::SurfaceCapabilities surfaceCapabilities;
-  const wgpu::Status status = g_surface.GetCapabilities(g_adapter, &surfaceCapabilities);
+  const wgpu::Status status = g_surface.GetCapabilities(g_adapter, &g_surfaceCapabilities);
   if (status != wgpu::Status::Success) {
     Log.error("Failed to get surface capabilities: {}", magic_enum::enum_name(status));
     return false;
   }
-  if (surfaceCapabilities.formatCount == 0) {
+  if (g_surfaceCapabilities.formatCount == 0) {
     Log.error("Surface has no formats");
     return false;
   }
-  if (surfaceCapabilities.presentModeCount == 0) {
+  if (g_surfaceCapabilities.presentModeCount == 0) {
     Log.error("Surface has no present modes");
     return false;
   }
-  auto surfaceFormat = surfaceCapabilities.formats[0];
-  auto presentMode = surfaceCapabilities.presentModes[0];
+  auto surfaceFormat = g_surfaceCapabilities.formats[0];
+  auto presentMode = best_present_mode(g_config.vsync);
   if (surfaceFormat == wgpu::TextureFormat::RGBA8UnormSrgb) {
     surfaceFormat = wgpu::TextureFormat::RGBA8Unorm;
   } else if (surfaceFormat == wgpu::TextureFormat::BGRA8UnormSrgb) {
@@ -625,3 +650,9 @@ void resize_swapchain(uint32_t width, uint32_t height, uint32_t native_width, ui
   create_copy_bind_group();
 }
 } // namespace aurora::webgpu
+
+void aurora_enable_vsync(const bool enabled) {
+  aurora::webgpu::g_graphicsConfig.surfaceConfiguration.presentMode = aurora::webgpu::best_present_mode(enabled);
+  SDL_Event event{.type = aurora::g_sdlCustomEventsStart + 1};
+  SDL_PushEvent(&event);
+}
