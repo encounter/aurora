@@ -95,6 +95,11 @@ auto underlying(T value) -> std::underlying_type_t<T> {
 #else
 #define UNLIKELY
 #endif
+#if __has_cpp_attribute(likely)
+#define LIKELY [[likely]]
+#else
+#define LIKELY
+#endif
 #define FATAL(msg, ...) Log.fatal(msg, ##__VA_ARGS__);
 #define ASSERT(cond, msg, ...)                                                                                         \
   if (!(cond))                                                                                                         \

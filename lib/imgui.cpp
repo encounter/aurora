@@ -65,20 +65,15 @@ void shutdown() noexcept {
 }
 
 void process_event(const SDL_Event& event) noexcept {
-  if (event.type == SDL_EVENT_MOUSE_MOTION) {
-    SDL_Event scaledEvent = event;
-    const auto density = SDL_GetWindowPixelDensity(window::get_sdl_window());
-    scaledEvent.motion.x *= density;
-    scaledEvent.motion.y *= density;
-    scaledEvent.motion.xrel *= density;
-    scaledEvent.motion.yrel *= density;
-    ImGui_ImplSDL3_ProcessEvent(&scaledEvent);
-    return;
-  }
   ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
 void new_frame(const AuroraWindowSize& size) noexcept {
+  const float framebufferScaleX =
+      size.width > 0 ? static_cast<float>(size.native_fb_width) / static_cast<float>(size.width) : 1.0f;
+  const float framebufferScaleY =
+      size.height > 0 ? static_cast<float>(size.native_fb_height) / static_cast<float>(size.height) : 1.0f;
+
   if (g_useSdlRenderer) {
     ImGui_ImplSDLRenderer3_NewFrame();
     g_scale = size.scale;
@@ -93,10 +88,11 @@ void new_frame(const AuroraWindowSize& size) noexcept {
   }
   ImGui_ImplSDL3_NewFrame();
 
-  // Render at full DPI
+  ImGuiIO& io = ImGui::GetIO();
+  io.DisplayFramebufferScale = {framebufferScaleX, framebufferScaleY};
   ImGui::GetIO().DisplaySize = {
-      static_cast<float>(size.fb_width),
-      static_cast<float>(size.fb_height),
+      static_cast<float>(size.width),
+      static_cast<float>(size.height),
   };
   ImGui::NewFrame();
 }
@@ -105,15 +101,16 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
   ImGui::Render();
 
   auto* data = ImGui::GetDrawData();
-  // io.DisplayFramebufferScale is informational; we're rendering at full DPI
-  data->FramebufferScale = {1.f, 1.f};
+  data->FramebufferScale = ImGui::GetIO().DisplayFramebufferScale;
   if (g_useSdlRenderer) {
     SDL_Renderer* renderer = window::get_sdl_renderer();
     SDL_RenderClear(renderer);
     ImGui_ImplSDLRenderer3_RenderDrawData(data, renderer);
     SDL_RenderPresent(renderer);
   } else {
+    pass.PushDebugGroup("Aurora: Dear Imgui");
     ImGui_ImplWGPU_RenderDrawData(data, pass.Get());
+    pass.PopDebugGroup();
   }
 }
 

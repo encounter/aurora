@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Install dependencies
+      - name: Install dependencies (Ubuntu)
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
           sudo apt-get update
@@ -37,7 +37,11 @@ jobs:
             libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev \
             libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev \
             libudev-dev libthai-dev libpipewire-0.3-dev libwayland-dev libdecor-0-dev \
-            liburing-dev libsdl2-dev libglfw3-dev
+            liburing-dev
+
+      - name: Install dependencies (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: brew install sdl3
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9

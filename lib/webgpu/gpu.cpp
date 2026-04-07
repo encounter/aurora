@@ -19,6 +19,13 @@
 #include <dawn/native/DawnNative.h>
 #endif
 
+namespace aurora::gx {
+void clear_copy_texture_cache() noexcept;
+} // namespace aurora::gx
+namespace aurora::gfx {
+void clear_offscreen_cache();
+} // namespace aurora::gfx
+
 namespace aurora::webgpu {
 static Module Log("aurora::gpu");
 
@@ -40,10 +47,10 @@ static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
 static wgpu::AdapterInfo g_adapterInfo;
 
-TextureWithSampler create_render_texture(bool multisampled) {
+TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled) {
   const wgpu::Extent3D size{
-      .width = g_graphicsConfig.surfaceConfiguration.width,
-      .height = g_graphicsConfig.surfaceConfiguration.height,
+      .width = width,
+      .height = height,
       .depthOrArrayLayers = 1,
   };
   const auto format = g_graphicsConfig.surfaceConfiguration.format;
@@ -66,8 +73,6 @@ TextureWithSampler create_render_texture(bool multisampled) {
   const wgpu::TextureViewDescriptor viewDescriptor{
       .label = "Render texture view",
       .dimension = wgpu::TextureViewDimension::e2D,
-      .mipLevelCount = WGPU_MIP_LEVEL_COUNT_UNDEFINED,
-      .arrayLayerCount = WGPU_ARRAY_LAYER_COUNT_UNDEFINED,
   };
   auto view = texture.CreateView(&viewDescriptor);
 
@@ -94,10 +99,10 @@ TextureWithSampler create_render_texture(bool multisampled) {
   };
 }
 
-static TextureWithSampler create_depth_texture() {
+static TextureWithSampler create_depth_texture(uint32_t width, uint32_t height) {
   const wgpu::Extent3D size{
-      .width = g_graphicsConfig.surfaceConfiguration.width,
-      .height = g_graphicsConfig.surfaceConfiguration.height,
+      .width = width,
+      .height = height,
       .depthOrArrayLayers = 1,
   };
   const auto format = g_graphicsConfig.depthFormat;
@@ -115,8 +120,6 @@ static TextureWithSampler create_depth_texture() {
   const wgpu::TextureViewDescriptor viewDescriptor{
       .label = "Depth texture view",
       .dimension = wgpu::TextureViewDimension::e2D,
-      .mipLevelCount = WGPU_MIP_LEVEL_COUNT_UNDEFINED,
-      .arrayLayerCount = WGPU_ARRAY_LAYER_COUNT_UNDEFINED,
   };
   auto view = texture.CreateView(&viewDescriptor);
 
@@ -417,12 +420,10 @@ bool initialize(AuroraBackend auroraBackend) {
         .maxStorageBuffersPerShaderStage = supportedLimits.maxStorageBuffersPerShaderStage == 0
                                                ? WGPU_LIMIT_U32_UNDEFINED
                                                : supportedLimits.maxStorageBuffersPerShaderStage,
-        .minUniformBufferOffsetAlignment = supportedLimits.minUniformBufferOffsetAlignment < 64
-                                               ? 64
-                                               : supportedLimits.minUniformBufferOffsetAlignment,
-        .minStorageBufferOffsetAlignment = supportedLimits.minStorageBufferOffsetAlignment < 16
-                                               ? 16
-                                               : supportedLimits.minStorageBufferOffsetAlignment,
+        .minUniformBufferOffsetAlignment =
+            supportedLimits.minUniformBufferOffsetAlignment < 64 ? 64 : supportedLimits.minUniformBufferOffsetAlignment,
+        .minStorageBufferOffsetAlignment =
+            supportedLimits.minStorageBufferOffsetAlignment < 16 ? 16 : supportedLimits.minStorageBufferOffsetAlignment,
     };
     Log.info(
         "Using limits:"
@@ -438,15 +439,7 @@ bool initialize(AuroraBackend auroraBackend) {
         requiredLimits.maxTextureDimension3D, requiredLimits.maxTextureArrayLayers,
         requiredLimits.maxDynamicStorageBuffersPerPipelineLayout, requiredLimits.maxStorageBuffersPerShaderStage,
         requiredLimits.minUniformBufferOffsetAlignment, requiredLimits.minStorageBufferOffsetAlignment);
-    std::vector<wgpu::FeatureName> requiredFeatures;
-    wgpu::SupportedFeatures supportedFeatures;
-    g_adapter.GetFeatures(&supportedFeatures);
-    for (size_t i = 0; i < supportedFeatures.featureCount; ++i) {
-      const auto feature = supportedFeatures.features[i];
-      if (feature == wgpu::FeatureName::TextureCompressionBC) {
-        requiredFeatures.push_back(feature);
-      }
-    }
+    std::vector requiredFeatures{wgpu::FeatureName::TextureComponentSwizzle};
 #ifdef WEBGPU_DAWN
     const std::array enableToggles{
     /* clang-format off */
@@ -556,8 +549,8 @@ bool initialize(AuroraBackend auroraBackend) {
           wgpu::SurfaceConfiguration{
               .format = surfaceFormat,
               .usage = wgpu::TextureUsage::RenderAttachment,
-              .width = size.fb_width,
-              .height = size.fb_height,
+              .width = size.native_fb_width,
+              .height = size.native_fb_height,
               .presentMode = presentMode,
           },
       .depthFormat = wgpu::TextureFormat::Depth32Float,
@@ -565,7 +558,7 @@ bool initialize(AuroraBackend auroraBackend) {
       .textureAnisotropy = g_config.maxTextureAnisotropy,
   };
   create_copy_pipeline();
-  resize_swapchain(size.fb_width, size.fb_height, true);
+  resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_width, true);
   return true;
 }
 
@@ -592,33 +585,43 @@ bool refresh_surface(bool recreate) {
   }
   uint32_t width = g_graphicsConfig.surfaceConfiguration.width;
   uint32_t height = g_graphicsConfig.surfaceConfiguration.height;
+  uint32_t native_width = width;
+  uint32_t native_height = height;
   if (window::get_sdl_window() != nullptr) {
     const auto size = window::get_window_size();
     width = size.fb_width;
     height = size.fb_height;
+    native_width = size.native_fb_width;
+    native_height = size.native_fb_height;
   }
   if (width != 0 && height != 0) {
-    resize_swapchain(width, height, true);
+    resize_swapchain(width, height, native_width, native_height, true);
   }
   return true;
 }
 
-void resize_swapchain(uint32_t width, uint32_t height, bool force) {
-  if (!g_surface || !g_device || width == 0 || height == 0) {
+void resize_swapchain(uint32_t width, uint32_t height, uint32_t native_width, uint32_t native_height, bool force) {
+  if (!g_surface || !g_device || width == 0 || height == 0 || native_height == 0 || native_width == 0) {
     return;
   }
-  if (!force && g_graphicsConfig.surfaceConfiguration.width == width &&
-      g_graphicsConfig.surfaceConfiguration.height == height) {
+  const bool sizeChanged = g_graphicsConfig.surfaceConfiguration.width != native_width ||
+                           g_graphicsConfig.surfaceConfiguration.height != native_height ||
+                           g_frameBuffer.size.width != width || g_frameBuffer.size.height != height;
+  if (!force && !sizeChanged) {
     return;
   }
-  g_graphicsConfig.surfaceConfiguration.width = width;
-  g_graphicsConfig.surfaceConfiguration.height = height;
+  if (sizeChanged) {
+    gx::clear_copy_texture_cache();
+    gfx::clear_offscreen_cache();
+  }
+  g_graphicsConfig.surfaceConfiguration.width = native_width;
+  g_graphicsConfig.surfaceConfiguration.height = native_height;
   auto surfaceConfiguration = g_graphicsConfig.surfaceConfiguration;
   surfaceConfiguration.device = g_device;
   g_surface.Configure(&surfaceConfiguration);
-  g_frameBuffer = create_render_texture(true);
-  g_frameBufferResolved = create_render_texture(false);
-  g_depthBuffer = create_depth_texture();
+  g_frameBuffer = create_render_texture(width, height, true);
+  g_frameBufferResolved = create_render_texture(width, height, false);
+  g_depthBuffer = create_depth_texture(width, height);
   create_copy_bind_group();
 }
 } // namespace aurora::webgpu

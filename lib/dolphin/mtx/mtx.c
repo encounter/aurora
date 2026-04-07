@@ -505,6 +505,17 @@ void C_MTXRotAxisRad(Mtx m, const Vec* axis, f32 rad) {
   m[2][3] = 0;
 }
 
+void C_MTXReorder(const Mtx src, ROMtx dst)
+{
+  u32 i;
+  u32 j;
+  for (i = 0; i < 3; i++) {
+    for (j = 0; j < 4; j++) {
+      dst[j][i] = src[i][j];
+    }
+  }
+}
+
 void C_MTXLookAt(Mtx m, const Point3d* camPos, const Vec* camUp, const Point3d* target) {
   Vec vLook;
   Vec vRight;

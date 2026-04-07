@@ -41,6 +41,22 @@
 #define PAD_BUTTON_MENU 0x1000
 #define PAD_BUTTON_START 0x1000
 
+const static uint32_t PAD_BUTTON_COUNT = 12;
+
+// added by Aurora, not present in original SDK
+#define PAD_AXIS_LEFT_X_POS 0
+#define PAD_AXIS_LEFT_X_NEG 1
+#define PAD_AXIS_LEFT_Y_POS 2
+#define PAD_AXIS_LEFT_Y_NEG 3
+#define PAD_AXIS_RIGHT_X_POS 4
+#define PAD_AXIS_RIGHT_X_NEG 5
+#define PAD_AXIS_RIGHT_Y_POS 6
+#define PAD_AXIS_RIGHT_Y_NEG 7
+#define PAD_AXIS_TRIGGER_L 8
+#define PAD_AXIS_TRIGGER_R 9
+
+const static uint32_t PAD_AXIS_COUNT = 10;
+
 #define PAD_CHAN0_BIT 0x80000000
 #define PAD_CHAN1_BIT 0x40000000
 #define PAD_CHAN2_BIT 0x20000000
@@ -65,6 +81,18 @@ typedef struct PADStatus {
   u8 analogB;
   s8 err;
 } PADStatus;
+
+typedef enum PADAxisSign {
+  AXIS_SIGN_NEGATIVE = -1,
+  AXIS_SIGN_POSITIVE = 1,
+} PADAxisSign;
+
+typedef struct PADSignedNativeAxis {
+  int32_t nativeAxis;
+  PADAxisSign sign;
+} PADSignedNativeAxis;
+
+struct SDL_Gamepad;
 
 BOOL PADInit();
 u32 PADRead(PADStatus* status);
@@ -95,6 +123,14 @@ typedef struct PADButtonMapping {
   PADButton padButton;
 } PADButtonMapping;
 
+typedef u16 PADAxis;
+
+typedef struct PADAxisMapping {
+  PADSignedNativeAxis nativeAxis;
+  s32 nativeButton;
+  PADAxis padAxis;
+} PADAxisMapping;
+
 /* Returns the total number of controllers */
 u32 PADCount();
 /* Returns the controller name for the given index into the controller map */
@@ -107,12 +143,25 @@ const char* PADGetName(u32 port);
 void PADSetButtonMapping(u32 port, PADButtonMapping mapping);
 void PADSetAllButtonMappings(u32 port, PADButtonMapping buttons[12]);
 PADButtonMapping* PADGetButtonMappings(u32 port, u32* buttonCount);
+void PADSetAxisMapping(u32 port, PADAxisMapping mapping);
+void PADSetAllAxisMappings(u32 port, PADAxisMapping axes[12]);
+PADAxisMapping* PADGetAxisMappings(u32 port, u32* axisCount);
 void PADSerializeMappings();
 PADDeadZones* PADGetDeadZones(u32 port);
 const char* PADGetButtonName(PADButton);
 const char* PADGetNativeButtonName(u32 button);
-/* Returns any pressed native button */
+const char* PADGetAxisName(PADAxis);
+const char* PADGetAxisDirectionLabel(PADAxis);
+const char* PADGetNativeAxisName(PADSignedNativeAxis axis);
+
+/**
+ * Returns the SDL gamepad for the index into the controller map.
+ */
+struct SDL_Gamepad* PADGetSDLGamepadForIndex(u32 index);
+/* Returns the first native button which is currently pressed */
 s32 PADGetNativeButtonPressed(u32 port);
+/* Returns the first native axis which is currently pulled halfway or more */
+PADSignedNativeAxis PADGetNativeAxisPulled(u32 port);
 void PADRestoreDefaultMapping(u32 port);
 void PADBlockInput(bool block);
 #endif

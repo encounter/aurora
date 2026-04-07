@@ -4,15 +4,16 @@
 extern "C" {
 
 void GXSetScissor(u32 left, u32 top, u32 width, u32 height) {
-  // u32 tp = top + 340;
-  // u32 lf = left + 340;
-  // u32 bm = tp + height - 1;
-  // u32 rt = lf + width - 1;
+  const u32 tp = top + 342;
+  const u32 lf = left + 342;
+  const u32 bm = tp + height - 1;
+  const u32 rt = lf + width - 1;
 
-  // SET_REG_FIELD(0, __gx->suScis0, 11, 0, tp);
-  // SET_REG_FIELD(0, __gx->suScis0, 11, 12, lf);
-  // SET_REG_FIELD(0, __gx->suScis1, 11, 0, bm);
-  // SET_REG_FIELD(0, __gx->suScis1, 11, 12, rt);
+  // NOTE: changed bit size from 11 to 16 to accommodate for higher resolutions
+  SET_REG_FIELD(0, __gx->suScis0, 16, 0, tp);
+  SET_REG_FIELD(0, __gx->suScis0, 16, 16, lf);
+  SET_REG_FIELD(0, __gx->suScis1, 16, 0, bm);
+  SET_REG_FIELD(0, __gx->suScis1, 16, 16, rt);
 
   // GX_WRITE_RAS_REG(__gx->suScis0);
   // GX_WRITE_RAS_REG(__gx->suScis1);

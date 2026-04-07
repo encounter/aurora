@@ -149,7 +149,48 @@ void GXSetZCompLoc(GXBool before_tex) {
 }
 
 void GXSetPixelFmt(GXPixelFmt pix_fmt, GXZFmt16 z_fmt) {
-  // Stub - pixel format changes require more complex handling
+  u32 oldPeCtrl = __gx->peCtrl;
+  u8 hwPixelFmt = 0;
+
+  switch (pix_fmt) {
+  case GX_PF_RGB8_Z24:
+    hwPixelFmt = 0;
+    break;
+  case GX_PF_RGBA6_Z24:
+    hwPixelFmt = 1;
+    break;
+  case GX_PF_RGB565_Z16:
+    hwPixelFmt = 2;
+    break;
+  case GX_PF_Z24:
+    hwPixelFmt = 3;
+    break;
+  case GX_PF_Y8:
+  case GX_PF_U8:
+  case GX_PF_V8:
+    hwPixelFmt = 4;
+    break;
+  case GX_PF_YUV420:
+    hwPixelFmt = 5;
+    break;
+  default:
+    UNLIKELY FATAL("GXSetPixelFmt: unsupported pixel format {}", static_cast<u32>(pix_fmt));
+  }
+
+  SET_REG_FIELD(0, __gx->peCtrl, 3, 0, hwPixelFmt);
+  SET_REG_FIELD(0, __gx->peCtrl, 3, 3, z_fmt);
+  if (oldPeCtrl != __gx->peCtrl) {
+    GX_WRITE_RAS_REG(__gx->peCtrl);
+    SET_REG_FIELD(0, __gx->genMode, 1, 9, pix_fmt == GX_PF_RGB565_Z16);
+    __gx->dirtyState |= 4;
+  }
+
+  if (hwPixelFmt == 4) {
+    SET_REG_FIELD(0, __gx->cmode1, 2, 9, (static_cast<u32>(pix_fmt) - GX_PF_Y8) & 0x3);
+    GX_WRITE_RAS_REG(__gx->cmode1);
+  }
+
+  __gx->bpSent = 1;
 }
 
 void GXSetDither(GXBool dither) {

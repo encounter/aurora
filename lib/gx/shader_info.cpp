@@ -1,8 +1,25 @@
 #include "shader_info.hpp"
 
+#include <cmath>
+
 namespace aurora::gx {
 namespace {
 Module Log("aurora::gx");
+
+bool is_alpha_bump_channel(GXChannelID id) { return id == GX_ALPHA_BUMP || id == GX_ALPHA_BUMPN; }
+
+Vec4<float> texture_size_bias(const gfx::TextureBind& tex) {
+  auto width = static_cast<float>(tex.texObj.width);
+  auto height = static_cast<float>(tex.texObj.height);
+
+  // TODO: actual logical EFB copy size
+  if (tex.texObj.ref && tex.texObj.ref->isRenderTexture) {
+    width = 608.0f;
+    height = 448.0f;
+  }
+
+  return {width, height, tex.texObj.lodBias, 0.0f};
+}
 
 void color_arg_reg_info(GXTevColorArg arg, const TevStage& stage, ShaderInfo& info) {
   switch (arg) {
@@ -39,7 +56,10 @@ void color_arg_reg_info(GXTevColorArg arg, const TevStage& stage, ShaderInfo& in
     break;
   case GX_CC_RASC:
   case GX_CC_RASA:
-    info.sampledColorChannels.set(color_channel(stage.channelId));
+    if (stage.channelId != GX_COLOR_NULL && stage.channelId != GX_COLOR_ZERO &&
+        !is_alpha_bump_channel(stage.channelId)) {
+      info.sampledColorChannels.set(color_channel(stage.channelId));
+    }
     break;
   case GX_CC_KONST:
     switch (stage.kcSel) {
@@ -109,7 +129,10 @@ void alpha_arg_reg_info(GXTevAlphaArg arg, const TevStage& stage, ShaderInfo& in
     info.sampledTextures.set(stage.texMapId);
     break;
   case GX_CA_RASA:
-    info.sampledColorChannels.set(color_channel(stage.channelId));
+    if (stage.channelId != GX_COLOR_NULL && stage.channelId != GX_COLOR_ZERO &&
+        !is_alpha_bump_channel(stage.channelId)) {
+      info.sampledColorChannels.set(color_channel(stage.channelId));
+    }
     break;
   case GX_CA_KONST:
     switch (stage.kaSel) {
@@ -149,14 +172,19 @@ void alpha_arg_reg_info(GXTevAlphaArg arg, const TevStage& stage, ShaderInfo& in
 
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   ShaderInfo info{
-      .uniformSize = sizeof(Mat4x4<float>), // proj
+      .uniformSize = 4 + 4 + 8 + 64, // vtx_start, current_pnmtx, viewport_size, proj
   };
 
-  for (int attr = 0; attr < config.vtxAttrs.size(); attr++) {
-    if ((attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) &&
-        config.vtxAttrs[attr] == GX_DIRECT) {
+  if (config.lineMode != 0) {
+    info.uniformSize += 4 + 4 + 4 + 4; // line_width, line_aspect_y, line_tex_offset, line_texcoord_mask
+    info.lineMode = config.lineMode;
+  }
+
+  for (int attr = 0; attr < config.attrs.size(); attr++) {
+    const auto attrType = config.attrs[attr].attrType;
+    if ((attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) && attrType == GX_DIRECT) {
       info.indexAttr.set(attr);
-    } else if (config.vtxAttrs[attr] == GX_INDEX8 || config.vtxAttrs[attr] == GX_INDEX16) {
+    } else if (attrType == GX_INDEX8 || attrType == GX_INDEX16) {
       info.indexAttr.set(attr);
     }
   }
@@ -186,6 +214,40 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
       info.writesTevReg.set(stage.alphaOp.outReg);
     }
   }
+  for (int i = 0; i < config.tevStageCount; ++i) {
+    const auto& stage = config.tevStages[i];
+    // Skip if not enabled
+    if (stage.indTexStage >= config.numIndStages) {
+      continue;
+    }
+    const bool usesIndStage = stage.indTexMtxId != GX_ITM_OFF || is_alpha_bump_channel(stage.channelId);
+    const bool usesTevTexCoord = stage.indTexMtxId != GX_ITM_OFF || stage.indTexWrapS != GX_ITW_OFF ||
+                                 stage.indTexWrapT != GX_ITW_OFF || stage.indTexAddPrev;
+    if (usesTevTexCoord && stage.texCoordId != GX_TEXCOORD_NULL) {
+      info.sampledTexCoords.set(stage.texCoordId);
+    }
+    if (usesTevTexCoord && stage.texMapId != GX_TEXMAP_NULL &&
+        (stage.indTexMtxId != GX_ITM_OFF || stage.indTexAddPrev)) {
+      info.sampledTextures.set(stage.texMapId);
+    }
+    if (!usesIndStage) {
+      continue;
+    }
+    info.usedIndStages.set(stage.indTexStage);
+    const auto& indStage = config.indStages[stage.indTexStage];
+    info.sampledTextures.set(indStage.texMapId);
+    info.sampledTexCoords.set(indStage.texCoordId);
+    info.sampledIndTextures.set(indStage.texMapId);
+    // Track which indirect matrix is used
+    if (stage.indTexMtxId >= GX_ITM_0 && stage.indTexMtxId <= GX_ITM_2) {
+      info.usedIndTexMtxs.set(stage.indTexMtxId - GX_ITM_0);
+    } else if (stage.indTexMtxId >= GX_ITM_S0 && stage.indTexMtxId <= GX_ITM_S2) {
+      info.usedIndTexMtxs.set(stage.indTexMtxId - GX_ITM_S0);
+    } else if (stage.indTexMtxId >= GX_ITM_T0 && stage.indTexMtxId <= GX_ITM_T2) {
+      info.usedIndTexMtxs.set(stage.indTexMtxId - GX_ITM_T0);
+    }
+  }
+
   info.uniformSize += info.loadsTevReg.count() * sizeof(Vec4<float>);
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
     if (info.sampledColorChannels.test(i)) {
@@ -235,13 +297,71 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
     info.usesFog = true;
     info.uniformSize += sizeof(Fog);
   }
-  info.uniformSize += info.sampledTextures.count() * sizeof(u32);
+  if (info.usedIndTexMtxs.any()) {
+    info.uniformSize += MaxIndTexMtxs * sizeof(Mat2x4<float>);
+  }
+  info.uniformSize += info.sampledTextures.count() * sizeof(Vec4<float>);
   info.uniformSize = gfx::align_uniform(info.uniformSize);
   return info;
 }
 
-gfx::Range build_uniform(const ShaderInfo& info) noexcept {
+static f32 tex_offset(GXTexOffset offs) noexcept {
+  switch (offs) {
+    DEFAULT_FATAL("invalid tex offset {}", underlying(offs));
+  case GX_TO_ZERO:
+    return 0.f;
+  case GX_TO_SIXTEENTH:
+    return 1.f / 16.f;
+  case GX_TO_EIGHTH:
+    return 1.f / 8.f;
+  case GX_TO_FOURTH:
+    return 1.f / 4.f;
+  case GX_TO_HALF:
+    return 1.f / 2.f;
+  case GX_TO_ONE:
+    return 1.f;
+  }
+}
+
+static u32 point_texcoord_mask() noexcept {
+  u32 mask = 0;
+  for (int i = 0; i < MaxTexCoord; ++i) {
+    if (g_gxState.texCoordScales[i].pointOffset) {
+      mask |= 1 << i;
+    }
+  }
+  return mask;
+}
+
+static u32 line_texcoord_mask() noexcept {
+  u32 mask = 0;
+  for (int i = 0; i < MaxTexCoord; ++i) {
+    if (g_gxState.texCoordScales[i].lineOffset) {
+      mask |= 1 << i;
+    }
+  }
+  return mask;
+}
+
+gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart) noexcept {
   auto [buf, range] = gfx::map_uniform(info.uniformSize);
+  buf.append(vtxStart);
+  buf.append(g_gxState.currentPnMtx);
+  buf.append<f32>(gfx::get_viewport().width);
+  buf.append<f32>(gfx::get_viewport().height);
+  if (info.lineMode != 0) {
+    if (info.lineMode == 3) { // GX_POINTS
+      buf.append<f32>(static_cast<f32>(g_gxState.pointSize) / 6.f);
+      buf.append<f32>(1.0f);
+      buf.append<f32>(tex_offset(g_gxState.pointTexOffset));
+      buf.append<u32>(point_texcoord_mask());
+    } else { // GX_LINES / GX_LINESTRIP
+      buf.append<f32>(static_cast<f32>(g_gxState.lineWidth) / 6.f);
+      buf.append<f32>(g_gxState.lineHalfAspect ? 0.5f : 1.f);
+      buf.append<f32>(tex_offset(g_gxState.lineTexOffset));
+      buf.append<u32>(line_texcoord_mask());
+    }
+  }
   buf.append(g_gxState.proj);
 
   for (int i = 0; i < MaxPnMtx; i++) {
@@ -306,13 +426,20 @@ gfx::Range build_uniform(const ShaderInfo& info) noexcept {
     Fog fog{.color = state.color, .a = state.a, .b = state.b, .c = state.c};
     buf.append(fog);
   }
+  if (info.usedIndTexMtxs.any()) {
+    for (int i = 0; i < MaxIndTexMtxs; ++i) {
+      const auto& mtx = g_gxState.indTexMtxs[i];
+      buf.append(Vec4{mtx.mtx.m0.x, mtx.mtx.m0.y, mtx.mtx.m1.x, mtx.mtx.m1.y});
+      buf.append(Vec4{mtx.mtx.m2.x, mtx.mtx.m2.y, std::exp2f(mtx.scaleExp), 0.0f});
+    }
+  }
   for (int i = 0; i < info.sampledTextures.size(); ++i) {
     if (!info.sampledTextures.test(i)) {
       continue;
     }
     const auto& tex = get_texture(static_cast<GXTexMapID>(i));
     CHECK(tex, "unbound texture {}", i);
-    buf.append(tex.texObj.lodBias);
+    buf.append(texture_size_bias(tex));
   }
   g_gxState.stateDirty = false;
   return range;

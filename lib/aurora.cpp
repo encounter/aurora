@@ -2,6 +2,7 @@
 
 #ifdef AURORA_ENABLE_GX
 #include "gfx/common.hpp"
+#include "gx/fifo.hpp"
 #include "imgui.hpp"
 #include "webgpu/gpu.hpp"
 #include <webgpu/webgpu_cpp.h>
@@ -208,6 +209,7 @@ bool begin_frame() noexcept {
 
 void end_frame() noexcept {
 #ifdef AURORA_ENABLE_GX
+  gx::fifo::drain();
   const auto encoderDescriptor = wgpu::CommandEncoderDescriptor{
       .label = "Redraw encoder",
   };
@@ -231,6 +233,15 @@ void end_frame() noexcept {
     // Copy EFB -> XFB (swapchain)
     pass.SetPipeline(webgpu::g_CopyPipeline);
     pass.SetBindGroup(0, webgpu::g_CopyBindGroup, 0, nullptr);
+
+    // Center viewport to framebuffer size in case we're at an aspect ratio lock.
+    {
+      uint32_t pos_x = (webgpu::g_graphicsConfig.surfaceConfiguration.width - webgpu::g_frameBuffer.size.width) / 2;
+      uint32_t pos_y = (webgpu::g_graphicsConfig.surfaceConfiguration.height - webgpu::g_frameBuffer.size.height) / 2;
+
+      pass.SetViewport(pos_x, pos_y, webgpu::g_frameBuffer.size.width, webgpu::g_frameBuffer.size.height, 0, 1);
+    }
+
     pass.Draw(3);
     imgui::render(pass);
     pass.End();
@@ -238,7 +249,10 @@ void end_frame() noexcept {
   const wgpu::CommandBufferDescriptor cmdBufDescriptor{.label = "Redraw command buffer"};
   const auto buffer = encoder.Finish(&cmdBufDescriptor);
   g_queue.Submit(1, &buffer);
-  g_surface.Present();
+  auto presentStatus = g_surface.Present();
+  if (presentStatus != wgpu::Status::Success) {
+    Log.warn("Surface present failed: {}", static_cast<int>(presentStatus));
+  }
   g_currentView = {};
 #endif
 }

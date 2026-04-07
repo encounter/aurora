@@ -17,264 +17,6 @@
 namespace aurora::gx::fifo {
 static Module Log("aurora::gx::fifo");
 
-struct DisplayListCache {
-  ByteBuffer vtxBuf;
-
-  DisplayListCache(ByteBuffer&& vtxBuf) : vtxBuf(std::move(vtxBuf)) {}
-};
-
-static absl::flat_hash_map<HashType, DisplayListCache> sCachedDisplayLists;
-
-static u32 prepare_vtx_buffer(ByteBuffer* outBuf, GXVtxFmt vtxfmt, const u8* ptr, u16 vtxCount, bool bigEndian) {
-  struct {
-    u8 count;
-    GXCompType type;
-  } attrArrays[GX_VA_MAX_ATTR] = {};
-  u32 vtxSize = 0;
-  u32 outVtxSize = 0;
-
-  // Calculate attribute offsets and vertex size
-  for (int attr = 0; attr < GX_VA_MAX_ATTR; attr++) {
-    const auto& attrFmt = g_gxState.vtxFmts[vtxfmt].attrs[attr];
-    switch (g_gxState.vtxDesc[attr]) {
-      DEFAULT_FATAL("unhandled attribute type {}", g_gxState.vtxDesc[attr]);
-    case GX_NONE:
-      break;
-    case GX_DIRECT:
-      if (attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) {
-        ++vtxSize;
-        outVtxSize += 2;
-        break;
-      }
-
-#define COMBINE(val1, val2, val3) (((val1) << 16) | ((val2) << 8) | (val3))
-      switch (COMBINE(attr, attrFmt.cnt, attrFmt.type)) {
-        DEFAULT_FATAL("not handled: attr {}, cnt {}, type {}", static_cast<GXAttr>(attr), attrFmt.cnt, attrFmt.type);
-      case COMBINE(GX_VA_POS, GX_POS_XYZ, GX_F32):
-      case COMBINE(GX_VA_NRM, GX_NRM_XYZ, GX_F32):
-        attrArrays[attr].count = 3;
-        attrArrays[attr].type = GX_F32;
-        vtxSize += 12;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XYZ, GX_S16):
-      case COMBINE(GX_VA_NRM, GX_NRM_XYZ, GX_S16):
-        attrArrays[attr].count = 3;
-        attrArrays[attr].type = GX_S16;
-        vtxSize += 6;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XYZ, GX_U8):
-        attrArrays[attr].count = 3;
-        attrArrays[attr].type = GX_U8;
-        vtxSize += 3;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XYZ, GX_S8):
-        attrArrays[attr].count = 3;
-        attrArrays[attr].type = GX_S8;
-        vtxSize += 3;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XY, GX_S8):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_S8;
-        vtxSize += 2;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XY, GX_U16):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_U16;
-        vtxSize += 4;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XY, GX_S16):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_S16;
-        vtxSize += 4;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_POS, GX_POS_XY, GX_F32):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_F32;
-        vtxSize += 8;
-        outVtxSize += 12;
-        break;
-      case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX3, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX4, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX5, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX6, GX_TEX_ST, GX_F32):
-      case COMBINE(GX_VA_TEX7, GX_TEX_ST, GX_F32):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_F32;
-        vtxSize += 8;
-        outVtxSize += 8;
-        break;
-      case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX3, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX4, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX5, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX6, GX_TEX_ST, GX_S16):
-      case COMBINE(GX_VA_TEX7, GX_TEX_ST, GX_S16):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_S16;
-        vtxSize += 4;
-        outVtxSize += 8;
-        break;
-      case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX3, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX4, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX5, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX6, GX_TEX_ST, GX_U16):
-      case COMBINE(GX_VA_TEX7, GX_TEX_ST, GX_U16):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_U16;
-        vtxSize += 4;
-        outVtxSize += 8;
-        break;
-      case COMBINE(GX_VA_TEX0, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX1, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX2, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX3, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX4, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX5, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX6, GX_TEX_ST, GX_S8):
-      case COMBINE(GX_VA_TEX7, GX_TEX_ST, GX_S8):
-        attrArrays[attr].count = 2;
-        attrArrays[attr].type = GX_S8;
-        vtxSize += 2;
-        outVtxSize += 8;
-        break;
-      case COMBINE(GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8):
-      case COMBINE(GX_VA_CLR1, GX_CLR_RGBA, GX_RGBA8):
-        attrArrays[attr].count = 4;
-        attrArrays[attr].type = GX_RGBA8;
-        vtxSize += 4;
-        outVtxSize += 16;
-        break;
-      }
-#undef COMBINE
-      break;
-    case GX_INDEX8:
-      ++vtxSize;
-      outVtxSize += 2;
-      break;
-    case GX_INDEX16:
-      vtxSize += 2;
-      outVtxSize += 2;
-      break;
-    }
-  }
-  // Align to 4
-  int rem = outVtxSize % 4;
-  int padding = 0;
-  if (rem != 0) {
-    padding = 4 - rem;
-    outVtxSize += padding;
-  }
-
-  // Just checking size
-  if (outBuf == nullptr || ptr == nullptr) {
-    return vtxSize;
-  }
-
-  // Build vertex buffer
-  ByteBuffer& buf = *outBuf;
-  buf.reserve_extra(vtxCount * outVtxSize);
-  std::array<f32, 4> out{};
-  for (u32 v = 0; v < vtxCount; ++v) {
-    for (int attr = 0; attr < GX_VA_MAX_ATTR; attr++) {
-      if (g_gxState.vtxDesc[attr] == GX_INDEX8) {
-        buf.append(static_cast<u16>(*ptr));
-        ++ptr;
-      } else if (g_gxState.vtxDesc[attr] == GX_INDEX16) {
-        const auto value = *reinterpret_cast<const u16*>(ptr);
-        buf.append(bigEndian ? bswap(value) : value);
-        ptr += 2;
-      }
-      if (g_gxState.vtxDesc[attr] != GX_DIRECT) {
-        continue;
-      }
-
-      if (attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) {
-        buf.append(static_cast<u16>(*ptr));
-        ++ptr;
-        continue;
-      }
-
-      const auto& attrFmt = g_gxState.vtxFmts[vtxfmt].attrs[attr];
-      u8 count = attrArrays[attr].count;
-      switch (attrArrays[attr].type) {
-      case GX_U8:
-        for (int i = 0; i < count; ++i) {
-          const auto value = reinterpret_cast<const u8*>(ptr)[i];
-          out[i] = static_cast<f32>(value) / static_cast<f32>(1 << attrFmt.frac);
-        }
-        buf.append(out.data(), sizeof(f32) * count);
-        ptr += count;
-        break;
-      case GX_S8:
-        for (int i = 0; i < count; ++i) {
-          const auto value = reinterpret_cast<const s8*>(ptr)[i];
-          out[i] = static_cast<f32>(value) / static_cast<f32>(1 << attrFmt.frac);
-        }
-        buf.append(out.data(), sizeof(f32) * count);
-        ptr += count;
-        break;
-      case GX_U16:
-        for (int i = 0; i < count; ++i) {
-          auto value = reinterpret_cast<const u16*>(ptr)[i];
-          out[i] = static_cast<f32>(bigEndian ? bswap(value) : value) / static_cast<f32>(1 << attrFmt.frac);
-        }
-        buf.append(out.data(), sizeof(f32) * count);
-        ptr += count * sizeof(u16);
-        break;
-      case GX_S16:
-        for (int i = 0; i < count; ++i) {
-          const auto value = reinterpret_cast<const s16*>(ptr)[i];
-          out[i] = static_cast<f32>(bigEndian ? bswap(value) : value) / static_cast<f32>(1 << attrFmt.frac);
-        }
-        buf.append(out.data(), sizeof(f32) * count);
-        ptr += count * sizeof(s16);
-        break;
-      case GX_F32:
-        for (int i = 0; i < count; ++i) {
-          const auto value = reinterpret_cast<const f32*>(ptr)[i];
-          out[i] = bigEndian ? bswap(value) : value;
-        }
-        buf.append(out.data(), sizeof(f32) * count);
-        ptr += count * sizeof(f32);
-        break;
-      case GX_RGBA8:
-        out[0] = static_cast<f32>(ptr[0]) / 255.f;
-        out[1] = static_cast<f32>(ptr[1]) / 255.f;
-        out[2] = static_cast<f32>(ptr[2]) / 255.f;
-        out[3] = static_cast<f32>(ptr[3]) / 255.f;
-        buf.append(out.data(), sizeof(f32) * 4);
-        ptr += sizeof(u32);
-        break;
-      }
-      if (attr == GX_VA_POS) {
-        for (int i = count; i < 3; ++i) {
-          buf.append(0.0f);
-        }
-      }
-    }
-    if (padding > 0) {
-      buf.append_zeroes(padding);
-    }
-  }
-
-  return vtxSize;
-}
-
 static u16 prepare_idx_buffer(ByteBuffer& buf, GXPrimitive prim, u16 vtxStart, u16 vtxCount) {
   u16 numIndices = 0;
   if (prim == GX_QUADS) {
@@ -331,6 +73,15 @@ static u16 prepare_idx_buffer(ByteBuffer& buf, GXPrimitive prim, u16 vtxStart, u
       }
       numIndices += 3;
     }
+  } else if (prim == GX_LINES || prim == GX_LINESTRIP || prim == GX_POINTS) {
+    buf.reserve_extra(6 * sizeof(u16));
+    buf.append<u16>(0);
+    buf.append<u16>(1);
+    buf.append<u16>(3);
+    buf.append<u16>(3);
+    buf.append<u16>(2);
+    buf.append<u16>(0);
+    numIndices = 6;
   } else
     UNLIKELY FATAL("unsupported primitive type {}", static_cast<u32>(prim));
   return numIndices;
@@ -367,6 +118,38 @@ static inline u32 read_u32(const u8* ptr, bool bigEndian) {
   }
   return static_cast<u32>(ptr[3]) << 24 | static_cast<u32>(ptr[2]) << 16 | static_cast<u32>(ptr[1]) << 8 |
          static_cast<u32>(ptr[0]);
+}
+
+static u32 bp_get(u32 reg, u32 size, u32 shift);
+
+static GXPixelFmt decode_pixel_fmt(u32 peCtrl, u32 cmode1) {
+  switch (bp_get(peCtrl, 3, 0)) {
+  case 0:
+    return GX_PF_RGB8_Z24;
+  case 1:
+    return GX_PF_RGBA6_Z24;
+  case 2:
+    return GX_PF_RGB565_Z16;
+  case 3:
+    return GX_PF_Z24;
+  case 4:
+    switch (bp_get(cmode1, 2, 9)) {
+    case 0:
+      return GX_PF_Y8;
+    case 1:
+      return GX_PF_U8;
+    case 2:
+      return GX_PF_V8;
+    default:
+      Log.warn("command_processor: unsupported cmode1 pixel subtype {}", bp_get(cmode1, 2, 9));
+      return GX_PF_Y8;
+    }
+  case 5:
+    return GX_PF_YUV420;
+  default:
+    Log.warn("command_processor: unsupported PE pixel format {}", bp_get(peCtrl, 3, 0));
+    return GX_PF_RGB8_Z24;
+  }
 }
 
 static inline u64 read_u64(const u8* ptr, bool bigEndian) {
@@ -469,7 +252,8 @@ static bool copy_xf_data(u32 addr, const u8* data, u32 len, bool bigEndian) {
     u32 lightIdx = lightBase / 0x10;
     u32 startOffset = lightBase % 0x10;
     CHECK(lightIdx < 8, "XF: Light copy oob? Should never happen; lightIdx={}", lightIdx);
-    CHECK(startOffset + len <= 0x10, "XF: Light copy that crosses across light boundaries unsupported: offs={}, len={}", startOffset, len);
+    CHECK(startOffset + len <= 0x10, "XF: Light copy that crosses across light boundaries unsupported: offs={}, len={}",
+          startOffset, len);
     auto& light = g_gxState.lights[lightIdx];
     for (u32 i = 0; i < len; i++) {
       u32 field = startOffset + i;
@@ -525,7 +309,7 @@ static bool copy_xf_data(u32 addr, const u8* data, u32 len, bool bigEndian) {
   return false;
 }
 
-// Forward declarations for register handlers (implemented in later phases)
+// Forward declarations for register handlers
 static void handle_bp(u32 value, bool bigEndian);
 static void handle_cp(u8 addr, u32 value, bool bigEndian);
 static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian);
@@ -580,7 +364,7 @@ void process(const u8* data, u32 size, bool bigEndian) {
       u16 len = (addrLen >> 12) + 1;
       u16 dstAddr = addrLen & 0x0FFF;
       if (!copy_xf_data(dstAddr, srcData, len, bigEndian)) {
-        Log.warn("Unimplemented indexed XF load (opcode 0x{:02X}, dstAddr=%04x)", opcode, dstAddr);
+        Log.debug("Unimplemented indexed XF load (opcode 0x{:02X}, dstAddr=%04x)", opcode, dstAddr);
       }
       pos += 4;
       break;
@@ -743,7 +527,7 @@ static void handle_bp(u32 value, bool bigEndian) {
   // BP mask (0x0F) - internal, applies to next BP write
   case 0x0F:
     // The BP mask is used by the hardware to selectively update fields.
-    Log.warn("BP mask set to {:06x}, but selective updates are not implemented", value & 0xFFFFFF);
+    Log.debug("BP mask set to {:06x}, but selective updates are not implemented", value & 0xFFFFFF);
     break;
 
   // TEV indirect stages (0x10-0x1F)
@@ -783,13 +567,18 @@ static void handle_bp(u32 value, bool bigEndian) {
   // Scissor registers (0x20, 0x21)
   case 0x20:
   case 0x21: {
-    Log.warn("Unimplemented: BP register {:x} (scissor)", regId);
+    Log.debug("Unimplemented: BP register {:x} (scissor)", regId);
     break;
   }
 
   // Line/point size (0x22)
   case 0x22: {
-    Log.warn("Unimplemented: BP register {:x} (line/point size)", regId);
+    g_gxState.lineWidth = static_cast<u8>(bp_get(value, 8, 0));
+    g_gxState.pointSize = static_cast<u8>(bp_get(value, 8, 8));
+    g_gxState.lineTexOffset = static_cast<GXTexOffset>(bp_get(value, 3, 16));
+    g_gxState.pointTexOffset = static_cast<GXTexOffset>(bp_get(value, 3, 19));
+    g_gxState.lineHalfAspect = bp_get(value, 1, 22) != 0;
+    g_gxState.stateDirty = true;
     break;
   }
 
@@ -843,8 +632,8 @@ static void handle_bp(u32 value, bool bigEndian) {
     u32 stage1 = idx * 2 + 1;
 
     // Channel ID reverse mapping from hardware to GX
-    static const GXChannelID r2c[] = {GX_COLOR0A0, GX_COLOR1A1,   GX_COLOR0A0,   GX_COLOR1A1,
-                                      GX_COLOR0A0, GX_COLOR_ZERO, GX_COLOR_ZERO, GX_COLOR_NULL};
+    static const GXChannelID r2c[] = {GX_COLOR0A0, GX_COLOR1A1,   GX_COLOR0A0,    GX_COLOR1A1,
+                                      GX_COLOR0A0, GX_ALPHA_BUMP, GX_ALPHA_BUMPN, GX_COLOR_ZERO};
 
     if (stage0 < MaxTevStages) {
       auto& s = g_gxState.tevStages[stage0];
@@ -910,12 +699,17 @@ static void handle_bp(u32 value, bool bigEndian) {
     u8 alpha = bp_get(value, 8, 0);
     bool enabled = bp_get(value, 1, 8) != 0;
     g_gxState.dstAlpha = enabled ? alpha : UINT32_MAX;
+    g_gxState.pixelFmt = decode_pixel_fmt(g_gxState.bpRegCache[0x43], value);
+    g_gxState.stateDirty = true;
     break;
   }
 
-  // PE control (0x43) - zcomp location
+  // PE control (0x43) - pixel format, z format, zcomp location
   case 0x43: {
-    // Log.warn("Unimplemented: BP register {:x} (zcomp loc)", regId);
+    g_gxState.pixelFmt = decode_pixel_fmt(value, g_gxState.bpRegCache[0x42]);
+    g_gxState.zFmt = static_cast<GXZFmt16>(bp_get(value, 3, 3));
+    g_gxState.zCompLocBeforeTex = bp_get(value, 1, 6) != 0;
+    g_gxState.stateDirty = true;
     break;
   }
 
@@ -1112,11 +906,11 @@ static void handle_bp(u32 value, bool bigEndian) {
   case 0x0C:
   case 0x0D:
   case 0x0E: {
-    u32 idx = (regId - 0x06) / 3; // matrix index (0-2)
-    u32 row = (regId - 0x06) % 3; // row index (0-2)
+    u32 idx = (regId - 0x06) / 3;    // matrix index (0-2)
+    u32 column = (regId - 0x06) % 3; // column index (0-2)
     auto& info = g_gxState.indTexMtxs[idx];
 
-    // Decode 11-bit signed matrix elements (scaled by 1024)
+    // Decode one packed matrix column: [m[0][column], m[1][column]].
     s32 col0 = bp_get(value, 11, 0);
     if (col0 & 0x400)
       col0 |= ~0x7FF; // sign-extend from 11 bits
@@ -1124,13 +918,13 @@ static void handle_bp(u32 value, bool bigEndian) {
     if (col1 & 0x400)
       col1 |= ~0x7FF;
 
-    auto& r = row == 0 ? info.mtx.m0 : (row == 1 ? info.mtx.m1 : info.mtx.m2);
-    r.x = static_cast<float>(col0) / 1024.0f;
-    r.y = static_cast<float>(col1) / 1024.0f;
+    auto& packedColumn = column == 0 ? info.mtx.m0 : (column == 1 ? info.mtx.m1 : info.mtx.m2);
+    packedColumn.x = static_cast<float>(col0) / 1024.0f;
+    packedColumn.y = static_cast<float>(col1) / 1024.0f;
 
     // Accumulate 2-bit scale exponent part (adjScale = scaleExp + 17, split across 3 registers)
     u32 scaleBits = bp_get(value, 2, 22);
-    u32 shift = row * 2;
+    u32 shift = column * 2;
     info.adjScaleRaw = (info.adjScaleRaw & ~(3u << shift)) | (scaleBits << shift);
     info.scaleExp = static_cast<s8>(info.adjScaleRaw) - 17;
 
@@ -1204,7 +998,7 @@ static void handle_bp(u32 value, bool bigEndian) {
       // Texture format/wrap/filter configuration.
       // These are handled pragmatically - GXLoadTexObj sets texture handles directly.
     } else {
-      Log.warn("Unhandled BP register 0x{:02X} (value 0x{:06X})", regId, value & 0xFFFFFF);
+      Log.debug("Unhandled BP register 0x{:02X} (value 0x{:06X})", regId, value & 0xFFFFFF);
     }
     break;
   }
@@ -1269,7 +1063,13 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
       vf.attrs[GX_VA_POS].frac = static_cast<u8>(bp_get(value, 5, 4));
       vf.attrs[GX_VA_NRM].cnt = static_cast<GXCompCnt>(bp_get(value, 1, 9));
       vf.attrs[GX_VA_NRM].type = static_cast<GXCompType>(bp_get(value, 3, 10));
-      vf.attrs[GX_VA_NRM].frac = 0;
+      if (vf.attrs[GX_VA_NRM].type == GX_U8 || vf.attrs[GX_VA_NRM].type == GX_S8) {
+        vf.attrs[GX_VA_NRM].frac = 6;
+      } else if (vf.attrs[GX_VA_NRM].type == GX_U16 || vf.attrs[GX_VA_NRM].type == GX_S16) {
+        vf.attrs[GX_VA_NRM].frac = 14;
+      } else {
+        vf.attrs[GX_VA_NRM].frac = 0;
+      }
       vf.attrs[GX_VA_CLR0].cnt = static_cast<GXCompCnt>(bp_get(value, 1, 13));
       vf.attrs[GX_VA_CLR0].type = static_cast<GXCompType>(bp_get(value, 3, 14));
       vf.attrs[GX_VA_CLR0].frac = 0;
@@ -1323,9 +1123,12 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
     else if (addr >= 0xB0 && addr <= 0xBF) {
       u32 attrIdx = addr - 0xB0 + GX_VA_POS;
       if (attrIdx < GX_VA_MAX_ATTR) {
-        g_gxState.arrays[attrIdx].stride = static_cast<u8>(value);
-        g_gxState.arrays[attrIdx].cachedRange = {};
-        g_gxState.stateDirty = true;
+        auto& array = g_gxState.arrays[attrIdx];
+        const auto newStride = static_cast<u8>(value);
+        if (array.stride != newStride) {
+          array.stride = newStride;
+          g_gxState.stateDirty = true;
+        }
       }
     }
     break;
@@ -1543,7 +1346,7 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
             g_gxState.stateDirty = true;
           }
         } else {
-          Log.warn("Unhandled XF register 0x{:04X} (value 0x{:08X})", reg, val);
+          Log.debug("Unhandled XF register 0x{:04X} (value 0x{:08X})", reg, val);
         }
         break;
       }
@@ -1563,14 +1366,27 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   u16 vtxCount = read_u16(data + pos, bigEndian);
   pos += 2;
 
-  // Temporarily save the vertex data start position
-  const u8* vtxDataStart = data + pos;
-
-  u32 vtxSize = prepare_vtx_buffer(nullptr, fmt, nullptr, vtxCount, bigEndian);
+  u32 vtxSize = 0;
+  const auto& vtxFmt = g_gxState.vtxFmts[fmt];
+  for (int i = GX_VA_PNMTXIDX; i <= GX_VA_TEX7; ++i) {
+    switch (g_gxState.vtxDesc[i]) {
+    case GX_NONE:
+      break;
+    case GX_DIRECT: {
+      const auto attr = static_cast<GXAttr>(i);
+      const auto& attrFmt = vtxFmt.attrs[i];
+      vtxSize += comp_type_size(attr, attrFmt.type) * comp_cnt_count(attr, attrFmt.cnt);
+      break;
+    }
+    case GX_INDEX8:
+      vtxSize += 1;
+      break;
+    case GX_INDEX16:
+      vtxSize += 2;
+      break;
+    }
+  }
   u32 totalVtxBytes = vtxCount * vtxSize;
-  // Log.warn("  draw: prim {:02x} fmt {} vtxCount {} vtxSize {} totalBytes {} pos {} -> {}",
-  //          static_cast<u32>(prim), static_cast<u32>(fmt), vtxCount, vtxSize, totalVtxBytes, pos, pos +
-  //          totalVtxBytes);
   if (pos + totalVtxBytes > size) {
     // Hex dump around the draw command for debugging
     u32 cmdPos = pos - 2 - 1; // opcode byte position (before vtxCount and pos++)
@@ -1587,31 +1403,18 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
     FATAL("draw vertex data overrun: need {} bytes at pos {}, have {}", totalVtxBytes, pos, size);
   }
 
-  // Hash over the vertex format and raw command data
-  auto hash = xxh3_hash_s(&g_gxState.vtxFmts[fmt], sizeof(VtxFmt), 0);
-  hash = xxh3_hash_s(data + pos - 3, 3 + totalVtxBytes, hash); // cmd byte + vtxCount + vtxData
-
-  gfx::Range vertRange, idxRange;
-  u32 numIndices = 0;
-
-  auto it = sCachedDisplayLists.find(hash);
-  if (it != sCachedDisplayLists.end()) {
-    // Cache hit - use cached buffers
-    const auto& cache = it->second;
-    vertRange = gfx::push_verts(cache.vtxBuf.data(), cache.vtxBuf.size());
-  } else {
-    // Cache miss - build index buffer and cache both
-    ByteBuffer vtxBuf;
-    prepare_vtx_buffer(&vtxBuf, fmt, vtxDataStart, vtxCount, bigEndian);
-    vertRange = gfx::push_verts(vtxBuf.data(), vtxBuf.size());
-    sCachedDisplayLists.try_emplace(hash, std::move(vtxBuf));
-  }
-
+  // Push raw vertex data to buffer
+  gfx::Range vertRange = gfx::push_verts(data + pos, totalVtxBytes);
   pos += totalVtxBytes;
 
+  u32 numIndices = 0;
+  gfx::Range idxRange;
+  // Try to merge with previous draw call
   if (!g_gxState.stateDirty) {
-    // Try to merge with previous draw call
-    if (auto* lastDraw = gfx::get_last_draw_command<DrawData>()) {
+    auto* lastDraw = gfx::get_last_draw_command<DrawData>();
+    // Only if the previous draw call was a single instance draw (no lines/points handling)
+    if (lastDraw != nullptr && prim != GX_LINES && prim != GX_LINESTRIP && prim != GX_POINTS &&
+        lastDraw->instanceCount == 1) {
       ByteBuffer idxBuf;
       numIndices = prepare_idx_buffer(idxBuf, prim, lastDraw->vtxCount, vtxCount);
       idxRange = gfx::push_indices(idxBuf.data(), idxBuf.size());
@@ -1638,37 +1441,57 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
 
   // Build pipeline, bind groups, and push draw command
   BindGroupRanges ranges{};
-  for (int i = 0; i < GX_VA_MAX_ATTR; ++i) {
+  for (int i = GX_VA_POS; i <= GX_VA_TEX7; ++i) {
     if (g_gxState.vtxDesc[i] != GX_INDEX8 && g_gxState.vtxDesc[i] != GX_INDEX16) {
       continue;
     }
     auto& array = g_gxState.arrays[i];
     if (array.cachedRange.size > 0) {
-      ranges.vaRanges[i] = array.cachedRange;
+      ranges.vaRanges[i - GX_VA_POS] = array.cachedRange;
     } else {
       const auto range = gfx::push_storage(static_cast<const uint8_t*>(array.data), array.size);
-      ranges.vaRanges[i] = range;
+      ranges.vaRanges[i - GX_VA_POS] = range;
       array.cachedRange = range;
     }
   }
 
   PipelineConfig config{};
-  populate_pipeline_config(config, GX_TRIANGLES, fmt);
+  populate_pipeline_config(config, prim, fmt);
   const auto info = build_shader_info(config.shaderConfig);
   const auto bindGroups = build_bind_groups(info, config.shaderConfig, ranges);
   const auto pipeline = gfx::pipeline_ref(config);
 
+  uint32_t instanceCount = 1;
+  if (prim == GX_LINES) {
+    instanceCount = vtxCount / 2;
+  } else if (prim == GX_LINESTRIP) {
+    instanceCount = vtxCount - 1;
+  } else if (prim == GX_POINTS) {
+    instanceCount = vtxCount;
+  }
   gfx::push_draw_command(DrawData{
       .pipeline = pipeline,
       .vertRange = vertRange,
       .idxRange = idxRange,
       .dataRanges = ranges,
-      .uniformRange = build_uniform(info),
+      .uniformRange = build_uniform(info, vertRange.offset),
       .vtxCount = vtxCount,
       .indexCount = numIndices,
+      .instanceCount = instanceCount,
       .bindGroups = bindGroups,
       .dstAlpha = g_gxState.dstAlpha,
   });
+}
+
+std::string read_string(const u8* data, u32& pos, u32 size, bool bigEndian) {
+  CHECK(pos + 2 <= size, "Aurora string length read overrun");
+  const u16 length = read_u16(data + pos, bigEndian);
+  pos += 2;
+
+  CHECK(pos + length <= size, "Aurora string read overrun");
+  std::string str(reinterpret_cast<const char*>(data) + pos, length);
+  pos += length;
+  return str;
 }
 
 void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
@@ -1678,21 +1501,37 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
 
   // Setting of vertex array bases.
   if (subCmd >= GX_LOAD_AURORA_ARRAYBASE && subCmd <= (GX_LOAD_AURORA_ARRAYBASE | 0x0f)) {
-    CHECK(pos + 16 <= size, "GX_LOAD_AURORA_ARRAYBASE read overrun");
+    CHECK(pos + 13 <= size, "GX_LOAD_AURORA_ARRAYBASE read overrun");
     u32 attrIdx = subCmd - GX_LOAD_AURORA_ARRAYBASE + GX_VA_POS;
 
     u64 arrayAddr = read_u64(data + pos, bigEndian);
     pos += 8;
-    u64 arraySize = read_u64(data + pos, bigEndian);
-    pos += 8;
+    u32 arraySize = read_u32(data + pos, bigEndian);
+    pos += 4;
+    bool le = data[pos] == 1;
+    pos += 1;
 
-    CHECK(arraySize <= std::numeric_limits<decltype(g_gxState.arrays[attrIdx].size)>::max(), "Array size too large!");
+    auto& array = g_gxState.arrays[attrIdx];
+    const auto newData = reinterpret_cast<void*>(arrayAddr);
+    if (array.data != newData || array.size != arraySize || array.le != le) {
+      array.data = newData;
+      array.size = arraySize;
+      array.le = le;
+      // Only drop the cached upload when the backing array actually changes.
+      array.cachedRange = {};
+      g_gxState.stateDirty = true;
+    }
+  } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_PUSH) {
+    auto label = read_string(data, pos, size, bigEndian);
+    gfx::push_debug_group(std::move(label));
+  } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_POP) {
+    pop_debug_group();
+  } else if (subCmd == GX_LOAD_AURORA_DEBUG_MARKER_INSERT) {
+    auto label = read_string(data, pos, size, bigEndian);
+    gfx::insert_debug_marker(std::move(label));
+  }
 
-    g_gxState.arrays[attrIdx].data = reinterpret_cast<void*>(arrayAddr);
-    g_gxState.arrays[attrIdx].size = (u32)arraySize;
-    g_gxState.arrays[attrIdx].cachedRange = {};
-    g_gxState.stateDirty = true;
-  } else {
+  else {
     Log.error("Unknown Aurora subcommand: {:04X}", subCmd);
   }
 }

@@ -12,10 +12,9 @@ struct RGBA8 {
   uint8_t a;
 };
 
-struct DXT1Block {
-  uint16_t color1;
-  uint16_t color2;
-  std::array<uint8_t, 4> lines;
+struct RG8 {
+  uint8_t r;
+  uint8_t g;
 };
 
 // http://www.mindcontrol.org/~hplus/graphics/expand-bits.html
@@ -37,22 +36,6 @@ constexpr uint8_t HalfBlend(uint8_t a, uint8_t b) {
 }
 
 static size_t ComputeMippedTexelCount(uint32_t w, uint32_t h, uint32_t mips) {
-  size_t ret = w * h;
-  for (uint32_t i = mips; i > 1; --i) {
-    if (w > 1) {
-      w /= 2;
-    }
-    if (h > 1) {
-      h /= 2;
-    }
-    ret += w * h;
-  }
-  return ret;
-}
-
-static size_t ComputeMippedBlockCountDXT1(uint32_t w, uint32_t h, uint32_t mips) {
-  w /= 4;
-  h /= 4;
   size_t ret = w * h;
   for (uint32_t i = mips; i > 1; --i) {
     if (w > 1) {
@@ -154,24 +137,21 @@ struct TextureDecoderI8 {
 
 struct TextureDecoderIA4 {
   using Source = uint8_t;
-  using Target = RGBA8;
+  using Target = RG8;
 
   static constexpr uint32_t Frac = 1;
   static constexpr uint32_t BlockWidth = 8;
   static constexpr uint32_t BlockHeight = 4;
 
   static void decode_texel(Target* target, const Source* in, const uint32_t x) {
-    const uint8_t intensity = ExpandTo8<4>(in[x] & 0xf);
-    target[x].r = intensity;
-    target[x].g = intensity;
-    target[x].b = intensity;
-    target[x].a = ExpandTo8<4>(in[x] >> 4);
+    target[x].r = ExpandTo8<4>(in[x] & 0xf);
+    target[x].g = ExpandTo8<4>(in[x] >> 4);
   }
 };
 
 struct TextureDecoderIA8 {
   using Source = uint16_t;
-  using Target = RGBA8;
+  using Target = RG8;
 
   static constexpr uint32_t Frac = 1;
   static constexpr uint32_t BlockWidth = 4;
@@ -179,11 +159,8 @@ struct TextureDecoderIA8 {
 
   static void decode_texel(Target* target, const Source* in, const uint32_t x) {
     const auto texel = in[x];
-    const uint8_t intensity = texel >> 8;
-    target[x].r = intensity;
-    target[x].g = intensity;
-    target[x].b = intensity;
-    target[x].a = texel & 0xff;
+    target[x].r = texel >> 8;
+    target[x].g = texel & 0xff;
   }
 };
 
@@ -285,53 +262,6 @@ static ByteBuffer BuildRGBA8FromGCN(uint32_t width, uint32_t height, uint32_t mi
       }
     }
     targetMip += w * h;
-    if (w > 1) {
-      w /= 2;
-    }
-    if (h > 1) {
-      h /= 2;
-    }
-  }
-
-  return buf;
-}
-
-static ByteBuffer BuildDXT1FromGCN(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
-  const size_t blockCount = ComputeMippedBlockCountDXT1(width, height, mips);
-  ByteBuffer buf{sizeof(DXT1Block) * blockCount};
-
-  uint32_t w = width / 4;
-  uint32_t h = height / 4;
-  auto* targetMip = reinterpret_cast<DXT1Block*>(buf.data());
-  const auto* in = reinterpret_cast<const DXT1Block*>(data.data());
-  for (uint32_t mip = 0; mip < mips; ++mip) {
-    const uint32_t bwidth = (w + 1) / 2;
-    const uint32_t bheight = (h + 1) / 2;
-    for (uint32_t by = 0; by < bheight; ++by) {
-      const uint32_t baseY = by * 2;
-      for (uint32_t bx = 0; bx < bwidth; ++bx) {
-        const uint32_t baseX = bx * 2;
-        for (uint32_t y = 0; y < 2; ++y) {
-          DXT1Block* target = targetMip + (baseY + y) * w + baseX;
-          for (size_t x = 0; x < 2; ++x) {
-            target[x].color1 = bswap(in[x].color1);
-            target[x].color2 = bswap(in[x].color2);
-            for (size_t i = 0; i < 4; ++i) {
-              std::array<uint8_t, 4> ind;
-              const uint8_t packed = in[x].lines[i];
-              ind[3] = packed & 0x3;
-              ind[2] = (packed >> 2) & 0x3;
-              ind[1] = (packed >> 4) & 0x3;
-              ind[0] = (packed >> 6) & 0x3;
-              target[x].lines[i] = ind[0] | (ind[1] << 2) | (ind[2] << 4) | (ind[3] << 6);
-            }
-          }
-          in += 2;
-        }
-      }
-    }
-    targetMip += w * h;
-
     if (w > 1) {
       w /= 2;
     }
@@ -452,12 +382,8 @@ ByteBuffer convert_texture(u32 format, uint32_t width, uint32_t height, uint32_t
     return DecodeTiled<TextureDecoderRGB5A3>(width, height, mips, data);
   case GX_TF_RGBA8:
     return BuildRGBA8FromGCN(width, height, mips, data);
-  case GX_TF_CMPR: {
-    if (webgpu::g_device.HasFeature(wgpu::FeatureName::TextureCompressionBC)) {
-      return BuildDXT1FromGCN(width, height, mips, data);
-    }
+  case GX_TF_CMPR:
     return BuildRGBA8FromCMPR(width, height, mips, data);
-  }
   }
 }
 

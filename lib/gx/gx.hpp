@@ -65,6 +65,7 @@ constexpr u32 MaxIndStages = GX_MAX_INDTEXSTAGE;
 constexpr u32 MaxIndTexMtxs = 3;
 constexpr u32 MaxVtxFmt = GX_MAX_VTXFMT;
 constexpr u32 MaxPnMtx = (GX_PNMTX9 / 3) + 1;
+constexpr u32 MaxIndexAttr = 12; // VA_POS -> VA_TEX7
 
 template <typename Arg, Arg Default>
 struct TevPass {
@@ -202,7 +203,7 @@ struct AlphaCompare {
 };
 static_assert(std::has_unique_object_representations_v<AlphaCompare>);
 struct IndTexMtxInfo {
-  aurora::Mat3x2<float> mtx;
+  Mat3x2<float> mtx;
   s8 scaleExp = 0;
   // Accumulated adjScale bits from BP registers (2 bits per row, 3 rows)
   u8 adjScaleRaw = 0;
@@ -231,9 +232,9 @@ struct VtxAttrFmt {
   GXCompCnt cnt;
   GXCompType type;
   u8 frac;
-  u8 le = true;
   u8 _p1 = 0;
   u8 _p2 = 0;
+  u8 _p3 = 0;
 };
 static_assert(std::has_unique_object_representations_v<VtxAttrFmt>);
 struct VtxFmt {
@@ -270,10 +271,11 @@ struct AttrArray {
   const void* data;
   u32 size;
   u8 stride;
+  bool le = true;
   gfx::Range cachedRange;
 };
 inline bool operator==(const AttrArray& lhs, const AttrArray& rhs) {
-  return lhs.data == rhs.data && lhs.size == rhs.size && lhs.stride == rhs.stride;
+  return lhs.data == rhs.data && lhs.size == rhs.size && lhs.stride == rhs.stride && lhs.le == rhs.le;
 }
 inline bool operator!=(const AttrArray& lhs, const AttrArray& rhs) { return !(lhs == rhs); }
 
@@ -284,6 +286,11 @@ struct GXState {
   GXProjectionType projType; // for GXGetProjectionv
   FogState fog;
   GXCullMode cullMode = GX_CULL_BACK;
+  u8 lineWidth = 0;
+  u8 pointSize = 0;
+  GXTexOffset lineTexOffset = GX_TO_ZERO;
+  GXTexOffset pointTexOffset = GX_TO_ZERO;
+  bool lineHalfAspect = false;
   GXBlendMode blendMode = GX_BM_NONE;
   GXBlendFactor blendFacSrc = GX_BL_SRCALPHA;
   GXBlendFactor blendFacDst = GX_BL_INVSRCALPHA;
@@ -291,6 +298,9 @@ struct GXState {
   GXCompare depthFunc = GX_LEQUAL;
   Vec4<float> clearColor{0.f, 0.f, 0.f, 1.f};
   u32 clearDepth = 0xFFFFFF;
+  GXPixelFmt pixelFmt = GX_PF_RGB8_Z24;
+  GXZFmt16 zFmt = GX_ZC_LINEAR;
+  bool zCompLocBeforeTex = false;
   u32 dstAlpha; // u8; UINT32_MAX = disabled
   AlphaCompare alphaCompare;
   std::array<Vec4<float>, MaxTevRegs> colorRegs;
@@ -315,10 +325,28 @@ struct GXState {
   };
   std::array<IndStage, MaxIndStages> indStages;
   std::array<IndTexMtxInfo, MaxIndTexMtxs> indTexMtxs;
-  std::array<AttrArray, GX_VA_MAX_ATTR> arrays;
+  std::array<AttrArray, MaxVtxAttr> arrays;
   gfx::ClipRect texCopySrc;
   GXTexFmt texCopyFmt;
-  absl::flat_hash_map<void*, gfx::TextureHandle> copyTextures;
+  u16 texCopyDstWidth = 0;
+  u16 texCopyDstHeight = 0;
+  struct CopyTextureKey {
+    const void* dest = nullptr;
+    u32 width = 0;
+    u32 height = 0;
+    GXTexFmt format = GX_TF_I4;
+
+    bool operator==(const CopyTextureKey& rhs) const {
+      return dest == rhs.dest && width == rhs.width && height == rhs.height && format == rhs.format;
+    }
+
+    template <typename H>
+    friend H AbslHashValue(H h, const CopyTextureKey& key) {
+      return H::combine(std::move(h), key.dest, key.width, key.height, key.format);
+    }
+  };
+  absl::flat_hash_map<const void*, gfx::TextureHandle> copyTextures;
+  absl::flat_hash_map<CopyTextureKey, gfx::TextureHandle> copyTextureCache;
   bool depthCompare = true;
   bool depthUpdate = true;
   bool colorUpdate = true;
@@ -328,33 +356,21 @@ struct GXState {
   u8 numTevStages = 0;
   u8 numTexGens = 0;
   bool stateDirty = true;
-  std::array<u32, 0xFF> bpRegCache;
+  std::array<u32, 0x100> bpRegCache;
   GXState() { bpRegCache[0xFE] = 0x00FFFFFF; }
 };
 extern GXState g_gxState;
 
+void initialize() noexcept;
 void shutdown() noexcept;
+void clear_copy_texture_cache() noexcept;
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept;
 
-static inline bool requires_copy_conversion(const GXTexObj_& obj) {
-  if (!obj.ref) {
-    return false;
-  }
-  if (obj.ref->isRenderTexture) {
-    return true;
-  }
-  switch (obj.ref->gxFormat) {
-    // case GX_TF_RGB565:
-    // case GX_TF_I4:
-    // case GX_TF_I8:
-  case GX_TF_C4:
-  case GX_TF_C8:
-  case GX_TF_C14X2:
-    return true;
-  default:
-    return false;
-  }
+inline float clear_depth_value() {
+  const float normalizedDepth = static_cast<float>(g_gxState.clearDepth) / 16777215.f;
+  return UseReversedZ ? (1.f - normalizedDepth) : normalizedDepth;
 }
+
 static inline bool requires_load_conversion(const GXTexObj_& obj) {
   if (!obj.ref) {
     return false;
@@ -373,38 +389,31 @@ static inline bool requires_load_conversion(const GXTexObj_& obj) {
 }
 static inline bool is_palette_format(u32 fmt) { return fmt == GX_TF_C4 || fmt == GX_TF_C8 || fmt == GX_TF_C14X2; }
 
-struct TextureConfig {
-  u32 copyFmt = gfx::InvalidTextureFormat; // Underlying texture format
-  u32 loadFmt = gfx::InvalidTextureFormat; // Texture format being bound
-  bool renderTex = false;                  // Perform conversion
-  u8 _p1 = 0;
-  u8 _p2 = 0;
-  u8 _p3 = 0;
-
-  bool operator==(const TextureConfig& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
-};
-static_assert(std::has_unique_object_representations_v<TextureConfig>);
-struct StorageConfig {
-  GXAttr attr = GX_VA_NULL;
-  GXCompCnt cnt = static_cast<GXCompCnt>(0xFF);
-  GXCompType compType = static_cast<GXCompType>(0xFF);
+struct AttrConfig {
+  u8 attrType = GX_NONE; // GXAttrType
+  u8 cnt = 0xFF;         // Actual count; not GXCompCnt
+  u8 compType = 0xFF;    // GXCompType
+  u8 offset = 0;         // Offset within vertex
+  u8 stride = 0;         // Array stride
   u8 frac = 0;
-  u8 le = 1;
-  std::array<u8, 2> pad{};
+  bool le = true;
+  u8 _p1 = 0;
 };
 struct ShaderConfig {
-  GXFogType fogType;
-  std::array<GXAttrType, MaxVtxAttr> vtxAttrs;
-  // Mapping for indexed attributes -> storage buffer
-  std::array<StorageConfig, MaxVtxAttr> attrMapping;
+  u8 fogType = GX_FOG_NONE;
+  u8 vtxStride = 0;
+  u8 lineMode : 2 = 0; // 1 = GX_LINES, 2 = GX_LINESTRIP, 3 = GX_POINTS
+  u8 pad1 : 6 = 0;
+  u8 pad2 = 0;
+  std::array<AttrConfig, MaxVtxAttr> attrs;
   std::array<TevSwap, MaxTevSwap> tevSwapTable;
   std::array<TevStage, MaxTevStages> tevStages;
   u32 tevStageCount = 0;
   std::array<ColorChannelConfig, MaxColorChannels> colorChannels;
   std::array<TcgConfig, MaxTexCoord> tcgs;
   AlphaCompare alphaCompare;
-  std::array<TextureConfig, MaxTextures> textureConfig;
-  u32 currentPnMtx = 0;
+  std::array<IndStage, MaxIndStages> indStages{};
+  u32 numIndStages = 0;
 
   bool operator==(const ShaderConfig& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
 };
@@ -432,19 +441,25 @@ struct ShaderInfo {
   std::bitset<MaxTevRegs> writesTevReg;
   std::bitset<MaxPTTexMtx> usesPTTexMtx;
   std::bitset<MaxVtxAttr> indexAttr;
+  std::bitset<MaxIndStages> usedIndStages;
+  std::bitset<MaxTextures> sampledIndTextures;
+  std::bitset<MaxIndTexMtxs> usedIndTexMtxs;
   u32 uniformSize = 0;
   bool usesFog : 1 = false;
   bool lightingEnabled : 1 = false;
+  u8 lineMode : 2 = 0;
 };
 struct BindGroupRanges {
-  std::array<gfx::Range, GX_VA_MAX_ATTR> vaRanges{};
+  std::array<gfx::Range, MaxIndexAttr> vaRanges{};
 };
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept;
-wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const ShaderInfo& info,
-                                    ArrayRef<wgpu::VertexBufferLayout> vtxBuffers, wgpu::ShaderModule shader,
-                                    const char* label) noexcept;
-wgpu::ShaderModule build_shader(const ShaderConfig& config, const ShaderInfo& info) noexcept;
-GXBindGroupLayouts build_bind_group_layouts(const ShaderInfo& info, const ShaderConfig& config) noexcept;
+wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
+                                    wgpu::ShaderModule shader, const char* label) noexcept;
+wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept;
+GXBindGroupLayouts build_bind_group_layouts(const ShaderConfig& config) noexcept;
 GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& config,
                                const BindGroupRanges& ranges) noexcept;
+
+u8 comp_type_size(GXAttr attr, GXCompType type) noexcept;
+u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept;
 } // namespace aurora::gx

@@ -40,8 +40,28 @@ typedef struct {
 typedef struct {
   uint32_t width;
   uint32_t height;
+
+  /**
+   * Width of the main GX framebuffer.
+   */
   uint32_t fb_width;
+
+  /**
+   * Height of the main GX framebuffer.
+   */
   uint32_t fb_height;
+
+  /**
+   * The size of the framebuffer used to present to the operating system.
+   * May differ from fb_width if Aurora is instructed to force an aspect ratio or resolution configuration.
+   */
+  uint32_t native_fb_width;
+
+  /**
+   * The size of the framebuffer used to present to the operating system.
+   * May differ from fb_height if Aurora is instructed to force an aspect ratio or resolution configuration.
+   */
+  uint32_t native_fb_height;
   float scale;
 } AuroraWindowSize;
 
@@ -62,6 +82,8 @@ typedef struct {
   uint16_t maxTextureAnisotropy;
   bool startFullscreen;
   bool allowJoystickBackgroundEvents;
+  bool allowTextureReplacements;
+  bool allowTextureDumps;
   int32_t windowPosX;
   int32_t windowPosY;
   uint32_t windowWidth;

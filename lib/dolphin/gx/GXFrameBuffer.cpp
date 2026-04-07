@@ -1,8 +1,12 @@
 #include "gx.hpp"
 #include "__gx.h"
 
+#include "../../gfx/tex_copy_conv.hpp"
+#include "../../gfx/texture.hpp"
 #include "../../window.hpp"
+#include "../../gfx/clear.hpp"
 #include "../../webgpu/wgpu.hpp"
+#include "../../webgpu/gpu.hpp"
 
 extern "C" {
 GXRenderModeObj GXNtsc480IntDf = {
@@ -81,8 +85,9 @@ void GXSetTexCopySrc(u16 left, u16 top, u16 wd, u16 ht) { g_gxState.texCopySrc =
 void GXSetDispCopyDst(u16 wd, u16 ht) {}
 
 void GXSetTexCopyDst(u16 wd, u16 ht, GXTexFmt fmt, GXBool mipmap) {
-  // TODO texture copy scaling (mipmap)
   g_gxState.texCopyFmt = fmt;
+  g_gxState.texCopyDstWidth = wd;
+  g_gxState.texCopyDstHeight = ht;
 }
 
 // TODO GXSetDispCopyFrame2Field
@@ -121,20 +126,55 @@ void GXCopyDisp(void* dest, GXBool clear) {}
 
 void GXCopyTex(void* dest, GXBool clear) {
   const auto& rect = g_gxState.texCopySrc;
-  const wgpu::Extent3D size{
-      .width = static_cast<uint32_t>(rect.width),
-      .height = static_cast<uint32_t>(rect.height),
-      .depthOrArrayLayers = 1,
+  const u32 dstWidth = g_gxState.texCopyDstWidth;
+  const u32 dstHeight = g_gxState.texCopyDstHeight;
+  const auto texCopyFmt = g_gxState.texCopyFmt;
+
+  const aurora::gx::GXState::CopyTextureKey key{
+      .dest = dest,
+      .width = dstWidth,
+      .height = dstHeight,
+      .format = texCopyFmt,
   };
-  aurora::gfx::TextureHandle handle;
-  const auto it = g_gxState.copyTextures.find(dest);
-  if (it == g_gxState.copyTextures.end() || it->second->size != size) {
-    handle = aurora::gfx::new_render_texture(rect.width, rect.height, g_gxState.texCopyFmt, "Resolved Texture");
-    g_gxState.copyTextures[dest] = handle;
-  } else {
-    handle = it->second;
+  auto it = g_gxState.copyTextureCache.find(key);
+  if (it == g_gxState.copyTextureCache.end()) {
+    aurora::gfx::TextureHandle handle;
+    if (aurora::gfx::tex_copy_conv::needs_conversion(texCopyFmt)) {
+      handle = aurora::gfx::new_conv_texture(dstWidth, dstHeight, texCopyFmt, "Copy Conv Texture");
+    } else {
+      // Configure the texture swizzle to use alpha 1.0 if targeting RGB565 or EFB doesn't have alpha
+      const auto fmt = texCopyFmt == GX_TF_RGB565 || g_gxState.pixelFmt == GX_PF_RGB8_Z24 ||
+                               g_gxState.pixelFmt == GX_PF_RGB565_Z16
+                           ? GX_TF_RGB565
+                           : GX_TF_RGBA8;
+      handle = aurora::gfx::new_render_texture(dstWidth, dstHeight, fmt, "Resolved Texture");
+    }
+    it = g_gxState.copyTextureCache.emplace(key, handle).first;
   }
-  aurora::gfx::resolve_pass(handle, rect, clear, g_gxState.clearColor);
+  const auto& handle = it->second;
+
+  if (g_gxState.alphaUpdate && g_gxState.dstAlpha != UINT32_MAX) {
+    if (!clear) {
+      // TODO: figure out the right behavior here.
+      // should the copy have a specific alpha value but the EFB remains untouched?
+    }
+    // Overwrite alpha before resolving
+    aurora::gfx::push_draw_command(aurora::gfx::clear::DrawData{
+        .pipeline = aurora::gfx::pipeline_ref(aurora::gfx::clear::PipelineConfig{
+            .clearColor = false,
+            .clearAlpha = true,
+            .clearDepth = false,
+        }),
+        .color = wgpu::Color{0.f, 0.f, 0.f, g_gxState.dstAlpha / 255.f},
+    });
+  }
+  const auto clearColor = clear && g_gxState.colorUpdate;
+  const auto clearAlpha = clear && g_gxState.alphaUpdate;
+  const auto clearDepth = clear && g_gxState.depthUpdate;
+  aurora::gfx::resolve_pass(handle, rect, clearColor, clearAlpha, clearDepth, g_gxState.clearColor,
+                            aurora::gx::clear_depth_value(), texCopyFmt);
+
+  g_gxState.copyTextures[dest] = handle;
 }
 
 // TODO GXGetYScaleFactor

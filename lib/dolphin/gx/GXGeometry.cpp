@@ -198,7 +198,24 @@ void GXSetVtxAttrFmt(GXVtxFmt vtxfmt, GXAttr attr, GXCompCnt cnt, GXCompType typ
   __gx->dirtyVAT |= static_cast<u8>(1 << vtxfmt);
 }
 
-void GXSetArray(GXAttr attr, const void* data, u32 size, u8 stride) {
+void GXSetVtxAttrFmtv(GXVtxFmt vtxfmt, const GXVtxAttrFmtList* list) {
+  CHECK(vtxfmt >= GX_VTXFMT0 && vtxfmt < GX_MAX_VTXFMT, "invalid vtxfmt {}", underlying(vtxfmt));
+  CHECK(list != nullptr, "null vtx attr fmt list");
+
+  u32* va = &__gx->vatA[vtxfmt];
+  u32* vb = &__gx->vatB[vtxfmt];
+  u32* vc = &__gx->vatC[vtxfmt];
+  while (list->attr != GX_VA_NULL) {
+    CHECK(list->attr >= GX_VA_POS && list->attr < GX_VA_MAX_ATTR, "invalid attr {}", underlying(list->attr));
+    SETVAT(va, vb, vc, list->attr, list->cnt, list->type, list->frac);
+    ++list;
+  }
+
+  __gx->dirtyState |= 0x10;
+  __gx->dirtyVAT |= static_cast<u8>(1 << vtxfmt);
+}
+
+void GXSetArray(GXAttr attr, const void* data, u32 size, u8 stride, bool le) {
   GXAttr cpAttr = static_cast<GXAttr>(attr);
   if (attr == GX_VA_NBT) {
     cpAttr = GX_VA_NRM;
@@ -210,7 +227,8 @@ void GXSetArray(GXAttr attr, const void* data, u32 size, u8 stride) {
   // Write array base
   GX_WRITE_AURORA(GX_LOAD_AURORA_ARRAYBASE | cpIdx);
   GX_WRITE_U64(reinterpret_cast<u64>(data));
-  GX_WRITE_U64(size);
+  GX_WRITE_U32(size);
+  GX_WRITE_U8(le ? 1 : 0);
 
   // Write array stride
   GX_WRITE_CP_REG(CP_REG_ARRAYSTRIDE_ID | cpIdx, stride);
@@ -369,8 +387,6 @@ void GXSetPointSize(u8 pointSize, GXTexOffset texOffsets) {
   GX_WRITE_RAS_REG(__gx->lpSize);
   __gx->bpSent = 1;
 }
-
-// TODO GXSetPointSize
 
 void GXEnableTexOffsets(GXTexCoordID coord, GXBool line_enable, GXBool point_enable) {
   SET_REG_FIELD(0, __gx->suTs0[coord], 1, 18, line_enable);

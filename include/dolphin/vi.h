@@ -35,6 +35,22 @@ VIRetraceCallback VISetPostRetraceCallback(VIRetraceCallback cb);
 void VISetWindowTitle(const char* title);
 void VISetWindowFullscreen(bool fullscreen);
 bool VIGetWindowFullscreen();
+void VISetWindowSize(uint32_t width, uint32_t height);
+void VISetWindowPosition(uint32_t x, uint32_t y);
+void VICenterWindow();
+
+/**
+ * \brief Lock the GX framebuffer to a specific aspect ratio, without changing the native framebuffer.
+ *
+ * @param width Width part of the aspect ratio fraction.
+ * @param height Height part of the aspect ratio fraction.
+ */
+void VILockAspectRatio(int width, int height);
+
+/**
+ * \brief Undoes a previous call to VILockAspectRatio.
+ */
+void VIUnlockAspectRatio();
 #endif
 
 #ifdef __cplusplus

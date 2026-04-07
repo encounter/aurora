@@ -10,6 +10,7 @@
 
 #include <aurora/gfx.h>
 #include <aurora/math.hpp>
+#include <dolphin/gx/GXEnum.h>
 #include <webgpu/webgpu_cpp.h>
 #define XXH_STATIC_LINKING_ONLY
 #include <xxhash.h>
@@ -153,6 +154,12 @@ private:
 } // namespace aurora
 
 namespace aurora::gfx {
+inline constexpr uint64_t UniformBufferSize = 25165824;  // 24mb
+inline constexpr uint64_t VertexBufferSize = 3145728;    // 3mb
+inline constexpr uint64_t IndexBufferSize = 1048576;     // 1mb
+inline constexpr uint64_t StorageBufferSize = 8388608;   // 8mb
+inline constexpr uint64_t TextureUploadSize = 268435456; // 256mb
+
 extern AuroraStats g_stats;
 extern wgpu::Buffer g_vertexBuffer;
 extern wgpu::Buffer g_uniformBuffer;
@@ -200,6 +207,7 @@ struct TextureRef;
 using TextureHandle = std::shared_ptr<TextureRef>;
 
 enum class ShaderType : uint8_t {
+  Clear = 0,
   GX = 1,
 };
 
@@ -211,7 +219,19 @@ void end_frame(const wgpu::CommandEncoder& cmd);
 void render(wgpu::CommandEncoder& cmd);
 void render_pass(const wgpu::RenderPassEncoder& pass, uint32_t idx);
 void map_staging_buffer();
-void resolve_pass(TextureHandle texture, ClipRect rect, bool clear, Vec4<float> clearColor);
+void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
+                  Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat = GX_TF_RGBA8);
+
+void begin_offscreen(uint32_t width, uint32_t height);
+void end_offscreen();
+bool is_offscreen() noexcept;
+uint32_t get_sample_count() noexcept;
+void clear_offscreen_cache();
+
+namespace tex_palette_conv {
+struct ConvRequest;
+} // namespace tex_palette_conv
+void queue_palette_conv(tex_palette_conv::ConvRequest req);
 
 Range push_verts(const uint8_t* data, size_t length);
 template <typename T>
@@ -264,4 +284,7 @@ uint32_t align_uniform(uint32_t value);
 const Viewport& get_viewport() noexcept;
 void set_viewport(float left, float top, float width, float height, float znear, float zfar) noexcept;
 void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept;
+
+void push_debug_group(std::string label);
+void insert_debug_marker(std::string label);
 } // namespace aurora::gfx

@@ -73,3 +73,23 @@ void C_MTXMultVecArraySR(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 coun
   }
 }
 
+void C_MTXROMultVecArray(const ROMtx m, const Vec *srcBase, Vec *dstBase, u32 count)
+{
+  u32 i;
+  Vec vTmp;
+
+  assert(m && "MTXROMultVecArray():  NULL MtxPtr 'm' ");
+  assert(srcBase && "MTXROMultVecArray():  NULL VecPtr 'srcBase' ");
+  assert(dstBase && "MTXROMultVecArray():  NULL VecPtr 'dstBase' ");
+
+  for(i = 0; i < count; i++) {
+    vTmp.x = (m[0][0] * srcBase->x) + (m[1][0] * srcBase->y) + (m[2][0] * srcBase->z) + m[3][0];
+    vTmp.y = (m[0][1] * srcBase->x) + (m[1][1] * srcBase->y) + (m[2][1] * srcBase->z) + m[3][1];
+    vTmp.z = (m[0][2] * srcBase->x) + (m[1][2] * srcBase->y) + (m[2][2] * srcBase->z) + m[3][2];
+    dstBase->x = vTmp.x;
+    dstBase->y = vTmp.y;
+    dstBase->z = vTmp.z;
+    srcBase++;
+    dstBase++;
+  }
+}

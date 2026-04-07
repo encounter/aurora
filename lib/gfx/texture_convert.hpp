@@ -5,21 +5,28 @@
 #include "../webgpu/gpu.hpp"
 
 namespace aurora::gfx {
-static wgpu::TextureFormat to_wgpu(u32 format) {
-  switch (format) {
+static constexpr wgpu::TextureFormat to_wgpu(u32 gxFormat) {
+  switch (gxFormat) {
   case GX_TF_I4:
   case GX_TF_I8:
   case GX_TF_R8_PC:
+  case GX_CTF_R4:
+  case GX_CTF_A8:
+  case GX_CTF_R8:
+  case GX_CTF_B8:
+  case GX_CTF_G8:
     return wgpu::TextureFormat::R8Unorm;
+  case GX_TF_IA4:
+  case GX_TF_IA8:
+  case GX_CTF_RA4:
+  case GX_CTF_RA8:
+  case GX_CTF_RG8:
+  case GX_CTF_GB8:
+    return wgpu::TextureFormat::RG8Unorm;
   case GX_TF_C4:
   case GX_TF_C8:
   case GX_TF_C14X2:
     return wgpu::TextureFormat::R16Sint;
-  case GX_TF_CMPR:
-    if (webgpu::g_device.HasFeature(wgpu::FeatureName::TextureCompressionBC)) {
-      return wgpu::TextureFormat::BC1RGBAUnorm;
-    }
-    [[fallthrough]];
   default:
     return wgpu::TextureFormat::RGBA8Unorm;
   }
