@@ -233,6 +233,15 @@ void end_frame() noexcept {
     // Copy EFB -> XFB (swapchain)
     pass.SetPipeline(webgpu::g_CopyPipeline);
     pass.SetBindGroup(0, webgpu::g_CopyBindGroup, 0, nullptr);
+
+    // Center viewport to framebuffer size in case we're at an aspect ratio lock.
+    {
+      uint32_t pos_x = (webgpu::g_graphicsConfig.surfaceConfiguration.width - webgpu::g_frameBuffer.size.width) / 2;
+      uint32_t pos_y = (webgpu::g_graphicsConfig.surfaceConfiguration.height - webgpu::g_frameBuffer.size.height) / 2;
+
+      pass.SetViewport(pos_x, pos_y, webgpu::g_frameBuffer.size.width, webgpu::g_frameBuffer.size.height, 0, 1);
+    }
+
     pass.Draw(3);
     imgui::render(pass);
     pass.End();

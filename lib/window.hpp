@@ -23,4 +23,6 @@ bool get_fullscreen();
 void set_window_size(uint32_t width, uint32_t height);
 void set_window_position(uint32_t x, uint32_t y);
 void center_window();
+void lock_aspect_ratio(int width, int height);
+void unlock_aspect_ratio();
 }; // namespace aurora::window
