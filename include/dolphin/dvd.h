@@ -198,7 +198,7 @@ int DVDReadDir(DVDDir* dir, DVDDirEntry* dirent);
 int DVDCloseDir(DVDDir* dir);
 void DVDRewindDir(DVDDir* dir);
 void* DVDGetFSTLocation(void);
-const u8* DVDGetDOLLocation(s32& out_size);
+const u8* DVDGetDOLLocation(s32* out_size);
 BOOL DVDPrepareStreamAsync(DVDFileInfo* fileInfo, u32 length, u32 offset, DVDCallback callback);
 s32 DVDPrepareStream(DVDFileInfo* fileInfo, u32 length, u32 offset);
 s32 DVDGetTransferredSize(DVDFileInfo* fileinfo);
