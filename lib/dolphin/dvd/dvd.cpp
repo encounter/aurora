@@ -395,6 +395,23 @@ void aurora_dvd_close(void) { clearState(); }
 
 void DVDInit(void) {}
 
+const u8* DVDGetDOLLocation(s32* out_size) {
+  if (s_partition == nullptr) {
+    *out_size = 0;
+    return nullptr;
+  }
+
+  NodPartitionMeta meta{};
+
+  if (nod_partition_meta(s_partition, &meta) != NOD_RESULT_OK) {
+    *out_size = 0;
+    return nullptr;
+  }
+
+  *out_size = meta.raw_dol.size;
+  return meta.raw_dol.data;
+}
+
 int DVDReadAbsAsyncPrio(DVDCommandBlock* block, void* addr, s32 length, s32 offset, DVDCBCallback callback, s32 prio) {
   (void)prio;
   ASSERTMSGLINE(0x780, block, "DVDReadAbsAsync(): null pointer is specified to command block address.");
@@ -778,9 +795,6 @@ BOOL DVDChangeDir(const char* dirName) {
 BOOL DVDReadAsyncPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset, DVDCallback callback, s32 prio) {
   ASSERTMSGLINE(0x2C7, fileInfo, "DVDReadAsync(): null pointer is specified to file info address  ");
   ASSERTMSGLINE(0x2C8, addr, "DVDReadAsync(): null pointer is specified to addr  ");
-  ASSERTMSGLINE(0x2CC, isAligned(addr, 32), "DVDReadAsync(): address must be aligned with 32 byte boundaries  ");
-  ASSERTMSGLINE(0x2CE, !(length & 0x1F), "DVDReadAsync(): length must be  multiple of 32 byte  ");
-  ASSERTMSGLINE(0x2D0, !(offset & 3), "DVDReadAsync(): offset must be multiple of 4 byte  ");
 
   ASSERTMSGLINE(0x2D5, (0 <= offset) && (offset <= static_cast<s32>(fileInfo->length)),
                 "DVDReadAsync(): specified area is out of the file  ");
