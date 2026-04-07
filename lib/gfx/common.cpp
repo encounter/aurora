@@ -6,6 +6,7 @@
 #include "../gx/pipeline.hpp"
 #include "tex_copy_conv.hpp"
 #include "tex_palette_conv.hpp"
+#include "texture_replacement.hpp"
 #include "texture.hpp"
 
 #include <atomic>
@@ -32,12 +33,6 @@ using webgpu::g_queue;
 std::vector<std::string> g_debugGroupStack;
 std::vector<std::string> g_debugMarkers;
 #endif
-
-constexpr uint64_t UniformBufferSize = 25165824; // 24mb
-constexpr uint64_t VertexBufferSize = 3145728;   // 3mb
-constexpr uint64_t IndexBufferSize = 1048576;    // 1mb
-constexpr uint64_t StorageBufferSize = 8388608;  // 8mb
-constexpr uint64_t TextureUploadSize = 25165824; // 24mb
 
 constexpr uint64_t StagingBufferSize =
     UniformBufferSize + VertexBufferSize + IndexBufferSize + StorageBufferSize + TextureUploadSize;
@@ -614,6 +609,7 @@ void save_pipeline_cache() {
 void initialize() {
   tex_copy_conv::initialize();
   tex_palette_conv::initialize();
+  texture_replacement::initialize();
 
   // No async pipelines for OpenGL (ES)
   if (webgpu::g_backendType == wgpu::BackendType::OpenGL || webgpu::g_backendType == wgpu::BackendType::OpenGLES ||
@@ -670,6 +666,7 @@ void shutdown() {
 
   tex_copy_conv::shutdown();
   tex_palette_conv::shutdown();
+  texture_replacement::shutdown();
   gx::shutdown();
 
   g_textureUploads.clear();

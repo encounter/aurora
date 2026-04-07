@@ -44,6 +44,10 @@ TextureFormatInfo format_info(wgpu::TextureFormat format) {
     return {1, 1, 4, false};
   case wgpu::TextureFormat::BC1RGBAUnorm:
     return {4, 4, 8, true};
+  case wgpu::TextureFormat::BC3RGBAUnorm:
+  case wgpu::TextureFormat::BC5RGUnorm:
+  case wgpu::TextureFormat::BC7RGBAUnorm:
+    return {4, 4, 16, true};
   }
 }
 

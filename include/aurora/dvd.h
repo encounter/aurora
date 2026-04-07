@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include <stdbool.h>
+#include <dolphin/types.h>
 
 /**
  * Open a GC/Wii disc image for use by the DVD API.

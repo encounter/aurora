@@ -30,6 +30,8 @@ typedef struct {
 
 const AuroraStats* aurora_get_stats();
 
+void aurora_enable_vsync(bool enabled);
+
 #ifdef __cplusplus
 }
 #endif

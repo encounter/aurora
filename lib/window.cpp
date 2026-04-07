@@ -29,12 +29,15 @@ Module Log("aurora::window");
 
 SDL_Window* g_window;
 SDL_Renderer* g_renderer;
+bool g_aspectRatioLocked;
+int g_aspectRatioW, g_aspectRatioH;
 AuroraWindowSize g_windowSize;
 std::vector<AuroraEvent> g_events;
 
 inline bool operator==(const AuroraWindowSize& lhs, const AuroraWindowSize& rhs) {
   return lhs.width == rhs.width && lhs.height == rhs.height && lhs.fb_width == rhs.fb_width &&
-         lhs.fb_height == rhs.fb_height && lhs.scale == rhs.scale;
+         lhs.fb_height == rhs.fb_height && lhs.native_fb_height == rhs.native_fb_height &&
+         lhs.native_fb_width == rhs.native_fb_width && lhs.scale == rhs.scale;
 }
 
 void resize_swapchain() noexcept {
@@ -49,7 +52,7 @@ void resize_swapchain() noexcept {
   }
   g_windowSize = size;
 #ifdef AURORA_ENABLE_GX
-  webgpu::resize_swapchain(size.fb_width, size.fb_height);
+  webgpu::resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height);
 #endif
 }
 
@@ -156,6 +159,19 @@ const AuroraEvent* poll_events() {
           .type = AURORA_EXIT,
       });
     default:
+      if (event.type == g_sdlCustomEventsStart) {
+        // Future resize event
+        resize_swapchain();
+        g_events.push_back(AuroraEvent{
+            .type = AURORA_WINDOW_RESIZED,
+            .windowSize = get_window_size(),
+        });
+      } else if (event.type == g_sdlCustomEventsStart + 1) {
+        // Refresh surface (vsync changed)
+#ifdef AURORA_ENABLE_GX
+        webgpu::refresh_surface(false);
+#endif
+      }
       break;
     }
 
@@ -315,16 +331,32 @@ void shutdown() {
 AuroraWindowSize get_window_size() {
   int width = 0;
   int height = 0;
-  int fb_w = 0;
-  int fb_h = 0;
+  int native_fb_w = 0;
+  int native_fb_h = 0;
   ASSERT(SDL_GetWindowSize(g_window, &width, &height), "Failed to get window size: {}", SDL_GetError());
-  ASSERT(SDL_GetWindowSizeInPixels(g_window, &fb_w, &fb_h), "Failed to get window size in pixels: {}", SDL_GetError());
+  ASSERT(SDL_GetWindowSizeInPixels(g_window, &native_fb_w, &native_fb_h), "Failed to get window size in pixels: {}", SDL_GetError());
+
+  int fb_w = native_fb_w;
+  int fb_h = native_fb_h;
+
+  if (g_aspectRatioLocked) {
+    // Try as if bounded on width.
+    fb_h = fb_w * g_aspectRatioH / g_aspectRatioW;
+    if (fb_h > native_fb_h) {
+      // Bounded on height instead.
+      fb_h = native_fb_h;
+      fb_w = fb_h * g_aspectRatioW / g_aspectRatioH;
+    }
+  }
+
   const float scale = SDL_GetWindowDisplayScale(g_window);
   return {
       .width = static_cast<uint32_t>(width),
       .height = static_cast<uint32_t>(height),
       .fb_width = static_cast<uint32_t>(fb_w),
       .fb_height = static_cast<uint32_t>(fb_h),
+      .native_fb_width = static_cast<uint32_t>(native_fb_w),
+      .native_fb_height = static_cast<uint32_t>(native_fb_h),
       .scale = scale,
   };
 }
@@ -354,6 +386,27 @@ void set_window_position(uint32_t x, uint32_t y) {
 
 void center_window() {
   TRY_WARN(SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED), "Failed to center window: {}", SDL_GetError());
+}
+
+static void push_future_resize_event() {
+  SDL_Event event{.type = g_sdlCustomEventsStart};
+  TRY_WARN(SDL_PushEvent(&event), "Failed to push SDL event for future resize: {}", SDL_GetError());
+}
+
+void lock_aspect_ratio(int width, int height) {
+  g_aspectRatioLocked = true;
+  g_aspectRatioW = width;
+  g_aspectRatioH = height;
+
+  // Defer so that we don't try to reconfigure the surface in the middle of game logic.
+  push_future_resize_event();
+}
+
+void unlock_aspect_ratio() {
+  g_aspectRatioLocked = false;
+
+  // Defer so that we don't try to reconfigure the surface in the middle of game logic.
+  push_future_resize_event();
 }
 
 } // namespace aurora::window
