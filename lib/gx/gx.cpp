@@ -467,7 +467,7 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
     wgpu::BindGroupEntry& textureEntry = textureEntries[textureCount];
     samplerEntry.binding = textureCount;
     textureEntry.binding = textureCount;
-    if (tex) {
+    if (tex && (info.sampledTextures[i] || info.sampledIndTextures[i])) {
       samplerEntry.sampler = gfx::sampler_ref(tex.get_descriptor());
       textureEntry.textureView = tex.texObj.ref->sampleTextureView;
     } else {
