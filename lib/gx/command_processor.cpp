@@ -104,20 +104,35 @@ static constexpr u8 CP_OPCODE_MASK = GX_OPCODE_MASK;
 static constexpr u8 CP_VAT_MASK = GX_VAT_MASK;
 
 // Read helpers for big/little endian
+#if _MSC_VER
+template<typename T>
+__forceinline // Yes, this was necessary.
+inline T unaligned_load(const T* ptr) {
+  return *static_cast<const __unaligned T*>(ptr);
+}
+#else
+template<typename T>
+inline T unaligned_load(const T* ptr) {
+  T copy;
+  memcpy(&copy, ptr, sizeof(T));
+  return copy;
+}
+#endif
+
 static inline u16 read_u16(const u8* ptr, bool bigEndian) {
+  const u16 val = unaligned_load(reinterpret_cast<const u16*>(ptr));
   if (bigEndian) {
-    return static_cast<u16>(ptr[0] << 8 | ptr[1]);
+    return bswap(val);
   }
-  return static_cast<u16>(ptr[1] << 8 | ptr[0]);
+  return val;
 }
 
 static inline u32 read_u32(const u8* ptr, bool bigEndian) {
+  const u32 val = unaligned_load(reinterpret_cast<const u32*>(ptr));
   if (bigEndian) {
-    return static_cast<u32>(ptr[0]) << 24 | static_cast<u32>(ptr[1]) << 16 | static_cast<u32>(ptr[2]) << 8 |
-           static_cast<u32>(ptr[3]);
+    return bswap(val);
   }
-  return static_cast<u32>(ptr[3]) << 24 | static_cast<u32>(ptr[2]) << 16 | static_cast<u32>(ptr[1]) << 8 |
-         static_cast<u32>(ptr[0]);
+  return val;
 }
 
 static u32 bp_get(u32 reg, u32 size, u32 shift);
@@ -426,7 +441,7 @@ void process(const u8* data, u32 size, bool bigEndian) {
 }
 
 // Helper to extract bit fields from a 32-bit register
-static u32 bp_get(u32 reg, u32 size, u32 shift) { return reg >> shift & (1u << size) - 1; }
+inline static u32 bp_get(u32 reg, u32 size, u32 shift) { return reg >> shift & (1u << size) - 1; }
 
 // BP register handler - decodes BP (RAS/pixel engine) register writes and updates g_gxState
 static void handle_bp(u32 value, bool bigEndian) {
