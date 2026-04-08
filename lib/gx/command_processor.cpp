@@ -1030,6 +1030,7 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
     vd[GX_VA_CLR0] = static_cast<GXAttrType>(bp_get(value, 2, 13));
     vd[GX_VA_CLR1] = static_cast<GXAttrType>(bp_get(value, 2, 15));
     g_gxState.stateDirty = true;
+    g_gxState.clearVtxSizeCache();
     break;
   }
 
@@ -1045,6 +1046,7 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
     vd[GX_VA_TEX6] = static_cast<GXAttrType>(bp_get(value, 2, 12));
     vd[GX_VA_TEX7] = static_cast<GXAttrType>(bp_get(value, 2, 14));
     g_gxState.stateDirty = true;
+    g_gxState.clearVtxSizeCache();
     break;
   }
 
@@ -1086,6 +1088,7 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
       vf.attrs[GX_VA_TEX0].type = static_cast<GXCompType>(bp_get(value, 3, 22));
       vf.attrs[GX_VA_TEX0].frac = static_cast<u8>(bp_get(value, 5, 25));
       g_gxState.stateDirty = true;
+      g_gxState.clearVtxSizeCache();
     }
     // VAT B registers (0x80-0x87)
     else if (addr >= 0x80 && addr <= 0x87) {
@@ -1104,6 +1107,7 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
       vf.attrs[GX_VA_TEX4].type = static_cast<GXCompType>(bp_get(value, 3, 28));
       // TEX4 frac is in VAT C
       g_gxState.stateDirty = true;
+      g_gxState.clearVtxSizeCache();
     }
     // VAT C registers (0x90-0x97)
     else if (addr >= 0x90 && addr <= 0x97) {
@@ -1120,6 +1124,7 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
       vf.attrs[GX_VA_TEX7].type = static_cast<GXCompType>(bp_get(value, 3, 24));
       vf.attrs[GX_VA_TEX7].frac = static_cast<u8>(bp_get(value, 5, 27));
       g_gxState.stateDirty = true;
+      g_gxState.clearVtxSizeCache();
     }
     // Array base addresses (0xA0-0xAF)
     else if (addr >= 0xA0 && addr <= 0xAF) {
@@ -1362,16 +1367,24 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
   pos += dataBytes;
 }
 
+static void handle_draw_overrun [[noreturn]] (u32 totalVtxBytes, const u8* data, const u32& pos, u32 size) {
+  // Hex dump around the draw command for debugging
+  u32 cmdPos = pos - 2 - 1; // opcode byte position (before vtxCount and pos++)
+  u32 dumpStart = (cmdPos > 16) ? cmdPos - 16 : 0;
+  u32 dumpEnd = (cmdPos + 32 < size) ? cmdPos + 32 : size;
+  std::string hex;
+  for (u32 i = dumpStart; i < dumpEnd; i++) {
+    if (i == cmdPos)
+      hex += fmt::format("[{:02x}]", data[i]);
+    else
+      hex += fmt::format(" {:02x}", data[i]);
+  }
+  Log.error("  hex dump around draw cmd (pos {}-{}):{}", dumpStart, dumpEnd - 1, hex);
+  FATAL("draw vertex data overrun: need {} bytes at pos {}, have {}", totalVtxBytes, pos, size);
+}
+
 // Draw command handler - parses vertices inline and caches results
-static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndian) {
-  u8 opcode = cmd & CP_OPCODE_MASK;
-  GXVtxFmt fmt = static_cast<GXVtxFmt>(cmd & CP_VAT_MASK);
-  GXPrimitive prim = static_cast<GXPrimitive>(opcode);
-
-  CHECK(pos + 2 <= size, "draw vtxCount read overrun");
-  u16 vtxCount = read_u16(data + pos, bigEndian);
-  pos += 2;
-
+static u32 calculate_last_vtx_size(GXVtxFmt fmt) {
   u32 vtxSize = 0;
   const auto& vtxFmt = g_gxState.vtxFmts[fmt];
   for (int i = GX_VA_PNMTXIDX; i <= GX_VA_TEX7; ++i) {
@@ -1392,38 +1405,51 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
       break;
     }
   }
+
+  g_gxState.lastVtxFmt = fmt;
+  g_gxState.lastVtxSize = vtxSize;
+
+  return vtxSize;
+}
+
+static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange);
+
+// Draw command handler - parses vertices inline and caches results
+static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndian) {
+  u8 opcode = cmd & CP_OPCODE_MASK;
+  GXVtxFmt fmt = static_cast<GXVtxFmt>(cmd & CP_VAT_MASK);
+  GXPrimitive prim = static_cast<GXPrimitive>(opcode);
+
+  CHECK(pos + 2 <= size, "draw vtxCount read overrun");
+  u16 vtxCount = read_u16(data + pos, bigEndian);
+  pos += 2;
+
+  u32 vtxSize;
+  if (g_gxState.lastVtxFmt == fmt) LIKELY {
+    vtxSize = g_gxState.lastVtxSize;
+  } else UNLIKELY {
+    vtxSize = calculate_last_vtx_size(fmt);
+  }
+
   u32 totalVtxBytes = vtxCount * vtxSize;
-  if (pos + totalVtxBytes > size) {
-    // Hex dump around the draw command for debugging
-    u32 cmdPos = pos - 2 - 1; // opcode byte position (before vtxCount and pos++)
-    u32 dumpStart = (cmdPos > 16) ? cmdPos - 16 : 0;
-    u32 dumpEnd = (cmdPos + 32 < size) ? cmdPos + 32 : size;
-    std::string hex;
-    for (u32 i = dumpStart; i < dumpEnd; i++) {
-      if (i == cmdPos)
-        hex += fmt::format("[{:02x}]", data[i]);
-      else
-        hex += fmt::format(" {:02x}", data[i]);
-    }
-    Log.error("  hex dump around draw cmd (pos {}-{}):{}", dumpStart, dumpEnd - 1, hex);
-    FATAL("draw vertex data overrun: need {} bytes at pos {}, have {}", totalVtxBytes, pos, size);
+  if (pos + totalVtxBytes > size) UNLIKELY {
+    handle_draw_overrun(totalVtxBytes, data, pos, size);
   }
 
   // Push raw vertex data to buffer
   gfx::Range vertRange = gfx::push_verts(data + pos, totalVtxBytes);
   pos += totalVtxBytes;
 
-  u32 numIndices = 0;
-  gfx::Range idxRange;
   // Try to merge with previous draw call
-  if (!g_gxState.stateDirty) {
+  if (!g_gxState.stateDirty) LIKELY {
     auto* lastDraw = gfx::get_last_draw_command<DrawData>();
     // Only if the previous draw call was a single instance draw (no lines/points handling)
     if (lastDraw != nullptr && prim != GX_LINES && prim != GX_LINESTRIP && prim != GX_POINTS &&
-        lastDraw->instanceCount == 1) {
-      ByteBuffer idxBuf;
-      numIndices = prepare_idx_buffer(idxBuf, prim, lastDraw->vtxCount, vtxCount);
-      idxRange = gfx::push_indices(idxBuf.data(), idxBuf.size());
+        lastDraw->instanceCount == 1) LIKELY {
+      static ByteBuffer idxBuf;
+      u32 numIndices = prepare_idx_buffer(idxBuf, prim, lastDraw->vtxCount, vtxCount);
+      gfx::Range idxRange = gfx::push_indices(idxBuf.data(), idxBuf.size());
+      idxBuf.setLengthZero();
       CHECK(lastDraw->vertRange.offset + lastDraw->vertRange.size == vertRange.offset,
             "Non-consecutive vertex ranges ({} < {})", lastDraw->vertRange.offset + lastDraw->vertRange.size,
             vertRange.offset);
@@ -1438,6 +1464,13 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
       return;
     }
   }
+
+  handle_draw_unmerged(prim, fmt, vtxCount, vertRange);
+}
+
+static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange) {
+  u32 numIndices = 0;
+  gfx::Range idxRange;
 
   {
     ByteBuffer idxBuf;

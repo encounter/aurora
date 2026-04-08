@@ -119,6 +119,14 @@ public:
     m_owned = true;
   }
 
+  void setLengthZero() {
+    if (!m_owned) {
+      abort();
+    }
+
+    m_length = 0;
+  }
+
   void reserve_extra(size_t size) { resize(m_length + size, true); }
 
 private:
