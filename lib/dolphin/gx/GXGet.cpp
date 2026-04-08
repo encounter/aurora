@@ -304,19 +304,19 @@ void* GXGetTexObjData(GXTexObj* tex_obj) {
   return const_cast<void*>(reinterpret_cast<const GXTexObj_*>(tex_obj)->data);
 }
 
-u16 GXGetTexObjWidth(GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->width; }
+u16 GXGetTexObjWidth(GXTexObj* tex_obj) { return static_cast<u16>(reinterpret_cast<const GXTexObj_*>(tex_obj)->width()); }
 
-u16 GXGetTexObjHeight(GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->height; }
+u16 GXGetTexObjHeight(GXTexObj* tex_obj) { return static_cast<u16>(reinterpret_cast<const GXTexObj_*>(tex_obj)->height()); }
 
 GXTexFmt GXGetTexObjFmt(GXTexObj* tex_obj) {
-  return static_cast<GXTexFmt>(reinterpret_cast<const GXTexObj_*>(tex_obj)->fmt);
+  return static_cast<GXTexFmt>(reinterpret_cast<const GXTexObj_*>(tex_obj)->format());
 }
 
-GXTexWrapMode GXGetTexObjWrapS(GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->wrapS; }
+GXTexWrapMode GXGetTexObjWrapS(GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->wrap_s(); }
 
-GXTexWrapMode GXGetTexObjWrapT(GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->wrapT; }
+GXTexWrapMode GXGetTexObjWrapT(GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->wrap_t(); }
 
-GXBool GXGetTexObjMipMap(GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->hasMips; }
+GXBool GXGetTexObjMipMap(GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->has_mips(); }
 
 // TODO GXGetTexObjAll
 // TODO GXGetTexObjMinFilt

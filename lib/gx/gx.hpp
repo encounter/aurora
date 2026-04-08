@@ -280,6 +280,39 @@ inline bool operator==(const AttrArray& lhs, const AttrArray& rhs) {
 inline bool operator!=(const AttrArray& lhs, const AttrArray& rhs) { return !(lhs == rhs); }
 
 struct GXState {
+  struct LoadedTextureSlot {
+    u32 mode0 = 0;
+    u32 mode1 = 0;
+    u32 image0 = 0;
+    u32 image1 = 0;
+    u32 image2 = 0;
+    u32 image3 = 0;
+    u32 tlut = 0;
+    const void* imageData = nullptr;
+    u32 width = 0;
+    u32 height = 0;
+    GXTexFmt format = GX_TF_I4;
+    GXBool hasMips = false;
+    u32 texObjId = 0;
+    u32 texDataVersion = 0;
+    bool valid = false;
+  };
+  struct LoadedTlutSlot {
+    u32 tlut = 0;
+    u32 loadTlut0 = 0;
+    const void* data = nullptr;
+    GXTlutFmt format = GX_TL_IA8;
+    u16 entries = 0;
+    u32 tlutObjId = 0;
+    u32 tlutDataVersion = 0;
+    bool valid = false;
+  };
+  struct CopyTextureRef {
+    gfx::TextureHandle handle;
+    u32 revision = 0;
+
+    operator bool() const noexcept { return handle.operator bool(); }
+  };
   std::array<PnMtx, MaxPnMtx> pnMtx;
   u32 currentPnMtx;
   Mat4x4<float> proj;
@@ -310,7 +343,8 @@ struct GXState {
   std::array<Light, GX::MaxLights> lights;
   std::array<TevStage, MaxTevStages> tevStages;
   std::array<gfx::TextureBind, MaxTextures> textures;
-  std::array<GXTlutObj_, MaxTluts> tluts;
+  std::array<LoadedTextureSlot, MaxTextures> loadedTextures;
+  std::array<LoadedTlutSlot, MaxTluts> loadedTluts;
   std::array<Mat3x4<float>, MaxTexMtx> texMtxs;
   std::array<Mat3x4<float>, MaxPTTexMtx> ptTexMtxs;
   std::array<TcgConfig, MaxTexCoord> tcgs;
@@ -345,8 +379,8 @@ struct GXState {
       return H::combine(std::move(h), key.dest, key.width, key.height, key.format);
     }
   };
-  absl::flat_hash_map<const void*, gfx::TextureHandle> copyTextures;
-  absl::flat_hash_map<CopyTextureKey, gfx::TextureHandle> copyTextureCache;
+  absl::flat_hash_map<const void*, CopyTextureRef> copyTextures;
+  absl::flat_hash_map<CopyTextureKey, CopyTextureRef> copyTextureCache;
   bool depthCompare = true;
   bool depthUpdate = true;
   bool colorUpdate = true;
@@ -356,15 +390,20 @@ struct GXState {
   u8 numTevStages = 0;
   u8 numTexGens = 0;
   bool stateDirty = true;
-  std::array<u32, 0x100> bpRegCache;
-  GXState() { bpRegCache[0xFE] = 0x00FFFFFF; }
+  std::array<u32, 0x100> bpRegCache = [] {
+    std::array<u32, 0x100> regs{};
+    regs[0xFE] = 0x00FFFFFF;
+    return regs;
+  }();
 };
 extern GXState g_gxState;
+struct ShaderInfo;
 
 void initialize() noexcept;
 void shutdown() noexcept;
 void clear_copy_texture_cache() noexcept;
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept;
+void resolve_sampled_textures(const ShaderInfo& info) noexcept;
 
 inline float clear_depth_value() {
   const float normalizedDepth = static_cast<float>(g_gxState.clearDepth) / 16777215.f;
@@ -372,10 +411,7 @@ inline float clear_depth_value() {
 }
 
 static inline bool requires_load_conversion(const GXTexObj_& obj) {
-  if (!obj.ref) {
-    return false;
-  }
-  switch (obj.fmt) {
+  switch (obj.format()) {
   case GX_TF_I4:
   case GX_TF_I8:
   case GX_TF_C4:

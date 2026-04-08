@@ -149,9 +149,9 @@ void GXCopyTex(void* dest, GXBool clear) {
                            : GX_TF_RGBA8;
       handle = aurora::gfx::new_render_texture(dstWidth, dstHeight, fmt, "Resolved Texture");
     }
-    it = g_gxState.copyTextureCache.emplace(key, handle).first;
+    it = g_gxState.copyTextureCache.emplace(key, aurora::gx::GXState::CopyTextureRef{.handle = handle, .revision = 0}).first;
   }
-  const auto& handle = it->second;
+  auto& handle = it->second;
 
   if (g_gxState.alphaUpdate && g_gxState.dstAlpha != UINT32_MAX) {
     if (!clear) {
@@ -171,9 +171,9 @@ void GXCopyTex(void* dest, GXBool clear) {
   const auto clearColor = clear && g_gxState.colorUpdate;
   const auto clearAlpha = clear && g_gxState.alphaUpdate;
   const auto clearDepth = clear && g_gxState.depthUpdate;
-  aurora::gfx::resolve_pass(handle, rect, clearColor, clearAlpha, clearDepth, g_gxState.clearColor,
+  aurora::gfx::resolve_pass(handle.handle, rect, clearColor, clearAlpha, clearDepth, g_gxState.clearColor,
                             aurora::gx::clear_depth_value(), texCopyFmt);
-
+  ++handle.revision;
   g_gxState.copyTextures[dest] = handle;
 }
 

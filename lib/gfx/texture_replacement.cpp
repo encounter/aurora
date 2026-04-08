@@ -31,8 +31,8 @@ Module Log("aurora::gfx::texture_replacement");
 struct RuntimeTextureKey {
   uint64_t textureHash = 0;
   uint64_t tlutHash = 0;
-  u16 width = 0;
-  u16 height = 0;
+  u32 width = 0;
+  u32 height = 0;
   bool hasMips = false;
   bool hasTlut = false;
   u32 format = 0;
@@ -71,8 +71,8 @@ std::filesystem::path s_dumpRoot;
 uint64_t s_replacementCacheBytes = 0;
 constexpr uint64_t kReplacementCacheBudgetBytes = 4294967296; // 4GB, reasonable for modern hardware?
 
-constexpr u32 mip_count(const GXTexObj_& obj) noexcept {
-  return obj.hasMips ? std::max<u32>(static_cast<u32>(obj.maxLod) + 1, 1) : 1;
+u32 mip_count(const GXTexObj_& obj) noexcept {
+  return obj.has_mips() ? std::max<u32>(static_cast<u32>(obj.max_lod()) + 1, 1) : 1;
 }
 
 u32 summed_mip_size(u32 width, u32 height, u32 bytesPerPixel, u32 mips) noexcept {
@@ -91,13 +91,13 @@ u32 compute_texture_upload_size(const GXTexObj_& obj) noexcept {
   }
 
   const u32 mips = mip_count(obj);
-  switch (obj.fmt) {
+  switch (obj.format()) {
   case GX_TF_R8_PC:
-    return summed_mip_size(obj.width, obj.height, 1, mips);
+    return summed_mip_size(obj.width(), obj.height(), 1, mips);
   case GX_TF_RGBA8_PC:
-    return summed_mip_size(obj.width, obj.height, 4, mips);
+    return summed_mip_size(obj.width(), obj.height(), 4, mips);
   default:
-    return GXGetTexBufferSize(obj.width, obj.height, obj.fmt, obj.hasMips, static_cast<u8>(mips - 1));
+    return GXGetTexBufferSize(obj.width(), obj.height(), obj.format(), obj.has_mips(), static_cast<u8>(mips - 1));
   }
 }
 
@@ -162,7 +162,7 @@ std::optional<u32> parse_u32(std::string_view text, int base = 10) noexcept {
   return value;
 }
 
-std::optional<std::pair<u16, u16>> parse_dimensions(std::string_view text) noexcept {
+std::optional<std::pair<u32, u32>> parse_dimensions(std::string_view text) noexcept {
   const size_t sep = text.find('x');
   if (sep == std::string_view::npos) {
     return std::nullopt;
@@ -170,20 +170,20 @@ std::optional<std::pair<u16, u16>> parse_dimensions(std::string_view text) noexc
 
   const auto width = parse_u32(text.substr(0, sep));
   const auto height = parse_u32(text.substr(sep + 1));
-  if (!width.has_value() || !height.has_value() || *width > UINT16_MAX || *height > UINT16_MAX) {
+  if (!width.has_value() || !height.has_value()) {
     return std::nullopt;
   }
-  return std::pair{static_cast<u16>(*width), static_cast<u16>(*height)};
+  return std::pair{*width, *height};
 }
 
 u32 texture_base_level_size(const GXTexObj_& obj) noexcept {
-  switch (obj.fmt) {
+  switch (obj.format()) {
   case GX_TF_R8_PC:
-    return static_cast<u32>(obj.width) * obj.height;
+    return obj.width() * obj.height();
   case GX_TF_RGBA8_PC:
-    return static_cast<u32>(obj.width) * obj.height * 4;
+    return obj.width() * obj.height() * 4;
   default:
-    return GXGetTexBufferSize(obj.width, obj.height, obj.fmt, false, 0);
+    return GXGetTexBufferSize(obj.width(), obj.height(), obj.format(), false, 0);
   }
 }
 
@@ -201,12 +201,12 @@ constexpr std::optional<size_t> palette_storage_byte_size(u32 format) noexcept {
 }
 
 std::optional<uint64_t> compute_referenced_tlut_hash(const GXTexObj_& obj) noexcept {
-  if (!is_palette_format(obj.fmt) || obj.tlut >= s_loadedTluts.size()) {
+  if (!is_palette_format(obj.format()) || obj.tlut >= s_loadedTluts.size()) {
     return std::nullopt;
   }
 
   const auto& tlut = s_loadedTluts[obj.tlut];
-  const auto paletteSize = palette_storage_byte_size(obj.fmt);
+  const auto paletteSize = palette_storage_byte_size(obj.format());
   const u32 textureSize = texture_base_level_size(obj);
   const auto* textureData = static_cast<const u8*>(obj.data);
   if (!paletteSize.has_value() || !tlut.valid || tlut.data.size() < *paletteSize || textureData == nullptr || textureSize == 0) {
@@ -215,7 +215,7 @@ std::optional<uint64_t> compute_referenced_tlut_hash(const GXTexObj_& obj) noexc
 
   u32 minIndex = 0xffff;
   u32 maxIndex = 0;
-  switch (obj.fmt) {
+  switch (obj.format()) {
   case GX_TF_C4:
     for (u32 i = 0; i < textureSize; ++i) {
       const u32 lowNibble = textureData[i] & 0xf;
@@ -253,7 +253,7 @@ std::optional<uint64_t> compute_referenced_tlut_hash(const GXTexObj_& obj) noexc
 }
 
 const TlutMetadata* get_loaded_tlut(const GXTexObj_& obj) noexcept {
-  if (!is_palette_format(obj.fmt) || obj.tlut >= s_loadedTluts.size()) {
+  if (!is_palette_format(obj.format()) || obj.tlut >= s_loadedTluts.size()) {
     return nullptr;
   }
 
@@ -350,7 +350,7 @@ std::vector<u8> copy_rgba8_pixels(ArrayRef<u8> pixels) {
 }
 
 std::optional<std::vector<u8>> build_palette_rgba8_pixels(const GXTexObj_& obj, ArrayRef<u8> rawData) noexcept {
-  if (obj.fmt == GX_TF_C14X2) {
+  if (obj.format() == GX_TF_C14X2) {
     return std::nullopt;
   }
 
@@ -359,7 +359,7 @@ std::optional<std::vector<u8>> build_palette_rgba8_pixels(const GXTexObj_& obj, 
     return std::nullopt;
   }
 
-  const auto indices = gfx::convert_texture(obj.fmt, obj.width, obj.height, 1, rawData);
+  const auto indices = gfx::convert_texture(obj.format(), obj.width(), obj.height(), 1, rawData);
   if (indices.empty()) {
     return std::nullopt;
   }
@@ -374,7 +374,7 @@ std::optional<std::vector<u8>> build_palette_rgba8_pixels(const GXTexObj_& obj, 
     return std::nullopt;
   }
 
-  const size_t pixelCount = static_cast<size_t>(obj.width) * obj.height;
+  const size_t pixelCount = static_cast<size_t>(obj.width()) * obj.height();
   if (indices.size() < pixelCount * sizeof(u16)) {
     return std::nullopt;
   }
@@ -402,27 +402,27 @@ std::optional<std::vector<u8>> build_palette_rgba8_pixels(const GXTexObj_& obj, 
 }
 
 std::optional<std::vector<u8>> build_non_palette_rgba8_pixels(const GXTexObj_& obj, ArrayRef<u8> rawData) noexcept {
-  switch (obj.fmt) {
+  switch (obj.format()) {
   case GX_TF_R8_PC:
-    if (rawData.size() < static_cast<size_t>(obj.width) * obj.height) {
+    if (rawData.size() < static_cast<size_t>(obj.width()) * obj.height()) {
       return std::nullopt;
     }
-    return expand_intensity_to_rgba({rawData.data(), static_cast<size_t>(obj.width) * obj.height});
+    return expand_intensity_to_rgba({rawData.data(), static_cast<size_t>(obj.width()) * obj.height()});
   case GX_TF_RGBA8_PC:
-    if (rawData.size() < static_cast<size_t>(obj.width) * obj.height * 4) {
+    if (rawData.size() < static_cast<size_t>(obj.width()) * obj.height() * 4) {
       return std::nullopt;
     }
-    return copy_rgba8_pixels({rawData.data(), static_cast<size_t>(obj.width) * obj.height * 4});
+    return copy_rgba8_pixels({rawData.data(), static_cast<size_t>(obj.width()) * obj.height() * 4});
   default:
     break;
   }
 
-  const auto converted = gfx::convert_texture(obj.fmt, obj.width, obj.height, 1, rawData);
+  const auto converted = gfx::convert_texture(obj.format(), obj.width(), obj.height(), 1, rawData);
   if (converted.empty()) {
     return std::nullopt;
   }
 
-  switch (obj.fmt) {
+  switch (obj.format()) {
   case GX_TF_I4:
   case GX_TF_I8:
     return expand_intensity_to_rgba({converted.data(), converted.size()});
@@ -440,14 +440,14 @@ std::optional<std::vector<u8>> build_non_palette_rgba8_pixels(const GXTexObj_& o
 }
 
 std::optional<std::vector<u8>> build_editable_rgba8_pixels(const GXTexObj_& obj) noexcept {
-  if (obj.data == nullptr || obj.width == 0 || obj.height == 0) {
+  if (obj.data == nullptr || obj.width() == 0 || obj.height() == 0) {
     return std::nullopt;
   }
 
   const u32 dataSize = compute_texture_upload_size(obj);
   const ArrayRef<u8> rawData{static_cast<const u8*>(obj.data), dataSize};
 
-  if (is_palette_format(obj.fmt)) {
+  if (is_palette_format(obj.format())) {
     return build_palette_rgba8_pixels(obj, rawData);
   }
 
@@ -456,11 +456,11 @@ std::optional<std::vector<u8>> build_editable_rgba8_pixels(const GXTexObj_& obj)
 
 RuntimeTextureKey build_runtime_key(const GXTexObj_& obj) noexcept {
   RuntimeTextureKey key{
-      .width = obj.width,
-      .height = obj.height,
-      .hasMips = obj.hasMips,
-      .hasTlut = is_palette_format(obj.fmt),
-      .format = obj.fmt,
+      .width = obj.width(),
+      .height = obj.height(),
+      .hasMips = obj.has_mips(),
+      .hasTlut = is_palette_format(obj.format()),
+      .format = obj.format(),
   };
 
   const u32 textureSize = texture_base_level_size(obj);
@@ -670,7 +670,7 @@ gfx::TextureHandle load_replacement_texture(const RuntimeTextureKey& key, const 
   };
   wgpu::TextureViewDescriptor sampleTextureViewDescriptor = textureViewDescriptor;
   wgpu::TextureComponentSwizzleDescriptor swizzle;
-  if (!replacement_uses_literal_sampling(replacement->format) && setup_replacement_swizzle(swizzle, source.fmt)) {
+  if (!replacement_uses_literal_sampling(replacement->format) && setup_replacement_swizzle(swizzle, source.format())) {
     sampleTextureViewDescriptor.nextInChain = &swizzle;
   }
   auto textureView = texture.CreateView(&sampleTextureViewDescriptor);
@@ -690,12 +690,11 @@ void cache_replacement(const RuntimeTextureKey& key, const gfx::TextureHandle& h
 }
 
 void bind_replacement(GXTexObj_& obj, GXTexMapID id, const gfx::TextureHandle& handle) noexcept {
-  obj.ref = handle;
-  obj.dataInvalidated = false;
-
   GXTexObj_ out = obj;
-  out.fmt = GX_TF_RGBA8;
-  g_gxState.textures[id] = {out};
+  out.mWidth = handle->size.width;
+  out.mHeight = handle->size.height;
+  out.mFormat = GX_TF_RGBA8_PC;
+  g_gxState.textures[id] = gfx::TextureBind(out, handle);
   g_gxState.stateDirty = true;
 }
 
@@ -706,7 +705,7 @@ bool dump_editable_texture_dds(const RuntimeTextureKey& key, const GXTexObj_& ob
   }
 
   const auto path = s_dumpRoot / format_replacement_filename(key);
-  return dds::write_rgba8_dds(path, obj.width, obj.height, {pixels->data(), pixels->size()});
+  return dds::write_rgba8_dds(path, obj.width(), obj.height(), {pixels->data(), pixels->size()});
 }
 
 bool report_missing_key(const RuntimeTextureKey& key, const GXTexObj_& obj) noexcept {
@@ -770,29 +769,40 @@ bool try_bind_replacement(GXTexObj_& obj, GXTexMapID id) noexcept {
     return false;
   }
 
+  const auto handle = find_replacement(obj);
+  if (!handle.has_value()) {
+    return false;
+  }
+  bind_replacement(obj, id, *handle);
+  return true;
+}
+
+std::optional<TextureHandle> find_replacement(const GXTexObj_& obj) noexcept {
+  if (!g_config.allowTextureReplacements) {
+    return std::nullopt;
+  }
+
   const RuntimeTextureKey key = build_runtime_key(obj);
   const auto* path = find_replacement_path(key);
   if (path == nullptr) {
     report_missing_key(key, obj);
-    return false;
+    return std::nullopt;
   }
 
   if (const auto* cached = find_cached_replacement(key); cached != nullptr) {
-    bind_replacement(obj, id, *cached);
-    return true;
+    return *cached;
   }
 
   if (s_failedKeys.contains(key)) {
-    return false;
+    return std::nullopt;
   }
 
   auto handle = load_replacement_texture(key, obj, *path);
   if (!handle) {
-    return false;
+    return std::nullopt;
   }
 
   cache_replacement(key, handle);
-  bind_replacement(obj, id, handle);
-  return true;
+  return handle;
 }
 } // namespace aurora::gfx::texture_replacement

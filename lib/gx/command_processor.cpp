@@ -9,6 +9,7 @@
 
 #include <absl/container/flat_hash_map.h>
 
+#include <optional>
 #include <cmath>
 #include <cstring>
 #include "dolphin/gx/GXAurora.h"
@@ -162,6 +163,46 @@ static inline u64 read_u64(const u8* ptr, bool bigEndian) {
   }
 
   return loaded;
+}
+
+struct TexBpRegMapping {
+  u8 texMapId;
+  enum class Kind : uint8_t { Mode0, Mode1, Image0, Image1, Image2, Image3, Tlut } kind;
+};
+
+static std::optional<TexBpRegMapping> decode_tex_bp_reg(u32 regId) {
+  constexpr std::array mode0Ids{0x80u, 0x81u, 0x82u, 0x83u, 0xA0u, 0xA1u, 0xA2u, 0xA3u};
+  constexpr std::array mode1Ids{0x84u, 0x85u, 0x86u, 0x87u, 0xA4u, 0xA5u, 0xA6u, 0xA7u};
+  constexpr std::array image0Ids{0x88u, 0x89u, 0x8Au, 0x8Bu, 0xA8u, 0xA9u, 0xAAu, 0xABu};
+  constexpr std::array image1Ids{0x8Cu, 0x8Du, 0x8Eu, 0x8Fu, 0xACu, 0xADu, 0xAEu, 0xAFu};
+  constexpr std::array image2Ids{0x90u, 0x91u, 0x92u, 0x93u, 0xB0u, 0xB1u, 0xB2u, 0xB3u};
+  constexpr std::array image3Ids{0x94u, 0x95u, 0x96u, 0x97u, 0xB4u, 0xB5u, 0xB6u, 0xB7u};
+  constexpr std::array tlutIds{0x98u, 0x99u, 0x9Au, 0x9Bu, 0xB8u, 0xB9u, 0xBAu, 0xBBu};
+
+  for (u8 i = 0; i < MaxTextures; ++i) {
+    if (regId == mode0Ids[i]) {
+      return TexBpRegMapping{.texMapId = i, .kind = TexBpRegMapping::Kind::Mode0};
+    }
+    if (regId == mode1Ids[i]) {
+      return TexBpRegMapping{.texMapId = i, .kind = TexBpRegMapping::Kind::Mode1};
+    }
+    if (regId == image0Ids[i]) {
+      return TexBpRegMapping{.texMapId = i, .kind = TexBpRegMapping::Kind::Image0};
+    }
+    if (regId == image1Ids[i]) {
+      return TexBpRegMapping{.texMapId = i, .kind = TexBpRegMapping::Kind::Image1};
+    }
+    if (regId == image2Ids[i]) {
+      return TexBpRegMapping{.texMapId = i, .kind = TexBpRegMapping::Kind::Image2};
+    }
+    if (regId == image3Ids[i]) {
+      return TexBpRegMapping{.texMapId = i, .kind = TexBpRegMapping::Kind::Image3};
+    }
+    if (regId == tlutIds[i]) {
+      return TexBpRegMapping{.texMapId = i, .kind = TexBpRegMapping::Kind::Tlut};
+    }
+  }
+  return std::nullopt;
 }
 
 // Helper to convert packed RGBA8 to Vec4<float>
@@ -440,7 +481,8 @@ static void handle_bp(u32 value, bool bigEndian) {
   } else {
     u32 ssMask = g_gxState.bpRegCache[0xFE];
     g_gxState.bpRegCache[0xFE] = 0x00FFFFFF;
-    value = (g_gxState.bpRegCache[regId] & ~ssMask) | (value & ssMask);
+    const u32 merged = (g_gxState.bpRegCache[regId] & ~ssMask) | (value & ssMask);
+    value = (regId << 24) | (merged & 0x00FFFFFF);
     g_gxState.bpRegCache[regId] = value;
   }
 
@@ -710,6 +752,19 @@ static void handle_bp(u32 value, bool bigEndian) {
     g_gxState.zFmt = static_cast<GXZFmt16>(bp_get(value, 3, 3));
     g_gxState.zCompLocBeforeTex = bp_get(value, 1, 6) != 0;
     g_gxState.stateDirty = true;
+    break;
+  }
+
+  // TLUT load address / execute (0x64, 0x65)
+  case 0x64:
+    break;
+  case 0x65: {
+    const auto idx = bp_get(value, 10, 0);
+    if (idx < MaxTluts) {
+      auto& slot = g_gxState.loadedTluts[idx];
+      slot.loadTlut0 = g_gxState.bpRegCache[0x64];
+      slot.entries = static_cast<u16>(bp_get(value, 10, 10) + 1);
+    }
     break;
   }
 
@@ -998,11 +1053,33 @@ static void handle_bp(u32 value, bool bigEndian) {
     break;
   }
 
-  // Texture mode/image registers (0x80-0xBB) - texture config
   default:
-    if (regId >= 0x80 && regId <= 0xBB) {
-      // Texture format/wrap/filter configuration.
-      // These are handled pragmatically - GXLoadTexObj sets texture handles directly.
+    if (const auto mapping = decode_tex_bp_reg(regId); mapping.has_value()) {
+      auto& slot = g_gxState.loadedTextures[mapping->texMapId];
+      switch (mapping->kind) {
+      case TexBpRegMapping::Kind::Mode0:
+        slot.mode0 = value;
+        break;
+      case TexBpRegMapping::Kind::Mode1:
+        slot.mode1 = value;
+        break;
+      case TexBpRegMapping::Kind::Image0:
+        slot.image0 = value;
+        break;
+      case TexBpRegMapping::Kind::Image1:
+        slot.image1 = value;
+        break;
+      case TexBpRegMapping::Kind::Image2:
+        slot.image2 = value;
+        break;
+      case TexBpRegMapping::Kind::Image3:
+        slot.image3 = value;
+        break;
+      case TexBpRegMapping::Kind::Tlut:
+        slot.tlut = value;
+        break;
+      }
+      g_gxState.stateDirty = true;
     } else {
       Log.debug("Unhandled BP register 0x{:02X} (value 0x{:06X})", regId, value & 0xFFFFFF);
     }
@@ -1464,6 +1541,7 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   PipelineConfig config{};
   populate_pipeline_config(config, prim, fmt);
   const auto info = build_shader_info(config.shaderConfig);
+  resolve_sampled_textures(info);
   const auto bindGroups = build_bind_groups(info, config.shaderConfig, ranges);
   const auto pipeline = gfx::pipeline_ref(config);
 
@@ -1527,6 +1605,46 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
       array.cachedRange = {};
       g_gxState.stateDirty = true;
     }
+  } else if (subCmd == GX_LOAD_AURORA_TEXOBJ) {
+    CHECK(pos + 30 <= size, "GX_LOAD_AURORA_TEXOBJ read overrun");
+    const auto texMapId = data[pos];
+    pos += 1;
+    CHECK(texMapId < MaxTextures, "invalid texture map id {}", texMapId);
+    auto& slot = g_gxState.loadedTextures[texMapId];
+    slot.imageData = reinterpret_cast<const void*>(read_u64(data + pos, bigEndian));
+    pos += 8;
+    slot.width = read_u32(data + pos, bigEndian);
+    pos += 4;
+    slot.height = read_u32(data + pos, bigEndian);
+    pos += 4;
+    slot.format = static_cast<GXTexFmt>(read_u32(data + pos, bigEndian));
+    pos += 4;
+    slot.hasMips = data[pos] != 0;
+    pos += 1;
+    slot.texObjId = read_u32(data + pos, bigEndian);
+    pos += 4;
+    slot.texDataVersion = read_u32(data + pos, bigEndian);
+    pos += 4;
+    slot.valid = true;
+    g_gxState.stateDirty = true;
+  } else if (subCmd == GX_LOAD_AURORA_TLUT) {
+    CHECK(pos + 23 <= size, "GX_LOAD_AURORA_TLUT read overrun");
+    const auto idx = data[pos];
+    pos += 1;
+    CHECK(idx < MaxTluts, "invalid tlut slot {}", idx);
+    auto& slot = g_gxState.loadedTluts[idx];
+    slot.data = reinterpret_cast<const void*>(read_u64(data + pos, bigEndian));
+    pos += 8;
+    slot.format = static_cast<GXTlutFmt>(read_u32(data + pos, bigEndian));
+    pos += 4;
+    slot.entries = read_u16(data + pos, bigEndian);
+    pos += 2;
+    slot.tlutObjId = read_u32(data + pos, bigEndian);
+    pos += 4;
+    slot.tlutDataVersion = read_u32(data + pos, bigEndian);
+    pos += 4;
+    slot.valid = true;
+    g_gxState.stateDirty = true;
   } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_PUSH) {
     auto label = read_string(data, pos, size, bigEndian);
     gfx::push_debug_group(std::move(label));

@@ -39,6 +39,10 @@ extern "C" {
  */
 #define GX_LOAD_AURORA_DEBUG_MARKER_INSERT 0x0022
 
+#define GX_LOAD_AURORA_TEXOBJ 0x0030
+
+#define GX_LOAD_AURORA_TLUT 0x0031
+
 
 /*
  * Debug marker stuff

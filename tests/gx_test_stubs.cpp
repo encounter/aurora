@@ -74,6 +74,7 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
 }
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept { return {}; }
 gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart) noexcept { return {}; }
+void resolve_sampled_textures(const ShaderInfo& info) noexcept {}
 u8 color_channel(GXChannelID id) noexcept { return 0; }
 u8 comp_type_size(GXAttr attr, GXCompType type) noexcept { return 0; }
 u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept { return 0; }
@@ -155,6 +156,7 @@ namespace aurora::gfx::texture_replacement {
 u32 compute_texture_upload_size(const GXTexObj_& obj) noexcept { return 0; }
 void register_tlut(const GXTlutObj*, const void*, GXTlutFmt, u16) noexcept {}
 void load_tlut(const GXTlutObj*, u32) noexcept {}
+std::optional<TextureHandle> find_replacement(const GXTexObj_&) noexcept { return std::nullopt; }
 bool try_bind_replacement(GXTexObj_&, GXTexMapID) noexcept { return false; }
 } // namespace aurora::gfx::texture_replacement
 
