@@ -171,17 +171,21 @@ static void set_efb_targets(RenderPass& pass) {
   pass.msaaSamples = webgpu::g_graphicsConfig.msaaSamples;
 }
 
-struct OffscreenDepthKey {
+struct OffscreenCacheKey {
   uint32_t width;
   uint32_t height;
 
-  bool operator==(const OffscreenDepthKey& rhs) const { return width == rhs.width && height == rhs.height; }
+  bool operator==(const OffscreenCacheKey& rhs) const { return width == rhs.width && height == rhs.height; }
   template <typename H>
-  friend H AbslHashValue(H h, const OffscreenDepthKey& key) {
+  friend H AbslHashValue(H h, const OffscreenCacheKey& key) {
     return H::combine(std::move(h), key.width, key.height);
   }
 };
-static absl::flat_hash_map<OffscreenDepthKey, webgpu::TextureWithSampler> g_offscreenDepthCache;
+struct OffscreenCacheEntry {
+  webgpu::TextureWithSampler color;
+  webgpu::TextureWithSampler depth;
+};
+static absl::flat_hash_map<OffscreenCacheKey, OffscreenCacheEntry> g_offscreenCache;
 std::vector<TextureUpload> g_textureUploads;
 
 static ByteBuffer g_serializedPipelines{};
@@ -374,17 +378,34 @@ uint32_t get_sample_count() noexcept {
   return g_renderPasses[g_currentRenderPass].msaaSamples;
 }
 
-void clear_offscreen_cache() { g_offscreenDepthCache.clear(); }
+void clear_offscreen_cache() { g_offscreenCache.clear(); }
 
-static webgpu::TextureWithSampler get_offscreen_depth(uint32_t width, uint32_t height) {
-  OffscreenDepthKey key{width, height};
-  auto it = g_offscreenDepthCache.find(key);
-  if (it != g_offscreenDepthCache.end()) {
+static OffscreenCacheEntry get_offscreen_textures(uint32_t width, uint32_t height) {
+  OffscreenCacheKey key{width, height};
+  if (const auto it = g_offscreenCache.find(key); it != g_offscreenCache.end()) {
     return it->second;
   }
-  const auto format = webgpu::g_graphicsConfig.depthFormat;
+  const auto format = webgpu::g_graphicsConfig.surfaceConfiguration.format;
   const wgpu::Extent3D size{width, height, 1};
-  const wgpu::TextureDescriptor desc{
+  const wgpu::TextureDescriptor colorDesc{
+      .label = "Offscreen Color",
+      .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc |
+               wgpu::TextureUsage::CopyDst,
+      .dimension = wgpu::TextureDimension::e2D,
+      .size = size,
+      .format = format,
+      .mipLevelCount = 1,
+      .sampleCount = 1,
+  };
+  auto colorTexture = g_device.CreateTexture(&colorDesc);
+  auto colorView = colorTexture.CreateView();
+  webgpu::TextureWithSampler color{
+      .texture = std::move(colorTexture),
+      .view = std::move(colorView),
+      .size = size,
+      .format = format,
+  };
+  const wgpu::TextureDescriptor depthDesc{
       .label = "Offscreen Depth",
       .usage = wgpu::TextureUsage::RenderAttachment,
       .dimension = wgpu::TextureDimension::e2D,
@@ -393,15 +414,19 @@ static webgpu::TextureWithSampler get_offscreen_depth(uint32_t width, uint32_t h
       .mipLevelCount = 1,
       .sampleCount = 1,
   };
-  auto texture = g_device.CreateTexture(&desc);
-  auto view = texture.CreateView();
-  webgpu::TextureWithSampler result{
-      .texture = std::move(texture),
-      .view = std::move(view),
+  auto depthTexture = g_device.CreateTexture(&depthDesc);
+  auto depthView = depthTexture.CreateView();
+  webgpu::TextureWithSampler depth{
+      .texture = std::move(depthTexture),
+      .view = std::move(depthView),
       .size = size,
       .format = format,
   };
-  auto [insertIt, _] = g_offscreenDepthCache.emplace(key, result);
+  OffscreenCacheEntry entry{
+      .color = std::move(color),
+      .depth = std::move(depth),
+  };
+  auto [insertIt, _] = g_offscreenCache.emplace(key, std::move(entry));
   return insertIt->second;
 }
 
@@ -419,28 +444,10 @@ void begin_offscreen(uint32_t width, uint32_t height) {
     }
   }
 
-  // Create offscreen color target
-  const wgpu::Extent3D size{width, height, 1};
-  const auto colorFormat = webgpu::g_graphicsConfig.surfaceConfiguration.format;
-  const wgpu::TextureDescriptor colorDesc{
-      .label = "Offscreen Color",
-      .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc |
-               wgpu::TextureUsage::CopyDst,
-      .dimension = wgpu::TextureDimension::e2D,
-      .size = size,
-      .format = colorFormat,
-      .mipLevelCount = 1,
-      .sampleCount = 1,
-  };
-  auto colorTexture = g_device.CreateTexture(&colorDesc);
-  auto colorView = colorTexture.CreateView();
-  g_offscreenColor = {
-      .texture = std::move(colorTexture),
-      .view = std::move(colorView),
-      .size = size,
-      .format = colorFormat,
-  };
-  g_offscreenDepth = get_offscreen_depth(width, height);
+  // Create offscreen textures
+  auto offscreenEntry = get_offscreen_textures(width, height);
+  g_offscreenColor = std::move(offscreenEntry.color);
+  g_offscreenDepth = std::move(offscreenEntry.depth);
 
   // Start a new pass with offscreen targets
   RenderPass newPass{
@@ -448,7 +455,7 @@ void begin_offscreen(uint32_t width, uint32_t height) {
       .depthView = g_offscreenDepth.view,
       .copySourceTexture = g_offscreenColor.texture,
       .copySourceView = g_offscreenColor.view,
-      .targetSize = size,
+      .targetSize = {width, height, 1},
       .msaaSamples = 1,
       .clearColorValue = {0.f, 0.f, 0.f, 0.f},
       .clearDepthValue = gx::UseReversedZ ? 0.f : 1.f,
@@ -683,7 +690,7 @@ void shutdown() {
   g_stagingBuffers.fill({});
   g_renderPasses.clear();
   g_currentRenderPass = UINT32_MAX;
-  g_offscreenDepthCache.clear();
+  g_offscreenCache.clear();
   g_offscreenColor = {};
   g_offscreenDepth = {};
   g_inOffscreen = false;
