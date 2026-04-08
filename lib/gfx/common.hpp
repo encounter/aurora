@@ -149,6 +149,10 @@ private:
       if (!m_owned) {
         abort();
       }
+      // Exponential expansion to avoid O(n^2) time complexity.
+      if (size < m_capacity * 2) {
+        size = m_capacity * 2;
+      }
       m_data = static_cast<uint8_t*>(realloc(m_data, size));
       if (zeroed) {
         memset(m_data + m_capacity, 0, size - m_capacity);
