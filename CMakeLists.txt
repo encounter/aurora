@@ -53,15 +53,6 @@ set_property(CACHE AURORA_NOD_LINKAGE PROPERTY STRINGS shared static)
 
 add_subdirectory(extern)
 
-include(FetchContent)
-FetchContent_Declare(
-  tracy
-  URL https://github.com/wolfpld/tracy/archive/refs/tags/v0.13.1.tar.gz
-  URL_HASH SHA256=d4efc50ebcb0bfcfdbba148995aeb75044c0d80f5d91223aebfaa8fa9e563d2b
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
-FetchContent_MakeAvailable(tracy)
-
 include(cmake/aurora_core.cmake)
 include(cmake/aurora_os.cmake)
 if (AURORA_ENABLE_GX)
