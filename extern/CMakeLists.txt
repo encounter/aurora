@@ -130,7 +130,7 @@ if (NOT TARGET TracyClient)
   message(STATUS "aurora: Fetching Tracy")
 
   # Default to off, users can enable the cache variable if they want to use it.
-  set(CACHE{TRACY_ENABLE} TYPE BOOL VALUE OFF)
+  set(TRACY_ENABLE OFF CACHE BOOL "Enable Tracy profiling")
 
   include(FetchContent)
   FetchContent_Declare(
