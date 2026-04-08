@@ -283,13 +283,13 @@ template <typename DrawData>
 DrawData* get_last_draw_command();
 
 template <typename PipelineConfig>
-PipelineRef pipeline_ref(PipelineConfig config);
+PipelineRef pipeline_ref(const PipelineConfig& config);
 bool bind_pipeline(PipelineRef ref, const wgpu::RenderPassEncoder& pass);
 
 BindGroupRef bind_group_ref(const wgpu::BindGroupDescriptor& descriptor);
-wgpu::BindGroup find_bind_group(BindGroupRef id);
+wgpu::BindGroup& find_bind_group(BindGroupRef id);
 
-wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor);
+wgpu::Sampler& sampler_ref(const wgpu::SamplerDescriptor& descriptor);
 
 uint32_t align_uniform(uint32_t value);
 

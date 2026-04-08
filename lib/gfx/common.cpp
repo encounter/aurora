@@ -305,7 +305,7 @@ void push_draw_command(clear::DrawData data) {
 }
 
 template <>
-PipelineRef pipeline_ref(clear::PipelineConfig config) {
+PipelineRef pipeline_ref(const clear::PipelineConfig& config) {
   return find_pipeline(ShaderType::Clear, config, [=] { return create_pipeline(config); });
 }
 
@@ -502,7 +502,7 @@ void push_draw_command(gx::DrawData data) {
 }
 
 template <>
-PipelineRef pipeline_ref(gx::PipelineConfig config) {
+PipelineRef pipeline_ref(const gx::PipelineConfig& config) {
   return find_pipeline(ShaderType::GX, config, [=] { return create_pipeline(config); });
 }
 
@@ -1067,7 +1067,7 @@ BindGroupRef bind_group_ref(const wgpu::BindGroupDescriptor& descriptor) {
   return id;
 }
 
-wgpu::BindGroup find_bind_group(BindGroupRef id) {
+wgpu::BindGroup& find_bind_group(BindGroupRef id) {
 #ifdef EMSCRIPTEN
   return g_cachedBindGroups[id];
 #else
@@ -1077,7 +1077,7 @@ wgpu::BindGroup find_bind_group(BindGroupRef id) {
 #endif
 }
 
-wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
+wgpu::Sampler& sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
   const auto id = xxh3_hash(descriptor);
   auto it = g_cachedSamplers.find(id);
   if (it == g_cachedSamplers.end()) {
