@@ -772,7 +772,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
   const auto writeBuffer = [&](ByteBuffer& buf, wgpu::Buffer& out, uint64_t size, std::string_view label) {
     const auto writeSize = buf.size(); // Only need to copy this many bytes
     if (writeSize > 0) {
-      cmd.CopyBufferToBuffer(g_stagingBuffers[currentStagingBuffer], bufferOffset, out, 0, ALIGN(writeSize, 4));
+      cmd.CopyBufferToBuffer(g_stagingBuffers[currentStagingBuffer], bufferOffset, out, 0, AURORA_ALIGN(writeSize, 4));
       buf.clear();
     }
     bufferOffset += size;
@@ -791,7 +791,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
           .layout =
               wgpu::TexelCopyBufferLayout{
                   .offset = item.layout.offset + bufferOffset,
-                  .bytesPerRow = ALIGN(item.layout.bytesPerRow, 256),
+                  .bytesPerRow = AURORA_ALIGN(item.layout.bytesPerRow, 256),
                   .rowsPerImage = item.layout.rowsPerImage,
               },
           .buffer = g_stagingBuffers[currentStagingBuffer],
@@ -1039,7 +1039,7 @@ Range push_storage(const uint8_t* data, size_t length) {
 }
 Range push_texture_data(const uint8_t* data, size_t length, u32 bytesPerRow, u32 rowsPerImage) {
   // For CopyBufferToTexture, we need an alignment of 256 per row (see Dawn kTextureBytesPerRowAlignment)
-  const auto copyBytesPerRow = ALIGN(bytesPerRow, 256);
+  const auto copyBytesPerRow = AURORA_ALIGN(bytesPerRow, 256);
   const auto range = map(g_textureUpload, copyBytesPerRow * rowsPerImage, 0);
   u8* dst = g_textureUpload.data() + range.offset;
   for (u32 i = 0; i < rowsPerImage; ++i) {
@@ -1100,7 +1100,7 @@ wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
   return it->second;
 }
 
-uint32_t align_uniform(uint32_t value) { return ALIGN(value, g_cachedLimits.minUniformBufferOffsetAlignment); }
+uint32_t align_uniform(uint32_t value) { return AURORA_ALIGN(value, g_cachedLimits.minUniformBufferOffsetAlignment); }
 
 void insert_debug_marker(std::string label) {
 #if defined(AURORA_GFX_DEBUG_GROUPS)
