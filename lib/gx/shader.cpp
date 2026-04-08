@@ -738,16 +738,6 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
         Log.info("  indStages[{}]: texCoordId {} texMapId {} scaleS {} scaleT {}", i, stage.texCoordId, stage.texMapId,
                  stage.scaleS, stage.scaleT);
       }
-      for (size_t i = 0; i < info.usedIndTexMtxs.size(); ++i) {
-        if (!info.usedIndTexMtxs.test(i)) {
-          continue;
-        }
-        const auto& mtx = g_gxState.indTexMtxs[i];
-        Log.info("  indTexMtxs[{}]: scaleExp {} adjScaleRaw {}", i, static_cast<int>(mtx.scaleExp), mtx.adjScaleRaw);
-        Log.info("    row0: [{}, {}]", mtx.mtx.m0.x, mtx.mtx.m0.y);
-        Log.info("    row1: [{}, {}]", mtx.mtx.m1.x, mtx.mtx.m1.y);
-        Log.info("    row2: [{}, {}]", mtx.mtx.m2.x, mtx.mtx.m2.y);
-      }
       for (int i = 0; i < config.colorChannels.size(); ++i) {
         const auto& chan = config.colorChannels[i];
         Log.info("  colorChannels[{}]: enabled {} mat {} amb {}", static_cast<GXChannelID>(i), chan.lightingEnabled,
@@ -1188,12 +1178,15 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
         if (stage.indTexMtxId >= GX_ITM_0 && stage.indTexMtxId <= GX_ITM_2) {
           // Static 2x3 matrix: dot(mat_row, vec3(S,T,U)) * scale
           u32 mtxIdx = stage.indTexMtxId - GX_ITM_0;
-          fragmentFnPre += fmt::format("\n    var ind{0}_mtx = ubuf.ind_mtx[{1}];", i, mtxIdx);
+          fragmentFnPre += fmt::format(
+              "\n    let ind{0}_c0 = ubuf.ind_mtx[{1}][0];"
+              "\n    let ind{0}_c1 = ubuf.ind_mtx[{1}][1];",
+              i, mtxIdx);
           indirectOffsetTexel = fmt::format(
               "vec2f("
-              "dot(vec3f(ind{0}_mtx[0][0], ind{0}_mtx[0][2], ind{0}_mtx[1][0]), ind{0}_coord), "
-              "dot(vec3f(ind{0}_mtx[0][1], ind{0}_mtx[0][3], ind{0}_mtx[1][1]), ind{0}_coord)"
-              ") * ind{0}_mtx[1][2]",
+              "dot(vec3f(ind{0}_c0.xz, ind{0}_c1.x), ind{0}_coord), "
+              "dot(vec3f(ind{0}_c0.yw, ind{0}_c1.y), ind{0}_coord)"
+              ") * ind{0}_c1.z",
               i);
         } else if (stage.indTexMtxId >= GX_ITM_S0 && stage.indTexMtxId <= GX_ITM_S2 && hasBaseCoord) {
           // Dynamic S: result = uv * texDim * ind_coord.x * scale / 256

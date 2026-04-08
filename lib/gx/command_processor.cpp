@@ -922,10 +922,16 @@ static void handle_bp(u32 value, bool bigEndian) {
     packedColumn.x = static_cast<float>(col0) / 1024.0f;
     packedColumn.y = static_cast<float>(col1) / 1024.0f;
 
-    // Accumulate 2-bit scale exponent part (adjScale = scaleExp + 17, split across 3 registers)
+    // Accumulate the indirect matrix scale exponent. The SDK writes two bits per column, but
+    // the hardware appears to ignore the top bit from the third column, leaving an effective
+    // 5-bit value for adjScale = scaleExp + 17.
     u32 scaleBits = bp_get(value, 2, 22);
     u32 shift = column * 2;
-    info.adjScaleRaw = (info.adjScaleRaw & ~(3u << shift)) | (scaleBits << shift);
+    if (column == 2) {
+      info.adjScaleRaw = (info.adjScaleRaw & ~(1u << shift)) | ((scaleBits & 1u) << shift);
+    } else {
+      info.adjScaleRaw = (info.adjScaleRaw & ~(3u << shift)) | (scaleBits << shift);
+    }
     info.scaleExp = static_cast<s8>(info.adjScaleRaw) - 17;
 
     g_gxState.stateDirty = true;
