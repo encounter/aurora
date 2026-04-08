@@ -16,6 +16,8 @@
 #include <magic_enum.hpp>
 #include <webgpu/webgpu_cpp.h>
 
+#include "tracy/Tracy.hpp"
+
 namespace aurora::gfx {
 using webgpu::g_device;
 using webgpu::g_queue;
@@ -141,6 +143,7 @@ static bool setup_swizzle(wgpu::TextureComponentSwizzleDescriptor& swizzle, u32 
 
 TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 gxFormat,
                                      const char* label) noexcept {
+  ZoneScopedS(3);
   const auto wgpuFormat = to_wgpu(gxFormat);
   const wgpu::Extent3D size{
       .width = width,

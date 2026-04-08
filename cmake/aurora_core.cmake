@@ -9,7 +9,7 @@ add_library(aurora::core ALIAS aurora_core)
 target_compile_definitions(aurora_core PUBLIC AURORA TARGET_PC)
 target_include_directories(aurora_core PUBLIC include)
 target_link_libraries(aurora_core PUBLIC ${AURORA_SDL3_TARGET} fmt::fmt xxhash)
-target_link_libraries(aurora_core PRIVATE absl::btree absl::flat_hash_map)
+target_link_libraries(aurora_core PRIVATE absl::btree absl::flat_hash_map TracyClient)
 
 if (AURORA_ENABLE_GX)
     target_sources(aurora_core PRIVATE lib/imgui.cpp)

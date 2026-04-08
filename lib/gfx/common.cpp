@@ -22,6 +22,8 @@
 #include <absl/container/flat_hash_set.h>
 #include <magic_enum.hpp>
 
+#include "tracy/Tracy.hpp"
+
 namespace aurora::gfx {
 static Module Log("aurora::gfx");
 
@@ -432,6 +434,7 @@ static OffscreenCacheEntry get_offscreen_textures(uint32_t width, uint32_t heigh
 }
 
 void begin_offscreen(uint32_t width, uint32_t height) {
+  ZoneScoped;
   CHECK(g_currentRenderPass != UINT32_MAX, "begin_offscreen called outside of a frame");
 
   // If the current EFB pass has no resolve target, its output is unobservable.
@@ -474,6 +477,7 @@ void begin_offscreen(uint32_t width, uint32_t height) {
 }
 
 void end_offscreen() {
+  ZoneScoped;
   CHECK(g_inOffscreen, "end_offscreen called without begin_offscreen");
 
   g_inOffscreen = false;
@@ -507,6 +511,10 @@ PipelineRef pipeline_ref(gx::PipelineConfig config) {
 }
 
 static void pipeline_worker() {
+#ifdef TRACY_ENABLE
+  tracy::SetThreadName("Pipeline compilation thread");
+#endif
+
   bool hasMore = false;
   while (g_hasPipelineThread || g_pipelinesPerFrame < BuildPipelinesPerFrame) {
     std::pair<PipelineRef, NewPipelineCallback> cb;
@@ -718,8 +726,12 @@ void map_staging_buffer() {
 }
 
 void begin_frame() {
-  while (!bufferMapped) {
-    g_instance.ProcessEvents();
+  ZoneScoped;
+  {
+    ZoneScopedN("Wait for buffer map");
+    while (!bufferMapped) {
+      g_instance.ProcessEvents();
+    }
   }
   size_t bufferOffset = 0;
   const auto& stagingBuf = g_stagingBuffers[currentStagingBuffer];
@@ -754,6 +766,7 @@ void begin_frame() {
 }
 
 void end_frame(const wgpu::CommandEncoder& cmd) {
+  ZoneScoped;
   ASSERT(!g_inOffscreen, "end_frame called while offscreen rendering is active");
   uint64_t bufferOffset = 0;
   const auto writeBuffer = [&](ByteBuffer& buf, wgpu::Buffer& out, uint64_t size, std::string_view label) {
@@ -801,6 +814,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
 }
 
 void render(wgpu::CommandEncoder& cmd) {
+  ZoneScoped;
   for (u32 i = 0; i < g_renderPasses.size(); ++i) {
     const auto& passInfo = g_renderPasses[i];
     for (const auto& conv : passInfo.paletteConvs) {

@@ -13,6 +13,8 @@
 #include <string_view>
 #include <utility>
 
+#include "tracy/Tracy.hpp"
+
 namespace aurora::gx {
 using namespace fmt::literals;
 using namespace std::string_literals;
@@ -680,6 +682,7 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
 }
 
 wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
+  ZoneScoped;
   const auto hash = xxh3_hash(config);
   {
     std::lock_guard lock{g_gxCachedShadersMutex};
