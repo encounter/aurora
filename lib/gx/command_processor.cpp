@@ -1484,14 +1484,18 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   handle_draw_unmerged(prim, fmt, vtxCount, vertRange);
 }
 
+static ByteBuffer handle_draw_unmerged_idxBuf;
+
 static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange) {
   u32 numIndices = 0;
   gfx::Range idxRange;
 
   {
     ByteBuffer idxBuf;
-    numIndices = prepare_idx_buffer(idxBuf, prim, 0, vtxCount);
-    idxRange = gfx::push_indices(idxBuf.data(), idxBuf.size());
+    auto& realBuf = vtxCount < 1000 ? handle_draw_unmerged_idxBuf : idxBuf;
+    numIndices = prepare_idx_buffer(realBuf, prim, 0, vtxCount);
+    idxRange = gfx::push_indices(realBuf.data(), realBuf.size());
+    realBuf.setLengthZero();
   }
 
   // Build pipeline, bind groups, and push draw command
