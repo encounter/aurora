@@ -1430,6 +1430,8 @@ static u32 calculate_last_vtx_size(GXVtxFmt fmt) {
 static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange);
 
 // Draw command handler - parses vertices inline and caches results
+static ByteBuffer handle_draw_idx_buf;
+
 static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndian) {
   u8 opcode = cmd & CP_OPCODE_MASK;
   GXVtxFmt fmt = static_cast<GXVtxFmt>(cmd & CP_VAT_MASK);
@@ -1461,10 +1463,9 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
     // Only if the previous draw call was a single instance draw (no lines/points handling)
     if (lastDraw != nullptr && prim != GX_LINES && prim != GX_LINESTRIP && prim != GX_POINTS &&
         lastDraw->instanceCount == 1) LIKELY {
-      static ByteBuffer idxBuf;
-      u32 numIndices = prepare_idx_buffer(idxBuf, prim, lastDraw->vtxCount, vtxCount);
-      gfx::Range idxRange = gfx::push_indices(idxBuf.data(), idxBuf.size());
-      idxBuf.setLengthZero();
+      u32 numIndices = prepare_idx_buffer(handle_draw_idx_buf, prim, lastDraw->vtxCount, vtxCount);
+      gfx::Range idxRange = gfx::push_indices(handle_draw_idx_buf.data(), handle_draw_idx_buf.size());
+      handle_draw_idx_buf.setLengthZero();
       CHECK(lastDraw->vertRange.offset + lastDraw->vertRange.size == vertRange.offset,
             "Non-consecutive vertex ranges ({} < {})", lastDraw->vertRange.offset + lastDraw->vertRange.size,
             vertRange.offset);
