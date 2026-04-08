@@ -44,6 +44,17 @@ void update_tex_upload_size(GXTexObj_& obj) {
   obj.dataSize = aurora::gfx::texture_replacement::compute_texture_upload_size(obj);
 }
 
+int __cntlzw(unsigned int val) {
+  if (val == 0) return 32; // PowerPC returns 32 if the input is 0
+#ifdef _MSC_VER
+  unsigned long idx;
+  _BitScanReverse(&idx, val);
+  return 31 - (int)idx;
+#else
+  return __builtin_clz(val);
+#endif
+}
+
 void init_texobj_common(GXTexObj_& obj, const void* data, u16 width, u16 height, u32 format, GXTexWrapMode wrapS,
                         GXTexWrapMode wrapT, GXBool mipmap) {
   memset(&obj, 0, sizeof(obj));
@@ -61,7 +72,7 @@ void init_texobj_common(GXTexObj_& obj, const void* data, u16 width, u16 height,
     obj.flags |= 1;
     obj.mode0 = (obj.mode0 & 0xFFFFFF1F) | 0xC0;
     const u32 maxDim = std::max(width, height);
-    const u8 lmax = static_cast<u8>(16.0f * static_cast<float>(31 - __builtin_clz(maxDim)));
+    const u8 lmax = static_cast<u8>(16.0f * static_cast<float>(31 - __cntlzw(maxDim)));
     SET_REG_FIELD(0, obj.mode1, 8, 8, lmax);
   } else {
     obj.mode0 = (obj.mode0 & 0xFFFFFF1F) | 0x80;
