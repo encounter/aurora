@@ -385,7 +385,7 @@ static OffscreenCacheEntry get_offscreen_textures(uint32_t width, uint32_t heigh
   if (const auto it = g_offscreenCache.find(key); it != g_offscreenCache.end()) {
     return it->second;
   }
-  const auto format = webgpu::g_graphicsConfig.surfaceConfiguration.format;
+  const auto colorFormat = webgpu::g_graphicsConfig.surfaceConfiguration.format;
   const wgpu::Extent3D size{width, height, 1};
   const wgpu::TextureDescriptor colorDesc{
       .label = "Offscreen Color",
@@ -393,7 +393,7 @@ static OffscreenCacheEntry get_offscreen_textures(uint32_t width, uint32_t heigh
                wgpu::TextureUsage::CopyDst,
       .dimension = wgpu::TextureDimension::e2D,
       .size = size,
-      .format = format,
+      .format = colorFormat,
       .mipLevelCount = 1,
       .sampleCount = 1,
   };
@@ -403,14 +403,15 @@ static OffscreenCacheEntry get_offscreen_textures(uint32_t width, uint32_t heigh
       .texture = std::move(colorTexture),
       .view = std::move(colorView),
       .size = size,
-      .format = format,
+      .format = colorFormat,
   };
+  const auto depthFormat = webgpu::g_graphicsConfig.depthFormat;
   const wgpu::TextureDescriptor depthDesc{
       .label = "Offscreen Depth",
       .usage = wgpu::TextureUsage::RenderAttachment,
       .dimension = wgpu::TextureDimension::e2D,
       .size = size,
-      .format = format,
+      .format = depthFormat,
       .mipLevelCount = 1,
       .sampleCount = 1,
   };
@@ -420,7 +421,7 @@ static OffscreenCacheEntry get_offscreen_textures(uint32_t width, uint32_t heigh
       .texture = std::move(depthTexture),
       .view = std::move(depthView),
       .size = size,
-      .format = format,
+      .format = depthFormat,
   };
   OffscreenCacheEntry entry{
       .color = std::move(color),
