@@ -10,6 +10,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(AURORA_ENABLE_GX "Enable GX implementation and WebGPU renderer" ON)
 option(AURORA_ENABLE_DVD "Enable DVD implementation backed by nod" OFF)  # TODO: need to fix tests
 option(AURORA_ENABLE_CARD "Enable CARD implementation based on kabufuda" ON)
+option(AURORA_CACHE_USE_ZSTD "Compress WebGPU cache entries with zstd" ON)
 
 # Dependency versions
 set(AURORA_DAWN_VERSION "v20260309.222352" CACHE STRING "Dawn version tag (https://github.com/encounter/dawn-build/releases)")
@@ -53,18 +54,6 @@ set_property(CACHE AURORA_NOD_LINKAGE PROPERTY STRINGS shared static)
 
 add_subdirectory(extern)
 
-set(ZSTD_BUILD_STATIC ON)
-set(ZSTD_BUILD_SHARED OFF)
-
-include(FetchContent)
-FetchContent_Declare(zstd
-  URL https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
-  URL_HASH SHA256=eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-  SOURCE_SUBDIR build/cmake
-)
-FetchContent_MakeAvailable(zstd)
-
 include(cmake/aurora_core.cmake)
 include(cmake/aurora_os.cmake)
 if (AURORA_ENABLE_GX)
@@ -91,8 +80,6 @@ if (NOT CMAKE_CROSSCOMPILING)
   enable_testing()
   add_subdirectory(tests)
 endif ()
-
-add_subdirectory(sqlite3)
 
 # =============================================================================
 # aurora_shared: Single SHARED library bundling all Aurora components.
@@ -173,8 +160,11 @@ if (AURORA_ENABLE_GX)
   target_compile_definitions(aurora_shared PUBLIC AURORA_ENABLE_GX)
   # imgui code is compiled into aurora_shared; link PRIVATE to avoid duplicating the static lib
   # into downstream targets. Propagate only the include directories for header access.
-  target_link_libraries(aurora_shared PRIVATE imgui sqlite3 libzstd_static)
-  target_include_directories(aurora_shared PRIVATE ${zstd_SOURCE_DIR}/lib)
+  target_link_libraries(aurora_shared PRIVATE imgui sqlite3)
+  if (AURORA_CACHE_USE_ZSTD)
+    target_compile_definitions(aurora_shared PRIVATE AURORA_CACHE_USE_ZSTD)
+    target_link_libraries(aurora_shared PRIVATE libzstd_static)
+  endif ()
   target_include_directories(aurora_shared PUBLIC $<TARGET_PROPERTY:imgui,INTERFACE_INCLUDE_DIRECTORIES>)
   if (EMSCRIPTEN)
     target_link_options(aurora_shared PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)
