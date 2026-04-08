@@ -124,6 +124,42 @@ if (AURORA_ENABLE_GX)
   else ()
     message(STATUS "aurora: Using existing imgui")
   endif ()
+
+  if (NOT TARGET sqlite3)
+    message(STATUS "aurora: Fetching sqlite3")
+    FetchContent_Declare(sqlite3
+      URL https://sqlite.org/2026/sqlite-amalgamation-3510300.zip
+      URL_HASH SHA256=acb1e6f5d832484bf6d32b681e858c38add8b2acdfd42ac5df24b8afb46552b4
+      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+      EXCLUDE_FROM_ALL
+    )
+    FetchContent_MakeAvailable(sqlite3)
+
+    add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
+    target_include_directories(sqlite3 PUBLIC ${sqlite3_SOURCE_DIR})
+  else ()
+    message(STATUS "aurora: Using existing sqlite3")
+  endif ()
+
+  if (AURORA_CACHE_USE_ZSTD)
+    if (NOT TARGET libzstd_static)
+      message(STATUS "aurora: Fetching zstd")
+      set(ZSTD_BUILD_STATIC ON)
+      set(ZSTD_BUILD_SHARED OFF)
+
+      include(FetchContent)
+      FetchContent_Declare(zstd
+        URL https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
+        URL_HASH SHA256=eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        SOURCE_SUBDIR build/cmake
+        EXCLUDE_FROM_ALL
+      )
+      FetchContent_MakeAvailable(zstd)
+    else ()
+      message(STATUS "aurora: Using existing zstd")
+    endif ()
+  endif ()
 endif ()
 
 if (NOT TARGET TracyClient)
