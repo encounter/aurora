@@ -12,6 +12,8 @@
 #include <cfloat>
 #include <mutex>
 
+#include "tracy/Tracy.hpp"
+
 static aurora::Module Log("aurora::gx");
 
 namespace aurora::gx {
@@ -186,6 +188,7 @@ static inline wgpu::PrimitiveState to_primitive_state(GXCullMode gx_cullMode) {
 
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
                                     wgpu::ShaderModule shader, const char* label) noexcept {
+  ZoneScoped;
   const wgpu::DepthStencilState depthStencil{
       .format = g_graphicsConfig.depthFormat,
       .depthWriteEnabled = config.depthCompare && config.depthUpdate,
@@ -439,11 +442,13 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
                                const BindGroupRanges& ranges) noexcept {
   const auto layouts = build_bind_group_layouts(config);
 
-  std::array<wgpu::BindGroupEntry, MaxIndexAttr + 3> uniformEntries;
+  // Using C WGPU types instead of C++ wrappers to avoid destructor overhead
+  std::array<WGPUBindGroupEntry, MaxIndexAttr + 3> uniformEntries{};
   uniformEntries[0].binding = 0;
-  uniformEntries[0].buffer = gfx::g_vertexBuffer;
+  uniformEntries[0].buffer = gfx::g_vertexBuffer.Get();
+  uniformEntries[0].size = WGPU_WHOLE_SIZE;
   uniformEntries[1].binding = 1;
-  uniformEntries[1].buffer = gfx::g_uniformBuffer;
+  uniformEntries[1].buffer = gfx::g_uniformBuffer.Get();
   uniformEntries[1].size = info.uniformSize;
   u32 uniformBindIdx = 2;
   for (u32 i = 0; i < MaxIndexAttr; ++i) {
@@ -451,46 +456,46 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
     if (range.size <= 0) {
       continue;
     }
-    wgpu::BindGroupEntry& entry = uniformEntries[uniformBindIdx];
+    WGPUBindGroupEntry& entry = uniformEntries[uniformBindIdx];
     entry.binding = uniformBindIdx;
-    entry.buffer = gfx::g_storageBuffer;
+    entry.buffer = gfx::g_storageBuffer.Get();
     entry.size = range.size;
     ++uniformBindIdx;
   }
 
-  std::array<wgpu::BindGroupEntry, MaxTextures> samplerEntries;
-  std::array<wgpu::BindGroupEntry, MaxTextures> textureEntries;
+  std::array<WGPUBindGroupEntry, MaxTextures> samplerEntries{};
+  std::array<WGPUBindGroupEntry, MaxTextures> textureEntries{};
   u32 textureCount = 0;
   for (u32 i = 0; i < MaxTextures; ++i) {
     const auto& tex = g_gxState.textures[i];
-    wgpu::BindGroupEntry& samplerEntry = samplerEntries[textureCount];
-    wgpu::BindGroupEntry& textureEntry = textureEntries[textureCount];
+    WGPUBindGroupEntry& samplerEntry = samplerEntries[textureCount];
+    WGPUBindGroupEntry& textureEntry = textureEntries[textureCount];
     samplerEntry.binding = textureCount;
     textureEntry.binding = textureCount;
-    if (tex) {
-      samplerEntry.sampler = gfx::sampler_ref(tex.get_descriptor());
-      textureEntry.textureView = tex.texObj.ref->sampleTextureView;
+    if (tex && (info.sampledTextures[i] || info.sampledIndTextures[i])) {
+      samplerEntry.sampler = gfx::sampler_ref(tex.get_descriptor()).Get();
+      textureEntry.textureView = tex.texObj.ref->sampleTextureView.Get();
     } else {
-      samplerEntry.sampler = sEmptySampler;
-      textureEntry.textureView = sEmptyTextureView;
+      samplerEntry.sampler = sEmptySampler.Get();
+      textureEntry.textureView = sEmptyTextureView.Get();
     }
     ++textureCount;
   }
-  const wgpu::BindGroupDescriptor uniformBindGroupDescriptor{
-      .label = "GX Uniform Bind Group",
-      .layout = layouts.uniformLayout,
+  const WGPUBindGroupDescriptor uniformBindGroupDescriptor{
+      .label = {"GX Uniform Bind Group", WGPU_STRLEN},
+      .layout = layouts.uniformLayout.Get(),
       .entryCount = uniformBindIdx,
       .entries = uniformEntries.data(),
   };
-  const wgpu::BindGroupDescriptor samplerBindGroupDescriptor{
-      .label = "GX Sampler Bind Group",
-      .layout = layouts.samplerLayout,
+  const WGPUBindGroupDescriptor samplerBindGroupDescriptor{
+      .label = {"GX Sampler Bind Group", WGPU_STRLEN},
+      .layout = layouts.samplerLayout.Get(),
       .entryCount = textureCount,
       .entries = samplerEntries.data(),
   };
-  const wgpu::BindGroupDescriptor textureBindGroupDescriptor{
-      .label = "GX Texture Bind Group",
-      .layout = layouts.textureLayout,
+  const WGPUBindGroupDescriptor textureBindGroupDescriptor{
+      .label = {"GX Texture Bind Group", WGPU_STRLEN},
+      .layout = layouts.textureLayout.Get(),
       .entryCount = textureCount,
       .entries = textureEntries.data(),
   };

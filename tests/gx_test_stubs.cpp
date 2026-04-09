@@ -97,7 +97,7 @@ void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {}
 // --- Pipeline/draw command stubs ---
 namespace aurora::gfx {
 template <>
-PipelineRef pipeline_ref<clear::PipelineConfig>(clear::PipelineConfig config) {
+PipelineRef pipeline_ref<clear::PipelineConfig>(const clear::PipelineConfig& config) {
   return 0;
 }
 template <>
@@ -105,7 +105,7 @@ void push_draw_command<clear::DrawData>(clear::DrawData data) {
   // No-op
 }
 template <>
-PipelineRef pipeline_ref<gx::PipelineConfig>(gx::PipelineConfig config) {
+PipelineRef pipeline_ref<gx::PipelineConfig>(const gx::PipelineConfig& config) {
   return 0;
 }
 template <>

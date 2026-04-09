@@ -16,6 +16,8 @@
 #include <absl/container/flat_hash_map.h>
 #include <magic_enum.hpp>
 
+#include "tracy/Tracy.hpp"
+
 namespace aurora::gfx {
 static Module Log("aurora::gfx");
 
@@ -72,11 +74,11 @@ namespace aurora {
 // we create specialized methods to handle them. Note that these are highly dependent on
 // the structure definition, which could easily change with Dawn updates.
 template <>
-inline HashType xxh3_hash(const wgpu::BindGroupDescriptor& input, HashType seed) {
-  constexpr auto offset = offsetof(wgpu::BindGroupDescriptor, layout); // skip nextInChain, label
+inline HashType xxh3_hash(const WGPUBindGroupDescriptor& input, HashType seed) {
+  constexpr auto offset = offsetof(WGPUBindGroupDescriptor, layout); // skip nextInChain, label
   const auto hash = xxh3_hash_s(reinterpret_cast<const u8*>(&input) + offset,
-                                sizeof(wgpu::BindGroupDescriptor) - offset - sizeof(void*) /* skip entries */, seed);
-  return xxh3_hash_s(input.entries, sizeof(wgpu::BindGroupEntry) * input.entryCount, hash);
+                                sizeof(WGPUBindGroupDescriptor) - offset - sizeof(void*) /* skip entries */, seed);
+  return xxh3_hash_s(input.entries, sizeof(WGPUBindGroupEntry) * input.entryCount, hash);
 }
 template <>
 inline HashType xxh3_hash(const wgpu::SamplerDescriptor& input, HashType seed) {
@@ -222,7 +224,7 @@ void push_draw_command(clear::DrawData data) {
 }
 
 template <>
-PipelineRef pipeline_ref(clear::PipelineConfig config) {
+PipelineRef pipeline_ref(const clear::PipelineConfig& config) {
   return find_pipeline(ShaderType::Clear, config, [=] { return create_pipeline(config); });
 }
 
@@ -349,6 +351,7 @@ static OffscreenCacheEntry get_offscreen_textures(uint32_t width, uint32_t heigh
 }
 
 void begin_offscreen(uint32_t width, uint32_t height) {
+  ZoneScoped;
   CHECK(g_currentRenderPass != UINT32_MAX, "begin_offscreen called outside of a frame");
 
   // If the current EFB pass has no resolve target, its output is unobservable.
@@ -391,6 +394,7 @@ void begin_offscreen(uint32_t width, uint32_t height) {
 }
 
 void end_offscreen() {
+  ZoneScoped;
   CHECK(g_inOffscreen, "end_offscreen called without begin_offscreen");
 
   g_inOffscreen = false;
@@ -419,7 +423,7 @@ void push_draw_command(gx::DrawData data) {
 }
 
 template <>
-PipelineRef pipeline_ref(gx::PipelineConfig config) {
+PipelineRef pipeline_ref(const gx::PipelineConfig& config) {
   return find_pipeline(ShaderType::GX, config, [=] { return create_pipeline(config); });
 }
 
@@ -504,8 +508,12 @@ void map_staging_buffer() {
 }
 
 void begin_frame() {
-  while (!bufferMapped) {
-    g_instance.ProcessEvents();
+  ZoneScoped;
+  {
+    ZoneScopedN("Wait for buffer map");
+    while (!bufferMapped) {
+      g_instance.ProcessEvents();
+    }
   }
   size_t bufferOffset = 0;
   const auto& stagingBuf = g_stagingBuffers[currentStagingBuffer];
@@ -537,13 +545,14 @@ void begin_frame() {
 }
 
 void end_frame(const wgpu::CommandEncoder& cmd) {
+  ZoneScoped;
   ASSERT(!g_inOffscreen, "end_frame called while offscreen rendering is active");
   uint64_t bufferOffset = 0;
   const auto writeBuffer = [&](ByteBuffer& buf, wgpu::Buffer& out, uint64_t size, std::string_view label) {
     const auto writeSize = buf.size(); // Only need to copy this many bytes
     if (writeSize > 0) {
-      cmd.CopyBufferToBuffer(g_stagingBuffers[currentStagingBuffer], bufferOffset, out, 0, ALIGN(writeSize, 4));
-      buf.clear();
+      cmd.CopyBufferToBuffer(g_stagingBuffers[currentStagingBuffer], bufferOffset, out, 0, AURORA_ALIGN(writeSize, 4));
+      buf.release();
     }
     bufferOffset += size;
     return writeSize;
@@ -561,7 +570,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
           .layout =
               wgpu::TexelCopyBufferLayout{
                   .offset = item.layout.offset + bufferOffset,
-                  .bytesPerRow = ALIGN(item.layout.bytesPerRow, 256),
+                  .bytesPerRow = AURORA_ALIGN(item.layout.bytesPerRow, 256),
                   .rowsPerImage = item.layout.rowsPerImage,
               },
           .buffer = g_stagingBuffers[currentStagingBuffer],
@@ -569,7 +578,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
       cmd.CopyBufferToTexture(&buf, &item.tex, &item.size);
     }
     g_textureUploads.clear();
-    g_textureUpload.clear();
+    g_textureUpload.release();
   }
   currentStagingBuffer = (currentStagingBuffer + 1) % g_stagingBuffers.size();
   map_staging_buffer();
@@ -584,6 +593,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
 uint32_t current_frame() noexcept { return g_frameIndex; }
 
 void render(wgpu::CommandEncoder& cmd) {
+  ZoneScoped;
   for (u32 i = 0; i < g_renderPasses.size(); ++i) {
     const auto& passInfo = g_renderPasses[i];
     for (const auto& conv : passInfo.paletteConvs) {
@@ -807,7 +817,7 @@ Range push_storage(const uint8_t* data, size_t length) {
 }
 Range push_texture_data(const uint8_t* data, size_t length, u32 bytesPerRow, u32 rowsPerImage) {
   // For CopyBufferToTexture, we need an alignment of 256 per row (see Dawn kTextureBytesPerRowAlignment)
-  const auto copyBytesPerRow = ALIGN(bytesPerRow, 256);
+  const auto copyBytesPerRow = AURORA_ALIGN(bytesPerRow, 256);
   const auto range = map(g_textureUpload, copyBytesPerRow * rowsPerImage, 0);
   u8* dst = g_textureUpload.data() + range.offset;
   for (u32 i = 0; i < rowsPerImage; ++i) {
@@ -835,21 +845,21 @@ std::pair<ByteBuffer, Range> map_storage(size_t length) {
 }
 
 // TODO: should we avoid caching bind groups altogether?
-BindGroupRef bind_group_ref(const wgpu::BindGroupDescriptor& descriptor) {
+BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor) {
 #ifdef EMSCRIPTEN
-  const auto bg = g_device.CreateBindGroup(&descriptor);
+  const auto bg = wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor);
   BindGroupRef id = reinterpret_cast<BindGroupRef>(bg.Get());
   g_cachedBindGroups.try_emplace(id, bg);
 #else
   const auto id = xxh3_hash(descriptor);
   if (!g_cachedBindGroups.contains(id)) {
-    g_cachedBindGroups.try_emplace(id, g_device.CreateBindGroup(&descriptor));
+    g_cachedBindGroups.try_emplace(id, wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor));
   }
 #endif
   return id;
 }
 
-wgpu::BindGroup find_bind_group(BindGroupRef id) {
+wgpu::BindGroup& find_bind_group(BindGroupRef id) {
 #ifdef EMSCRIPTEN
   return g_cachedBindGroups[id];
 #else
@@ -859,7 +869,7 @@ wgpu::BindGroup find_bind_group(BindGroupRef id) {
 #endif
 }
 
-wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
+wgpu::Sampler& sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
   const auto id = xxh3_hash(descriptor);
   auto it = g_cachedSamplers.find(id);
   if (it == g_cachedSamplers.end()) {
@@ -868,7 +878,7 @@ wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
   return it->second;
 }
 
-uint32_t align_uniform(uint32_t value) { return ALIGN(value, g_cachedLimits.minUniformBufferOffsetAlignment); }
+uint32_t align_uniform(uint32_t value) { return AURORA_ALIGN(value, g_cachedLimits.minUniformBufferOffsetAlignment); }
 
 void insert_debug_marker(std::string label) {
 #if defined(AURORA_GFX_DEBUG_GROUPS)

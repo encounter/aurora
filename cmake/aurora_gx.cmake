@@ -36,7 +36,7 @@ add_library(aurora_gx STATIC
 add_library(aurora::gx ALIAS aurora_gx)
 
 target_link_libraries(aurora_gx PUBLIC aurora::core xxhash)
-target_link_libraries(aurora_gx PRIVATE absl::btree absl::flat_hash_map sqlite3)
+target_link_libraries(aurora_gx PRIVATE absl::btree absl::flat_hash_map sqlite3 TracyClient)
 if (EMSCRIPTEN)
     target_link_options(aurora_gx PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)
     target_compile_definitions(aurora_gx PRIVATE ENABLE_BACKEND_WEBGPU)
