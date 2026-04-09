@@ -848,12 +848,13 @@ std::pair<ByteBuffer, Range> map_storage(size_t length) {
 BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor) {
 #ifdef EMSCRIPTEN
   const auto bg = wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor);
-  BindGroupRef id = reinterpret_cast<BindGroupRef>(bg.Get());
-  g_cachedBindGroups.try_emplace(id, bg);
+  BindGroupRef id = reinterpret_cast<BindGroupRef>(bg);
+  g_cachedBindGroups.try_emplace(id, wgpu::BindGroup::Acquire(bg));
 #else
   const auto id = xxh3_hash(descriptor);
   if (!g_cachedBindGroups.contains(id)) {
-    g_cachedBindGroups.try_emplace(id, wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor));
+    const auto bg = wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor);
+    g_cachedBindGroups.try_emplace(id, wgpu::BindGroup::Acquire(bg));
   }
 #endif
   return id;
