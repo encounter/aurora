@@ -852,9 +852,9 @@ BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor) {
   g_cachedBindGroups.try_emplace(id, wgpu::BindGroup::Acquire(bg));
 #else
   const auto id = xxh3_hash(descriptor);
-  if (!g_cachedBindGroups.contains(id)) {
+  if (auto it = g_cachedBindGroups.find(id); it == g_cachedBindGroups.end()) {
     const auto bg = wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor);
-    g_cachedBindGroups.try_emplace(id, wgpu::BindGroup::Acquire(bg));
+    g_cachedBindGroups.emplace(id, wgpu::BindGroup::Acquire(bg));
   }
 #endif
   return id;
