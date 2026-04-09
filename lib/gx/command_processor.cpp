@@ -1,6 +1,7 @@
 #include "command_processor.hpp"
 
 #include "../gfx/common.hpp"
+#include "../gfx/texture_replacement.hpp"
 #include "gx.hpp"
 #include "gx_fmt.hpp"
 #include "pipeline.hpp"
@@ -783,7 +784,7 @@ static void handle_bp(u32 value, bool bigEndian) {
     if (idx < MaxTluts) {
       auto& slot = g_gxState.loadedTluts[idx];
       slot.loadTlut0 = g_gxState.bpRegCache[0x64];
-      slot.entries = static_cast<u16>(bp_get(value, 10, 10) + 1);
+      slot.numEntries = static_cast<u16>(bp_get(value, 10, 10) + 1);
     }
     break;
   }
@@ -1086,17 +1087,15 @@ static void handle_bp(u32 value, bool bigEndian) {
       case TexBpRegMapping::Kind::Image0:
         slot.image0 = value;
         break;
-      case TexBpRegMapping::Kind::Image1:
-        slot.image1 = value;
-        break;
-      case TexBpRegMapping::Kind::Image2:
-        slot.image2 = value;
-        break;
       case TexBpRegMapping::Kind::Image3:
         slot.image3 = value;
         break;
       case TexBpRegMapping::Kind::Tlut:
-        slot.tlut = value;
+        // TLUT region's TMEM offset
+        break;
+      case TexBpRegMapping::Kind::Image1:
+      case TexBpRegMapping::Kind::Image2:
+        // GXTexRegion regs
         break;
       }
       g_gxState.stateDirty = true;
@@ -1669,26 +1668,32 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
       g_gxState.stateDirty = true;
     }
   } else if (subCmd == GX_LOAD_AURORA_TEXOBJ) {
-    CHECK(pos + 30 <= size, "GX_LOAD_AURORA_TEXOBJ read overrun");
+    CHECK(pos + 34 <= size, "GX_LOAD_AURORA_TEXOBJ read overrun");
     const auto texMapId = data[pos];
     pos += 1;
     CHECK(texMapId < MaxTextures, "invalid texture map id {}", texMapId);
     auto& slot = g_gxState.loadedTextures[texMapId];
-    slot.imageData = reinterpret_cast<const void*>(read_u64(data + pos, bigEndian));
+    slot.data = reinterpret_cast<const void*>(read_u64(data + pos, bigEndian));
     pos += 8;
-    slot.width = read_u32(data + pos, bigEndian);
+    slot.mWidth = read_u32(data + pos, bigEndian);
     pos += 4;
-    slot.height = read_u32(data + pos, bigEndian);
+    slot.mHeight = read_u32(data + pos, bigEndian);
     pos += 4;
-    slot.format = static_cast<GXTexFmt>(read_u32(data + pos, bigEndian));
+    slot.mFormat = static_cast<GXTexFmt>(read_u32(data + pos, bigEndian));
     pos += 4;
-    slot.hasMips = data[pos] != 0;
+    slot.tlut = static_cast<GXTlut>(read_u32(data + pos, bigEndian));
+    pos += 4;
+    if (data[pos] != 0) {
+      slot.flags |= 1u;
+    } else {
+      slot.flags &= ~1u;
+    }
     pos += 1;
     slot.texObjId = read_u32(data + pos, bigEndian);
     pos += 4;
     slot.texDataVersion = read_u32(data + pos, bigEndian);
     pos += 4;
-    slot.valid = true;
+    slot.dataSize = gfx::texture_replacement::compute_texture_upload_size(slot);
     g_gxState.stateDirty = true;
   } else if (subCmd == GX_LOAD_AURORA_TLUT) {
     CHECK(pos + 23 <= size, "GX_LOAD_AURORA_TLUT read overrun");
@@ -1700,14 +1705,21 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     pos += 8;
     slot.format = static_cast<GXTlutFmt>(read_u32(data + pos, bigEndian));
     pos += 4;
-    slot.entries = read_u16(data + pos, bigEndian);
+    slot.numEntries = read_u16(data + pos, bigEndian);
     pos += 2;
     slot.tlutObjId = read_u32(data + pos, bigEndian);
     pos += 4;
     slot.tlutDataVersion = read_u32(data + pos, bigEndian);
     pos += 4;
-    slot.valid = true;
     g_gxState.stateDirty = true;
+  } else if (subCmd == GX_LOAD_AURORA_DESTROY_TEXOBJ) {
+    CHECK(pos + 4 <= size, "GX_LOAD_AURORA_DESTROY_TEXOBJ read overrun");
+    evict_texture_object(read_u32(data + pos, bigEndian));
+    pos += 4;
+  } else if (subCmd == GX_LOAD_AURORA_DESTROY_TLUT) {
+    CHECK(pos + 4 <= size, "GX_LOAD_AURORA_DESTROY_TLUT read overrun");
+    evict_tlut_object(read_u32(data + pos, bigEndian));
+    pos += 4;
   } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_PUSH) {
     auto label = read_string(data, pos, size, bigEndian);
     gfx::push_debug_group(std::move(label));

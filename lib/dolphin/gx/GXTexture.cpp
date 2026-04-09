@@ -24,30 +24,21 @@ u32 sNextTlutObjId = 1;
 
 u32 next_tex_obj_id() {
   if (sNextTexObjId == 0) {
-    ++sNextTexObjId;
+    FATAL("texObj ID overflow");
   }
   return sNextTexObjId++;
 }
 
 u32 next_tlut_obj_id() {
   if (sNextTlutObjId == 0) {
-    ++sNextTlutObjId;
+    FATAL("tlutObj ID overflow");
   }
   return sNextTlutObjId++;
 }
 
-void configure_tex_image_ptr(GXTexObj_& obj, const void* data) {
-  obj.data = data;
-  obj.imagePtr64 = reinterpret_cast<u64>(data);
-  SET_REG_FIELD(0, obj.image3, 21, 0, static_cast<u32>((obj.imagePtr64 >> 5) & 0x01FFFFFF));
-}
-
-void update_tex_upload_size(GXTexObj_& obj) {
-  obj.dataSize = aurora::gfx::texture_replacement::compute_texture_upload_size(obj);
-}
-
 int __cntlzw(unsigned int val) {
-  if (val == 0) return 32; // PowerPC returns 32 if the input is 0
+  if (val == 0)
+    return 32; // PowerPC returns 32 if the input is 0
 #ifdef _MSC_VER
   unsigned long idx;
   _BitScanReverse(&idx, val);
@@ -83,17 +74,18 @@ void init_texobj_common(GXTexObj_& obj, const void* data, u16 width, u16 height,
   SET_REG_FIELD(0, obj.image0, 10, 10, static_cast<u32>(height - 1));
   SET_REG_FIELD(0, obj.image0, 4, 20, format & 0xF);
 
-  configure_tex_image_ptr(obj, data);
-  update_tex_upload_size(obj);
+  obj.data = data;
+  obj.dataSize = aurora::gfx::texture_replacement::compute_texture_upload_size(obj);
 }
 
 void emit_loaded_texobj_metadata(const GXTexObj_& obj, GXTexMapID id) {
   GX_WRITE_AURORA(GX_LOAD_AURORA_TEXOBJ);
   GX_WRITE_U8(static_cast<u8>(id));
-  GX_WRITE_U64(obj.imagePtr64);
+  GX_WRITE_U64(reinterpret_cast<u64>(obj.data));
   GX_WRITE_U32(obj.width());
   GX_WRITE_U32(obj.height());
   GX_WRITE_U32(obj.raw_format());
+  GX_WRITE_U32(static_cast<u32>(obj.tlut));
   GX_WRITE_U8(static_cast<u8>(obj.has_mips()));
   GX_WRITE_U32(obj.texObjId);
   GX_WRITE_U32(obj.texDataVersion);
@@ -102,7 +94,7 @@ void emit_loaded_texobj_metadata(const GXTexObj_& obj, GXTexMapID id) {
 void emit_loaded_tlut_metadata(const GXTlutObj_& obj, u32 idx) {
   GX_WRITE_AURORA(GX_LOAD_AURORA_TLUT);
   GX_WRITE_U8(static_cast<u8>(idx));
-  GX_WRITE_U64(obj.tlutPtr64);
+  GX_WRITE_U64(reinterpret_cast<u64>(obj.data));
   GX_WRITE_U32(static_cast<u32>(obj.format));
   GX_WRITE_U16(obj.numEntries);
   GX_WRITE_U32(obj.tlutObjId);
@@ -147,9 +139,9 @@ void GXInitTexObjLOD(GXTexObj* obj_, GXTexFilter minFilt, GXTexFilter magFilt, f
 
 void GXInitTexObjData(GXTexObj* obj_, const void* data) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
-  configure_tex_image_ptr(*obj, data);
+  obj->data = data;
+  obj->dataSize = aurora::gfx::texture_replacement::compute_texture_upload_size(*obj);
   ++obj->texDataVersion;
-  update_tex_upload_size(*obj);
 }
 
 void GXInitTexObjWrapMode(GXTexObj* obj_, GXTexWrapMode wrapS, GXTexWrapMode wrapT) {
@@ -281,12 +273,10 @@ void GXInitTlutObj(GXTlutObj* obj_, const void* data, GXTlutFmt format, u16 entr
   obj->data = data;
   obj->format = format;
   obj->numEntries = entries;
-  obj->tlutPtr64 = reinterpret_cast<u64>(data);
   obj->tlutObjId = next_tlut_obj_id();
   obj->tlutDataVersion = 1;
 
   SET_REG_FIELD(0, obj->tlut, 2, 10, format);
-  SET_REG_FIELD(0, obj->loadTlut0, 21, 0, static_cast<u32>((obj->tlutPtr64 >> 5) & 0x01FFFFFF));
   SET_REG_FIELD(0, obj->loadTlut0, 8, 24, 0x64);
   aurora::gfx::texture_replacement::register_tlut(obj_, data, format, entries);
 }

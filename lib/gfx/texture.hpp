@@ -1,6 +1,8 @@
 #pragma once
 #include <dolphin/gx.h>
 
+#include <utility>
+
 #include "common.hpp"
 
 namespace aurora::gfx {
@@ -10,7 +12,7 @@ struct TextureUpload {
   wgpu::Extent3D size;
 
   TextureUpload(wgpu::TexelCopyBufferLayout layout, wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size) noexcept
-  : layout(layout), tex(tex), size(size) {}
+  : layout(layout), tex(std::move(tex)), size(size) {}
 };
 extern std::vector<TextureUpload> g_textureUploads;
 
@@ -58,10 +60,9 @@ struct GXTexObj_ {
   u32 mHeight = 0;
   u32 mFormat = aurora::gfx::InvalidTextureFormat;
   GXTlut tlut = GX_TLUT0;
-  u8 flags = 0;
-  u64 imagePtr64 = 0;
   u32 texObjId = 0;
   u32 texDataVersion = 0;
+  u8 flags = 0;
 
   static constexpr u32 get_bits(u32 reg, u32 size, u32 shift) noexcept { return (reg >> shift) & ((1u << size) - 1); }
 
@@ -91,10 +92,8 @@ struct GXTlutObj_ {
   u32 tlut = 0;
   u32 loadTlut0 = 0;
   u16 numEntries = 0;
-  u16 _pad = 0;
   const void* data = nullptr;
   GXTlutFmt format = GX_TL_IA8;
-  u64 tlutPtr64 = 0;
   u32 tlutObjId = 0;
   u32 tlutDataVersion = 0;
 };
@@ -106,7 +105,7 @@ struct TextureBind {
   GXTexObj_ texObj;
 
   TextureBind() noexcept = default;
-  TextureBind(GXTexObj_ obj, TextureHandle handle) noexcept : ref(std::move(handle)), texObj(std::move(obj)) {}
+  TextureBind(const GXTexObj_& obj, TextureHandle handle) noexcept : ref(std::move(handle)), texObj(obj) {}
   void reset() noexcept { ref.reset(); }
   [[nodiscard]] wgpu::SamplerDescriptor get_descriptor() const noexcept;
   operator bool() const noexcept { return ref.operator bool(); }

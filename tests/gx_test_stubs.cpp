@@ -60,6 +60,8 @@ std::vector<TextureUpload> g_textureUploads;
 // --- get_texture ---
 namespace aurora::gx {
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[id]; }
+void evict_texture_object(u32) noexcept {}
+void evict_tlut_object(u32) noexcept {}
 void shutdown() noexcept {}
 } // namespace aurora::gx
 

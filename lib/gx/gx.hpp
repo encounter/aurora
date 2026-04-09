@@ -280,33 +280,6 @@ inline bool operator==(const AttrArray& lhs, const AttrArray& rhs) {
 inline bool operator!=(const AttrArray& lhs, const AttrArray& rhs) { return !(lhs == rhs); }
 
 struct GXState {
-  struct LoadedTextureSlot {
-    u32 mode0 = 0;
-    u32 mode1 = 0;
-    u32 image0 = 0;
-    u32 image1 = 0;
-    u32 image2 = 0;
-    u32 image3 = 0;
-    u32 tlut = 0;
-    const void* imageData = nullptr;
-    u32 width = 0;
-    u32 height = 0;
-    GXTexFmt format = GX_TF_I4;
-    GXBool hasMips = false;
-    u32 texObjId = 0;
-    u32 texDataVersion = 0;
-    bool valid = false;
-  };
-  struct LoadedTlutSlot {
-    u32 tlut = 0;
-    u32 loadTlut0 = 0;
-    const void* data = nullptr;
-    GXTlutFmt format = GX_TL_IA8;
-    u16 entries = 0;
-    u32 tlutObjId = 0;
-    u32 tlutDataVersion = 0;
-    bool valid = false;
-  };
   struct CopyTextureRef {
     gfx::TextureHandle handle;
     u32 revision = 0;
@@ -343,8 +316,8 @@ struct GXState {
   std::array<Light, GX::MaxLights> lights;
   std::array<TevStage, MaxTevStages> tevStages;
   std::array<gfx::TextureBind, MaxTextures> textures;
-  std::array<LoadedTextureSlot, MaxTextures> loadedTextures;
-  std::array<LoadedTlutSlot, MaxTluts> loadedTluts;
+  std::array<GXTexObj_, MaxTextures> loadedTextures;
+  std::array<GXTlutObj_, MaxTluts> loadedTluts;
   std::array<Mat3x4<float>, MaxTexMtx> texMtxs;
   std::array<Mat3x4<float>, MaxPTTexMtx> ptTexMtxs;
   std::array<TcgConfig, MaxTexCoord> tcgs;
@@ -398,9 +371,7 @@ struct GXState {
     return regs;
   }();
 
-  void clearVtxSizeCache() {
-    lastVtxFmt = GX_MAX_VTXFMT;
-  }
+  void clearVtxSizeCache() { lastVtxFmt = GX_MAX_VTXFMT; }
 };
 extern GXState g_gxState;
 struct ShaderInfo;
@@ -408,6 +379,8 @@ struct ShaderInfo;
 void initialize() noexcept;
 void shutdown() noexcept;
 void clear_copy_texture_cache() noexcept;
+void evict_texture_object(u32 texObjId) noexcept;
+void evict_tlut_object(u32 tlutObjId) noexcept;
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept;
 void resolve_sampled_textures(const ShaderInfo& info) noexcept;
 

@@ -63,7 +63,7 @@ typedef struct {
 
 typedef struct {
 #ifdef TARGET_PC
-  u32 dummy[18];
+  u32 dummy[16];
 #else
   u32 dummy[8];
 #endif
@@ -71,7 +71,7 @@ typedef struct {
 
 typedef struct {
 #ifdef TARGET_PC
-  u32 dummy[12];
+  u32 dummy[10];
 #else
   u32 dummy[3];
 #endif
