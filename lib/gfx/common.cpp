@@ -4,23 +4,19 @@
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"
 #include "../gx/pipeline.hpp"
+#include "pipeline_cache.hpp"
 #include "tex_copy_conv.hpp"
 #include "tex_palette_conv.hpp"
 #include "texture_replacement.hpp"
 #include "texture.hpp"
 
-#include <atomic>
-#include <condition_variable>
-#include <deque>
-#include <fstream>
-#include <mutex>
 #include <optional>
-#include <thread>
 #include <ranges>
 
 #include <absl/container/flat_hash_map.h>
-#include <absl/container/flat_hash_set.h>
 #include <magic_enum.hpp>
+
+#include "tracy/Tracy.hpp"
 
 namespace aurora::gfx {
 static Module Log("aurora::gfx");
@@ -78,11 +74,11 @@ namespace aurora {
 // we create specialized methods to handle them. Note that these are highly dependent on
 // the structure definition, which could easily change with Dawn updates.
 template <>
-inline HashType xxh3_hash(const wgpu::BindGroupDescriptor& input, HashType seed) {
-  constexpr auto offset = offsetof(wgpu::BindGroupDescriptor, layout); // skip nextInChain, label
+inline HashType xxh3_hash(const WGPUBindGroupDescriptor& input, HashType seed) {
+  constexpr auto offset = offsetof(WGPUBindGroupDescriptor, layout); // skip nextInChain, label
   const auto hash = xxh3_hash_s(reinterpret_cast<const u8*>(&input) + offset,
-                                sizeof(wgpu::BindGroupDescriptor) - offset - sizeof(void*) /* skip entries */, seed);
-  return xxh3_hash_s(input.entries, sizeof(wgpu::BindGroupEntry) * input.entryCount, hash);
+                                sizeof(WGPUBindGroupDescriptor) - offset - sizeof(void*) /* skip entries */, seed);
+  return xxh3_hash_s(input.entries, sizeof(WGPUBindGroupEntry) * input.entryCount, hash);
 }
 template <>
 inline HashType xxh3_hash(const wgpu::SamplerDescriptor& input, HashType seed) {
@@ -93,22 +89,6 @@ inline HashType xxh3_hash(const wgpu::SamplerDescriptor& input, HashType seed) {
 } // namespace aurora
 
 namespace aurora::gfx {
-using NewPipelineCallback = std::function<wgpu::RenderPipeline()>;
-std::mutex g_pipelineMutex;
-static bool g_hasPipelineThread = false;
-static size_t g_pipelinesPerFrame = 0;
-#ifdef NDEBUG
-constexpr size_t BuildPipelinesPerFrame = 5;
-#else
-constexpr size_t BuildPipelinesPerFrame = 1;
-#endif
-static std::thread g_pipelineThread;
-static std::atomic_bool g_pipelineThreadEnd;
-static std::condition_variable g_pipelineCv;
-static absl::flat_hash_map<PipelineRef, wgpu::RenderPipeline> g_pipelines;
-static std::deque<std::pair<PipelineRef, NewPipelineCallback>> g_priorityPipelines;
-static std::deque<std::pair<PipelineRef, NewPipelineCallback>> g_backgroundPipelines;
-static absl::flat_hash_set<PipelineRef> g_pendingPipelines;
 static absl::flat_hash_map<BindGroupRef, wgpu::BindGroup> g_cachedBindGroups;
 static absl::flat_hash_map<SamplerRef, wgpu::Sampler> g_cachedSamplers;
 
@@ -123,13 +103,11 @@ wgpu::Buffer g_indexBuffer;
 wgpu::Buffer g_storageBuffer;
 static std::array<wgpu::Buffer, 3> g_stagingBuffers;
 static wgpu::Limits g_cachedLimits;
-
+static uint32_t g_frameIndex = UINT32_MAX;
 static PipelineRef g_currentPipeline;
 
 // for imgui debug
 AuroraStats g_stats{};
-std::atomic_ref queuedPipelines{g_stats.queuedPipelines};
-std::atomic_ref createdPipelines{g_stats.createdPipelines};
 
 using CommandList = std::vector<Command>;
 struct RenderPass {
@@ -187,65 +165,6 @@ struct OffscreenCacheEntry {
 };
 static absl::flat_hash_map<OffscreenCacheKey, OffscreenCacheEntry> g_offscreenCache;
 std::vector<TextureUpload> g_textureUploads;
-
-static ByteBuffer g_serializedPipelines{};
-static u32 g_serializedPipelineCount = 0;
-
-template <typename PipelineConfig>
-static void serialize_pipeline_config(ShaderType type, const PipelineConfig& config) {
-  static_assert(std::has_unique_object_representations_v<PipelineConfig>);
-  g_serializedPipelines.append(type);
-  g_serializedPipelines.append<u32>(sizeof(config));
-  g_serializedPipelines.append(config);
-  ++g_serializedPipelineCount;
-}
-
-template <typename PipelineConfig>
-static PipelineRef find_pipeline(ShaderType type, const PipelineConfig& config, NewPipelineCallback&& cb,
-                                 bool serialize = true) {
-  PipelineRef hash = xxh3_hash(config, static_cast<HashType>(type));
-  bool found = false;
-  {
-    std::scoped_lock guard{g_pipelineMutex};
-    found = g_pipelines.contains(hash);
-    if (!found && g_pendingPipelines.contains(hash)) {
-      found = true;
-      // Promote from background to priority if requested during a frame
-      if (g_currentRenderPass != UINT32_MAX) {
-        auto it = std::find_if(g_backgroundPipelines.begin(), g_backgroundPipelines.end(),
-                               [=](const auto& v) { return v.first == hash; });
-        if (it != g_backgroundPipelines.end()) {
-          g_priorityPipelines.emplace_back(std::move(*it));
-          g_backgroundPipelines.erase(it);
-        }
-      }
-    }
-    if (!found) {
-      if (!g_hasPipelineThread && g_pipelinesPerFrame < BuildPipelinesPerFrame) {
-        g_pipelines.try_emplace(hash, cb());
-        if (serialize) {
-          serialize_pipeline_config(type, config);
-        }
-        ++g_pipelinesPerFrame;
-        createdPipelines++;
-        found = true;
-      } else {
-        bool isFrameRequest = g_currentRenderPass != UINT32_MAX;
-        auto& targetQueue = isFrameRequest ? g_priorityPipelines : g_backgroundPipelines;
-        targetQueue.emplace_back(std::pair{hash, std::move(cb)});
-        g_pendingPipelines.insert(hash);
-        if (serialize) {
-          serialize_pipeline_config(type, config);
-        }
-      }
-    }
-  }
-  if (!found) {
-    g_pipelineCv.notify_one();
-    queuedPipelines++;
-  }
-  return hash;
-}
 
 static inline void push_command(CommandType type, const Command::Data& data) {
   if (g_currentRenderPass == UINT32_MAX)
@@ -305,7 +224,7 @@ void push_draw_command(clear::DrawData data) {
 }
 
 template <>
-PipelineRef pipeline_ref(clear::PipelineConfig config) {
+PipelineRef pipeline_ref(const clear::PipelineConfig& config) {
   return find_pipeline(ShaderType::Clear, config, [=] { return create_pipeline(config); });
 }
 
@@ -432,6 +351,7 @@ static OffscreenCacheEntry get_offscreen_textures(uint32_t width, uint32_t heigh
 }
 
 void begin_offscreen(uint32_t width, uint32_t height) {
+  ZoneScoped;
   CHECK(g_currentRenderPass != UINT32_MAX, "begin_offscreen called outside of a frame");
 
   // If the current EFB pass has no resolve target, its output is unobservable.
@@ -474,6 +394,7 @@ void begin_offscreen(uint32_t width, uint32_t height) {
 }
 
 void end_offscreen() {
+  ZoneScoped;
   CHECK(g_inOffscreen, "end_offscreen called without begin_offscreen");
 
   g_inOffscreen = false;
@@ -502,132 +423,15 @@ void push_draw_command(gx::DrawData data) {
 }
 
 template <>
-PipelineRef pipeline_ref(gx::PipelineConfig config) {
+PipelineRef pipeline_ref(const gx::PipelineConfig& config) {
   return find_pipeline(ShaderType::GX, config, [=] { return create_pipeline(config); });
 }
 
-static void pipeline_worker() {
-  bool hasMore = false;
-  while (g_hasPipelineThread || g_pipelinesPerFrame < BuildPipelinesPerFrame) {
-    std::pair<PipelineRef, NewPipelineCallback> cb;
-    {
-      std::unique_lock lock{g_pipelineMutex};
-      if (g_hasPipelineThread) {
-        if (!hasMore) {
-          g_pipelineCv.wait(lock, [] {
-            return !g_priorityPipelines.empty() || !g_backgroundPipelines.empty() || g_pipelineThreadEnd;
-          });
-        }
-      } else if (g_priorityPipelines.empty() && g_backgroundPipelines.empty()) {
-        return;
-      }
-      if (g_pipelineThreadEnd) {
-        break;
-      }
-      auto& source = !g_priorityPipelines.empty() ? g_priorityPipelines : g_backgroundPipelines;
-      cb = std::move(source.front());
-      source.pop_front();
-    }
-    auto result = cb.second();
-    {
-      std::lock_guard lock{g_pipelineMutex};
-      g_pipelines.try_emplace(cb.first, std::move(result));
-      g_pendingPipelines.erase(cb.first);
-      hasMore = !g_priorityPipelines.empty() || !g_backgroundPipelines.empty();
-    }
-    if (!g_hasPipelineThread) {
-      ++g_pipelinesPerFrame;
-    }
-    ++createdPipelines;
-    --queuedPipelines;
-  }
-}
-
-// Load serialized pipeline cache
-void load_pipeline_cache() {
-  ByteBuffer pipelineCache;
-  u32 pipelineCacheCount = 0;
-
-  {
-    std::string path = std::string{g_config.configPath} + "/pipeline_cache.bin";
-    std::ifstream file(path, std::ios::in | std::ios::binary | std::ios::ate);
-    if (file) {
-      const auto size = file.tellg();
-      file.seekg(0, std::ios::beg);
-      constexpr size_t headerSize = sizeof(pipelineCacheCount);
-      if (size != -1 && size > headerSize) {
-        pipelineCache.append_zeroes(size_t(size) - headerSize);
-        file.read(reinterpret_cast<char*>(&pipelineCacheCount), headerSize);
-        file.read(reinterpret_cast<char*>(pipelineCache.data()), size_t(size) - headerSize);
-      }
-    }
-  }
-
-  if (pipelineCacheCount > 0) {
-    size_t offset = 0;
-    while (offset < pipelineCache.size()) {
-      ShaderType type = *reinterpret_cast<const ShaderType*>(pipelineCache.data() + offset);
-      offset += sizeof(ShaderType);
-      u32 size = *reinterpret_cast<const u32*>(pipelineCache.data() + offset);
-      offset += sizeof(u32);
-      switch (type) {
-      case ShaderType::Clear: {
-        if (size != sizeof(clear::PipelineConfig)) {
-          break;
-        }
-        const auto config = *reinterpret_cast<const clear::PipelineConfig*>(pipelineCache.data() + offset);
-        if (config.version != clear::ClearPipelineConfigVersion) {
-          break;
-        }
-        find_pipeline(type, config, [=] { return clear::create_pipeline(config); }, true);
-        break;
-      }
-      case ShaderType::GX: {
-        if (size != sizeof(gx::PipelineConfig)) {
-          break;
-        }
-        const auto config = *reinterpret_cast<const gx::PipelineConfig*>(pipelineCache.data() + offset);
-        if (config.version != gx::GXPipelineConfigVersion) {
-          break;
-        }
-        find_pipeline(type, config, [=] { return gx::create_pipeline(config); }, true);
-        break;
-      }
-      default:
-        Log.warn("Unknown pipeline type {}", underlying(type));
-        break;
-      }
-      offset += size;
-    }
-  }
-}
-
-// Write serialized pipelines to file
-void save_pipeline_cache() {
-  const auto path = std::string{g_config.configPath} + "/pipeline_cache.bin";
-  std::ofstream file(path, std::ios::out | std::ios::trunc | std::ios::binary);
-  if (file) {
-    file.write(reinterpret_cast<const char*>(&g_serializedPipelineCount), sizeof(g_serializedPipelineCount));
-    file.write(reinterpret_cast<const char*>(g_serializedPipelines.data()), g_serializedPipelines.size());
-  }
-  g_serializedPipelines.clear();
-  g_serializedPipelineCount = 0;
-}
-
 void initialize() {
+  g_frameIndex = 0;
   tex_copy_conv::initialize();
   tex_palette_conv::initialize();
   texture_replacement::initialize();
-
-  // No async pipelines for OpenGL (ES)
-  if (webgpu::g_backendType == wgpu::BackendType::OpenGL || webgpu::g_backendType == wgpu::BackendType::OpenGLES ||
-      webgpu::g_backendType == wgpu::BackendType::WebGPU) {
-    g_hasPipelineThread = false;
-  } else {
-    g_pipelineThreadEnd = false;
-    g_hasPipelineThread = true;
-    g_pipelineThread = std::thread(pipeline_worker);
-  }
 
   // For uniform & storage buffer offset alignments
   g_device.GetLimits(&g_cachedLimits);
@@ -659,19 +463,11 @@ void initialize() {
   map_staging_buffer();
 
   gx::initialize();
-
-  load_pipeline_cache();
+  initialize_pipeline_cache();
 }
 
 void shutdown() {
-  if (g_hasPipelineThread) {
-    g_pipelineThreadEnd = true;
-    g_pipelineCv.notify_all();
-    g_pipelineThread.join();
-  }
-
-  save_pipeline_cache();
-
+  shutdown_pipeline_cache();
   tex_copy_conv::shutdown();
   tex_palette_conv::shutdown();
   texture_replacement::shutdown();
@@ -680,10 +476,6 @@ void shutdown() {
   g_textureUploads.clear();
   g_cachedBindGroups.clear();
   g_cachedSamplers.clear();
-  g_pipelines.clear();
-  g_priorityPipelines.clear();
-  g_backgroundPipelines.clear();
-  g_pendingPipelines.clear();
   g_vertexBuffer = {};
   g_uniformBuffer = {};
   g_indexBuffer = {};
@@ -695,9 +487,7 @@ void shutdown() {
   g_offscreenColor = {};
   g_offscreenDepth = {};
   g_inOffscreen = false;
-
-  queuedPipelines = 0;
-  createdPipelines = 0;
+  g_frameIndex = UINT32_MAX;
 }
 
 static size_t currentStagingBuffer = 0;
@@ -718,8 +508,12 @@ void map_staging_buffer() {
 }
 
 void begin_frame() {
-  while (!bufferMapped) {
-    g_instance.ProcessEvents();
+  ZoneScoped;
+  {
+    ZoneScopedN("Wait for buffer map");
+    while (!bufferMapped) {
+      g_instance.ProcessEvents();
+    }
   }
   size_t bufferOffset = 0;
   const auto& stagingBuf = g_stagingBuffers[currentStagingBuffer];
@@ -747,20 +541,18 @@ void begin_frame() {
   g_currentRenderPass = 0;
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
-
-  if (!g_hasPipelineThread) {
-    g_pipelinesPerFrame = 0;
-  }
+  begin_pipeline_frame();
 }
 
 void end_frame(const wgpu::CommandEncoder& cmd) {
+  ZoneScoped;
   ASSERT(!g_inOffscreen, "end_frame called while offscreen rendering is active");
   uint64_t bufferOffset = 0;
   const auto writeBuffer = [&](ByteBuffer& buf, wgpu::Buffer& out, uint64_t size, std::string_view label) {
     const auto writeSize = buf.size(); // Only need to copy this many bytes
     if (writeSize > 0) {
-      cmd.CopyBufferToBuffer(g_stagingBuffers[currentStagingBuffer], bufferOffset, out, 0, ALIGN(writeSize, 4));
-      buf.clear();
+      cmd.CopyBufferToBuffer(g_stagingBuffers[currentStagingBuffer], bufferOffset, out, 0, AURORA_ALIGN(writeSize, 4));
+      buf.release();
     }
     bufferOffset += size;
     return writeSize;
@@ -778,7 +570,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
           .layout =
               wgpu::TexelCopyBufferLayout{
                   .offset = item.layout.offset + bufferOffset,
-                  .bytesPerRow = ALIGN(item.layout.bytesPerRow, 256),
+                  .bytesPerRow = AURORA_ALIGN(item.layout.bytesPerRow, 256),
                   .rowsPerImage = item.layout.rowsPerImage,
               },
           .buffer = g_stagingBuffers[currentStagingBuffer],
@@ -786,7 +578,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
       cmd.CopyBufferToTexture(&buf, &item.tex, &item.size);
     }
     g_textureUploads.clear();
-    g_textureUpload.clear();
+    g_textureUpload.release();
   }
   currentStagingBuffer = (currentStagingBuffer + 1) % g_stagingBuffers.size();
   map_staging_buffer();
@@ -794,13 +586,14 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
   for (auto& array : gx::g_gxState.arrays) {
     array.cachedRange = {};
   }
-
-  if (!g_hasPipelineThread) {
-    pipeline_worker();
-  }
+  end_pipeline_frame();
+  ++g_frameIndex;
 }
 
+uint32_t current_frame() noexcept { return g_frameIndex; }
+
 void render(wgpu::CommandEncoder& cmd) {
+  ZoneScoped;
   for (u32 i = 0; i < g_renderPasses.size(); ++i) {
     const auto& passInfo = g_renderPasses[i];
     for (const auto& conv : passInfo.paletteConvs) {
@@ -970,12 +763,11 @@ bool bind_pipeline(PipelineRef ref, const wgpu::RenderPassEncoder& pass) {
   if (ref == g_currentPipeline) {
     return true;
   }
-  std::lock_guard guard{g_pipelineMutex};
-  const auto it = g_pipelines.find(ref);
-  if (it == g_pipelines.end()) {
+  wgpu::RenderPipeline pipeline;
+  if (!get_pipeline(ref, pipeline)) {
     return false;
   }
-  pass.SetPipeline(it->second);
+  pass.SetPipeline(pipeline);
   g_currentPipeline = ref;
   return true;
 }
@@ -1025,7 +817,7 @@ Range push_storage(const uint8_t* data, size_t length) {
 }
 Range push_texture_data(const uint8_t* data, size_t length, u32 bytesPerRow, u32 rowsPerImage) {
   // For CopyBufferToTexture, we need an alignment of 256 per row (see Dawn kTextureBytesPerRowAlignment)
-  const auto copyBytesPerRow = ALIGN(bytesPerRow, 256);
+  const auto copyBytesPerRow = AURORA_ALIGN(bytesPerRow, 256);
   const auto range = map(g_textureUpload, copyBytesPerRow * rowsPerImage, 0);
   u8* dst = g_textureUpload.data() + range.offset;
   for (u32 i = 0; i < rowsPerImage; ++i) {
@@ -1053,21 +845,21 @@ std::pair<ByteBuffer, Range> map_storage(size_t length) {
 }
 
 // TODO: should we avoid caching bind groups altogether?
-BindGroupRef bind_group_ref(const wgpu::BindGroupDescriptor& descriptor) {
+BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor) {
 #ifdef EMSCRIPTEN
-  const auto bg = g_device.CreateBindGroup(&descriptor);
+  const auto bg = wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor);
   BindGroupRef id = reinterpret_cast<BindGroupRef>(bg.Get());
   g_cachedBindGroups.try_emplace(id, bg);
 #else
   const auto id = xxh3_hash(descriptor);
   if (!g_cachedBindGroups.contains(id)) {
-    g_cachedBindGroups.try_emplace(id, g_device.CreateBindGroup(&descriptor));
+    g_cachedBindGroups.try_emplace(id, wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor));
   }
 #endif
   return id;
 }
 
-wgpu::BindGroup find_bind_group(BindGroupRef id) {
+wgpu::BindGroup& find_bind_group(BindGroupRef id) {
 #ifdef EMSCRIPTEN
   return g_cachedBindGroups[id];
 #else
@@ -1077,7 +869,7 @@ wgpu::BindGroup find_bind_group(BindGroupRef id) {
 #endif
 }
 
-wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
+wgpu::Sampler& sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
   const auto id = xxh3_hash(descriptor);
   auto it = g_cachedSamplers.find(id);
   if (it == g_cachedSamplers.end()) {
@@ -1086,7 +878,7 @@ wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
   return it->second;
 }
 
-uint32_t align_uniform(uint32_t value) { return ALIGN(value, g_cachedLimits.minUniformBufferOffsetAlignment); }
+uint32_t align_uniform(uint32_t value) { return AURORA_ALIGN(value, g_cachedLimits.minUniformBufferOffsetAlignment); }
 
 void insert_debug_marker(std::string label) {
 #if defined(AURORA_GFX_DEBUG_GROUPS)

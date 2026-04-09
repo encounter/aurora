@@ -15,6 +15,8 @@
 #include <SDL3/SDL_filesystem.h>
 #include <magic_enum.hpp>
 
+#include "tracy/Tracy.hpp"
+
 namespace aurora {
 AuroraConfig g_config;
 uint32_t g_sdlCustomEventsStart;
@@ -167,6 +169,7 @@ void shutdown() noexcept {
 }
 
 const AuroraEvent* update() noexcept {
+  ZoneScoped;
   if (g_initialFrame) {
     g_initialFrame = false;
     input::initialize();
@@ -175,6 +178,7 @@ const AuroraEvent* update() noexcept {
 }
 
 bool begin_frame() noexcept {
+  ZoneScoped;
 #ifdef AURORA_ENABLE_GX
   if (!g_surface) {
     webgpu::refresh_surface(true);
@@ -205,6 +209,7 @@ bool begin_frame() noexcept {
     Log.error("Failed to get surface texture: {}", magic_enum::enum_name(surfaceTexture.status));
     return false;
   }
+
   imgui::new_frame(window::get_window_size());
   gfx::begin_frame();
 #endif
@@ -212,6 +217,7 @@ bool begin_frame() noexcept {
 }
 
 void end_frame() noexcept {
+  ZoneScoped;
 #ifdef AURORA_ENABLE_GX
   gx::fifo::drain();
   const auto encoderDescriptor = wgpu::CommandEncoderDescriptor{
@@ -258,6 +264,23 @@ void end_frame() noexcept {
     Log.warn("Surface present failed: {}", static_cast<int>(presentStatus));
   }
   g_currentView = {};
+
+  TracyPlotConfig("aurora: lastVertSize", tracy::PlotFormatType::Memory, false, true, 0);
+  TracyPlotConfig("aurora: lastUniformSize", tracy::PlotFormatType::Memory, false, true, 0);
+  TracyPlotConfig("aurora: lastIndexSize", tracy::PlotFormatType::Memory, false, true, 0);
+  TracyPlotConfig("aurora: lastStorageSize", tracy::PlotFormatType::Memory, false, true, 0);
+  TracyPlotConfig("aurora: lastTextureUploadSize", tracy::PlotFormatType::Memory, false, true, 0);
+
+  TracyPlot("aurora: queuedPipelines", static_cast<int64_t>(gfx::g_stats.queuedPipelines));
+  TracyPlot("aurora: createdPipelines", static_cast<int64_t>(gfx::g_stats.createdPipelines));
+  TracyPlot("aurora: drawCallCount", static_cast<int64_t>(gfx::g_stats.drawCallCount));
+  TracyPlot("aurora: mergedDrawCallCount", static_cast<int64_t>(gfx::g_stats.mergedDrawCallCount));
+  TracyPlot("aurora: lastVertSize", static_cast<int64_t>(gfx::g_stats.lastVertSize));
+  TracyPlot("aurora: lastUniformSize", static_cast<int64_t>(gfx::g_stats.lastUniformSize));
+  TracyPlot("aurora: lastIndexSize", static_cast<int64_t>(gfx::g_stats.lastIndexSize));
+  TracyPlot("aurora: lastStorageSize", static_cast<int64_t>(gfx::g_stats.lastStorageSize));
+  TracyPlot("aurora: lastTextureUploadSize", static_cast<int64_t>(gfx::g_stats.lastTextureUploadSize));
+
 #endif
 }
 } // namespace

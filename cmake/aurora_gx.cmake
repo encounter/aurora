@@ -1,6 +1,7 @@
 add_library(aurora_gx STATIC
         lib/gfx/clear.cpp
         lib/gfx/common.cpp
+        lib/gfx/pipeline_cache.cpp
         lib/gfx/dds_io.cpp
         lib/gfx/tex_copy_conv.cpp
         lib/gfx/tex_palette_conv.cpp
@@ -35,7 +36,7 @@ add_library(aurora_gx STATIC
 add_library(aurora::gx ALIAS aurora_gx)
 
 target_link_libraries(aurora_gx PUBLIC aurora::core xxhash)
-target_link_libraries(aurora_gx PRIVATE absl::btree absl::flat_hash_map)
+target_link_libraries(aurora_gx PRIVATE absl::btree absl::flat_hash_map sqlite3 TracyClient)
 if (EMSCRIPTEN)
     target_link_options(aurora_gx PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)
     target_compile_definitions(aurora_gx PRIVATE ENABLE_BACKEND_WEBGPU)

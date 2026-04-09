@@ -3,11 +3,13 @@
 #include "../webgpu/gpu.hpp"
 #include "gx_fmt.hpp"
 #include "shader_info.hpp"
+#include "tracy/Tracy.hpp"
 
 namespace aurora::gx {
 static Module Log("aurora::gx");
 
 wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
+  ZoneScoped;
   const auto shader = build_shader(config.shaderConfig);
   return build_pipeline(config, {}, shader, "GX Pipeline");
 }

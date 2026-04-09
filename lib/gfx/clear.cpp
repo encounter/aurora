@@ -1,6 +1,7 @@
 #include "clear.hpp"
 
 #include "../webgpu/gpu.hpp"
+#include "tracy/Tracy.hpp"
 
 namespace {
 wgpu::ColorWriteMask clear_write_mask(bool clearColor, bool clearAlpha) {
@@ -21,6 +22,7 @@ using webgpu::g_device;
 using webgpu::g_graphicsConfig;
 
 wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
+  ZoneScoped;
   wgpu::ShaderSourceWGSL sourceDescriptor{};
   sourceDescriptor.code = R"""(
 struct VertexOutput {

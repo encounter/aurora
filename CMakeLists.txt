@@ -10,6 +10,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(AURORA_ENABLE_GX "Enable GX implementation and WebGPU renderer" ON)
 option(AURORA_ENABLE_DVD "Enable DVD implementation backed by nod" OFF)  # TODO: need to fix tests
 option(AURORA_ENABLE_CARD "Enable CARD implementation based on kabufuda" ON)
+option(AURORA_CACHE_USE_ZSTD "Compress WebGPU cache entries with zstd" ON)
 
 # Dependency versions
 set(AURORA_DAWN_VERSION "v20260309.222352" CACHE STRING "Dawn version tag (https://github.com/encounter/dawn-build/releases)")
@@ -110,7 +111,7 @@ add_library(aurora::shared ALIAS aurora_shared)
 target_compile_definitions(aurora_shared PUBLIC AURORA TARGET_PC)
 target_include_directories(aurora_shared PUBLIC include)
 target_link_libraries(aurora_shared PUBLIC ${AURORA_SDL3_TARGET} fmt::fmt xxhash)
-target_link_libraries(aurora_shared PRIVATE absl::btree absl::flat_hash_map)
+target_link_libraries(aurora_shared PRIVATE absl::btree absl::flat_hash_map TracyClient)
 
 if (AURORA_ENABLE_DVD)
   target_sources(aurora_shared PRIVATE lib/dolphin/dvd/dvd.cpp)
@@ -122,9 +123,11 @@ if (AURORA_ENABLE_GX)
     # aurora_core GX sources
     lib/imgui.cpp
     lib/webgpu/gpu.cpp
+    lib/webgpu/gpu_cache.cpp
     # aurora_gx sources
     lib/gfx/clear.cpp
     lib/gfx/common.cpp
+    lib/gfx/pipeline_cache.cpp
     lib/gfx/dds_io.cpp
     lib/gfx/tex_copy_conv.cpp
     lib/gfx/tex_palette_conv.cpp
@@ -158,7 +161,11 @@ if (AURORA_ENABLE_GX)
   target_compile_definitions(aurora_shared PUBLIC AURORA_ENABLE_GX)
   # imgui code is compiled into aurora_shared; link PRIVATE to avoid duplicating the static lib
   # into downstream targets. Propagate only the include directories for header access.
-  target_link_libraries(aurora_shared PRIVATE imgui)
+  target_link_libraries(aurora_shared PRIVATE imgui sqlite3)
+  if (AURORA_CACHE_USE_ZSTD)
+    target_compile_definitions(aurora_shared PRIVATE AURORA_CACHE_USE_ZSTD)
+    target_link_libraries(aurora_shared PRIVATE libzstd_static)
+  endif ()
   target_include_directories(aurora_shared PUBLIC $<TARGET_PROPERTY:imgui,INTERFACE_INCLUDE_DIRECTORIES>)
   if (EMSCRIPTEN)
     target_link_options(aurora_shared PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)

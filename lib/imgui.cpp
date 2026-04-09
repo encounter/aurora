@@ -15,6 +15,7 @@
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_sdlrenderer3.h"
 #include "backends/imgui_impl_wgpu.h"
+#include "tracy/Tracy.hpp"
 
 namespace aurora::imgui {
 static float g_scale;
@@ -36,6 +37,7 @@ void create_context() noexcept {
 }
 
 void initialize() noexcept {
+  ZoneScoped;
   SDL_Renderer* renderer = window::get_sdl_renderer();
   ImGui_ImplSDL3_InitForSDLRenderer(window::get_sdl_window(), renderer);
   g_useSdlRenderer = renderer != nullptr;
@@ -50,6 +52,7 @@ void initialize() noexcept {
 }
 
 void shutdown() noexcept {
+  ZoneScoped;
   if (g_useSdlRenderer) {
     ImGui_ImplSDLRenderer3_Shutdown();
   } else {
@@ -69,6 +72,7 @@ void process_event(const SDL_Event& event) noexcept {
 }
 
 void new_frame(const AuroraWindowSize& size) noexcept {
+  ZoneScoped;
   const float framebufferScaleX =
       size.width > 0 ? static_cast<float>(size.native_fb_width) / static_cast<float>(size.width) : 1.0f;
   const float framebufferScaleY =
@@ -98,6 +102,7 @@ void new_frame(const AuroraWindowSize& size) noexcept {
 }
 
 void render(const wgpu::RenderPassEncoder& pass) noexcept {
+  ZoneScoped;
   ImGui::Render();
 
   auto* data = ImGui::GetDrawData();

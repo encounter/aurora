@@ -281,10 +281,6 @@ void GXFlush() {
   if (__gx->dirtyState) {
     __GXSetDirtyState();
   }
-  for (u32 i = 32; i > 0; i--) {
-    GX_WRITE_U8(0);
-  }
-  // PPCSync();
 }
 
 void GXPixModeSync() {
