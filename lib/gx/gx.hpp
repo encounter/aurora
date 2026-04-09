@@ -315,6 +315,8 @@ struct GXState {
   std::array<Mat3x4<float>, MaxPTTexMtx> ptTexMtxs;
   std::array<TcgConfig, MaxTexCoord> tcgs;
   std::array<TexCoordScale, MaxTexCoord> texCoordScales;
+  u16 lastVtxSize = 0;
+  GXVtxFmt lastVtxFmt = GX_MAX_VTXFMT;
   std::array<GXAttrType, MaxVtxAttr> vtxDesc;
   std::array<VtxFmt, MaxVtxFmt> vtxFmts;
   std::array<TevSwap, MaxTevSwap> tevSwapTable{
@@ -358,6 +360,10 @@ struct GXState {
   bool stateDirty = true;
   std::array<u32, 0x100> bpRegCache;
   GXState() { bpRegCache[0xFE] = 0x00FFFFFF; }
+
+  void clearVtxSizeCache() {
+    lastVtxFmt = GX_MAX_VTXFMT;
+  }
 };
 extern GXState g_gxState;
 

@@ -109,7 +109,7 @@ public:
     m_length += size;
   }
 
-  void clear() {
+  void release() {
     if (m_data != nullptr && m_owned) {
       free(m_data);
     }
@@ -117,6 +117,10 @@ public:
     m_length = 0;
     m_capacity = 0;
     m_owned = true;
+  }
+
+  void clear() {
+    m_length = 0;
   }
 
   void reserve_extra(size_t size) { resize(m_length + size, true); }
@@ -140,6 +144,10 @@ private:
     } else if (size > m_capacity) {
       if (!m_owned) {
         abort();
+      }
+      // Exponential expansion to avoid O(n^2) time complexity.
+      if (size < m_capacity * 2) {
+        size = m_capacity * 2;
       }
       m_data = static_cast<uint8_t*>(realloc(m_data, size));
       if (zeroed) {
@@ -271,13 +279,13 @@ template <typename DrawData>
 DrawData* get_last_draw_command();
 
 template <typename PipelineConfig>
-PipelineRef pipeline_ref(PipelineConfig config);
+PipelineRef pipeline_ref(const PipelineConfig& config);
 bool bind_pipeline(PipelineRef ref, const wgpu::RenderPassEncoder& pass);
 
-BindGroupRef bind_group_ref(const wgpu::BindGroupDescriptor& descriptor);
-wgpu::BindGroup find_bind_group(BindGroupRef id);
+BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor);
+wgpu::BindGroup& find_bind_group(BindGroupRef id);
 
-wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor);
+wgpu::Sampler& sampler_ref(const wgpu::SamplerDescriptor& descriptor);
 
 uint32_t align_uniform(uint32_t value);
 
