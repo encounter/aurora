@@ -74,6 +74,8 @@ typedef void (*AuroraImGuiInitCallback)(const AuroraWindowSize* size);
 #define MEM1_DEFAULT_SIZE = 24 * 1024 * 1024;
 #define ARAM_DEFAULT_SIZE = 16 * 1024 * 1024;
 
+typedef struct PADDefaultMapping PADDefaultMapping;
+
 typedef struct {
   const char* appName;
   const char* configPath;
@@ -108,6 +110,11 @@ typedef struct {
    * This can be set to 0 to disable allocating this region.
    */
   uint32_t mem2Size;
+
+  /**
+   * If not null, a default controller mapping configuration to use.
+   */
+  const PADDefaultMapping* defaultPadMapping;
 } AuroraConfig;
 
 typedef struct {

@@ -38,6 +38,28 @@ static constexpr std::array<PADAxisMapping, PAD_AXIS_COUNT> g_defaultAxes{{
     {{SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_TRIGGER_R},
 }};
 
+template<typename T, size_t N>
+constexpr const std::array<T, N>& toStdArray(const T (&array)[N]) {
+  static_assert(sizeof(array) == sizeof(std::array<T, N>));
+  return reinterpret_cast<const std::array<T, N>&>(array);
+}
+
+static const std::array<PADButtonMapping, PAD_BUTTON_COUNT>& getDefaultButtons() {
+  if (aurora::g_config.defaultPadMapping) {
+    return toStdArray(aurora::g_config.defaultPadMapping->buttons);
+  }
+
+  return g_defaultButtons;
+}
+
+static const std::array<PADAxisMapping, PAD_AXIS_COUNT>& getDefaultAxes() {
+  if (aurora::g_config.defaultPadMapping) {
+    return toStdArray(aurora::g_config.defaultPadMapping->axes);
+  }
+
+  return g_defaultAxes;
+}
+
 void PADSetSpec(u32 spec) {}
 BOOL PADInit() {
   return true;
@@ -119,8 +141,8 @@ void __PADLoadMapping(aurora::input::GameController* controller) {
 
   std::string basePath{aurora::g_config.configPath};
   if (!controller->m_mappingLoaded) {
-    controller->m_buttonMapping = g_defaultButtons;
-    controller->m_axisMapping = g_defaultAxes;
+    controller->m_buttonMapping = getDefaultButtons();
+    controller->m_axisMapping = getDefaultAxes();
   }
 
   controller->m_mappingLoaded = true;
@@ -747,8 +769,8 @@ void PADRestoreDefaultMapping(uint32_t port) {
   if (controller == nullptr) {
     return;
   }
-  controller->m_buttonMapping = g_defaultButtons;
-  controller->m_axisMapping = g_defaultAxes;
+  controller->m_buttonMapping = getDefaultButtons();
+  controller->m_axisMapping = getDefaultAxes();
 }
 
 void PADBlockInput(bool block) { gBlockPAD = block; }

@@ -69,6 +69,8 @@
 extern "C" {
 #endif
 
+#define NATIVE_BUTTON_INVALID 0xFFFFFFFF
+
 typedef struct PADStatus {
   u16 button;
   s8 stickX;
@@ -130,6 +132,11 @@ typedef struct PADAxisMapping {
   s32 nativeButton;
   PADAxis padAxis;
 } PADAxisMapping;
+
+typedef struct PADDefaultMapping {
+  PADButtonMapping buttons[PAD_BUTTON_COUNT];
+  PADAxisMapping axes[PAD_AXIS_COUNT];
+} PADDefaultMapping;
 
 /* Returns the total number of controllers */
 u32 PADCount();
