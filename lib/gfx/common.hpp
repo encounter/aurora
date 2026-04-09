@@ -224,6 +224,7 @@ void shutdown();
 
 void begin_frame();
 void end_frame(const wgpu::CommandEncoder& cmd);
+uint32_t current_frame() noexcept;
 void render(wgpu::CommandEncoder& cmd);
 void render_pass(const wgpu::RenderPassEncoder& pass, uint32_t idx);
 void map_staging_buffer();
