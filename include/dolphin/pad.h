@@ -69,7 +69,7 @@
 extern "C" {
 #endif
 
-#define NATIVE_BUTTON_INVALID 0xFFFFFFFF
+#define PAD_NATIVE_BUTTON_INVALID 0xFFFFFFFF
 
 typedef struct PADStatus {
   u16 button;
