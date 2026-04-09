@@ -164,8 +164,8 @@ gfx::TextureHandle get_tlut_texture(const GXState::LoadedTlutSlot& tlut) {
   }
 
   const auto handle = gfx::new_static_texture_2d(
-      tlut.entries, 1, 1, texFmt,
-      {static_cast<const u8*>(tlut.data), static_cast<size_t>(tlut.entries) * sizeof(u16)}, true, "Loaded TLUT");
+      tlut.entries, 1, 1, texFmt, {static_cast<const u8*>(tlut.data), static_cast<size_t>(tlut.entries) * sizeof(u16)},
+      true, "Loaded TLUT");
   s_tlutTextureCache.emplace(key, handle);
   return handle;
 }
@@ -191,8 +191,9 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
     return it->second;
   }
 
-  const auto handle = gfx::new_static_texture_2d(obj.width(), obj.height(), mip_count_for(obj), obj.format(),
-                                                 {static_cast<const u8*>(obj.data), obj.dataSize}, false, "GX Static Texture");
+  const auto handle =
+      gfx::new_static_texture_2d(obj.width(), obj.height(), mip_count_for(obj), obj.format(),
+                                 {static_cast<const u8*>(obj.data), obj.dataSize}, false, "GX Static Texture");
   s_staticTextureCache.emplace(key, handle);
   return handle;
 }
@@ -216,10 +217,9 @@ gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GX
     return it->second;
   }
 
-  auto decoded = gfx::decode_palette_texture_rgba8(
-      obj.format(), obj.width(), obj.height(), mip_count_for(obj),
-      {static_cast<const u8*>(obj.data), obj.dataSize}, tlut.format,
-      tlut.entries, {static_cast<const u8*>(tlut.data), static_cast<size_t>(tlut.entries) * 2});
+  auto decoded = gfx::convert_texture_palette(
+      obj.format(), obj.width(), obj.height(), mip_count_for(obj), {static_cast<const u8*>(obj.data), obj.dataSize},
+      tlut.format, tlut.entries, {static_cast<const u8*>(tlut.data), static_cast<size_t>(tlut.entries) * 2});
   if (decoded.empty()) {
     return {};
   }

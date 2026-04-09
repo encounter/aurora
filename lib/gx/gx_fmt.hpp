@@ -937,3 +937,16 @@ inline std::string format_as(const GXTexFmt& fmt) {
     return fmt::format("GXTexFmt({})", underlying(fmt));
   }
 }
+
+inline std::string format_as(const GXTlutFmt& fmt) {
+  switch (fmt) {
+  case GX_TL_IA8:
+    return "GX_TL_IA8";
+  case GX_TL_RGB565:
+    return "GX_TL_RGB565";
+  case GX_TL_RGB5A3:
+    return "GX_TL_RGB5A3";
+  default:
+    return fmt::format("GXTlutFmt({})", underlying(fmt));
+  }
+}

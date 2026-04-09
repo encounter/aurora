@@ -1,6 +1,7 @@
 #include "texture_convert.hpp"
 
 #include "../internal.hpp"
+#include "../gx/gx_fmt.hpp"
 
 namespace aurora::gfx {
 static Module Log("aurora::gfx");
@@ -399,42 +400,32 @@ ByteBuffer convert_tlut(u32 format, uint32_t width, ArrayRef<uint8_t> data) {
   }
 }
 
-u32 tlut_texture_format(GXTlutFmt format) noexcept {
+GXTexFmt tlut_texture_format(GXTlutFmt format) noexcept {
   switch (format) {
+    DEFAULT_FATAL("tlut_texture_format: unsupported tlut format {}", format);
   case GX_TL_IA8:
     return GX_TF_IA8;
   case GX_TL_RGB565:
     return GX_TF_RGB565;
   case GX_TL_RGB5A3:
     return GX_TF_RGB5A3;
-  default:
-    return InvalidTextureFormat;
   }
 }
 
-ByteBuffer decode_palette_texture_rgba8(u32 textureFormat, uint32_t width, uint32_t height, uint32_t mips,
-                                        ArrayRef<uint8_t> textureData, GXTlutFmt tlutFormat, uint16_t tlutEntries,
-                                        ArrayRef<uint8_t> tlutData) {
-  if (textureFormat == GX_TF_C14X2) {
-    return {};
-  }
-
-  const u32 tlutTextureFormat = tlut_texture_format(tlutFormat);
-  if (tlutTextureFormat == InvalidTextureFormat) {
-    return {};
-  }
-
+ByteBuffer convert_texture_palette(u32 textureFormat, uint32_t width, uint32_t height, uint32_t mips,
+                                   ArrayRef<uint8_t> textureData, GXTlutFmt tlutFormat, uint16_t tlutEntries,
+                                   ArrayRef<uint8_t> tlutData) {
   const auto indices = convert_texture(textureFormat, width, height, mips, textureData);
   if (indices.empty()) {
     return {};
   }
-  const auto palette = convert_tlut(tlutTextureFormat, tlutEntries, tlutData);
+  const auto palette = convert_tlut(tlut_texture_format(tlutFormat), tlutEntries, tlutData);
   if (palette.empty()) {
     return {};
   }
 
   ByteBuffer pixels;
-  pixels.reserve_extra((indices.size() / sizeof(u16)) * 4);
+  pixels.reserve_extra(indices.size() / sizeof(u16) * 4);
 
   const auto* indexData = reinterpret_cast<const u16*>(indices.data());
   size_t offset = 0;

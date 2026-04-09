@@ -33,9 +33,9 @@ static constexpr wgpu::TextureFormat to_wgpu(u32 gxFormat) {
 }
 
 ByteBuffer convert_texture(u32 format, uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data);
+ByteBuffer convert_texture_palette(u32 textureFormat, uint32_t width, uint32_t height, uint32_t mips,
+                                   ArrayRef<uint8_t> textureData, GXTlutFmt tlutFormat, uint16_t tlutEntries,
+                                   ArrayRef<uint8_t> tlutData);
 ByteBuffer convert_tlut(u32 format, uint32_t width, ArrayRef<uint8_t> data);
-u32 tlut_texture_format(GXTlutFmt format) noexcept;
-ByteBuffer decode_palette_texture_rgba8(u32 textureFormat, uint32_t width, uint32_t height, uint32_t mips,
-                                        ArrayRef<uint8_t> textureData, GXTlutFmt tlutFormat, uint16_t tlutEntries,
-                                        ArrayRef<uint8_t> tlutData);
+GXTexFmt tlut_texture_format(GXTlutFmt format) noexcept;
 } // namespace aurora::gfx
