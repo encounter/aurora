@@ -1,98 +1,153 @@
 #include "gx.hpp"
 #include "__gx.h"
 
-#include "../../gfx/tex_palette_conv.hpp"
 #include "../../gfx/texture.hpp"
 #include "../../gfx/texture_replacement.hpp"
-#include "../../webgpu/gpu.hpp"
+#include "dolphin/gx/GXAurora.h"
 
-#include <absl/container/flat_hash_map.h>
+#include <algorithm>
 
 #include "tracy/Tracy.hpp"
 
-using namespace aurora::gfx;
+namespace {
+constexpr u8 GXTexMode0Ids[8] = {0x80, 0x81, 0x82, 0x83, 0xA0, 0xA1, 0xA2, 0xA3};
+constexpr u8 GXTexMode1Ids[8] = {0x84, 0x85, 0x86, 0x87, 0xA4, 0xA5, 0xA6, 0xA7};
+constexpr u8 GXTexImage0Ids[8] = {0x88, 0x89, 0x8A, 0x8B, 0xA8, 0xA9, 0xAA, 0xAB};
+constexpr u8 GXTexImage1Ids[8] = {0x8C, 0x8D, 0x8E, 0x8F, 0xAC, 0xAD, 0xAE, 0xAF};
+constexpr u8 GXTexImage2Ids[8] = {0x90, 0x91, 0x92, 0x93, 0xB0, 0xB1, 0xB2, 0xB3};
+constexpr u8 GXTexImage3Ids[8] = {0x94, 0x95, 0x96, 0x97, 0xB4, 0xB5, 0xB6, 0xB7};
+constexpr u8 GXTexTlutIds[8] = {0x98, 0x99, 0x9A, 0x9B, 0xB8, 0xB9, 0xBA, 0xBB};
+constexpr u8 GX2HWFiltConv[6] = {0x00, 0x04, 0x01, 0x05, 0x02, 0x06};
+
+u32 sNextTexObjId = 1;
+u32 sNextTlutObjId = 1;
+
+u32 next_tex_obj_id() {
+  if (sNextTexObjId == 0) {
+    FATAL("texObj ID overflow");
+  }
+  return sNextTexObjId++;
+}
+
+u32 next_tlut_obj_id() {
+  if (sNextTlutObjId == 0) {
+    FATAL("tlutObj ID overflow");
+  }
+  return sNextTlutObjId++;
+}
+
+int __cntlzw(unsigned int val) {
+  if (val == 0)
+    return 32; // PowerPC returns 32 if the input is 0
+#ifdef _MSC_VER
+  unsigned long idx;
+  _BitScanReverse(&idx, val);
+  return 31 - (int)idx;
+#else
+  return __builtin_clz(val);
+#endif
+}
+
+void init_texobj_common(GXTexObj_& obj, const void* data, u16 width, u16 height, u32 format, GXTexWrapMode wrapS,
+                        GXTexWrapMode wrapT, GXBool mipmap) {
+  memset(&obj, 0, sizeof(obj));
+  obj.mWidth = width;
+  obj.mHeight = height;
+  obj.tlut = GX_TLUT0;
+  obj.flags = 2;
+  obj.texObjId = next_tex_obj_id();
+  obj.texDataVersion = 1;
+
+  SET_REG_FIELD(0, obj.mode0, 2, 0, wrapS);
+  SET_REG_FIELD(0, obj.mode0, 2, 2, wrapT);
+  SET_REG_FIELD(0, obj.mode0, 1, 4, 1);
+  if (mipmap) {
+    obj.flags |= 1;
+    obj.mode0 = (obj.mode0 & 0xFFFFFF1F) | 0xC0;
+    const u32 maxDim = std::max(width, height);
+    const u8 lmax = static_cast<u8>(16.0f * static_cast<float>(31 - __cntlzw(maxDim)));
+    SET_REG_FIELD(0, obj.mode1, 8, 8, lmax);
+  } else {
+    obj.mode0 = (obj.mode0 & 0xFFFFFF1F) | 0x80;
+  }
+  SET_REG_FIELD(0, obj.image0, 10, 0, static_cast<u32>(width - 1));
+  SET_REG_FIELD(0, obj.image0, 10, 10, static_cast<u32>(height - 1));
+  SET_REG_FIELD(0, obj.image0, 4, 20, format & 0xF);
+
+  obj.data = data;
+  obj.dataSize = aurora::gfx::texture_replacement::compute_texture_upload_size(obj);
+}
+
+void emit_loaded_texobj_metadata(const GXTexObj_& obj, GXTexMapID id) {
+  GX_WRITE_AURORA(GX_LOAD_AURORA_TEXOBJ);
+  GX_WRITE_U8(static_cast<u8>(id));
+  GX_WRITE_U64(reinterpret_cast<u64>(obj.data));
+  GX_WRITE_U32(obj.width());
+  GX_WRITE_U32(obj.height());
+  GX_WRITE_U32(obj.raw_format());
+  GX_WRITE_U32(static_cast<u32>(obj.tlut));
+  GX_WRITE_U8(static_cast<u8>(obj.has_mips()));
+  GX_WRITE_U32(obj.texObjId);
+  GX_WRITE_U32(obj.texDataVersion);
+}
+
+void emit_loaded_tlut_metadata(const GXTlutObj_& obj, u32 idx) {
+  GX_WRITE_AURORA(GX_LOAD_AURORA_TLUT);
+  GX_WRITE_U8(static_cast<u8>(idx));
+  GX_WRITE_U64(reinterpret_cast<u64>(obj.data));
+  GX_WRITE_U32(static_cast<u32>(obj.format));
+  GX_WRITE_U16(obj.numEntries);
+  GX_WRITE_U32(obj.tlutObjId);
+  GX_WRITE_U32(obj.tlutDataVersion);
+}
+} // namespace
 
 extern "C" {
 void GXInitTexObj(GXTexObj* obj_, const void* data, u16 width, u16 height, GXTexFmt format, GXTexWrapMode wrapS,
                   GXTexWrapMode wrapT, GXBool mipmap) {
-  ZoneScopedS(3);
-  if (reinterpret_cast<GXTexObj_*>(obj_)->ref)
-    Log.fatal("Texture object already has a reference");
-  memset(obj_, 0, sizeof(GXTexObj));
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
-  obj->data = data;
-  obj->width = width;
-  obj->height = height;
-  obj->fmt = format;
-  obj->wrapS = wrapS;
-  obj->wrapT = wrapT;
-  obj->hasMips = mipmap;
-  // TODO default values?
-  obj->minFilter = GX_LINEAR;
-  obj->magFilter = GX_LINEAR;
-  obj->minLod = 0.f;
-  obj->maxLod = 0.f;
-  obj->lodBias = 0.f;
-  obj->biasClamp = false;
-  obj->doEdgeLod = false;
-  obj->maxAniso = GX_ANISO_4;
-  obj->tlut = GX_TLUT0;
-  obj->dataInvalidated = true;
-  obj->dataSize = texture_replacement::compute_texture_upload_size(*obj);
+  init_texobj_common(*obj, data, width, height, format, wrapS, wrapT, mipmap);
 }
 
 void GXInitTexObjCI(GXTexObj* obj_, const void* data, u16 width, u16 height, GXCITexFmt format, GXTexWrapMode wrapS,
                     GXTexWrapMode wrapT, GXBool mipmap, u32 tlut) {
-  ZoneScopedS(3);
-  if (reinterpret_cast<GXTexObj_*>(obj_)->ref)
-    Log.fatal("Texture object already has a reference");
-  memset(obj_, 0, sizeof(GXTexObj));
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
-  obj->data = data;
-  obj->width = width;
-  obj->height = height;
-  obj->fmt = format;
-  obj->wrapS = wrapS;
-  obj->wrapT = wrapT;
-  obj->hasMips = mipmap;
+  init_texobj_common(*obj, data, width, height, format, wrapS, wrapT, mipmap);
   obj->tlut = static_cast<GXTlut>(tlut);
-  // TODO default values?
-  obj->minFilter = GX_LINEAR;
-  obj->magFilter = GX_LINEAR;
-  obj->minLod = 0.f;
-  obj->maxLod = 0.f;
-  obj->lodBias = 0.f;
-  obj->biasClamp = false;
-  obj->doEdgeLod = false;
-  obj->maxAniso = GX_ANISO_4;
-  obj->dataInvalidated = true;
-  obj->dataSize = texture_replacement::compute_texture_upload_size(*obj);
+  obj->flags &= ~2u;
 }
 
 void GXInitTexObjLOD(GXTexObj* obj_, GXTexFilter minFilt, GXTexFilter magFilt, float minLod, float maxLod,
                      float lodBias, GXBool biasClamp, GXBool doEdgeLod, GXAnisotropy maxAniso) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
-  obj->minFilter = minFilt;
-  obj->magFilter = magFilt;
-  obj->minLod = minLod;
-  obj->maxLod = maxLod;
-  obj->lodBias = lodBias;
-  obj->biasClamp = biasClamp;
-  obj->doEdgeLod = doEdgeLod;
-  obj->maxAniso = maxAniso;
-  obj->dataSize = texture_replacement::compute_texture_upload_size(*obj);
+  const float clampedBias = std::clamp(lodBias, -4.0f, 3.99f);
+  const auto lbias = static_cast<u8>(32.0f * clampedBias);
+  SET_REG_FIELD(0, obj->mode0, 8, 9, lbias);
+  SET_REG_FIELD(0, obj->mode0, 1, 4, magFilt == GX_LINEAR ? 1 : 0);
+  SET_REG_FIELD(0, obj->mode0, 3, 5, GX2HWFiltConv[minFilt]);
+  SET_REG_FIELD(0, obj->mode0, 1, 8, doEdgeLod ? 0 : 1);
+  obj->mode0 &= 0xFFFDFFFF;
+  obj->mode0 &= 0xFFFBFFFF;
+  SET_REG_FIELD(0, obj->mode0, 2, 19, maxAniso);
+  SET_REG_FIELD(0, obj->mode0, 1, 21, biasClamp);
+
+  const auto clampedMin = std::clamp(minLod, 0.0f, 10.0f);
+  const auto clampedMax = std::clamp(maxLod, 0.0f, 10.0f);
+  SET_REG_FIELD(0, obj->mode1, 8, 0, static_cast<u8>(16.0f * clampedMin));
+  SET_REG_FIELD(0, obj->mode1, 8, 8, static_cast<u8>(16.0f * clampedMax));
 }
 
 void GXInitTexObjData(GXTexObj* obj_, const void* data) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
   obj->data = data;
-  obj->dataInvalidated = true;
+  obj->dataSize = aurora::gfx::texture_replacement::compute_texture_upload_size(*obj);
+  ++obj->texDataVersion;
 }
 
 void GXInitTexObjWrapMode(GXTexObj* obj_, GXTexWrapMode wrapS, GXTexWrapMode wrapT) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
-  obj->wrapS = wrapS;
-  obj->wrapT = wrapT;
+  SET_REG_FIELD(0, obj->mode0, 2, 0, wrapS);
+  SET_REG_FIELD(0, obj->mode0, 2, 2, wrapT);
 }
 
 void GXInitTexObjTlut(GXTexObj* obj_, u32 tlut) {
@@ -112,57 +167,36 @@ void GXInitTexObjTlut(GXTexObj* obj_, u32 tlut) {
 
 void GXLoadTexObj(GXTexObj* obj_, GXTexMapID id) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
-  const auto it = g_gxState.copyTextures.find(obj->data);
-  const bool isCopyTexture = it != g_gxState.copyTextures.end();
-  if (isCopyTexture) {
-    obj->ref = it->second;
-    obj->dataInvalidated = false;
-  } else {
-    if (texture_replacement::try_bind_replacement(*obj, id)) {
-      return;
-    }
-  }
-  if (!obj->ref) {
-    const auto name = fmt::format("GXLoadTexObj_{}", obj->fmt);
-    obj->ref =
-        aurora::gfx::new_dynamic_texture_2d(obj->width, obj->height, u32(obj->maxLod) + 1, obj->fmt, name.c_str());
-  }
-  if (obj->dataInvalidated) {
-    obj->dataSize = texture_replacement::compute_texture_upload_size(*obj);
-    aurora::gfx::write_texture(*obj->ref, {static_cast<const u8*>(obj->data), obj->dataSize});
-    obj->dataInvalidated = false;
-  }
-  g_gxState.textures[id] = {*obj};
+  SET_REG_FIELD(0, obj->mode0, 8, 24, GXTexMode0Ids[id]);
+  SET_REG_FIELD(0, obj->mode1, 8, 24, GXTexMode1Ids[id]);
+  SET_REG_FIELD(0, obj->image0, 8, 24, GXTexImage0Ids[id]);
 
-  // Perform palette conversion if necessary
-  if (aurora::gx::is_palette_format(obj->fmt)) {
-    const auto& tlutObj = g_gxState.tluts[obj->tlut];
-    CHECK(tlutObj.ref, "TLUT {} not loaded for palette texture", static_cast<int>(obj->tlut));
+  u32 image1 = 0;
+  u32 image2 = 0;
+  SET_REG_FIELD(0, image1, 8, 24, GXTexImage1Ids[id]);
+  SET_REG_FIELD(0, image2, 8, 24, GXTexImage2Ids[id]);
+  SET_REG_FIELD(0, obj->image3, 8, 24, GXTexImage3Ids[id]);
 
-    using aurora::gfx::tex_palette_conv::Variant;
-    Variant variant;
-    if (obj->ref->format == wgpu::TextureFormat::R16Sint) {
-      // CPU-decoded static texture
-      variant = Variant::Direct;
-    } else {
-      // Float texture (copy-converted)
-      variant = obj->fmt == GX_TF_C4 ? Variant::FromFloat4 : Variant::FromFloat8;
-    }
+  GX_WRITE_RAS_REG(obj->mode0);
+  GX_WRITE_RAS_REG(obj->mode1);
+  GX_WRITE_RAS_REG(obj->image0);
+  GX_WRITE_RAS_REG(image1);
+  GX_WRITE_RAS_REG(image2);
+  GX_WRITE_RAS_REG(obj->image3);
 
-    const auto label = fmt::format("PaletteConv_{}", static_cast<int>(id));
-    auto dst = aurora::gfx::new_conv_texture(obj->width, obj->height, GX_TF_RGBA8, label.c_str());
-    aurora::gfx::queue_palette_conv({
-        .variant = variant,
-        .src = obj->ref,
-        .dst = dst,
-        .tlut = tlutObj.ref,
-    });
-    auto& out = g_gxState.textures[id].texObj;
-    out.ref = std::move(dst);
-    out.fmt = GX_TF_RGBA8;
+  if ((obj->flags & 2) == 0) {
+    u32 tlut = 0;
+    SET_REG_FIELD(0, tlut, 10, 0, static_cast<u32>(obj->tlut));
+    SET_REG_FIELD(0, tlut, 8, 24, GXTexTlutIds[id]);
+    GX_WRITE_RAS_REG(tlut);
   }
 
-  g_gxState.stateDirty = true; // TODO only if changed?
+  __gx->tImage0[id] = obj->image0;
+  __gx->tMode0[id] = obj->mode0;
+  __gx->dirtyState |= 1;
+  __gx->bpSent = 1;
+
+  emit_loaded_texobj_metadata(*obj, id);
 }
 
 u32 GXGetTexBufferSize(u16 width, u16 height, u32 fmt, GXBool mips, u8 maxLod) {
@@ -235,30 +269,32 @@ u32 GXGetTexBufferSize(u16 width, u16 height, u32 fmt, GXBool mips, u8 maxLod) {
 
 void GXInitTlutObj(GXTlutObj* obj_, const void* data, GXTlutFmt format, u16 entries) {
   memset(obj_, 0, sizeof(GXTlutObj));
-  GXTexFmt texFmt;
-  switch (format) {
-    DEFAULT_FATAL("invalid tlut format {}", static_cast<int>(format));
-  case GX_TL_IA8:
-    texFmt = GX_TF_IA8;
-    break;
-  case GX_TL_RGB565:
-    texFmt = GX_TF_RGB565;
-    break;
-  case GX_TL_RGB5A3:
-    texFmt = GX_TF_RGB5A3;
-    break;
-  }
   auto* obj = reinterpret_cast<GXTlutObj_*>(obj_);
-  obj->ref = aurora::gfx::new_static_texture_2d(
-      entries, 1, 1, texFmt, aurora::ArrayRef{static_cast<const u8*>(data), static_cast<size_t>(entries) * 2}, true,
-      "GXInitTlutObj");
-  texture_replacement::register_tlut(obj_, data, format, entries);
+  obj->data = data;
+  obj->format = format;
+  obj->numEntries = entries;
+  obj->tlutObjId = next_tlut_obj_id();
+  obj->tlutDataVersion = 1;
+
+  SET_REG_FIELD(0, obj->tlut, 2, 10, format);
+  SET_REG_FIELD(0, obj->loadTlut0, 8, 24, 0x64);
+  aurora::gfx::texture_replacement::register_tlut(obj_, data, format, entries);
 }
 
 void GXLoadTlut(const GXTlutObj* obj_, u32 idx) {
-  g_gxState.tluts[idx] = *reinterpret_cast<const GXTlutObj_*>(obj_);
-  texture_replacement::load_tlut(obj_, idx);
-  // TODO stateDirty?
+  auto* obj = reinterpret_cast<const GXTlutObj_*>(obj_);
+  __GXFlushTextureState();
+  GX_WRITE_RAS_REG(obj->loadTlut0);
+
+  u32 loadTlut1 = 0;
+  SET_REG_FIELD(0, loadTlut1, 10, 0, idx);
+  SET_REG_FIELD(0, loadTlut1, 10, 10, obj->numEntries - 1);
+  SET_REG_FIELD(0, loadTlut1, 8, 24, 0x65);
+  GX_WRITE_RAS_REG(loadTlut1);
+  __GXFlushTextureState();
+
+  aurora::gfx::texture_replacement::load_tlut(obj_, idx);
+  emit_loaded_tlut_metadata(*obj, idx);
 }
 
 // TODO GXInitTexCacheRegion

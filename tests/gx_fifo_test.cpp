@@ -16,6 +16,11 @@ static bool has_bp_write(const std::vector<u8>& bytes, u8 reg) {
   return std::search(bytes.begin(), bytes.end(), pattern.begin(), pattern.end()) != bytes.end();
 }
 
+static bool has_aurora_cmd(const std::vector<u8>& bytes, u16 cmd) {
+  const std::array<u8, 3> pattern{GX_LOAD_AURORA, static_cast<u8>(cmd >> 8), static_cast<u8>(cmd & 0xFF)};
+  return std::search(bytes.begin(), bytes.end(), pattern.begin(), pattern.end()) != bytes.end();
+}
+
 // ============================================================================
 // BP registers (direct FIFO writes, no dirty state flush needed)
 // ============================================================================
@@ -1242,6 +1247,108 @@ TEST_F(GXFifoTest, SetArray_LittleEndianFlag_UpdatesStateAndClearsCachedRange) {
   EXPECT_EQ(gxState().arrays[GX_VA_CLR0].cachedRange.offset, 0u);
   EXPECT_EQ(gxState().arrays[GX_VA_CLR0].cachedRange.size, 0u);
   EXPECT_TRUE(gxState().stateDirty);
+}
+
+TEST_F(GXFifoTest, LoadTexObj_EncodesSdkBpBurstAndAuroraMetadata) {
+  alignas(32) u8 image[64]{};
+  GXTexObj obj{};
+  GXInitTexObj(&obj, image, 8, 8, GX_TF_RGB5A3, GX_REPEAT, GX_MIRROR, GX_FALSE);
+
+  GXLoadTexObj(&obj, GX_TEXMAP2);
+  auto bytes = capture_fifo();
+
+  EXPECT_TRUE(has_bp_write(bytes, 0x82));
+  EXPECT_TRUE(has_bp_write(bytes, 0x86));
+  EXPECT_TRUE(has_bp_write(bytes, 0x8A));
+  EXPECT_TRUE(has_bp_write(bytes, 0x8E));
+  EXPECT_TRUE(has_bp_write(bytes, 0x92));
+  EXPECT_TRUE(has_bp_write(bytes, 0x96));
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_TEXOBJ));
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& slot = gxState().loadedTextures[GX_TEXMAP2];
+  EXPECT_EQ(slot.data, image);
+  EXPECT_EQ(slot.width(), 8u);
+  EXPECT_EQ(slot.height(), 8u);
+  EXPECT_EQ(slot.format(), GX_TF_RGB5A3);
+  EXPECT_FALSE(slot.has_mips());
+  EXPECT_EQ(slot.mode0 >> 24, 0x82u);
+  EXPECT_EQ(slot.mode1 >> 24, 0x86u);
+  EXPECT_EQ(slot.image0 >> 24, 0x8Au);
+  EXPECT_EQ(slot.image3 >> 24, 0x96u);
+  EXPECT_NE(slot.texObjId, 0u);
+  EXPECT_EQ(slot.texDataVersion, 1u);
+}
+
+TEST_F(GXFifoTest, LoadTexObjCiAndTlut_PopulatesTextureAndTlutSlots) {
+  alignas(32) u8 image[64]{};
+  alignas(32) u16 palette[16]{};
+  GXTexObj texObj{};
+  GXTlutObj tlutObj{};
+
+  GXInitTexObjCI(&texObj, image, 8, 8, GX_TF_C4, GX_CLAMP, GX_CLAMP, GX_FALSE, GX_TLUT3);
+  GXInitTlutObj(&tlutObj, palette, GX_TL_RGB565, 16);
+
+  GXLoadTexObj(&texObj, GX_TEXMAP1);
+  GXLoadTlut(&tlutObj, GX_TLUT3);
+  auto bytes = capture_fifo();
+
+  EXPECT_TRUE(has_bp_write(bytes, 0x81));
+  EXPECT_TRUE(has_bp_write(bytes, 0x85));
+  EXPECT_TRUE(has_bp_write(bytes, 0x89));
+  EXPECT_TRUE(has_bp_write(bytes, 0x8D));
+  EXPECT_TRUE(has_bp_write(bytes, 0x91));
+  EXPECT_TRUE(has_bp_write(bytes, 0x95));
+  EXPECT_TRUE(has_bp_write(bytes, 0x99));
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_TEXOBJ));
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_TLUT));
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& texSlot = gxState().loadedTextures[GX_TEXMAP1];
+  EXPECT_EQ(texSlot.data, image);
+  EXPECT_EQ(texSlot.width(), 8u);
+  EXPECT_EQ(texSlot.height(), 8u);
+  EXPECT_EQ(texSlot.format(), GX_TF_C4);
+  EXPECT_EQ(texSlot.tlut, GX_TLUT3);
+
+  const auto& tlutSlot = gxState().loadedTluts[GX_TLUT3];
+  EXPECT_EQ(tlutSlot.data, palette);
+  EXPECT_EQ(tlutSlot.format, GX_TL_RGB565);
+  EXPECT_EQ(tlutSlot.numEntries, 16u);
+  EXPECT_NE(tlutSlot.tlutObjId, 0u);
+  EXPECT_EQ(tlutSlot.tlutDataVersion, 1u);
+}
+
+TEST_F(GXFifoTest, DestroyTexObj_EmitsAuroraDestroyCommandAndClearsIdentity) {
+  alignas(32) u8 image[64]{};
+  GXTexObj obj{};
+  GXInitTexObj(&obj, image, 8, 8, GX_TF_RGB5A3, GX_REPEAT, GX_REPEAT, GX_FALSE);
+  GXDestroyTexObj(&obj);
+  auto bytes = capture_fifo();
+
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_DESTROY_TEXOBJ));
+  EXPECT_EQ(reinterpret_cast<const GXTexObj_*>(&obj)->texObjId, 0u);
+
+  reset_gx_state();
+  decode_fifo(bytes);
+}
+
+TEST_F(GXFifoTest, DestroyTlutObj_EmitsAuroraDestroyCommandAndClearsIdentity) {
+  alignas(32) u16 palette[16]{};
+  GXTlutObj obj{};
+  GXInitTlutObj(&obj, palette, GX_TL_RGB565, 16);
+  GXDestroyTlutObj(&obj);
+  auto bytes = capture_fifo();
+
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_DESTROY_TLUT));
+  EXPECT_EQ(reinterpret_cast<const GXTlutObj_*>(&obj)->tlutObjId, 0u);
+
+  reset_gx_state();
+  decode_fifo(bytes);
 }
 
 // ============================================================================

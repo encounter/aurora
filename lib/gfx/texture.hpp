@@ -1,6 +1,8 @@
 #pragma once
 #include <dolphin/gx.h>
 
+#include <utility>
+
 #include "common.hpp"
 
 namespace aurora::gfx {
@@ -10,7 +12,7 @@ struct TextureUpload {
   wgpu::Extent3D size;
 
   TextureUpload(wgpu::TexelCopyBufferLayout layout, wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size) noexcept
-  : layout(layout), tex(tex), size(size) {}
+  : layout(layout), tex(std::move(tex)), size(size) {}
 };
 extern std::vector<TextureUpload> g_textureUploads;
 
@@ -47,40 +49,65 @@ void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept;
 }; // namespace aurora::gfx
 
 struct GXTexObj_ {
-  aurora::gfx::TextureHandle ref;
-  const void* data;
-  u32 dataSize;
-  u16 width;
-  u16 height;
-  u32 fmt;
-  GXTexWrapMode wrapS;
-  GXTexWrapMode wrapT;
-  GXBool hasMips;
-  GXTexFilter minFilter;
-  GXTexFilter magFilter;
-  float minLod;
-  float maxLod;
-  float lodBias;
-  GXBool biasClamp;
-  GXBool doEdgeLod;
-  GXAnisotropy maxAniso;
-  GXTlut tlut;
-  bool dataInvalidated;
+  u32 mode0 = 0;
+  u32 mode1 = 0;
+  u32 image0 = 0;
+  u32 image3 = 0;
+  const void* userData = nullptr;
+  const void* data = nullptr;
+  u32 dataSize = 0;
+  u32 mWidth = 0;
+  u32 mHeight = 0;
+  u32 mFormat = aurora::gfx::InvalidTextureFormat;
+  GXTlut tlut = GX_TLUT0;
+  u32 texObjId = 0;
+  u32 texDataVersion = 0;
+  u8 flags = 0;
+
+  static constexpr u32 get_bits(u32 reg, u32 size, u32 shift) noexcept { return (reg >> shift) & ((1u << size) - 1); }
+
+  u32 width() const noexcept { return mWidth != 0 ? mWidth : get_bits(image0, 10, 0) + 1; }
+  u32 height() const noexcept { return mHeight != 0 ? mHeight : get_bits(image0, 10, 10) + 1; }
+  u32 raw_format() const noexcept { return get_bits(image0, 4, 20); }
+  u32 format() const noexcept { return mFormat != aurora::gfx::InvalidTextureFormat ? mFormat : raw_format(); }
+  GXTexWrapMode wrap_s() const noexcept { return static_cast<GXTexWrapMode>(get_bits(mode0, 2, 0)); }
+  GXTexWrapMode wrap_t() const noexcept { return static_cast<GXTexWrapMode>(get_bits(mode0, 2, 2)); }
+  GXTexFilter min_filter() const noexcept {
+    constexpr GXTexFilter kHwToGxFilter[8] = {
+        GX_NEAR, GX_NEAR_MIP_NEAR, GX_LIN_MIP_NEAR, GX_NEAR, GX_LINEAR, GX_NEAR_MIP_LIN, GX_LIN_MIP_LIN, GX_NEAR,
+    };
+    return kHwToGxFilter[get_bits(mode0, 3, 5)];
+  }
+  GXTexFilter mag_filter() const noexcept { return get_bits(mode0, 1, 4) != 0 ? GX_LINEAR : GX_NEAR; }
+  GXBool has_mips() const noexcept { return (flags & 1u) != 0 ? GX_TRUE : GX_FALSE; }
+  GXBool do_edge_lod() const noexcept { return get_bits(mode0, 1, 8) == 0 ? GX_TRUE : GX_FALSE; }
+  float lod_bias() const noexcept { return static_cast<float>(static_cast<int8_t>(get_bits(mode0, 8, 9))) / 32.0f; }
+  GXAnisotropy max_aniso() const noexcept { return static_cast<GXAnisotropy>(get_bits(mode0, 2, 19)); }
+  GXBool bias_clamp() const noexcept { return get_bits(mode0, 1, 21) != 0 ? GX_TRUE : GX_FALSE; }
+  float min_lod() const noexcept { return static_cast<float>(get_bits(mode1, 8, 0)) / 16.0f; }
+  float max_lod() const noexcept { return static_cast<float>(get_bits(mode1, 8, 8)) / 16.0f; }
 };
 static_assert(sizeof(GXTexObj_) <= sizeof(GXTexObj), "GXTexObj too small!");
 struct GXTlutObj_ {
-  aurora::gfx::TextureHandle ref;
+  u32 tlut = 0;
+  u32 loadTlut0 = 0;
+  u16 numEntries = 0;
+  const void* data = nullptr;
+  GXTlutFmt format = GX_TL_IA8;
+  u32 tlutObjId = 0;
+  u32 tlutDataVersion = 0;
 };
 static_assert(sizeof(GXTlutObj_) <= sizeof(GXTlutObj), "GXTlutObj too small!");
 
 namespace aurora::gfx {
 struct TextureBind {
+  TextureHandle ref;
   GXTexObj_ texObj;
 
   TextureBind() noexcept = default;
-  TextureBind(GXTexObj_ obj) noexcept : texObj(std::move(obj)) {}
-  void reset() noexcept { texObj.ref.reset(); };
+  TextureBind(const GXTexObj_& obj, TextureHandle handle) noexcept : ref(std::move(handle)), texObj(obj) {}
+  void reset() noexcept { ref.reset(); }
   [[nodiscard]] wgpu::SamplerDescriptor get_descriptor() const noexcept;
-  operator bool() const noexcept { return texObj.ref.operator bool(); }
+  operator bool() const noexcept { return ref.operator bool(); }
 };
 } // namespace aurora::gfx

@@ -1,6 +1,7 @@
 #include "texture_convert.hpp"
 
 #include "../internal.hpp"
+#include "../gx/gx_fmt.hpp"
 
 namespace aurora::gfx {
 static Module Log("aurora::gfx");
@@ -397,5 +398,60 @@ ByteBuffer convert_tlut(u32 format, uint32_t width, ArrayRef<uint8_t> data) {
   case GX_TF_RGB5A3: // GX_TL_RGB5A3
     return DecodeLinear<TextureDecoderRGB5A3>(width, data);
   }
+}
+
+GXTexFmt tlut_texture_format(GXTlutFmt format) noexcept {
+  switch (format) {
+    DEFAULT_FATAL("tlut_texture_format: unsupported tlut format {}", format);
+  case GX_TL_IA8:
+    return GX_TF_IA8;
+  case GX_TL_RGB565:
+    return GX_TF_RGB565;
+  case GX_TL_RGB5A3:
+    return GX_TF_RGB5A3;
+  }
+}
+
+ByteBuffer convert_texture_palette(u32 textureFormat, uint32_t width, uint32_t height, uint32_t mips,
+                                   ArrayRef<uint8_t> textureData, GXTlutFmt tlutFormat, uint16_t tlutEntries,
+                                   ArrayRef<uint8_t> tlutData) {
+  const auto indices = convert_texture(textureFormat, width, height, mips, textureData);
+  if (indices.empty()) {
+    return {};
+  }
+  const auto palette = convert_tlut(tlut_texture_format(tlutFormat), tlutEntries, tlutData);
+  if (palette.empty()) {
+    return {};
+  }
+
+  ByteBuffer pixels;
+  pixels.reserve_extra(indices.size() / sizeof(u16) * 4);
+
+  const auto* indexData = reinterpret_cast<const u16*>(indices.data());
+  size_t offset = 0;
+  for (u32 mip = 0; mip < mips; ++mip) {
+    const size_t pixelCount = static_cast<size_t>(width) * height;
+    for (size_t i = 0; i < pixelCount; ++i) {
+      const u32 index = indexData[offset + i];
+      if (index >= tlutEntries) {
+        constexpr uint8_t transparent[4] = {0, 0, 0, 0};
+        pixels.append(transparent, sizeof(transparent));
+        continue;
+      }
+      if (tlutFormat == GX_TL_IA8) {
+        const size_t src = static_cast<size_t>(index) * 2;
+        const u8 intensity = palette.data()[src];
+        const uint8_t rgba[4] = {intensity, intensity, intensity, palette.data()[src + 1]};
+        pixels.append(rgba, sizeof(rgba));
+      } else {
+        const size_t src = static_cast<size_t>(index) * 4;
+        pixels.append(palette.data() + src, 4);
+      }
+    }
+    offset += pixelCount;
+    width = std::max(width >> 1, 1u);
+    height = std::max(height >> 1, 1u);
+  }
+  return pixels;
 }
 } // namespace aurora::gfx

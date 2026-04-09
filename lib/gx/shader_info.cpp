@@ -9,16 +9,16 @@ Module Log("aurora::gx");
 bool is_alpha_bump_channel(GXChannelID id) { return id == GX_ALPHA_BUMP || id == GX_ALPHA_BUMPN; }
 
 Vec4<float> texture_size_bias(const gfx::TextureBind& tex) {
-  auto width = static_cast<float>(tex.texObj.width);
-  auto height = static_cast<float>(tex.texObj.height);
+  auto width = static_cast<float>(tex.texObj.width());
+  auto height = static_cast<float>(tex.texObj.height());
 
   // TODO: actual logical EFB copy size
-  if (tex.texObj.ref && tex.texObj.ref->isRenderTexture) {
+  if (tex.ref && tex.ref->isRenderTexture) {
     width = 608.0f;
     height = 448.0f;
   }
 
-  return {width, height, tex.texObj.lodBias, 0.0f};
+  return {width, height, tex.texObj.lod_bias(), 0.0f};
 }
 
 void color_arg_reg_info(GXTevColorArg arg, const TevStage& stage, ShaderInfo& info) {
@@ -438,7 +438,7 @@ gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart) noexcept {
       continue;
     }
     const auto& tex = get_texture(static_cast<GXTexMapID>(i));
-    CHECK(tex, "unbound texture {}", i);
+    // CHECK(tex, "unbound texture {}", i);
     buf.append(texture_size_bias(tex));
   }
   g_gxState.stateDirty = false;

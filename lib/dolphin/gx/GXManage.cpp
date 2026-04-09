@@ -129,7 +129,7 @@ GXFifoObj* GXInit(void* base, u32 size) {
   GXClearVtxDesc();
   GXInvalidateVtxCache();
   GXSetLineWidth(6, GX_TO_ZERO);
-  // GXSetPointSize(6, GX_TO_ZERO);
+  GXSetPointSize(6, GX_TO_ZERO);
   GXEnableTexOffsets(GX_TEXCOORD0, GX_DISABLE, GX_DISABLE);
   GXEnableTexOffsets(GX_TEXCOORD1, GX_DISABLE, GX_DISABLE);
   GXEnableTexOffsets(GX_TEXCOORD2, GX_DISABLE, GX_DISABLE);
@@ -159,9 +159,9 @@ GXFifoObj* GXInit(void* base, u32 size) {
   GXLoadTexMtxImm(identity_mtx, GX_PTIDENTITY, GX_MTX3x4);
 
   GXSetViewport(0.0f, 0.0f, rmode->fbWidth, rmode->xfbHeight, 0.0f, 1.0f);
-  // GXSetCoPlanar(GX_DISABLE);
+  GXSetCoPlanar(GX_DISABLE);
   GXSetCullMode(GX_CULL_BACK);
-  // GXSetClipMode(GX_CLIP_ENABLE);
+  GXSetClipMode(GX_CLIP_ENABLE);
   GXSetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
   // GXSetScissorBoxOffset(0, 0);
 
@@ -228,7 +228,7 @@ GXFifoObj* GXInit(void* base, u32 size) {
   GXSetIndTexCoordScale(GX_INDTEXSTAGE3, GX_ITS_1, GX_ITS_1);
 
   GXSetFog(GX_FOG_NONE, 0.0f, 1.0f, 0.1f, 1.0f, black);
-  // GXSetFogRangeAdj(GX_DISABLE, 0, nullptr);
+  GXSetFogRangeAdj(GX_DISABLE, 0, nullptr);
   GXSetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
   GXSetColorUpdate(GX_ENABLE);
   GXSetAlphaUpdate(GX_ENABLE);
@@ -237,8 +237,8 @@ GXFifoObj* GXInit(void* base, u32 size) {
   GXSetDither(GX_ENABLE);
   GXSetDstAlpha(GX_DISABLE, 0);
   GXSetPixelFmt(GX_PF_RGB8_Z24, GX_ZC_LINEAR);
-  // GXSetFieldMask(GX_ENABLE, GX_ENABLE);
-  // GXSetFieldMode(rmode->field_rendering, ((rmode->viHeight == 2 * rmode->xfbHeight) ? GX_ENABLE : GX_DISABLE));
+  GXSetFieldMask(GX_ENABLE, GX_ENABLE);
+  GXSetFieldMode(rmode->field_rendering, ((rmode->viHeight == 2 * rmode->xfbHeight) ? GX_ENABLE : GX_DISABLE));
 
   GXSetDispCopySrc(0, 0, rmode->fbWidth, rmode->efbHeight);
   GXSetDispCopyDst(rmode->fbWidth, rmode->efbHeight);
