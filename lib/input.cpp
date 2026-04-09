@@ -80,35 +80,35 @@ SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
 }
 
 void remove_controller(Uint32 instance) noexcept {
-  if (g_GameControllers.find(instance) != g_GameControllers.end()) {
-    SDL_CloseGamepad(g_GameControllers[instance].m_controller);
-    g_GameControllers.erase(instance);
+  if (auto it = g_GameControllers.find(instance); it != g_GameControllers.end()) {
+    SDL_CloseGamepad(it->second.m_controller);
+    g_GameControllers.erase(it);
   }
 }
 
 bool is_gamecube(Uint32 instance) noexcept {
-  if (g_GameControllers.find(instance) != g_GameControllers.end()) {
-    return g_GameControllers[instance].m_isGameCube;
+  if (auto it = g_GameControllers.find(instance); it != g_GameControllers.end()) {
+    return it->second.m_isGameCube;
   }
   return false;
 }
 
 int32_t player_index(Uint32 instance) noexcept {
-  if (g_GameControllers.find(instance) != g_GameControllers.end()) {
-    return SDL_GetGamepadPlayerIndex(g_GameControllers[instance].m_controller);
+  if (auto it = g_GameControllers.find(instance); it != g_GameControllers.end()) {
+    return SDL_GetGamepadPlayerIndex(it->second.m_controller);
   }
   return -1;
 }
 
 void set_player_index(Uint32 instance, Sint32 index) noexcept {
-  if (g_GameControllers.find(instance) != g_GameControllers.end()) {
-    SDL_SetGamepadPlayerIndex(g_GameControllers[instance].m_controller, index);
+  if (auto it = g_GameControllers.find(instance); it != g_GameControllers.end()) {
+    SDL_SetGamepadPlayerIndex(it->second.m_controller, index);
   }
 }
 
 std::string controller_name(Uint32 instance) noexcept {
-  if (g_GameControllers.find(instance) != g_GameControllers.end()) {
-    const auto* name = SDL_GetGamepadName(g_GameControllers[instance].m_controller);
+  if (auto it = g_GameControllers.find(instance); it != g_GameControllers.end()) {
+    const auto* name = SDL_GetGamepadName(it->second.m_controller);
     if (name != nullptr) {
       return {name};
     }
@@ -117,18 +117,16 @@ std::string controller_name(Uint32 instance) noexcept {
 }
 
 bool controller_has_rumble(Uint32 instance) noexcept {
-  if (g_GameControllers.find(instance) != g_GameControllers.end()) {
-    return g_GameControllers[instance].m_hasRumble;
+  if (auto it = g_GameControllers.find(instance); it != g_GameControllers.end()) {
+    return it->second.m_hasRumble;
   }
-
   return false;
 }
 
 void controller_rumble(uint32_t instance, uint16_t low_freq_intensity, uint16_t high_freq_intensity,
                        uint16_t duration_ms) noexcept {
-
-  if (g_GameControllers.find(instance) != g_GameControllers.end()) {
-    SDL_RumbleGamepad(g_GameControllers[instance].m_controller, low_freq_intensity, high_freq_intensity, duration_ms);
+  if (auto it = g_GameControllers.find(instance); it != g_GameControllers.end()) {
+    SDL_RumbleGamepad(it->second.m_controller, low_freq_intensity, high_freq_intensity, duration_ms);
   }
 }
 

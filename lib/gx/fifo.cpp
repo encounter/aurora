@@ -2,6 +2,7 @@
 #include "command_processor.hpp"
 #include "../internal.hpp"
 
+#include <cstdlib>
 #include <cstring>
 
 namespace aurora::gx::fifo {
@@ -19,8 +20,8 @@ uint32_t sDlWritePos = 0;
 
 void init() {
   constexpr uint32_t initialCapacity = 64 * 1024;
-  delete[] detail::sBufferData;
-  detail::sBufferData = new uint8_t[initialCapacity];
+  free(detail::sBufferData);
+  detail::sBufferData = static_cast<uint8_t*>(malloc(initialCapacity));
   detail::sBufferSize = 0;
   detail::sBufferCapacity = initialCapacity;
   detail::sInDisplayList = false;
@@ -31,17 +32,9 @@ void init() {
 
 void write_data_grow(const void* data, uint32_t length) {
   uint32_t needed = detail::sBufferSize + length;
-  uint32_t newCap = detail::sBufferCapacity * 2;
-  if (newCap < needed) {
-    newCap = needed;
-  }
-  auto* newBuf = new uint8_t[newCap];
-  if (detail::sBufferSize > 0) {
-    std::memcpy(newBuf, detail::sBufferData, detail::sBufferSize);
-  }
-  std::memcpy(newBuf + detail::sBufferSize, data, length);
-  delete[] detail::sBufferData;
-  detail::sBufferData = newBuf;
+  uint32_t newCap = std::max(detail::sBufferCapacity * 2, needed);
+  detail::sBufferData = static_cast<uint8_t*>(realloc(detail::sBufferData, newCap));
+  std::memcpy(detail::sBufferData + detail::sBufferSize, data, length);
   detail::sBufferSize = needed;
   detail::sBufferCapacity = newCap;
 }
