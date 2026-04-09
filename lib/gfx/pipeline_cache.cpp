@@ -13,9 +13,10 @@
 #include <mutex>
 #include <thread>
 
-#include <fmt/format.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
+#include <fmt/format.h>
+#include <tracy/Tracy.hpp>
 
 namespace aurora::gfx {
 static Module Log("aurora::gfx::pipeline_cache");
@@ -388,6 +389,10 @@ static bool write_pipeline_cache_record(const PipelineCacheWrite& write) {
 }
 
 static void pipeline_cache_writer() {
+#ifdef TRACY_ENABLE
+  tracy::SetThreadName("Pipeline cache writer thread");
+#endif
+
   while (true) {
     std::deque<PipelineCacheWrite> batch;
     {
@@ -428,6 +433,10 @@ static void pipeline_cache_writer() {
 }
 
 static void pipeline_worker() {
+#ifdef TRACY_ENABLE
+  tracy::SetThreadName("Pipeline compilation thread");
+#endif
+
   bool hasMore = false;
   while (g_hasPipelineThread || g_pipelinesPerFrame < BuildPipelinesPerFrame) {
     PendingPipeline pending;
