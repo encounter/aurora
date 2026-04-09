@@ -11,6 +11,7 @@
 #include "texture.hpp"
 
 #include <optional>
+#include <ranges>
 
 #include <absl/container/flat_hash_map.h>
 #include <magic_enum.hpp>
