@@ -504,6 +504,7 @@ static void handle_bp(u32 value, bool bigEndian) {
     g_gxState.bpRegCache[0xFE] = 0x00FFFFFF;
     const u32 merged = (g_gxState.bpRegCache[regId] & ~ssMask) | (value & ssMask);
     value = (regId << 24) | (merged & 0x00FFFFFF);
+    if (g_gxState.bpRegCache[regId] == value) return;
     g_gxState.bpRegCache[regId] = value;
   }
 
@@ -1243,6 +1244,9 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
   }
 }
 
+// cache for xf register writes that can be skipped if same as previous val
+static u32 xf_reg_cache[0x1A] = {};
+
 // XF register handler - decodes XF (transform unit) register writes and updates g_gxState
 static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
   ZoneScoped;
@@ -1266,7 +1270,10 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
     for (u32 i = 0; i < count; i++) {
       u32 reg = xfAddr + i;
       u32 val = read_u32(xfData + i * 4, bigEndian);
-      f32 fval = read_f32(xfData + i * 4, bigEndian);
+
+      // Skip scalar register writes that haven't changed (viewport/projection handled below)
+      if (reg <= 0x19 && val == sXfRegCache[reg]) continue;
+      if (reg <= 0x19) sXfRegCache[reg] = val;
 
       switch (reg) {
       case 0x08:
@@ -1569,6 +1576,8 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
 }
 
 static ByteBuffer handle_draw_unmerged_idxBuf;
+static gfx::PipelineRef last_pipeline_ref = 0;
+static ShaderInfo last_shader_info;
 
 static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange) {
   ZoneScoped;
@@ -1601,10 +1610,17 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
 
   PipelineConfig config{};
   populate_pipeline_config(config, prim, fmt);
-  const auto info = build_shader_info(config.shaderConfig);
+  const auto pipeline = gfx::pipeline_ref(config);
+  ShaderInfo info;
+  if (pipeline == last_pipeline_ref) {
+    info = last_shader_info;
+  } else {
+    info = build_shader_info(config.shaderConfig);
+    last_pipeline_ref = pipeline;
+    last_shader_info = info;
+  }
   resolve_sampled_textures(info);
   const auto bindGroups = build_bind_groups(info, config.shaderConfig, ranges);
-  const auto pipeline = gfx::pipeline_ref(config);
 
   uint32_t instanceCount = 1;
   if (prim == GX_LINES) {
