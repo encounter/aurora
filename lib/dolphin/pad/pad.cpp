@@ -8,7 +8,7 @@
 
 static const int32_t k_mappingsFileVersion = 2;
 
-static constexpr std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtons{{
+static std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtons{{
     {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
     {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},
     {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
@@ -23,7 +23,7 @@ static constexpr std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtons
     {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
 }};
 
-static constexpr std::array<PADAxisMapping, PAD_AXIS_COUNT> g_defaultAxes{{
+static std::array<PADAxisMapping, PAD_AXIS_COUNT> g_defaultAxes{{
     {{SDL_GAMEPAD_AXIS_LEFTX, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_LEFT_X_POS},
     {{SDL_GAMEPAD_AXIS_LEFTX, AXIS_SIGN_NEGATIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_LEFT_X_NEG},
     // SDL's gamepad y-axis is inverted from GC's
@@ -44,24 +44,14 @@ constexpr const std::array<T, N>& toStdArray(const T (&array)[N]) {
   return reinterpret_cast<const std::array<T, N>&>(array);
 }
 
-static const std::array<PADButtonMapping, PAD_BUTTON_COUNT>& getDefaultButtons() {
-  if (aurora::g_config.defaultPadMapping) {
-    return toStdArray(aurora::g_config.defaultPadMapping->buttons);
-  }
-
-  return g_defaultButtons;
-}
-
-static const std::array<PADAxisMapping, PAD_AXIS_COUNT>& getDefaultAxes() {
-  if (aurora::g_config.defaultPadMapping) {
-    return toStdArray(aurora::g_config.defaultPadMapping->axes);
-  }
-
-  return g_defaultAxes;
-}
+static bool g_initialized;
 
 void PADSetSpec(u32 spec) {}
 BOOL PADInit() {
+  if (g_initialized) {
+    return true;
+  }
+
   return true;
 }
 BOOL PADRecalibrate(u32 mask) { return true; }
@@ -141,8 +131,8 @@ void __PADLoadMapping(aurora::input::GameController* controller) {
 
   std::string basePath{aurora::g_config.configPath};
   if (!controller->m_mappingLoaded) {
-    controller->m_buttonMapping = getDefaultButtons();
-    controller->m_axisMapping = getDefaultAxes();
+    controller->m_buttonMapping = g_defaultButtons;
+    controller->m_axisMapping = g_defaultAxes;
   }
 
   controller->m_mappingLoaded = true;
@@ -769,8 +759,8 @@ void PADRestoreDefaultMapping(uint32_t port) {
   if (controller == nullptr) {
     return;
   }
-  controller->m_buttonMapping = getDefaultButtons();
-  controller->m_axisMapping = getDefaultAxes();
+  controller->m_buttonMapping = g_defaultButtons;
+  controller->m_axisMapping = g_defaultAxes;
 }
 
 void PADBlockInput(bool block) { gBlockPAD = block; }
@@ -782,4 +772,13 @@ SDL_Gamepad* PADGetSDLGamepadForIndex(u32 index) {
   }
 
   return ctrl->m_controller;
+}
+
+void PADSetDefaultMapping(const PADDefaultMapping* mapping) {
+  if (g_initialized) {
+    aurora::input::Log.fatal("PADSetDefaultMapping called after PADInit()!");
+  }
+
+  g_defaultButtons = toStdArray(mapping->buttons);
+  g_defaultAxes = toStdArray(mapping->axes);
 }

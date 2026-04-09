@@ -171,6 +171,14 @@ s32 PADGetNativeButtonPressed(u32 port);
 PADSignedNativeAxis PADGetNativeAxisPulled(u32 port);
 void PADRestoreDefaultMapping(u32 port);
 void PADBlockInput(bool block);
+
+/**
+ * Set the default controller mapping used.
+ *
+ * Must be called before PADInit.
+ */
+void PADSetDefaultMapping(const PADDefaultMapping* mapping);
+
 #endif
 
 #ifdef __cplusplus
