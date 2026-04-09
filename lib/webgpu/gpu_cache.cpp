@@ -1,12 +1,15 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <filesystem>
 
-#include "sqlite3.h"
-#include "fmt/format.h"
 #include "../internal.hpp"
+#include "../sqlite_utils.hpp"
+
+#include <sqlite3.h>
+#include <fmt/format.h>
 #if defined(AURORA_CACHE_USE_ZSTD)
-#include "zstd.h"
+#include <zstd.h>
 #endif
 #define XXH_STATIC_LINKING_ONLY
 #include <xxhash.h>
@@ -31,57 +34,6 @@ static void init_abort() {
   db = nullptr;
 }
 
-static int exec_sql(const char* sql) { return sqlite3_exec(db, sql, nullptr, nullptr, nullptr); }
-
-template <typename T>
-static int exec_sql(const char* sql, T callback, char** errmsg) {
-  return sqlite3_exec(
-      db, sql,
-      [](void* cb, int b, char** c, char** d) -> int {
-        auto& fp = *static_cast<T*>(cb);
-        if constexpr (std::is_same_v<decltype(fp(0, 0, 0)), void>) {
-          fp(b, c, d);
-          return 0;
-        } else {
-          return fp(b, c, d);
-        }
-      },
-      &callback, errmsg);
-}
-
-struct SqliteTransaction {
-  bool need_rollback;
-  explicit SqliteTransaction(bool immediate = false) : need_rollback(true) {
-    const auto type = immediate ? "BEGIN IMMEDIATE" : "BEGIN";
-    const auto ret = sqlite3_exec(db, type, nullptr, nullptr, nullptr);
-    if (ret != SQLITE_OK) {
-      Log.error("Failed to start transaction: {}", sqlite3_errmsg(db));
-      need_rollback = false;
-    }
-  }
-  SqliteTransaction(const SqliteTransaction&) = delete;
-  SqliteTransaction& operator=(const SqliteTransaction&) = delete;
-  SqliteTransaction(SqliteTransaction&&) = delete;
-  SqliteTransaction& operator=(SqliteTransaction&&) = delete;
-  ~SqliteTransaction() {
-    if (need_rollback) {
-      const auto ret = sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
-      if (ret != SQLITE_OK) {
-        Log.error("Failed to roll back transaction (uh oh?): {}", sqlite3_errmsg(db));
-      }
-    }
-  }
-  void commit() {
-    const auto ret = sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
-    if (ret != SQLITE_OK) {
-      Log.error("Failed to commit transaction: {}", sqlite3_errmsg(db));
-      return;
-    }
-    need_rollback = false;
-  }
-  explicit operator bool() const { return need_rollback; }
-};
-
 static int check(int ret) {
   if (ret != SQLITE_OK) {
     Log.error("SQLite operation failed: {}", sqlite3_errmsg(db));
@@ -91,13 +43,13 @@ static int check(int ret) {
 }
 
 static bool ensure_schema_up_to_date() {
-  SqliteTransaction tx(true);
+  sqlite::Transaction tx(db, Log, true);
   if (!tx) {
     Log.error("Failed to open schema check transaction", sqlite3_errmsg(db));
     return false;
   }
 
-  auto ret = exec_sql("CREATE TABLE IF NOT EXISTS aurora_schema(value INTEGER);");
+  auto ret = sqlite::exec(db, "CREATE TABLE IF NOT EXISTS aurora_schema(value INTEGER);");
   if (ret != SQLITE_OK) {
     Log.error("Failed to create schema table: {}", sqlite3_errmsg(db));
     return false;
@@ -105,7 +57,7 @@ static bool ensure_schema_up_to_date() {
 
   bool match = false;
   auto cmd = fmt::format("SELECT * FROM aurora_schema WHERE value = {}", CACHE_SCHEMA);
-  ret = exec_sql(cmd.c_str(), [&match](int, char**, char**) { match = true; }, nullptr);
+  ret = sqlite::exec(db, cmd.c_str(), [&match](int, char**, char**) { match = true; }, nullptr);
   if (ret != SQLITE_OK) {
     Log.error("Failed to check schema table: {}", sqlite3_errmsg(db));
     return false;
@@ -126,7 +78,7 @@ CREATE TABLE cache (
 DELETE FROM aurora_schema;
 INSERT INTO aurora_schema VALUES ({});)",
       CACHE_SCHEMA);
-  ret = exec_sql(cmd.c_str());
+  ret = sqlite::exec(db, cmd.c_str());
   if (ret != SQLITE_OK) {
     Log.error("Failed to update schema: {}", sqlite3_errmsg(db));
     return false;
@@ -139,7 +91,7 @@ INSERT INTO aurora_schema VALUES ({});)",
 static bool cache_init_core() {
   Log.debug("SQLite version {}", sqlite3_libversion());
 
-  std::string file = fmt::format("{}{}", g_config.configPath, "dawn_cache.db");
+  std::string file = (std::filesystem::path{g_config.configPath} / "dawn_cache.db").string();
   Log.debug("Using dawn cache at {}", file);
   auto ret = sqlite3_open(file.c_str(), &db);
   if (ret != SQLITE_OK) {
@@ -148,7 +100,7 @@ static bool cache_init_core() {
   }
 
   // WAL mode + NORMAL = no need for disk syncs, consistent but not durable is fine.
-  ret = exec_sql("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
+  ret = sqlite::exec(db, "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
   if (ret != SQLITE_OK) {
     Log.error("Failed to set pragmas: {}", sqlite3_errmsg(db));
     return false;
@@ -203,7 +155,7 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
     return 0;
   }
 
-  SqliteTransaction tx;
+  sqlite::Transaction tx(db, Log);
   if (!tx) {
     Log.error("Failed to open load transaction");
     return 0;
@@ -265,7 +217,7 @@ void store_to_cache(void const* key, size_t keySize, void const* value, size_t v
     return;
   }
 
-  SqliteTransaction tx(true);
+  sqlite::Transaction tx(db, Log, true);
   if (!tx) {
     Log.error("Failed to open store transaction");
     return;

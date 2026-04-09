@@ -127,6 +127,7 @@ if (AURORA_ENABLE_GX)
     # aurora_gx sources
     lib/gfx/clear.cpp
     lib/gfx/common.cpp
+    lib/gfx/pipeline_cache.cpp
     lib/gfx/dds_io.cpp
     lib/gfx/tex_copy_conv.cpp
     lib/gfx/tex_palette_conv.cpp
