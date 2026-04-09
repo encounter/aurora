@@ -1272,8 +1272,8 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
       u32 val = read_u32(xfData + i * 4, bigEndian);
 
       // Skip scalar register writes that haven't changed (viewport/projection handled below)
-      if (reg <= 0x19 && val == sXfRegCache[reg]) continue;
-      if (reg <= 0x19) sXfRegCache[reg] = val;
+      if (reg <= 0x19 && val == xf_reg_cache[reg]) continue;
+      if (reg <= 0x19) xf_reg_cache[reg] = val;
 
       switch (reg) {
       case 0x08:
