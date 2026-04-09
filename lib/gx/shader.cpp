@@ -907,7 +907,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
   {
     const auto& lastStage = config.tevStages[config.tevStageCount - 1];
     if (lastStage.colorOp.outReg != 0) {
-      fragmentFn += fmt::format("\n    prev.rgb = {0}.rgb;", regName[lastStage.colorOp.outReg]);
+      fragmentFn += fmt::format("\n    prev = vec4f({0}.rgb, prev.a);", regName[lastStage.colorOp.outReg]);
     }
     if (lastStage.alphaOp.outReg != 0) {
       fragmentFn += fmt::format("\n    prev.a = {0}.a;", regName[lastStage.alphaOp.outReg]);
