@@ -14,6 +14,8 @@
 #include "dolphin/gx/GXAurora.h"
 #include <limits>
 
+#include "tracy/Tracy.hpp"
+
 namespace aurora::gx::fifo {
 static Module Log("aurora::gx::fifo");
 
@@ -332,6 +334,7 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
 static void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian);
 
 void process(const u8* data, u32 size, bool bigEndian) {
+  ZoneScoped;
   u32 pos = 0;
 
   while (pos < size) {
@@ -369,6 +372,7 @@ void process(const u8* data, u32 size, bool bigEndian) {
     case CP_CMD_LOAD_INDX_B:
     case CP_CMD_LOAD_INDX_C:
     case CP_CMD_LOAD_INDX_D: {
+      ZoneScopedN("LOAD_INDX");
       // Indexed XF load: 4 bytes of data
       CHECK(pos + 4 <= size, "indexed XF read overrun");
       u32 arrayType = GX_POS_MTX_ARRAY + (opcode - (CP_CMD_LOAD_INDX_A / 0x08));
@@ -445,6 +449,7 @@ inline static u32 bp_get(u32 reg, u32 size, u32 shift) { return reg >> shift & (
 
 // BP register handler - decodes BP (RAS/pixel engine) register writes and updates g_gxState
 static void handle_bp(u32 value, bool bigEndian) {
+  ZoneScoped;
   u32 regId = (value >> 24) & 0xFF;
   // Mask off the register ID from the value for field extraction
   // (the regId is stored in bits 24-31, data is in bits 0-23)
@@ -1027,6 +1032,7 @@ static void handle_bp(u32 value, bool bigEndian) {
 
 // CP register handler - decodes CP register writes and updates g_gxState
 static void handle_cp(u8 addr, u32 value, bool bigEndian) {
+  ZoneScoped;
   switch (addr) {
   // VCD low (0x50)
   case 0x50: {
@@ -1163,6 +1169,7 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
 
 // XF register handler - decodes XF (transform unit) register writes and updates g_gxState
 static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
+  ZoneScoped;
   CHECK(pos + 4 <= size, "XF header read overrun");
   u32 header = read_u32(data + pos, bigEndian);
   pos += 4;
@@ -1433,6 +1440,7 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
 static ByteBuffer handle_draw_idx_buf;
 
 static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndian) {
+  ZoneScoped;
   u8 opcode = cmd & CP_OPCODE_MASK;
   GXVtxFmt fmt = static_cast<GXVtxFmt>(cmd & CP_VAT_MASK);
   GXPrimitive prim = static_cast<GXPrimitive>(opcode);
@@ -1487,6 +1495,7 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
 static ByteBuffer handle_draw_unmerged_idxBuf;
 
 static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange) {
+  ZoneScoped;
   u32 numIndices = 0;
   gfx::Range idxRange;
 
@@ -1554,6 +1563,7 @@ std::string read_string(const u8* data, u32& pos, u32 size, bool bigEndian) {
 }
 
 void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
+  ZoneScoped;
   CHECK(pos + 2 <= size, "Aurora cmd read overrun");
   u16 subCmd = read_u16(data + pos, bigEndian);
   pos += 2;

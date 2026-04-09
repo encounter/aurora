@@ -8,11 +8,14 @@
 
 #include <absl/container/flat_hash_map.h>
 
+#include "tracy/Tracy.hpp"
+
 using namespace aurora::gfx;
 
 extern "C" {
 void GXInitTexObj(GXTexObj* obj_, const void* data, u16 width, u16 height, GXTexFmt format, GXTexWrapMode wrapS,
                   GXTexWrapMode wrapT, GXBool mipmap) {
+  ZoneScopedS(3);
   if (reinterpret_cast<GXTexObj_*>(obj_)->ref)
     Log.fatal("Texture object already has a reference");
   memset(obj_, 0, sizeof(GXTexObj));
@@ -40,6 +43,7 @@ void GXInitTexObj(GXTexObj* obj_, const void* data, u16 width, u16 height, GXTex
 
 void GXInitTexObjCI(GXTexObj* obj_, const void* data, u16 width, u16 height, GXCITexFmt format, GXTexWrapMode wrapS,
                     GXTexWrapMode wrapT, GXBool mipmap, u32 tlut) {
+  ZoneScopedS(3);
   if (reinterpret_cast<GXTexObj_*>(obj_)->ref)
     Log.fatal("Texture object already has a reference");
   memset(obj_, 0, sizeof(GXTexObj));

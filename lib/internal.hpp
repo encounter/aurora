@@ -80,9 +80,7 @@ auto underlying(T value) -> std::underlying_type_t<T> {
   return static_cast<std::underlying_type_t<T>>(value);
 }
 
-#ifndef ALIGN
-#define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
-#endif
+#define AURORA_ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
 
 #define POINTER_ADD_TYPE(type_, ptr_, offset_) ((type_)((uintptr_t)(ptr_) + (uintptr_t)(offset_)))
 #define POINTER_ADD(ptr_, offset_) POINTER_ADD_TYPE(decltype(ptr_), ptr_, offset_)

@@ -467,6 +467,13 @@ bool initialize(AuroraBackend auroraBackend) {
         requiredLimits.minUniformBufferOffsetAlignment, requiredLimits.minStorageBufferOffsetAlignment);
     std::vector requiredFeatures{wgpu::FeatureName::TextureComponentSwizzle};
 #ifdef WEBGPU_DAWN
+    wgpu::DawnCacheDeviceDescriptor cacheDescriptor({
+      .isolationKey = nullptr,
+      .loadDataFunction = load_from_cache,
+      .storeDataFunction = store_to_cache,
+      .functionUserdata = nullptr,
+    });
+
     constexpr std::array enableToggles{
     /* clang-format off */
 #if _WIN32
@@ -487,6 +494,7 @@ bool initialize(AuroraBackend auroraBackend) {
         /* clang-format on */
     };
     const wgpu::DawnTogglesDescriptor togglesDescriptor({
+        .nextInChain = &cacheDescriptor,
         .enabledToggleCount = enableToggles.size(),
         .enabledToggles = enableToggles.data(),
     });
@@ -599,6 +607,8 @@ void shutdown() {
   g_device = {};
   g_adapter = {};
   g_instance = {};
+
+  cache_shutdown();
 }
 
 bool refresh_surface(bool recreate) {
