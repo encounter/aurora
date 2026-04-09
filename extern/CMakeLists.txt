@@ -161,3 +161,23 @@ if (AURORA_ENABLE_GX)
     endif ()
   endif ()
 endif ()
+
+if (NOT TARGET TracyClient)
+  message(STATUS "aurora: Fetching Tracy")
+
+  # Default to off, users can enable the cache variable if they want to use it.
+  set(TRACY_ENABLE OFF CACHE BOOL "Enable Tracy profiling")
+
+  include(FetchContent)
+  FetchContent_Declare(
+          tracy
+          URL https://github.com/wolfpld/tracy/archive/refs/tags/v0.13.1.tar.gz
+          URL_HASH SHA256=d4efc50ebcb0bfcfdbba148995aeb75044c0d80f5d91223aebfaa8fa9e563d2b
+          DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  )
+  FetchContent_MakeAvailable(tracy)
+
+  if (NOT TARGET TracyClient)
+    message(FATAL_ERROR "Failed to make TracyClient available")
+  endif ()
+endif ()

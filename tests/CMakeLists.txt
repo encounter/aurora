@@ -56,6 +56,7 @@ if (AURORA_ENABLE_GX)
     absl::flat_hash_map
     absl::btree
     dawn::dawncpp_headers
+    TracyClient
     ${AURORA_SDL3_TARGET}
   )
 

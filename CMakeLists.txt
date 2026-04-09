@@ -111,7 +111,7 @@ add_library(aurora::shared ALIAS aurora_shared)
 target_compile_definitions(aurora_shared PUBLIC AURORA TARGET_PC)
 target_include_directories(aurora_shared PUBLIC include)
 target_link_libraries(aurora_shared PUBLIC ${AURORA_SDL3_TARGET} fmt::fmt xxhash)
-target_link_libraries(aurora_shared PRIVATE absl::btree absl::flat_hash_map)
+target_link_libraries(aurora_shared PRIVATE absl::btree absl::flat_hash_map TracyClient)
 
 if (AURORA_ENABLE_DVD)
   target_sources(aurora_shared PRIVATE lib/dolphin/dvd/dvd.cpp)

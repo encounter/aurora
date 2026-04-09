@@ -12,6 +12,8 @@
 #include <cfloat>
 #include <mutex>
 
+#include "tracy/Tracy.hpp"
+
 static aurora::Module Log("aurora::gx");
 
 namespace aurora::gx {
@@ -186,6 +188,7 @@ static inline wgpu::PrimitiveState to_primitive_state(GXCullMode gx_cullMode) {
 
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
                                     wgpu::ShaderModule shader, const char* label) noexcept {
+  ZoneScoped;
   const wgpu::DepthStencilState depthStencil{
       .format = g_graphicsConfig.depthFormat,
       .depthWriteEnabled = config.depthCompare && config.depthUpdate,

@@ -22,6 +22,8 @@
 #include <absl/container/flat_hash_set.h>
 #include <magic_enum.hpp>
 
+#include "tracy/Tracy.hpp"
+
 namespace aurora::gfx {
 static Module Log("aurora::gfx");
 
@@ -432,6 +434,7 @@ static OffscreenCacheEntry get_offscreen_textures(uint32_t width, uint32_t heigh
 }
 
 void begin_offscreen(uint32_t width, uint32_t height) {
+  ZoneScoped;
   CHECK(g_currentRenderPass != UINT32_MAX, "begin_offscreen called outside of a frame");
 
   // If the current EFB pass has no resolve target, its output is unobservable.
@@ -474,6 +477,7 @@ void begin_offscreen(uint32_t width, uint32_t height) {
 }
 
 void end_offscreen() {
+  ZoneScoped;
   CHECK(g_inOffscreen, "end_offscreen called without begin_offscreen");
 
   g_inOffscreen = false;
@@ -507,6 +511,10 @@ PipelineRef pipeline_ref(gx::PipelineConfig config) {
 }
 
 static void pipeline_worker() {
+#ifdef TRACY_ENABLE
+  tracy::SetThreadName("Pipeline compilation thread");
+#endif
+
   bool hasMore = false;
   while (g_hasPipelineThread || g_pipelinesPerFrame < BuildPipelinesPerFrame) {
     std::pair<PipelineRef, NewPipelineCallback> cb;
@@ -718,8 +726,12 @@ void map_staging_buffer() {
 }
 
 void begin_frame() {
-  while (!bufferMapped) {
-    g_instance.ProcessEvents();
+  ZoneScoped;
+  {
+    ZoneScopedN("Wait for buffer map");
+    while (!bufferMapped) {
+      g_instance.ProcessEvents();
+    }
   }
   size_t bufferOffset = 0;
   const auto& stagingBuf = g_stagingBuffers[currentStagingBuffer];
@@ -754,12 +766,13 @@ void begin_frame() {
 }
 
 void end_frame(const wgpu::CommandEncoder& cmd) {
+  ZoneScoped;
   ASSERT(!g_inOffscreen, "end_frame called while offscreen rendering is active");
   uint64_t bufferOffset = 0;
   const auto writeBuffer = [&](ByteBuffer& buf, wgpu::Buffer& out, uint64_t size, std::string_view label) {
     const auto writeSize = buf.size(); // Only need to copy this many bytes
     if (writeSize > 0) {
-      cmd.CopyBufferToBuffer(g_stagingBuffers[currentStagingBuffer], bufferOffset, out, 0, ALIGN(writeSize, 4));
+      cmd.CopyBufferToBuffer(g_stagingBuffers[currentStagingBuffer], bufferOffset, out, 0, AURORA_ALIGN(writeSize, 4));
       buf.clear();
     }
     bufferOffset += size;
@@ -778,7 +791,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
           .layout =
               wgpu::TexelCopyBufferLayout{
                   .offset = item.layout.offset + bufferOffset,
-                  .bytesPerRow = ALIGN(item.layout.bytesPerRow, 256),
+                  .bytesPerRow = AURORA_ALIGN(item.layout.bytesPerRow, 256),
                   .rowsPerImage = item.layout.rowsPerImage,
               },
           .buffer = g_stagingBuffers[currentStagingBuffer],
@@ -801,6 +814,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
 }
 
 void render(wgpu::CommandEncoder& cmd) {
+  ZoneScoped;
   for (u32 i = 0; i < g_renderPasses.size(); ++i) {
     const auto& passInfo = g_renderPasses[i];
     for (const auto& conv : passInfo.paletteConvs) {
@@ -1025,7 +1039,7 @@ Range push_storage(const uint8_t* data, size_t length) {
 }
 Range push_texture_data(const uint8_t* data, size_t length, u32 bytesPerRow, u32 rowsPerImage) {
   // For CopyBufferToTexture, we need an alignment of 256 per row (see Dawn kTextureBytesPerRowAlignment)
-  const auto copyBytesPerRow = ALIGN(bytesPerRow, 256);
+  const auto copyBytesPerRow = AURORA_ALIGN(bytesPerRow, 256);
   const auto range = map(g_textureUpload, copyBytesPerRow * rowsPerImage, 0);
   u8* dst = g_textureUpload.data() + range.offset;
   for (u32 i = 0; i < rowsPerImage; ++i) {
@@ -1086,7 +1100,7 @@ wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor) {
   return it->second;
 }
 
-uint32_t align_uniform(uint32_t value) { return ALIGN(value, g_cachedLimits.minUniformBufferOffsetAlignment); }
+uint32_t align_uniform(uint32_t value) { return AURORA_ALIGN(value, g_cachedLimits.minUniformBufferOffsetAlignment); }
 
 void insert_debug_marker(std::string label) {
 #if defined(AURORA_GFX_DEBUG_GROUPS)
