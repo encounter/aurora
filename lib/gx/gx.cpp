@@ -439,6 +439,7 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
                                const BindGroupRanges& ranges) noexcept {
   const auto layouts = build_bind_group_layouts(config);
 
+  // Using C WGPU types instead of C++ wrappers to avoid destructor overhead
   std::array<WGPUBindGroupEntry, MaxIndexAttr + 3> uniformEntries{};
   uniformEntries[0].binding = 0;
   uniformEntries[0].buffer = gfx::g_vertexBuffer.Get();
@@ -496,9 +497,9 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
       .entries = textureEntries.data(),
   };
   return {
-      .uniformBindGroup = gfx::bind_group_ref(reinterpret_cast<const wgpu::BindGroupDescriptor&>(uniformBindGroupDescriptor)),
-      .samplerBindGroup = gfx::bind_group_ref(reinterpret_cast<const wgpu::BindGroupDescriptor&>(samplerBindGroupDescriptor)),
-      .textureBindGroup = gfx::bind_group_ref(reinterpret_cast<const wgpu::BindGroupDescriptor&>(textureBindGroupDescriptor)),
+      .uniformBindGroup = gfx::bind_group_ref(uniformBindGroupDescriptor),
+      .samplerBindGroup = gfx::bind_group_ref(samplerBindGroupDescriptor),
+      .textureBindGroup = gfx::bind_group_ref(textureBindGroupDescriptor),
   };
 }
 

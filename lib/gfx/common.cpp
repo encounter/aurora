@@ -78,11 +78,11 @@ namespace aurora {
 // we create specialized methods to handle them. Note that these are highly dependent on
 // the structure definition, which could easily change with Dawn updates.
 template <>
-inline HashType xxh3_hash(const wgpu::BindGroupDescriptor& input, HashType seed) {
-  constexpr auto offset = offsetof(wgpu::BindGroupDescriptor, layout); // skip nextInChain, label
+inline HashType xxh3_hash(const WGPUBindGroupDescriptor& input, HashType seed) {
+  constexpr auto offset = offsetof(WGPUBindGroupDescriptor, layout); // skip nextInChain, label
   const auto hash = xxh3_hash_s(reinterpret_cast<const u8*>(&input) + offset,
-                                sizeof(wgpu::BindGroupDescriptor) - offset - sizeof(void*) /* skip entries */, seed);
-  return xxh3_hash_s(input.entries, sizeof(wgpu::BindGroupEntry) * input.entryCount, hash);
+                                sizeof(WGPUBindGroupDescriptor) - offset - sizeof(void*) /* skip entries */, seed);
+  return xxh3_hash_s(input.entries, sizeof(WGPUBindGroupEntry) * input.entryCount, hash);
 }
 template <>
 inline HashType xxh3_hash(const wgpu::SamplerDescriptor& input, HashType seed) {
@@ -610,7 +610,7 @@ void save_pipeline_cache() {
     file.write(reinterpret_cast<const char*>(&g_serializedPipelineCount), sizeof(g_serializedPipelineCount));
     file.write(reinterpret_cast<const char*>(g_serializedPipelines.data()), g_serializedPipelines.size());
   }
-  g_serializedPipelines.clear();
+  g_serializedPipelines.release();
   g_serializedPipelineCount = 0;
 }
 
@@ -760,7 +760,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
     const auto writeSize = buf.size(); // Only need to copy this many bytes
     if (writeSize > 0) {
       cmd.CopyBufferToBuffer(g_stagingBuffers[currentStagingBuffer], bufferOffset, out, 0, ALIGN(writeSize, 4));
-      buf.clear();
+      buf.release();
     }
     bufferOffset += size;
     return writeSize;
@@ -786,7 +786,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
       cmd.CopyBufferToTexture(&buf, &item.tex, &item.size);
     }
     g_textureUploads.clear();
-    g_textureUpload.clear();
+    g_textureUpload.release();
   }
   currentStagingBuffer = (currentStagingBuffer + 1) % g_stagingBuffers.size();
   map_staging_buffer();
@@ -1053,15 +1053,15 @@ std::pair<ByteBuffer, Range> map_storage(size_t length) {
 }
 
 // TODO: should we avoid caching bind groups altogether?
-BindGroupRef bind_group_ref(const wgpu::BindGroupDescriptor& descriptor) {
+BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor) {
 #ifdef EMSCRIPTEN
-  const auto bg = g_device.CreateBindGroup(&descriptor);
+  const auto bg = wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor);
   BindGroupRef id = reinterpret_cast<BindGroupRef>(bg.Get());
   g_cachedBindGroups.try_emplace(id, bg);
 #else
   const auto id = xxh3_hash(descriptor);
   if (!g_cachedBindGroups.contains(id)) {
-    g_cachedBindGroups.try_emplace(id, g_device.CreateBindGroup(&descriptor));
+    g_cachedBindGroups.try_emplace(id, wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor));
   }
 #endif
   return id;

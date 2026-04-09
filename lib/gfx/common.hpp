@@ -109,7 +109,7 @@ public:
     m_length += size;
   }
 
-  void clear() {
+  void release() {
     if (m_data != nullptr && m_owned) {
       free(m_data);
     }
@@ -119,11 +119,7 @@ public:
     m_owned = true;
   }
 
-  void setLengthZero() {
-    if (!m_owned) {
-      abort();
-    }
-
+  void clear() {
     m_length = 0;
   }
 
@@ -286,7 +282,7 @@ template <typename PipelineConfig>
 PipelineRef pipeline_ref(const PipelineConfig& config);
 bool bind_pipeline(PipelineRef ref, const wgpu::RenderPassEncoder& pass);
 
-BindGroupRef bind_group_ref(const wgpu::BindGroupDescriptor& descriptor);
+BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor);
 wgpu::BindGroup& find_bind_group(BindGroupRef id);
 
 wgpu::Sampler& sampler_ref(const wgpu::SamplerDescriptor& descriptor);

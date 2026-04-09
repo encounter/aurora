@@ -1465,7 +1465,7 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
         lastDraw->instanceCount == 1) LIKELY {
       u32 numIndices = prepare_idx_buffer(handle_draw_idx_buf, prim, lastDraw->vtxCount, vtxCount);
       gfx::Range idxRange = gfx::push_indices(handle_draw_idx_buf.data(), handle_draw_idx_buf.size());
-      handle_draw_idx_buf.setLengthZero();
+      handle_draw_idx_buf.clear();
       CHECK(lastDraw->vertRange.offset + lastDraw->vertRange.size == vertRange.offset,
             "Non-consecutive vertex ranges ({} < {})", lastDraw->vertRange.offset + lastDraw->vertRange.size,
             vertRange.offset);
@@ -1495,7 +1495,7 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
     auto& realBuf = vtxCount < 1000 ? handle_draw_unmerged_idxBuf : idxBuf;
     numIndices = prepare_idx_buffer(realBuf, prim, 0, vtxCount);
     idxRange = gfx::push_indices(realBuf.data(), realBuf.size());
-    realBuf.setLengthZero();
+    realBuf.clear();
   }
 
   // Build pipeline, bind groups, and push draw command
