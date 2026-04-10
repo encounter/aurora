@@ -649,6 +649,7 @@ void render(wgpu::CommandEncoder& cmd) {
           .srcView = passInfo.copySourceView,
           .uniformRange = passInfo.resolveUniformRange,
           .dst = passInfo.resolveTarget,
+          .sampleFilter = needsScaling ? tex_copy_conv::SampleFilter::Linear : tex_copy_conv::SampleFilter::Nearest,
       };
       if (needsConversion) {
         tex_copy_conv::run(cmd, convReq);

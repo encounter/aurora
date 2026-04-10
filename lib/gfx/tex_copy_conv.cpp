@@ -208,7 +208,8 @@ static constexpr std::array ConvPipelines{
 };
 
 static wgpu::BindGroupLayout g_bindGroupLayout;
-static wgpu::Sampler g_sampler;
+static wgpu::Sampler g_nearestSampler;
+static wgpu::Sampler g_linearSampler;
 static absl::flat_hash_map<GXTexFmt, wgpu::RenderPipeline> g_pipelines;
 static wgpu::RenderPipeline g_blitPipeline;
 
@@ -306,26 +307,35 @@ void initialize() {
     }
   }
 
-  constexpr wgpu::SamplerDescriptor samplerDescriptor{
-      .label = "TexCopyConv Sampler",
+  constexpr wgpu::SamplerDescriptor nearestSamplerDescriptor{
+      .label = "TexCopyConv Nearest Sampler",
       .magFilter = wgpu::FilterMode::Nearest,
       .minFilter = wgpu::FilterMode::Nearest,
   };
-  g_sampler = g_device.CreateSampler(&samplerDescriptor);
+  g_nearestSampler = g_device.CreateSampler(&nearestSamplerDescriptor);
+
+  constexpr wgpu::SamplerDescriptor linearSamplerDescriptor{
+      .label = "TexCopyConv Linear Sampler",
+      .magFilter = wgpu::FilterMode::Linear,
+      .minFilter = wgpu::FilterMode::Linear,
+  };
+  g_linearSampler = g_device.CreateSampler(&linearSamplerDescriptor);
 }
 
 void shutdown() {
   g_pipelines.clear();
   g_blitPipeline = {};
   g_bindGroupLayout = {};
-  g_sampler = {};
+  g_nearestSampler = {};
+  g_linearSampler = {};
 }
 
 static void execute(const wgpu::CommandEncoder& cmd, const ConvRequest& req, const wgpu::RenderPipeline& pipeline) {
+  const auto& sampler = req.sampleFilter == SampleFilter::Linear ? g_linearSampler : g_nearestSampler;
   const std::array bindGroupEntries{
       wgpu::BindGroupEntry{
           .binding = 0,
-          .sampler = g_sampler,
+          .sampler = sampler,
       },
       wgpu::BindGroupEntry{
           .binding = 1,
