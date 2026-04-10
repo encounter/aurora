@@ -69,6 +69,8 @@
 extern "C" {
 #endif
 
+#define PAD_NATIVE_BUTTON_INVALID 0xFFFFFFFF
+
 typedef struct PADStatus {
   u16 button;
   s8 stickX;
@@ -131,6 +133,11 @@ typedef struct PADAxisMapping {
   PADAxis padAxis;
 } PADAxisMapping;
 
+typedef struct PADDefaultMapping {
+  PADButtonMapping buttons[PAD_BUTTON_COUNT];
+  PADAxisMapping axes[PAD_AXIS_COUNT];
+} PADDefaultMapping;
+
 /* Returns the total number of controllers */
 u32 PADCount();
 /* Returns the controller name for the given index into the controller map */
@@ -164,6 +171,14 @@ s32 PADGetNativeButtonPressed(u32 port);
 PADSignedNativeAxis PADGetNativeAxisPulled(u32 port);
 void PADRestoreDefaultMapping(u32 port);
 void PADBlockInput(bool block);
+
+/**
+ * Set the default controller mapping used.
+ *
+ * Must be called before PADInit.
+ */
+void PADSetDefaultMapping(const PADDefaultMapping* mapping);
+
 #endif
 
 #ifdef __cplusplus
