@@ -33,6 +33,8 @@ bool g_aspectRatioLocked;
 int g_aspectRatioW, g_aspectRatioH;
 AuroraWindowSize g_windowSize;
 std::vector<AuroraEvent> g_events;
+bool g_hasPendingFullscreen;
+bool g_pendingFullscreen;
 
 inline bool operator==(const AuroraWindowSize& lhs, const AuroraWindowSize& rhs) {
   return lhs.width == rhs.width && lhs.height == rhs.height && lhs.fb_width == rhs.fb_width &&
@@ -68,10 +70,23 @@ void set_window_icon() noexcept {
   TRY_WARN(SDL_SetWindowIcon(g_window, iconSurface), "Failed to set window icon: {}", SDL_GetError());
   SDL_DestroySurface(iconSurface);
 }
+
+void apply_pending_window_changes() noexcept {
+  if (g_window == nullptr || !g_hasPendingFullscreen) {
+    return;
+  }
+
+  // Window mutations are deferred until the update phase so we never reconfigure the SDL/Metal window while
+  // an in-flight frame already owns a drawable.
+  TRY_WARN(SDL_SetWindowFullscreen(g_window, g_pendingFullscreen), "Failed to set window fullscreen: {}",
+           SDL_GetError());
+  g_hasPendingFullscreen = false;
+}
 } // namespace
 
 const AuroraEvent* poll_events() {
   g_events.clear();
+  apply_pending_window_changes();
 
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
@@ -370,10 +385,16 @@ void set_title(const char* title) {
 }
 
 void set_fullscreen(bool fullscreen) {
-  TRY_WARN(SDL_SetWindowFullscreen(g_window, fullscreen), "Failed to set window fullscreen: {}", SDL_GetError());
+  g_pendingFullscreen = fullscreen;
+  g_hasPendingFullscreen = true;
 }
 
-bool get_fullscreen() { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0u; }
+bool get_fullscreen() {
+  if (g_hasPendingFullscreen) {
+    return g_pendingFullscreen;
+  }
+  return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0u;
+}
 
 void set_window_size(uint32_t width, uint32_t height) {
   TRY_WARN(SDL_RestoreWindow(g_window), "Failed to un-maximize window: {}", SDL_GetError());
@@ -385,7 +406,8 @@ void set_window_position(uint32_t x, uint32_t y) {
 }
 
 void center_window() {
-  TRY_WARN(SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED), "Failed to center window: {}", SDL_GetError());
+  TRY_WARN(SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED),
+           "Failed to center window: {}", SDL_GetError());
 }
 
 static void push_future_resize_event() {
