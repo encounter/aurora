@@ -107,6 +107,11 @@ add_library(aurora_shared SHARED
 )
 add_library(aurora::shared ALIAS aurora_shared)
 
+if (APPLE)
+  target_sources(aurora_shared PRIVATE lib/window_macos.mm)
+  set_source_files_properties(lib/window_macos.mm PROPERTIES COMPILE_FLAGS -fobjc-arc)
+endif ()
+
 target_compile_definitions(aurora_shared PUBLIC AURORA TARGET_PC)
 target_include_directories(aurora_shared PUBLIC include)
 target_link_libraries(aurora_shared PUBLIC ${AURORA_SDL3_TARGET} fmt::fmt xxhash)

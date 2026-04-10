@@ -6,6 +6,11 @@ add_library(aurora_core STATIC
 )
 add_library(aurora::core ALIAS aurora_core)
 
+if (APPLE)
+    target_sources(aurora_core PRIVATE lib/window_macos.mm)
+    set_source_files_properties(lib/window_macos.mm PROPERTIES COMPILE_FLAGS -fobjc-arc)
+endif ()
+
 target_compile_definitions(aurora_core PUBLIC AURORA TARGET_PC)
 target_include_directories(aurora_core PUBLIC include)
 target_link_libraries(aurora_core PUBLIC ${AURORA_SDL3_TARGET} fmt::fmt xxhash)

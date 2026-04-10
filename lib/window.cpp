@@ -20,10 +20,18 @@
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_pixels.h>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include <cstdint>
 #include <vector>
 
 namespace aurora::window {
+#if defined(__APPLE__) && TARGET_OS_OSX
+void configure_macos_window_for_disabled_fullscreen(SDL_Window* window) noexcept;
+#endif
+
 namespace {
 Module Log("aurora::window");
 
@@ -33,11 +41,26 @@ bool g_aspectRatioLocked;
 int g_aspectRatioW, g_aspectRatioH;
 AuroraWindowSize g_windowSize;
 std::vector<AuroraEvent> g_events;
+bool g_warnedFullscreenDisabled;
 
 inline bool operator==(const AuroraWindowSize& lhs, const AuroraWindowSize& rhs) {
   return lhs.width == rhs.width && lhs.height == rhs.height && lhs.fb_width == rhs.fb_width &&
          lhs.fb_height == rhs.fb_height && lhs.native_fb_height == rhs.native_fb_height &&
          lhs.native_fb_width == rhs.native_fb_width && lhs.scale == rhs.scale;
+}
+
+void warn_fullscreen_disabled_once() noexcept {
+  if (g_warnedFullscreenDisabled) {
+    return;
+  }
+  Log.warn("Ignoring fullscreen request because native fullscreen is disabled on macOS");
+  g_warnedFullscreenDisabled = true;
+}
+
+void refresh_native_window_state() noexcept {
+#if defined(__APPLE__) && TARGET_OS_OSX
+  configure_macos_window_for_disabled_fullscreen(g_window);
+#endif
 }
 
 void resize_swapchain() noexcept {
@@ -193,7 +216,11 @@ bool create_window(AuroraBackend backend) {
 #else
   flags |= SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE;
   if (g_config.startFullscreen) {
+#if defined(__APPLE__) && TARGET_OS_OSX
+    warn_fullscreen_disabled_once();
+#else
     flags |= SDL_WINDOW_FULLSCREEN;
+#endif
   }
 #endif
   switch (backend) {
@@ -263,6 +290,7 @@ bool create_window(AuroraBackend backend) {
   }
   SDL_SetWindowMinimumSize(g_window, 640, 480);
   set_window_icon();
+  refresh_native_window_state();
   return true;
 }
 
@@ -280,6 +308,7 @@ bool create_renderer() {
     Log.error("Failed to create renderer: {}", SDL_GetError());
     return false;
   }
+  refresh_native_window_state();
   return true;
 }
 
@@ -297,6 +326,7 @@ void destroy_window() {
 void show_window() {
   if (g_window != nullptr) {
     TRY_WARN(SDL_ShowWindow(g_window), "Failed to show window: {}", SDL_GetError());
+    refresh_native_window_state();
   }
 }
 
@@ -370,7 +400,19 @@ void set_title(const char* title) {
 }
 
 void set_fullscreen(bool fullscreen) {
+#if defined(__APPLE__) && TARGET_OS_OSX
+  if (fullscreen) {
+    warn_fullscreen_disabled_once();
+    refresh_native_window_state();
+    return;
+  }
+#endif
   TRY_WARN(SDL_SetWindowFullscreen(g_window, fullscreen), "Failed to set window fullscreen: {}", SDL_GetError());
+#if defined(__APPLE__) && TARGET_OS_OSX
+  if (!fullscreen) {
+    refresh_native_window_state();
+  }
+#endif
 }
 
 bool get_fullscreen() { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0u; }
