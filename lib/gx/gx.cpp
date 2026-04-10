@@ -941,6 +941,7 @@ static u16 wgpu_aniso(GXAnisotropy aniso) {
   switch (aniso) {
     DEFAULT_FATAL("invalid aniso {}", static_cast<int>(aniso));
   case GX_ANISO_1:
+  case GX_MAX_ANISOTROPY:
     return 1;
   case GX_ANISO_2:
     return std::max<u16>(aurora::webgpu::g_graphicsConfig.textureAnisotropy / 2, 1);
