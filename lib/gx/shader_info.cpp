@@ -11,13 +11,6 @@ bool is_alpha_bump_channel(GXChannelID id) { return id == GX_ALPHA_BUMP || id ==
 Vec4<float> texture_size_bias(const gfx::TextureBind& tex) {
   auto width = static_cast<float>(tex.texObj.width());
   auto height = static_cast<float>(tex.texObj.height());
-
-  // TODO: actual logical EFB copy size
-  if (tex.ref && tex.ref->isRenderTexture) {
-    width = 608.0f;
-    height = 448.0f;
-  }
-
   return {width, height, tex.texObj.lod_bias(), 0.0f};
 }
 

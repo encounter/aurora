@@ -202,7 +202,9 @@ gfx::TextureHandle resolve_dynamic_palette_texture(const GXTexObj_& obj, const G
   auto& tlutCache = s_tlutObjectCaches[tlut.tlutObjId];
   auto& entry = tlutCache.dynamicPaletteTextures[make_dynamic_palette_key(obj, source)];
   if (!entry.handle) {
-    entry.handle = gfx::new_conv_texture(obj.width(), obj.height(), GX_TF_RGBA8, "GX Dynamic Palette Texture");
+    // Use source size instead of target (logical) size
+    entry.handle = gfx::new_conv_texture(source.handle->size.width, source.handle->size.height, GX_TF_RGBA8,
+                                         "GX Dynamic Palette Texture");
   }
   if (entry.sourceRevision != source.revision || entry.tlutDataVersion != tlut.tlutDataVersion) {
     gfx::queue_palette_conv({
@@ -283,10 +285,6 @@ void resolve_sampled_textures(const ShaderInfo& info) noexcept {
       handle = resolve_static_texture(obj);
     }
 
-    if (handle) {
-      obj.mWidth = handle->size.width;
-      obj.mHeight = handle->size.height;
-    }
     obj.mFormat = resolved_format_for_handle(handle);
     g_gxState.textures[i] = gfx::TextureBind{obj, std::move(handle)};
   }
