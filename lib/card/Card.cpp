@@ -827,6 +827,7 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
     for (uint32_t i = 0; i < blockCount; ++i) {
       m_fileHandle.fileWrite(DummyBlock.get(), BlockSize, BlockSize * (i + 5));
     }
+    m_fileHandle.flush();
     m_dirty = false;
   }
 }
@@ -862,6 +863,7 @@ void Card::commit() {
     m_tmpBats[1].updateChecksum();
     m_tmpBats[1].swapEndian();
     m_fileHandle.fileWrite(m_tmpBats[1].raw.data(), BlockSize, BlockSize * 4);
+    m_fileHandle.flush();
     m_dirty = false;
   }
 }
