@@ -30,8 +30,8 @@ std::vector<std::string> g_debugGroupStack;
 std::vector<std::string> g_debugMarkers;
 #endif
 
-constexpr uint64_t StagingBufferSize =
-    UniformBufferSize + VertexBufferSize + IndexBufferSize + StorageBufferSize + TextureUploadSize;
+constexpr uint64_t StagingBufferSize = UniformBufferSize + VertexBufferSize + IndexBufferSize + StorageBufferSize +
+                                       (UseTextureBuffer ? TextureUploadSize : 0);
 
 struct ShaderDrawCommand {
   ShaderType type;
@@ -528,7 +528,9 @@ void begin_frame() {
   mapBuffer(g_uniforms, UniformBufferSize);
   mapBuffer(g_indices, IndexBufferSize);
   mapBuffer(g_storage, StorageBufferSize);
-  mapBuffer(g_textureUpload, TextureUploadSize);
+  if constexpr (UseTextureBuffer) {
+    mapBuffer(g_textureUpload, TextureUploadSize);
+  }
 
   g_stats.drawCallCount = 0;
   g_stats.mergedDrawCallCount = 0;
@@ -562,23 +564,25 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
   g_stats.lastUniformSize = writeBuffer(g_uniforms, g_uniformBuffer, UniformBufferSize, "Uniform");
   g_stats.lastIndexSize = writeBuffer(g_indices, g_indexBuffer, IndexBufferSize, "Index");
   g_stats.lastStorageSize = writeBuffer(g_storage, g_storageBuffer, StorageBufferSize, "Storage");
-  g_stats.lastTextureUploadSize = g_textureUpload.size();
-  {
-    // Perform texture copies
-    for (const auto& item : g_textureUploads) {
-      const wgpu::TexelCopyBufferInfo buf{
-          .layout =
-              wgpu::TexelCopyBufferLayout{
-                  .offset = item.layout.offset + bufferOffset,
-                  .bytesPerRow = AURORA_ALIGN(item.layout.bytesPerRow, 256),
-                  .rowsPerImage = item.layout.rowsPerImage,
-              },
-          .buffer = g_stagingBuffers[currentStagingBuffer],
-      };
-      cmd.CopyBufferToTexture(&buf, &item.tex, &item.size);
+  if constexpr (UseTextureBuffer) {
+    g_stats.lastTextureUploadSize = g_textureUpload.size();
+    {
+      // Perform texture copies
+      for (const auto& item : g_textureUploads) {
+        const wgpu::TexelCopyBufferInfo buf{
+            .layout =
+                wgpu::TexelCopyBufferLayout{
+                    .offset = item.layout.offset + bufferOffset,
+                    .bytesPerRow = AURORA_ALIGN(item.layout.bytesPerRow, 256),
+                    .rowsPerImage = item.layout.rowsPerImage,
+                },
+            .buffer = g_stagingBuffers[currentStagingBuffer],
+        };
+        cmd.CopyBufferToTexture(&buf, &item.tex, &item.size);
+      }
+      g_textureUploads.clear();
+      g_textureUpload.release();
     }
-    g_textureUploads.clear();
-    g_textureUpload.release();
   }
   currentStagingBuffer = (currentStagingBuffer + 1) % g_stagingBuffers.size();
   map_staging_buffer();

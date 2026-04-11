@@ -98,13 +98,21 @@ TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mi
         .texture = ref.texture,
         .mipLevel = mip,
     };
-    const auto range = push_texture_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks);
-    const wgpu::TexelCopyBufferLayout dataLayout{
-        .offset = range.offset,
-        .bytesPerRow = bytesPerRow,
-        .rowsPerImage = heightBlocks,
-    };
-    g_textureUploads.emplace_back(dataLayout, std::move(dstView), physicalSize);
+    if constexpr (UseTextureBuffer) {
+      const auto range = push_texture_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks);
+      const wgpu::TexelCopyBufferLayout dataLayout{
+          .offset = range.offset,
+          .bytesPerRow = bytesPerRow,
+          .rowsPerImage = heightBlocks,
+      };
+      g_textureUploads.emplace_back(dataLayout, std::move(dstView), physicalSize);
+    } else {
+      const wgpu::TexelCopyBufferLayout dataLayout{
+          .bytesPerRow = bytesPerRow,
+          .rowsPerImage = heightBlocks,
+      };
+      g_queue.WriteTexture(&dstView, data.data() + offset, dataSize, &dataLayout, &physicalSize);
+    }
     offset += dataSize;
   }
   if (data.size() != UINT32_MAX && offset < data.size()) {
@@ -286,13 +294,21 @@ void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
         .texture = ref.texture,
         .mipLevel = mip,
     };
-    const auto range = push_texture_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks);
-    const wgpu::TexelCopyBufferLayout dataLayout{
-        .offset = range.offset,
-        .bytesPerRow = bytesPerRow,
-        .rowsPerImage = heightBlocks,
-    };
-    g_textureUploads.emplace_back(dataLayout, std::move(dstView), physicalSize);
+    if constexpr (UseTextureBuffer) {
+      const auto range = push_texture_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks);
+      const wgpu::TexelCopyBufferLayout dataLayout{
+          .offset = range.offset,
+          .bytesPerRow = bytesPerRow,
+          .rowsPerImage = heightBlocks,
+      };
+      g_textureUploads.emplace_back(dataLayout, std::move(dstView), physicalSize);
+    } else {
+      const wgpu::TexelCopyBufferLayout dataLayout{
+          .bytesPerRow = bytesPerRow,
+          .rowsPerImage = heightBlocks,
+      };
+      g_queue.WriteTexture(&dstView, data.data() + offset, dataSize, &dataLayout, &physicalSize);
+    }
     offset += dataSize;
   }
   if (data.size() != UINT32_MAX && offset < data.size()) {
