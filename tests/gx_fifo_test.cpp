@@ -1282,6 +1282,28 @@ TEST_F(GXFifoTest, LoadTexObj_EncodesSdkBpBurstAndAuroraMetadata) {
   EXPECT_EQ(slot.texDataVersion, 1u);
 }
 
+TEST_F(GXFifoTest, LoadTexObjPcFormat_PreservesFullFormatMetadata) {
+  alignas(32) u8 image[64]{};
+  GXTexObj obj{};
+  GXInitTexObj(&obj, image, 8, 8, GX_TF_RGBA8_PC, GX_REPEAT, GX_REPEAT, GX_FALSE);
+
+  EXPECT_EQ(GXGetTexObjFmt(&obj), GX_TF_RGBA8_PC);
+
+  GXLoadTexObj(&obj, GX_TEXMAP3);
+  auto bytes = capture_fifo();
+
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_TEXOBJ));
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& slot = gxState().loadedTextures[GX_TEXMAP3];
+  EXPECT_EQ(slot.width(), 8u);
+  EXPECT_EQ(slot.height(), 8u);
+  EXPECT_EQ(slot.format(), GX_TF_RGBA8_PC);
+  EXPECT_EQ(slot.raw_format(), static_cast<u32>(GX_TF_I8));
+}
+
 TEST_F(GXFifoTest, LoadTexObjCiAndTlut_PopulatesTextureAndTlutSlots) {
   alignas(32) u8 image[64]{};
   alignas(32) u16 palette[16]{};

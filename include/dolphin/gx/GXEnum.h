@@ -132,6 +132,9 @@ typedef enum {
 #define _GX_TF_CTF 0x20
 #define _GX_TF_ZTF 0x10
 
+// Aurora-specific linear texture types
+#define _GX_TF_PC 0x40
+
 typedef enum {
   GX_TF_I4 = 0x0,
   GX_TF_I8 = 0x1,
@@ -165,9 +168,8 @@ typedef enum {
   GX_TF_A8 = GX_CTF_A8,
 
 #ifdef TARGET_PC
-  // Aurora-specific linear texture types
-  GX_TF_R8_PC = 0x60,
-  GX_TF_RGBA8_PC = 0x61,
+  GX_TF_R8_PC = 0x1 | _GX_TF_PC,
+  GX_TF_RGBA8_PC = 0x6 | _GX_TF_PC,
 #endif
 } GXTexFmt;
 

@@ -1086,6 +1086,10 @@ static void handle_bp(u32 value, bool bigEndian) {
         break;
       case TexBpRegMapping::Kind::Image0:
         slot.image0 = value;
+        slot.mWidth = 0;
+        slot.mHeight = 0;
+        slot.mFormat = gfx::InvalidTextureFormat;
+        slot.dataSize = 0;
         break;
       case TexBpRegMapping::Kind::Image3:
         slot.image3 = value;
