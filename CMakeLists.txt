@@ -141,6 +141,7 @@ if (AURORA_ENABLE_GX)
     lib/gx/shader.cpp
     lib/gx/shader_info.cpp
     lib/dolphin/gx/GXBump.cpp
+    lib/dolphin/gx/GXCpu2Efb.cpp
     lib/dolphin/gx/GXCull.cpp
     lib/dolphin/gx/GXDispList.cpp
     lib/dolphin/gx/GXDraw.cpp
