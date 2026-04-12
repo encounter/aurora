@@ -8,10 +8,9 @@ project.
 ### Features
 
 - GX compatibility layer
-    - Graphics API support: D3D12, Vulkan, Metal, OpenGL 4.4+ and OpenGL ES 3.1+
-    - *Planned: deko3d backend for Switch*
+    - Graphics API support: D3D12, Vulkan, Metal
 - Application layer using SDL
-    - Runs on Windows, Linux, macOS, iOS, tvOS (Android coming soon)
+    - Runs on Windows, Linux, macOS, iOS, tvOS, Android
     - Audio support with SDL_audio
 - PAD compatibility layer
     - Utilizes SDL_GameController for wide controller support, including GameCube controllers.
