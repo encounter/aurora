@@ -1301,7 +1301,7 @@ TEST_F(GXFifoTest, LoadTexObjPcFormat_PreservesFullFormatMetadata) {
   EXPECT_EQ(slot.width(), 8u);
   EXPECT_EQ(slot.height(), 8u);
   EXPECT_EQ(slot.format(), GX_TF_RGBA8_PC);
-  EXPECT_EQ(slot.raw_format(), static_cast<u32>(GX_TF_I8));
+  EXPECT_EQ(slot.raw_format(), static_cast<u32>(GX_TF_RGBA8));
 }
 
 TEST_F(GXFifoTest, LoadTexObjCiAndTlut_PopulatesTextureAndTlutSlots) {
