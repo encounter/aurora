@@ -12,11 +12,11 @@
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
+#include <tracy/Tracy.hpp>
+
 #include <cfloat>
 #include <mutex>
 #include <optional>
-
-#include "tracy/Tracy.hpp"
 
 static aurora::Module Log("aurora::gx");
 
@@ -144,14 +144,8 @@ gfx::TextureHandle get_tlut_texture(const GXTlutObj_& tlut) {
   return handle;
 }
 
-std::optional<gfx::TextureHandle> try_resolve_replacement_handle(const GXTexObj_& obj) {
-  return gfx::texture_replacement::find_replacement(obj);
-}
-
 gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
-  if (const auto replacement = try_resolve_replacement_handle(obj); replacement.has_value()) {
-    return *replacement;
-  }
+  ZoneScoped;
 
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
@@ -162,17 +156,19 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
     }
   }
 
-  const auto handle =
-      gfx::new_static_texture_2d(obj.width(), obj.height(), mip_count_for(obj), obj.format(),
-                                 {static_cast<const u8*>(obj.data), obj.dataSize}, false, "GX Static Texture");
+  gfx::TextureHandle handle;
+  if (const auto replacement = gfx::texture_replacement::find_replacement(obj); replacement.has_value()) {
+    handle = *replacement;
+  } else {
+    handle = gfx::new_static_texture_2d(obj.width(), obj.height(), mip_count_for(obj), obj.format(),
+                                        {static_cast<const u8*>(obj.data), obj.dataSize}, false, "GX Static Texture");
+  }
   store_cached_texture(obj, handle);
   return handle;
 }
 
 gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GXTlutObj_& tlut) {
-  if (const auto replacement = try_resolve_replacement_handle(obj); replacement.has_value()) {
-    return *replacement;
-  }
+  ZoneScoped;
 
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
@@ -184,20 +180,27 @@ gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GX
     }
   }
 
-  auto decoded = gfx::convert_texture_palette(
-      obj.format(), obj.width(), obj.height(), mip_count_for(obj), {static_cast<const u8*>(obj.data), obj.dataSize},
-      tlut.format, tlut.numEntries, {static_cast<const u8*>(tlut.data), static_cast<size_t>(tlut.numEntries) * 2});
-  if (decoded.empty()) {
-    return {};
+  gfx::TextureHandle handle;
+  if (const auto replacement = gfx::texture_replacement::find_replacement(obj); replacement.has_value()) {
+    handle = *replacement;
+  } else {
+    auto decoded = gfx::convert_texture_palette(
+        obj.format(), obj.width(), obj.height(), mip_count_for(obj), {static_cast<const u8*>(obj.data), obj.dataSize},
+        tlut.format, tlut.numEntries, {static_cast<const u8*>(tlut.data), static_cast<size_t>(tlut.numEntries) * 2});
+    if (decoded.empty()) {
+      return {};
+    }
+    handle = gfx::new_static_texture_2d(obj.width(), obj.height(), mip_count_for(obj), GX_TF_RGBA8_PC,
+                                        {decoded.data(), decoded.size()}, false, "GX Static Palette Texture");
   }
-  const auto handle = gfx::new_static_texture_2d(obj.width(), obj.height(), mip_count_for(obj), GX_TF_RGBA8_PC,
-                                                 {decoded.data(), decoded.size()}, false, "GX Static Palette Texture");
   store_cached_texture(obj, handle, tlut.tlutObjId, tlut.tlutDataVersion);
   return handle;
 }
 
 gfx::TextureHandle resolve_dynamic_palette_texture(const GXTexObj_& obj, const GXState::CopyTextureRef& source,
                                                    const GXTlutObj_& tlut) {
+  ZoneScoped;
+
   const auto tlutHandle = get_tlut_texture(tlut);
   auto& tlutCache = s_tlutObjectCaches[tlut.tlutObjId];
   auto& entry = tlutCache.dynamicPaletteTextures[make_dynamic_palette_key(obj, source)];
@@ -258,12 +261,20 @@ void clear_copy_texture_cache() noexcept {
 }
 
 void resolve_sampled_textures(const ShaderInfo& info) noexcept {
+  ZoneScoped;
+
   for (u32 i = 0; i < MaxTextures; ++i) {
     if (!info.sampledTextures.test(i)) {
       continue;
     }
 
     GXTexObj_ obj = g_gxState.loadedTextures[i];
+    auto& textureBind = g_gxState.textures[i];
+    if (obj.texObjId == textureBind.texObj.texObjId && obj.texDataVersion == textureBind.texObj.texDataVersion) {
+      // Texture bind unchanged
+      continue;
+    }
+
     gfx::TextureHandle handle;
     const auto copyIt = g_gxState.copyTextures.find(obj.data);
     const GXState::CopyTextureRef* copyRef = copyIt != g_gxState.copyTextures.end() ? &copyIt->second : nullptr;
@@ -286,7 +297,7 @@ void resolve_sampled_textures(const ShaderInfo& info) noexcept {
     }
 
     obj.mFormat = resolved_format_for_handle(handle);
-    g_gxState.textures[i] = gfx::TextureBind{obj, std::move(handle)};
+    textureBind = gfx::TextureBind{obj, std::move(handle)};
   }
 }
 
@@ -595,6 +606,8 @@ u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept {
 }
 
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept {
+  ZoneScoped;
+
   const auto& vtxFmt = g_gxState.vtxFmts[fmt];
   config.shaderConfig.fogType = g_gxState.fog.type;
   u8 vtxOffset = 0;
@@ -697,6 +710,8 @@ static wgpu::BindGroupLayout sSamplerBindGroupLayout;
 
 GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& config,
                                const BindGroupRanges& ranges) noexcept {
+  ZoneScoped;
+
   const auto layouts = build_bind_group_layouts(config);
 
   // Using C WGPU types instead of C++ wrappers to avoid destructor overhead
