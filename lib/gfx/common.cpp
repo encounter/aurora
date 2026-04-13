@@ -89,7 +89,17 @@ inline HashType xxh3_hash(const wgpu::SamplerDescriptor& input, HashType seed) {
 } // namespace aurora
 
 namespace aurora::gfx {
-static absl::flat_hash_map<BindGroupRef, wgpu::BindGroup> g_cachedBindGroups;
+namespace {
+struct CachedBindGroup {
+  wgpu::BindGroup bindGroup;
+  uint32_t lastUsedFrame = 0;
+};
+
+constexpr uint32_t BindGroupCacheRetainFrames = 120;
+constexpr uint32_t BindGroupCacheSweepPeriod = 32;
+} // namespace
+
+static absl::flat_hash_map<BindGroupRef, CachedBindGroup> g_cachedBindGroups;
 static absl::flat_hash_map<SamplerRef, wgpu::Sampler> g_cachedSamplers;
 
 static ByteBuffer g_verts;
@@ -105,6 +115,10 @@ static std::array<wgpu::Buffer, 3> g_stagingBuffers;
 static wgpu::Limits g_cachedLimits;
 static uint32_t g_frameIndex = UINT32_MAX;
 static PipelineRef g_currentPipeline;
+wgpu::BindGroupLayout g_staticBindGroupLayout;
+wgpu::BindGroup g_staticBindGroup;
+wgpu::BindGroupLayout g_uniformBindGroupLayout;
+wgpu::BindGroup g_uniformBindGroup;
 
 // for imgui debug
 AuroraStats g_stats{};
@@ -462,6 +476,87 @@ void initialize() {
   }
   map_staging_buffer();
 
+  {
+    constexpr std::array layoutEntries{
+        // Vertex data buffer
+        wgpu::BindGroupLayoutEntry{
+            .binding = 0,
+            .visibility = wgpu::ShaderStage::Vertex,
+            .buffer =
+                wgpu::BufferBindingLayout{
+                    .type = wgpu::BufferBindingType::ReadOnlyStorage,
+                },
+        },
+        // Storage data buffer
+        wgpu::BindGroupLayoutEntry{
+            .binding = 1,
+            .visibility = wgpu::ShaderStage::Vertex,
+            .buffer =
+                wgpu::BufferBindingLayout{
+                    .type = wgpu::BufferBindingType::ReadOnlyStorage,
+                },
+        },
+    };
+    const wgpu::BindGroupLayoutDescriptor layoutDesc{
+        .label = "Static bind group layout",
+        .entryCount = layoutEntries.size(),
+        .entries = layoutEntries.data(),
+    };
+    g_staticBindGroupLayout = g_device.CreateBindGroupLayout(&layoutDesc);
+    const std::array entries{
+        wgpu::BindGroupEntry{
+            .binding = 0,
+            .buffer = g_vertexBuffer,
+        },
+        wgpu::BindGroupEntry{
+            .binding = 1,
+            .buffer = g_storageBuffer,
+        },
+    };
+    const wgpu::BindGroupDescriptor bindGroupDescriptor{
+        .label = "Static bind group",
+        .layout = g_staticBindGroupLayout,
+        .entryCount = entries.size(),
+        .entries = entries.data(),
+    };
+    g_staticBindGroup = g_device.CreateBindGroup(&bindGroupDescriptor);
+  }
+
+  {
+    constexpr std::array layoutEntries{
+        // Uniform buffer (dynamic offset)
+        wgpu::BindGroupLayoutEntry{
+            .binding = 0,
+            .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
+            .buffer =
+                wgpu::BufferBindingLayout{
+                    .type = wgpu::BufferBindingType::Uniform,
+                    .hasDynamicOffset = true,
+                },
+        },
+    };
+    const wgpu::BindGroupLayoutDescriptor layoutDesc{
+        .label = "Uniform bind group layout",
+        .entryCount = layoutEntries.size(),
+        .entries = layoutEntries.data(),
+    };
+    g_uniformBindGroupLayout = g_device.CreateBindGroupLayout(&layoutDesc);
+    const std::array entries{
+        wgpu::BindGroupEntry{
+            .binding = 0,
+            .buffer = g_uniformBuffer,
+            .size = gx::MaxUniformSize,
+        },
+    };
+    const wgpu::BindGroupDescriptor bindGroupDescriptor{
+        .label = "Uniform bind group",
+        .layout = g_uniformBindGroupLayout,
+        .entryCount = entries.size(),
+        .entries = entries.data(),
+    };
+    g_uniformBindGroup = g_device.CreateBindGroup(&bindGroupDescriptor);
+  }
+
   gx::initialize();
   initialize_pipeline_cache();
 }
@@ -486,6 +581,10 @@ void shutdown() {
   g_offscreenCache.clear();
   g_offscreenColor = {};
   g_offscreenDepth = {};
+  g_staticBindGroup = {};
+  g_staticBindGroupLayout = {};
+  g_uniformBindGroup = {};
+  g_uniformBindGroupLayout = {};
   g_inOffscreen = false;
   g_frameIndex = UINT32_MAX;
 }
@@ -549,6 +648,7 @@ void begin_frame() {
 void end_frame(const wgpu::CommandEncoder& cmd) {
   ZoneScoped;
   ASSERT(!g_inOffscreen, "end_frame called while offscreen rendering is active");
+  g_uniforms.append_zeroes(gx::MaxUniformSize); // Pad the end of the buffer
   uint64_t bufferOffset = 0;
   const auto writeBuffer = [&](ByteBuffer& buf, wgpu::Buffer& out, uint64_t size, std::string_view label) {
     const auto writeSize = buf.size(); // Only need to copy this many bytes
@@ -595,6 +695,20 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
 }
 
 uint32_t current_frame() noexcept { return g_frameIndex; }
+
+static void expire_cached_bind_groups() {
+  if (g_cachedBindGroups.empty() || g_frameIndex == UINT32_MAX || g_frameIndex % BindGroupCacheSweepPeriod != 0) {
+    return;
+  }
+
+  for (auto it = g_cachedBindGroups.begin(); it != g_cachedBindGroups.end();) {
+    if (g_frameIndex - it->second.lastUsedFrame > BindGroupCacheRetainFrames) {
+      g_cachedBindGroups.erase(it++);
+    } else {
+      ++it;
+    }
+  }
+}
 
 void render(wgpu::CommandEncoder& cmd) {
   ZoneScoped;
@@ -681,7 +795,7 @@ void render(wgpu::CommandEncoder& cmd) {
     }
   }
   g_renderPasses.clear();
-  g_cachedBindGroups.clear();
+  expire_cached_bind_groups();
 
 #if defined(AURORA_GFX_DEBUG_GROUPS)
   if (!g_debugGroupStack.empty()) {
@@ -702,6 +816,10 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
 #ifdef AURORA_GFX_DEBUG_GROUPS
   std::vector<std::string> lastDebugGroupStack;
 #endif
+
+  // Bind static bind group for the whole pass
+  pass.SetBindGroup(0, g_staticBindGroup);
+  pass.SetBindGroup(2, gx::g_emptyTextureBindGroup);
 
   for (const auto& cmd : g_renderPasses[idx].commands) {
 #ifdef AURORA_GFX_DEBUG_GROUPS
@@ -849,30 +967,25 @@ std::pair<ByteBuffer, Range> map_storage(size_t length) {
   return {ByteBuffer{g_storage.data() + range.offset, range.size}, range};
 }
 
-// TODO: should we avoid caching bind groups altogether?
 BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor) {
-#ifdef EMSCRIPTEN
-  const auto bg = wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor);
-  BindGroupRef id = reinterpret_cast<BindGroupRef>(bg);
-  g_cachedBindGroups.try_emplace(id, wgpu::BindGroup::Acquire(bg));
-#else
   const auto id = xxh3_hash(descriptor);
-  if (!g_cachedBindGroups.contains(id)) {
-    const auto bg = wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor);
-    g_cachedBindGroups.try_emplace(id, wgpu::BindGroup::Acquire(bg));
+  const auto it = g_cachedBindGroups.find(id);
+  if (it == g_cachedBindGroups.end()) {
+    auto bg = wgpu::BindGroup::Acquire(wgpuDeviceCreateBindGroup(g_device.Get(), &descriptor));
+    g_cachedBindGroups.emplace(id, CachedBindGroup{
+                                       .bindGroup = std::move(bg),
+                                       .lastUsedFrame = g_frameIndex,
+                                   });
+  } else {
+    it->second.lastUsedFrame = g_frameIndex;
   }
-#endif
   return id;
 }
 
 wgpu::BindGroup& find_bind_group(BindGroupRef id) {
-#ifdef EMSCRIPTEN
-  return g_cachedBindGroups[id];
-#else
   const auto it = g_cachedBindGroups.find(id);
   CHECK(it != g_cachedBindGroups.end(), "get_bind_group: failed to locate {:x}", id);
-  return it->second;
-#endif
+  return it->second.bindGroup;
 }
 
 wgpu::Sampler& sampler_ref(const wgpu::SamplerDescriptor& descriptor) {

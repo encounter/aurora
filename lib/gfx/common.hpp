@@ -174,6 +174,10 @@ extern wgpu::Buffer g_vertexBuffer;
 extern wgpu::Buffer g_uniformBuffer;
 extern wgpu::Buffer g_indexBuffer;
 extern wgpu::Buffer g_storageBuffer;
+extern wgpu::BindGroupLayout g_staticBindGroupLayout;
+extern wgpu::BindGroup g_staticBindGroup;
+extern wgpu::BindGroupLayout g_uniformBindGroupLayout;
+extern wgpu::BindGroup g_uniformBindGroup;
 
 using BindGroupRef = HashType;
 using PipelineRef = HashType;
@@ -284,6 +288,15 @@ template <typename PipelineConfig>
 PipelineRef pipeline_ref(const PipelineConfig& config);
 bool bind_pipeline(PipelineRef ref, const wgpu::RenderPassEncoder& pass);
 
+// wgpu::BindGroup* try_touch_bind_group(BindGroupRef id) noexcept;
+// void store_bind_group(BindGroupRef id, wgpu::BindGroup bindGroup);
+// template <typename Create>
+// void cache_bind_group(BindGroupRef id, Create&& create) {
+//   if (try_touch_bind_group(id) != nullptr) {
+//     return;
+//   }
+//   store_bind_group(id, std::forward<Create>(create)());
+// }
 BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor);
 wgpu::BindGroup& find_bind_group(BindGroupRef id);
 

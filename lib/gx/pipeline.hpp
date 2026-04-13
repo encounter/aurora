@@ -8,7 +8,6 @@ struct DrawData {
   gfx::PipelineRef pipeline;
   gfx::Range vertRange;
   gfx::Range idxRange;
-  BindGroupRanges dataRanges;
   gfx::Range uniformRange;
   uint32_t vtxCount;
   uint32_t indexCount;

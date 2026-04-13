@@ -1614,7 +1614,7 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
   populate_pipeline_config(config, prim, fmt);
   const auto info = build_shader_info(config.shaderConfig);
   resolve_sampled_textures(info);
-  const auto bindGroups = build_bind_groups(info, config.shaderConfig, ranges);
+  const auto bindGroups = build_bind_groups(info);
   const auto pipeline = gfx::pipeline_ref(config);
 
   uint32_t instanceCount = 1;
@@ -1629,8 +1629,7 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
       .pipeline = pipeline,
       .vertRange = vertRange,
       .idxRange = idxRange,
-      .dataRanges = ranges,
-      .uniformRange = build_uniform(info, vertRange.offset),
+      .uniformRange = build_uniform(info, vertRange.offset, ranges),
       .vtxCount = vtxCount,
       .indexCount = numIndices,
       .instanceCount = instanceCount,

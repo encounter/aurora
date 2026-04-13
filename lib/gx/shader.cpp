@@ -487,11 +487,6 @@ constexpr std::array<std::string_view, GX_CA_ZERO + 1> TevAlphaArgNames{
     "APREV"sv, "A0"sv, "A1"sv, "A2"sv, "TEXA"sv, "RASA"sv, "KONST"sv, "ZERO"sv,
 };
 
-constexpr std::array<std::string_view, MaxIndexAttr> VtxArrayNames{
-    "v_arr_pos"sv,     "v_arr_nrm"sv,     "v_arr_clr0"sv,    "v_arr_clr1"sv,    "v_arr_tex0_uv"sv, "v_arr_tex1_uv"sv,
-    "v_arr_tex2_uv"sv, "v_arr_tex3_uv"sv, "v_arr_tex4_uv"sv, "v_arr_tex5_uv"sv, "v_arr_tex6_uv"sv, "v_arr_tex7_uv"sv,
-};
-
 auto fetch_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le) -> std::string {
   switch (mapping.compType) {
   case GX_U8:
@@ -539,12 +534,14 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
   auto offs = fmt::format("ubuf.vtx_start + {} * {}u + {}u", vidx, config.vtxStride, mapping.offset);
   auto le = false; // Vertex buffer is always big endian (for now)
   if (mapping.attrType == GX_INDEX8) {
-    offs = fmt::format("raw_fetch_u8_1(&{}, {}) * {}u", buf, offs, mapping.stride);
-    buf = VtxArrayNames[attr - GX_VA_POS];
+    offs = fmt::format("ubuf.array_start[{}] + raw_fetch_u8_1(&{}, {}) * {}u", attr - GX_VA_POS, buf, offs,
+                       mapping.stride);
+    buf = "abuf"sv;
     le = mapping.le;
   } else if (mapping.attrType == GX_INDEX16) {
-    offs = fmt::format("raw_fetch_u16_1(&{}, {}, {}) * {}u", buf, offs, le, mapping.stride);
-    buf = VtxArrayNames[attr - GX_VA_POS];
+    offs = fmt::format("ubuf.array_start[{}] + raw_fetch_u16_1(&{}, {}, {}) * {}u", attr - GX_VA_POS, buf, offs, le,
+                       mapping.stride);
+    buf = "abuf"sv;
     le = mapping.le;
   }
   switch (attr) {
@@ -761,8 +758,6 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
 
   std::string uniformPre;
   std::string uniBufAttrs;
-  std::string uniformBindings;
-  std::string sampBindings;
   std::string texBindings;
   std::string vtxOutAttrs;
   std::string vtxInAttrs;
@@ -813,18 +808,10 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
   }
 
   // Load vertex attributes
-  size_t uniBindingIdx = 2;
   for (GXAttr attr = GX_VA_PNMTXIDX; attr <= GX_VA_TEX7; attr = static_cast<GXAttr>(attr + 1)) {
     const auto attrType = config.attrs[attr].attrType;
     if (attrType == GX_NONE) {
       continue;
-    }
-    if (attrType == GX_INDEX8 || attrType == GX_INDEX16) {
-      // Array binding
-      uniformBindings += fmt::format(
-          "\n@group(0) @binding({})"
-          "\nvar<storage, read> {}: array<u32>;",
-          uniBindingIdx++, VtxArrayNames[attr - GX_VA_POS]);
     }
     // in_pnmtxidx and in_pos written above for line mode
     if ((attr != GX_VA_PNMTXIDX && attr != GX_VA_POS) || config.lineMode == 0) {
@@ -1347,14 +1334,12 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
       continue;
     }
     uniBufAttrs += fmt::format("\n    tex{}_size_bias: vec4f,", i);
-    sampBindings += fmt::format(
-        "\n@group(1) @binding({0})\n"
-        "var tex{0}_samp: sampler;",
-        i);
     texBindings += fmt::format(
-        "\n@group(2) @binding({0})\n"
-        "var tex{0}: texture_2d<f32>;",
-        i);
+        "\n@group(2) @binding({1})\n"
+        "var tex{0}: texture_2d<f32>;\n"
+        "@group(2) @binding({2})\n"
+        "var tex{0}_samp: sampler;",
+        i, i * 2, i * 2 + 1);
   }
   fragmentFn += "\n    prev = tev_overflow_vec4f(prev);";
   if (config.alphaCompare) {
@@ -1701,37 +1686,40 @@ fn tev_overflow_vec4f(in: vec4f) -> vec4f {{
   return vec4f(vec4i(in * 255.0f) & vec4i(255, 255, 255, 255)) / 255.0f;
 }}
 
-{10}
+{8}
 
 struct Uniform {{
     vtx_start: u32,
     current_pnmtx: u32,
-    viewport_size: vec2f,{0}
+    viewport_size: vec2f,
+    array_start: array<u32, 12>,{0}
 }};
 @group(0) @binding(0)
 var<storage, read> vbuf: array<u32>;
 @group(0) @binding(1)
-var<uniform> ubuf: Uniform;{3}{1}{2}
+var<storage, read> abuf: array<u32>;
+@group(1) @binding(0)
+var<uniform> ubuf: Uniform;{1}
 
 struct VertexOutput {{
-    @builtin(position) pos: vec4f,{4}
+    @builtin(position) pos: vec4f,{2}
 }};
 
 @vertex
 fn vs_main(
-    @builtin(vertex_index) vidx: u32{5}
+    @builtin(vertex_index) vidx: u32{3}
 ) -> VertexOutput {{
-    var out: VertexOutput;{9}{6}
+    var out: VertexOutput;{7}{4}
     return out;
 }}
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4f {{{8}{7}
+fn fs_main(in: VertexOutput) -> @location(0) vec4f {{{6}{5}
     return prev;
 }}
 )""",
-                                        uniBufAttrs, sampBindings, texBindings, uniformBindings, vtxOutAttrs,
-                                        vtxInAttrs, vtxXfrAttrs, fragmentFn, fragmentFnPre, vtxXfrAttrsPre, uniformPre);
+                                        uniBufAttrs, texBindings, vtxOutAttrs, vtxInAttrs, vtxXfrAttrs, fragmentFn,
+                                        fragmentFnPre, vtxXfrAttrsPre, uniformPre);
   if (EnableDebugPrints) {
     Log.info("Generated shader: {}", shaderSource);
   }

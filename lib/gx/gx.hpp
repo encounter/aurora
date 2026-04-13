@@ -66,6 +66,9 @@ constexpr u32 MaxIndTexMtxs = 3;
 constexpr u32 MaxVtxFmt = GX_MAX_VTXFMT;
 constexpr u32 MaxPnMtx = (GX_PNMTX9 / 3) + 1;
 constexpr u32 MaxIndexAttr = 12; // VA_POS -> VA_TEX7
+constexpr u32 MaxUniformSize = 3840;
+
+extern wgpu::BindGroup g_emptyTextureBindGroup;
 
 template <typename Arg, Arg Default>
 struct TevPass {
@@ -436,14 +439,7 @@ static_assert(std::has_unique_object_representations_v<ShaderConfig>);
 
 struct PipelineConfig;
 
-struct GXBindGroupLayouts {
-  wgpu::BindGroupLayout uniformLayout;
-  wgpu::BindGroupLayout samplerLayout;
-  wgpu::BindGroupLayout textureLayout;
-};
 struct GXBindGroups {
-  gfx::BindGroupRef uniformBindGroup;
-  gfx::BindGroupRef samplerBindGroup;
   gfx::BindGroupRef textureBindGroup;
 };
 // Output info from shader generation
@@ -471,9 +467,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
                                     wgpu::ShaderModule shader, const char* label) noexcept;
 wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept;
-GXBindGroupLayouts build_bind_group_layouts(const ShaderConfig& config) noexcept;
-GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& config,
-                               const BindGroupRanges& ranges) noexcept;
+GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept;
 
 u8 comp_type_size(GXAttr attr, GXCompType type) noexcept;
 u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept;

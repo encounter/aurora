@@ -169,7 +169,7 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   ZoneScoped;
 
   ShaderInfo info{
-      .uniformSize = 4 + 4 + 8 + 64, // vtx_start, current_pnmtx, viewport_size, proj
+      .uniformSize = 4 + 4 + 8 + 48 + 64, // vtx_start, current_pnmtx, viewport_size, array_start, proj
   };
 
   if (config.lineMode != 0) {
@@ -299,6 +299,9 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   }
   info.uniformSize += info.sampledTextures.count() * sizeof(Vec4<float>);
   info.uniformSize = gfx::align_uniform(info.uniformSize);
+  if (info.uniformSize > MaxUniformSize) {
+    Log.fatal("Uniform size exceeds maximum: {} > {}", info.uniformSize, MaxUniformSize);
+  }
   return info;
 }
 
@@ -340,7 +343,8 @@ static u32 line_texcoord_mask() noexcept {
   return mask;
 }
 
-gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart) noexcept {
+gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart,
+                         const BindGroupRanges& ranges) noexcept {
   ZoneScoped;
 
   auto [buf, range] = gfx::map_uniform(info.uniformSize);
@@ -348,6 +352,9 @@ gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart) noexcept {
   buf.append(g_gxState.currentPnMtx);
   buf.append<f32>(gfx::get_viewport().width);
   buf.append<f32>(gfx::get_viewport().height);
+  for (const auto& vaRange : ranges.vaRanges) {
+    buf.append<u32>(vaRange.offset);
+  }
   if (info.lineMode != 0) {
     if (info.lineMode == 3) { // GX_POINTS
       buf.append<f32>(static_cast<f32>(g_gxState.pointSize) / 6.f);
