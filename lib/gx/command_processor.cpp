@@ -1253,9 +1253,6 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
   }
 }
 
-// cache for xf register writes that can be skipped if same as previous val
-static u32 xf_reg_cache[0x1A] = {};
-
 // XF register handler - decodes XF (transform unit) register writes and updates g_gxState
 static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
   ZoneScoped;
@@ -1281,8 +1278,8 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
       u32 val = read_u32(xfData + i * 4, bigEndian);
 
       // Skip scalar register writes that haven't changed (viewport/projection handled below)
-      if (reg <= 0x19 && val == xf_reg_cache[reg]) continue;
-      if (reg <= 0x19) xf_reg_cache[reg] = val;
+      if (reg <= 0x19 && val == g_gxState.xfRegCache[reg]) continue;
+      if (reg <= 0x19) g_gxState.xfRegCache[reg] = val;
 
       switch (reg) {
       case 0x08:
