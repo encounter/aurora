@@ -19,19 +19,9 @@ void render(const DrawData& data, const wgpu::RenderPassEncoder& pass) {
     return;
   }
 
-  std::array<uint32_t, MaxIndexAttr + 2> offsets{data.uniformRange.offset};
-  uint32_t bindIdx = 1;
-  for (uint32_t i = 0; i < MaxIndexAttr; ++i) {
-    const auto& range = data.dataRanges.vaRanges[i];
-    if (range.size <= 0) {
-      continue;
-    }
-    offsets[bindIdx] = range.offset;
-    ++bindIdx;
-  }
-  pass.SetBindGroup(0, gfx::find_bind_group(data.bindGroups.uniformBindGroup), bindIdx, offsets.data());
-  if (data.bindGroups.samplerBindGroup && data.bindGroups.textureBindGroup) {
-    pass.SetBindGroup(1, gfx::find_bind_group(data.bindGroups.samplerBindGroup));
+  const std::array offsets{data.uniformRange.offset};
+  pass.SetBindGroup(1, gfx::g_uniformBindGroup, offsets.size(), offsets.data());
+  if (data.bindGroups.textureBindGroup) {
     pass.SetBindGroup(2, gfx::find_bind_group(data.bindGroups.textureBindGroup));
   }
   pass.SetIndexBuffer(gfx::g_indexBuffer, wgpu::IndexFormat::Uint16, data.idxRange.offset, data.idxRange.size);

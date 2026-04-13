@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include <tracy/Tracy.hpp>
+
 namespace aurora::gx {
 namespace {
 Module Log("aurora::gx");
@@ -11,13 +13,6 @@ bool is_alpha_bump_channel(GXChannelID id) { return id == GX_ALPHA_BUMP || id ==
 Vec4<float> texture_size_bias(const gfx::TextureBind& tex) {
   auto width = static_cast<float>(tex.texObj.width());
   auto height = static_cast<float>(tex.texObj.height());
-
-  // TODO: actual logical EFB copy size
-  if (tex.ref && tex.ref->isRenderTexture) {
-    width = 608.0f;
-    height = 448.0f;
-  }
-
   return {width, height, tex.texObj.lod_bias(), 0.0f};
 }
 
@@ -171,8 +166,10 @@ void alpha_arg_reg_info(GXTevAlphaArg arg, const TevStage& stage, ShaderInfo& in
 } // namespace
 
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
+  ZoneScoped;
+
   ShaderInfo info{
-      .uniformSize = 4 + 4 + 8 + 64, // vtx_start, current_pnmtx, viewport_size, proj
+      .uniformSize = 4 + 4 + 8 + 48 + 64, // vtx_start, current_pnmtx, viewport_size, array_start, proj
   };
 
   if (config.lineMode != 0) {
@@ -302,6 +299,9 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   }
   info.uniformSize += info.sampledTextures.count() * sizeof(Vec4<float>);
   info.uniformSize = gfx::align_uniform(info.uniformSize);
+  if (info.uniformSize > MaxUniformSize) {
+    Log.fatal("Uniform size exceeds maximum: {} > {}", info.uniformSize, MaxUniformSize);
+  }
   return info;
 }
 
@@ -343,12 +343,18 @@ static u32 line_texcoord_mask() noexcept {
   return mask;
 }
 
-gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart) noexcept {
+gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart,
+                         const BindGroupRanges& ranges) noexcept {
+  ZoneScoped;
+
   auto [buf, range] = gfx::map_uniform(info.uniformSize);
   buf.append(vtxStart);
   buf.append(g_gxState.currentPnMtx);
   buf.append<f32>(gfx::get_viewport().width);
   buf.append<f32>(gfx::get_viewport().height);
+  for (const auto& vaRange : ranges.vaRanges) {
+    buf.append<u32>(vaRange.offset);
+  }
   if (info.lineMode != 0) {
     if (info.lineMode == 3) { // GX_POINTS
       buf.append<f32>(static_cast<f32>(g_gxState.pointSize) / 6.f);

@@ -50,9 +50,10 @@ int __cntlzw(unsigned int val) {
 
 void init_texobj_common(GXTexObj_& obj, const void* data, u16 width, u16 height, u32 format, GXTexWrapMode wrapS,
                         GXTexWrapMode wrapT, GXBool mipmap) {
-  memset(&obj, 0, sizeof(obj));
+  obj = {};
   obj.mWidth = width;
   obj.mHeight = height;
+  obj.mFormat = format;
   obj.tlut = GX_TLUT0;
   obj.flags = 2;
   obj.texObjId = next_tex_obj_id();
@@ -84,7 +85,7 @@ void emit_loaded_texobj_metadata(const GXTexObj_& obj, GXTexMapID id) {
   GX_WRITE_U64(reinterpret_cast<u64>(obj.data));
   GX_WRITE_U32(obj.width());
   GX_WRITE_U32(obj.height());
-  GX_WRITE_U32(obj.raw_format());
+  GX_WRITE_U32(obj.format());
   GX_WRITE_U32(static_cast<u32>(obj.tlut));
   GX_WRITE_U8(static_cast<u8>(obj.has_mips()));
   GX_WRITE_U32(obj.texObjId);

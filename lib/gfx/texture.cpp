@@ -14,9 +14,8 @@
 
 #include <fmt/format.h>
 #include <magic_enum.hpp>
+#include <tracy/Tracy.hpp>
 #include <webgpu/webgpu_cpp.h>
-
-#include "tracy/Tracy.hpp"
 
 namespace aurora::gfx {
 using webgpu::g_device;
@@ -62,6 +61,8 @@ wgpu::Extent3D physical_size(wgpu::Extent3D size, TextureFormatInfo info) {
 
 TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format, ArrayRef<uint8_t> data,
                                     bool tlut, const char* label) noexcept {
+  ZoneScoped;
+
   auto handle = new_dynamic_texture_2d(width, height, mips, format, label);
   const auto& ref = *handle;
 
@@ -98,13 +99,21 @@ TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mi
         .texture = ref.texture,
         .mipLevel = mip,
     };
-    const auto range = push_texture_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks);
-    const wgpu::TexelCopyBufferLayout dataLayout{
-        .offset = range.offset,
-        .bytesPerRow = bytesPerRow,
-        .rowsPerImage = heightBlocks,
-    };
-    g_textureUploads.emplace_back(dataLayout, std::move(dstView), physicalSize);
+    if constexpr (UseTextureBuffer) {
+      const auto range = push_texture_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks);
+      const wgpu::TexelCopyBufferLayout dataLayout{
+          .offset = range.offset,
+          .bytesPerRow = bytesPerRow,
+          .rowsPerImage = heightBlocks,
+      };
+      g_textureUploads.emplace_back(dataLayout, std::move(dstView), physicalSize);
+    } else {
+      const wgpu::TexelCopyBufferLayout dataLayout{
+          .bytesPerRow = bytesPerRow,
+          .rowsPerImage = heightBlocks,
+      };
+      g_queue.WriteTexture(&dstView, data.data() + offset, dataSize, &dataLayout, &physicalSize);
+    }
     offset += dataSize;
   }
   if (data.size() != UINT32_MAX && offset < data.size()) {
@@ -177,6 +186,8 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
 }
 
 TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept {
+  ZoneScoped;
+
   const auto wgpuFormat = webgpu::g_graphicsConfig.surfaceConfiguration.format;
   const wgpu::Extent3D size{
       .width = width,
@@ -218,6 +229,8 @@ TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, 
 }
 
 TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept {
+  ZoneScoped;
+
   const auto wgpuFormat = to_wgpu(gxFormat);
   const wgpu::Extent3D size{
       .width = width,
@@ -259,6 +272,8 @@ TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, co
 }
 
 void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
+  ZoneScoped;
+
   ByteBuffer buffer;
   if (ref.gxFormat != InvalidTextureFormat) {
     buffer = convert_texture(ref.gxFormat, ref.size.width, ref.size.height, ref.mipCount, data);
@@ -286,13 +301,21 @@ void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
         .texture = ref.texture,
         .mipLevel = mip,
     };
-    const auto range = push_texture_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks);
-    const wgpu::TexelCopyBufferLayout dataLayout{
-        .offset = range.offset,
-        .bytesPerRow = bytesPerRow,
-        .rowsPerImage = heightBlocks,
-    };
-    g_textureUploads.emplace_back(dataLayout, std::move(dstView), physicalSize);
+    if constexpr (UseTextureBuffer) {
+      const auto range = push_texture_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks);
+      const wgpu::TexelCopyBufferLayout dataLayout{
+          .offset = range.offset,
+          .bytesPerRow = bytesPerRow,
+          .rowsPerImage = heightBlocks,
+      };
+      g_textureUploads.emplace_back(dataLayout, std::move(dstView), physicalSize);
+    } else {
+      const wgpu::TexelCopyBufferLayout dataLayout{
+          .bytesPerRow = bytesPerRow,
+          .rowsPerImage = heightBlocks,
+      };
+      g_queue.WriteTexture(&dstView, data.data() + offset, dataSize, &dataLayout, &physicalSize);
+    }
     offset += dataSize;
   }
   if (data.size() != UINT32_MAX && offset < data.size()) {

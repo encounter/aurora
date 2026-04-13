@@ -162,6 +162,7 @@ private:
 } // namespace aurora
 
 namespace aurora::gfx {
+inline constexpr bool UseTextureBuffer = false;
 inline constexpr uint64_t UniformBufferSize = 25165824;  // 24mb
 inline constexpr uint64_t VertexBufferSize = 3145728;    // 3mb
 inline constexpr uint64_t IndexBufferSize = 1048576;     // 1mb
@@ -173,6 +174,10 @@ extern wgpu::Buffer g_vertexBuffer;
 extern wgpu::Buffer g_uniformBuffer;
 extern wgpu::Buffer g_indexBuffer;
 extern wgpu::Buffer g_storageBuffer;
+extern wgpu::BindGroupLayout g_staticBindGroupLayout;
+extern wgpu::BindGroup g_staticBindGroup;
+extern wgpu::BindGroupLayout g_uniformBindGroupLayout;
+extern wgpu::BindGroup g_uniformBindGroup;
 
 using BindGroupRef = HashType;
 using PipelineRef = HashType;

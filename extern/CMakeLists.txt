@@ -118,7 +118,7 @@ if (AURORA_ENABLE_GX)
     option(IMGUI_USE_FREETYPE "Enable freetype with imgui" ON)
     if (FREETYPE_FOUND AND IMGUI_USE_FREETYPE)
       target_sources(imgui PRIVATE ${imgui_SOURCE_DIR}/misc/freetype/imgui_freetype.cpp)
-      target_compile_definitions(imgui PRIVATE IMGUI_ENABLE_FREETYPE)
+      target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_FREETYPE)
       target_link_libraries(imgui PRIVATE Freetype::Freetype)
     endif ()
   else ()
@@ -171,8 +171,8 @@ if (NOT TARGET TracyClient)
   include(FetchContent)
   FetchContent_Declare(
           tracy
-          URL https://github.com/wolfpld/tracy/archive/refs/tags/v0.13.1.tar.gz
-          URL_HASH SHA256=d4efc50ebcb0bfcfdbba148995aeb75044c0d80f5d91223aebfaa8fa9e563d2b
+          URL https://github.com/wolfpld/tracy/archive/a64b9a20294d59421a2f57aeca3c6383d8c48169.tar.gz
+          URL_HASH SHA256=24d342b5127d7f659dc3cf94f24347b348cc736f25b17a691fd7f69541937658
           DOWNLOAD_EXTRACT_TIMESTAMP TRUE
   )
   FetchContent_MakeAvailable(tracy)

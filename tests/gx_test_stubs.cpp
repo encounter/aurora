@@ -75,7 +75,9 @@ GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& confi
   return {};
 }
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept { return {}; }
-gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart) noexcept { return {}; }
+gfx::Range build_uniform(const ShaderInfo& info, uint32_t vtxStart, const BindGroupRanges& ranges) noexcept {
+  return {};
+}
 void resolve_sampled_textures(const ShaderInfo& info) noexcept {}
 u8 color_channel(GXChannelID id) noexcept { return 0; }
 u8 comp_type_size(GXAttr attr, GXCompType type) noexcept { return 0; }

@@ -129,6 +129,8 @@ static PendingPipeline* touch_pending_pipeline(PipelineRef hash, bool prioritize
 template <typename PipelineConfig>
 static PipelineRef find_pipeline_impl(ShaderType type, const PipelineConfig& config, NewPipelineCallback&& cb,
                                       bool persist, std::optional<uint32_t> firstFrameUsedOverride) {
+  ZoneScoped;
+
   const PipelineRef hash = xxh3_hash(config, static_cast<HashType>(type));
   const uint32_t firstFrameUsed = firstFrameUsedOverride.value_or(current_frame());
   bool notifyWorker = false;
