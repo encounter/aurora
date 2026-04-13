@@ -504,6 +504,7 @@ static void handle_bp(u32 value, bool bigEndian) {
     g_gxState.bpRegCache[0xFE] = 0x00FFFFFF;
     const u32 merged = (g_gxState.bpRegCache[regId] & ~ssMask) | (value & ssMask);
     value = (regId << 24) | (merged & 0x00FFFFFF);
+    if (g_gxState.bpRegCache[regId] == value) return;
     g_gxState.bpRegCache[regId] = value;
   }
 
@@ -1275,7 +1276,10 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
     for (u32 i = 0; i < count; i++) {
       u32 reg = xfAddr + i;
       u32 val = read_u32(xfData + i * 4, bigEndian);
-      f32 fval = read_f32(xfData + i * 4, bigEndian);
+
+      // Skip scalar register writes that haven't changed (viewport/projection handled below)
+      if (reg <= 0x19 && val == g_gxState.xfRegCache[reg]) continue;
+      if (reg <= 0x19) g_gxState.xfRegCache[reg] = val;
 
       switch (reg) {
       case 0x08:

@@ -373,6 +373,7 @@ struct GXState {
     regs[0xFE] = 0x00FFFFFF;
     return regs;
   }();
+  std::array<u32, 0x1A> xfRegCache;
 
   void clearVtxSizeCache() { lastVtxFmt = GX_MAX_VTXFMT; }
 };

@@ -70,10 +70,7 @@ namespace aurora::gx {
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept {
   // No-op for tests
 }
-GXBindGroups build_bind_groups(const ShaderInfo& info, const ShaderConfig& config,
-                               const BindGroupRanges& ranges) noexcept {
-  return {};
-}
+GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept { return {}; }
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept { return {}; }
 gfx::Range build_uniform(const ShaderInfo& info, uint32_t vtxStart, const BindGroupRanges& ranges) noexcept {
   return {};
