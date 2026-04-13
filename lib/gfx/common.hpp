@@ -288,15 +288,6 @@ template <typename PipelineConfig>
 PipelineRef pipeline_ref(const PipelineConfig& config);
 bool bind_pipeline(PipelineRef ref, const wgpu::RenderPassEncoder& pass);
 
-// wgpu::BindGroup* try_touch_bind_group(BindGroupRef id) noexcept;
-// void store_bind_group(BindGroupRef id, wgpu::BindGroup bindGroup);
-// template <typename Create>
-// void cache_bind_group(BindGroupRef id, Create&& create) {
-//   if (try_touch_bind_group(id) != nullptr) {
-//     return;
-//   }
-//   store_bind_group(id, std::forward<Create>(create)());
-// }
 BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor);
 wgpu::BindGroup& find_bind_group(BindGroupRef id);
 
