@@ -1382,10 +1382,7 @@ fn bswap32(v: u32, le: bool) -> u32 {{
 }}
 
 fn bswap16(v: u32, le: bool) -> u32 {{
-  if (le) {{
-    return v;
-  }}
-  return ((v & 0x00FFu) << 8u) | ((v & 0xFF00u) >> 8u);
+  return select(((v & 0xFFu) << 8u) | (v >> 8u), v, le);
 }}
 
 fn load_u8(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
