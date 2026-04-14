@@ -36,3 +36,20 @@ function(aurora_copy_runtime_dlls target)
     endif ()
   endif ()
 endfunction()
+
+# aurora_install_runtime_dlls(<executable_target> <install_destination>)
+#
+# INSTALL rule that copies all DLLs already placed next to the built target
+# into the install destination.
+function(aurora_install_runtime_dlls target install_destination)
+  if (NOT WIN32)
+    return()
+  endif ()
+
+  install(CODE
+    "file(GLOB _aurora_runtime_dlls \"$<TARGET_FILE_DIR:${target}>/*.dll\")\n\
+if(_aurora_runtime_dlls)\n\
+  file(INSTALL DESTINATION \"${install_destination}\" TYPE FILE FILES \${_aurora_runtime_dlls})\n\
+endif()"
+  )
+endfunction()
