@@ -179,6 +179,9 @@ void PADBlockInput(bool block);
  */
 void PADSetDefaultMapping(const PADDefaultMapping* mapping);
 
+BOOL PADSetColor(u32 port, u8 red, u8 green, u8 blue);
+BOOL PADGetColor(u32 port, u8* red, u8* green, u8* blue);
+
 #endif
 
 #ifdef __cplusplus

@@ -34,6 +34,9 @@ struct GameController {
   constexpr bool operator==(const GameController& other) const {
     return m_controller == other.m_controller && m_index == other.m_index;
   }
+  uint8_t m_ledRed = 0xFF;
+  uint8_t m_ledGreen = 0xFF;
+  uint8_t m_ledBlue = 0xFF;
 };
 
 GameController* get_controller_for_player(uint32_t player) noexcept;
