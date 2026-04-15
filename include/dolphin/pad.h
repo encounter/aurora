@@ -179,6 +179,25 @@ void PADBlockInput(bool block);
  */
 void PADSetDefaultMapping(const PADDefaultMapping* mapping);
 
+BOOL PADSetColor(u32 port, u8 red, u8 green, u8 blue);
+BOOL PADGetColor(u32 port, u8* red, u8* green, u8* blue);
+
+typedef enum {
+  PAD_SENSOR_INVALID = -1,
+  PAD_SENSOR_UNKNOWN,
+  PAD_SENSOR_ACCEL,
+  PAD_SENSOR_GYRO,
+  PAD_SENSOR_ACCEL_LEFT,
+  PAD_SENSOR_GYRO_LEFT,
+  PAD_SENSOR_ACCEL_RIGHT,
+  PAD_SENSOR_GYRO_RIGHT,
+} PADSensorType;
+BOOL PADSetSensorEnabled(u32 port, PADSensorType sensor, BOOL enabled);
+
+BOOL PADHasSensor(u32 port, PADSensorType sensor);
+
+BOOL PADGetSensorData(u32 port, PADSensorType sensor, f32* data, int nValues);
+
 #endif
 
 #ifdef __cplusplus
