@@ -814,3 +814,33 @@ BOOL PADGetColor(u32 port, u8* red, u8* green, u8* blue) {
   *blue = ctrl->m_ledBlue;
   return TRUE;
 }
+
+BOOL PADSetSensorEnabled(u32 port, PADSensorType sensor, BOOL enabled) {
+  const auto* ctrl = aurora::input::get_controller_for_player(port);
+
+  if (ctrl == nullptr) {
+    return FALSE;
+  }
+
+  return SDL_SetGamepadSensorEnabled(ctrl->m_controller, static_cast<SDL_SensorType>(sensor), enabled ? true : false)
+             ? TRUE
+             : FALSE;
+}
+
+BOOL PADHasSensorEnabled(u32 port, PADSensorType sensor) {
+  const auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr) {
+    return FALSE;
+  }
+
+  return SDL_GamepadHasSensor(ctrl->m_controller, static_cast<SDL_SensorType>(sensor)) ? TRUE : FALSE;
+}
+
+BOOL PADGetSensorData(u32 port, PADSensorType sensor, f32* data, const int nValues) {
+  const auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr) {
+    return FALSE;
+  }
+
+  return SDL_GetGamepadSensorData(ctrl->m_controller, static_cast<SDL_SensorType>(sensor), data, nValues);
+}
