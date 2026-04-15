@@ -183,6 +183,8 @@ BOOL PADSetColor(u32 port, u8 red, u8 green, u8 blue);
 BOOL PADGetColor(u32 port, u8* red, u8* green, u8* blue);
 
 typedef enum {
+  PAD_SENSOR_INVALID = -1,
+  PAD_SENSOR_UNKNOWN,
   PAD_SENSOR_ACCEL,
   PAD_SENSOR_GYRO,
   PAD_SENSOR_ACCEL_LEFT,
