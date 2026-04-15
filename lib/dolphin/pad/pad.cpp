@@ -164,6 +164,12 @@ void __PADLoadMapping(aurora::input::GameController* controller) {
   fclose(file);
 }
 
+static void EnsureMappingLoaded(aurora::input::GameController* controller) {
+  if (!controller->m_mappingLoaded) {
+    __PADLoadMapping(controller);
+  }
+}
+
 static Sint16 _get_axis_value(aurora::input::GameController* controller, PADAxis axis) {
   auto iter = std::find_if(controller->m_axisMapping.cbegin(), controller->m_axisMapping.cend(),
                            [axis](const auto& pair) { return pair.padAxis == axis; });
@@ -203,9 +209,7 @@ uint32_t PADRead(PADStatus* status) {
       continue;
     }
 
-    if (!controller->m_mappingLoaded) {
-      __PADLoadMapping(controller);
-    }
+    EnsureMappingLoaded(controller);
     status[i].err = PAD_ERR_NONE;
     std::for_each(
         controller->m_buttonMapping.begin(), controller->m_buttonMapping.end(), [&controller, &i, &status](const auto& mapping) {
@@ -532,6 +536,8 @@ PADButtonMapping* PADGetButtonMappings(uint32_t port, uint32_t* buttonCount) {
     return nullptr;
   }
 
+  EnsureMappingLoaded(controller);
+
   *buttonCount = PAD_BUTTON_COUNT;
   return controller->m_buttonMapping.data();
 }
@@ -576,9 +582,7 @@ void PADSerializeMappings() {
   std::filesystem::path basePath{aurora::g_config.configPath};
 
   for (auto& controller : aurora::input::g_GameControllers) {
-    if (!controller.second.m_mappingLoaded) {
-      __PADLoadMapping(&controller.second);
-    }
+    EnsureMappingLoaded(&controller.second);
     std::filesystem::path filePath = basePath / fmt::format("{}_{:04X}_{:04X}.controller",
                                    aurora::input::controller_name(controller.second.m_index), controller.second.m_vid,
                                    controller.second.m_pid);
