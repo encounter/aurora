@@ -827,7 +827,7 @@ BOOL PADSetSensorEnabled(u32 port, PADSensorType sensor, BOOL enabled) {
              : FALSE;
 }
 
-BOOL PADHasSensorEnabled(u32 port, PADSensorType sensor) {
+BOOL PADHasSensor(u32 port, PADSensorType sensor) {
   const auto* ctrl = aurora::input::get_controller_for_player(port);
   if (ctrl == nullptr) {
     return FALSE;
