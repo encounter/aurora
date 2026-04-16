@@ -154,6 +154,9 @@ const AuroraEvent* poll_events() {
       });
       break;
     }
+    case SDL_EVENT_MOUSE_WHEEL:
+      input::set_mouse_scroll(event.wheel.x, event.wheel.y);
+      break;
     case SDL_EVENT_QUIT:
       g_events.push_back(AuroraEvent{
           .type = AURORA_EXIT,
@@ -334,7 +337,8 @@ AuroraWindowSize get_window_size() {
   int native_fb_w = 0;
   int native_fb_h = 0;
   ASSERT(SDL_GetWindowSize(g_window, &width, &height), "Failed to get window size: {}", SDL_GetError());
-  ASSERT(SDL_GetWindowSizeInPixels(g_window, &native_fb_w, &native_fb_h), "Failed to get window size in pixels: {}", SDL_GetError());
+  ASSERT(SDL_GetWindowSizeInPixels(g_window, &native_fb_w, &native_fb_h), "Failed to get window size in pixels: {}",
+         SDL_GetError());
 
   int fb_w = native_fb_w;
   int fb_h = native_fb_h;
@@ -385,7 +389,8 @@ void set_window_position(uint32_t x, uint32_t y) {
 }
 
 void center_window() {
-  TRY_WARN(SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED), "Failed to center window: {}", SDL_GetError());
+  TRY_WARN(SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED),
+           "Failed to center window: {}", SDL_GetError());
 }
 
 static void push_future_resize_event() {

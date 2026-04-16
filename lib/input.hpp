@@ -53,4 +53,7 @@ void controller_rumble(uint32_t instance, uint16_t low_freq_intensity, uint16_t 
 uint32_t controller_count() noexcept;
 void initialize() noexcept;
 extern absl::flat_hash_map<Uint32, GameController> g_GameControllers;
+
+void set_mouse_scroll(float scrollX, float scrollY) noexcept;
+void get_mouse_scroll(float* scrollX, float* scrollY) noexcept;
 } // namespace aurora::input
