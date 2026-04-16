@@ -1,3 +1,6 @@
+// Aurora exclusive API extension
+// While the GC and Wii could both technically support mice, they never received official libraries
+// This library is a theoretical implementation based loosely on PAD
 #ifndef DOLPHIN_MS_H
 #define DOLPHIN_MS_H
 #include "types.h"
