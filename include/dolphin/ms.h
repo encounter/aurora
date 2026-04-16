@@ -19,11 +19,11 @@ typedef struct MSStatus {
   f32 scrollY;
 } MSStatus;
 
-#define MS_BUTTON_LEFT (1 << 1)
-#define MS_BUTTON_MIDDLE (1 << 2)
-#define MS_BUTTON_RIGHT (1 << 3)
-#define MS_BUTTON_X1 (1 << 4)
-#define MS_BUTTON_X2 (1 << 5)
+#define MS_BUTTON_LEFT (1 << 0)
+#define MS_BUTTON_MIDDLE (1 << 1)
+#define MS_BUTTON_RIGHT (1 << 2)
+#define MS_BUTTON_X1 (1 << 3)
+#define MS_BUTTON_X2 (1 << 4)
 
 void MSRead(MSStatus* status);
 
