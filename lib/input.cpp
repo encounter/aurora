@@ -138,4 +138,22 @@ void initialize() noexcept {
   ASSERT(SDL_Init(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD), "Failed to initialize SDL subsystems: {}",
          SDL_GetError());
 }
+
+struct MouseScrollStatus {
+  float scrollX;
+  float scrollY;
+};
+
+static MouseScrollStatus g_MouseStatus;
+
+void set_mouse_scroll(const float scrollX, const float scrollY) noexcept {
+  g_MouseStatus.scrollX = scrollX;
+  g_MouseStatus.scrollY = scrollY;
+}
+
+void get_mouse_scroll(float* scrollX, float* scrollY) noexcept {
+  *scrollX = g_MouseStatus.scrollX;
+  *scrollY = g_MouseStatus.scrollY;
+}
+
 } // namespace aurora::input
