@@ -74,6 +74,8 @@ const AuroraEvent* poll_events() {
   g_events.clear();
 
   SDL_Event event;
+  // Clear out the previous scroll values to prevent ghost input
+  input::set_mouse_scroll(0, 0);
   while (SDL_PollEvent(&event)) {
 #ifdef AURORA_ENABLE_GX
     imgui::process_event(event);
