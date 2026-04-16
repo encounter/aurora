@@ -25,6 +25,7 @@ typedef struct MSStatus {
 #define MS_BUTTON_X1 (1 << 3)
 #define MS_BUTTON_X2 (1 << 4)
 
+void MSPoll();
 void MSRead(MSStatus* status);
 
 #ifdef __cplusplus
