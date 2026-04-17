@@ -148,6 +148,8 @@ static std::vector<RenderPass> g_renderPasses;
 static u32 g_currentRenderPass = UINT32_MAX;
 static bool g_inOffscreen = false;
 static std::optional<RenderPass> g_suspendedEfbPass;
+static Viewport g_suspendedEfbViewport;
+static SetScissorCommand g_suspendedEfbScissor;
 static webgpu::TextureWithSampler g_offscreenColor;
 static webgpu::TextureWithSampler g_offscreenDepth;
 
@@ -377,6 +379,8 @@ void begin_offscreen(uint32_t width, uint32_t height) {
       g_renderPasses.pop_back();
       --g_currentRenderPass;
     }
+    g_suspendedEfbViewport = g_cachedViewport;
+    g_suspendedEfbScissor = g_cachedScissor;
   }
 
   // Create offscreen textures
@@ -402,9 +406,10 @@ void begin_offscreen(uint32_t width, uint32_t height) {
 
   g_inOffscreen = true;
 
-  push_command(CommandType::SetViewport, Command::Data{.setViewport = {0.f, 0.f, static_cast<float>(width),
-                                                                       static_cast<float>(height), 0.f, 1.f}});
-  push_command(CommandType::SetScissor, Command::Data{.setScissor = {0, 0, width, height}});
+  g_cachedViewport = {0.f, 0.f, static_cast<float>(width), static_cast<float>(height), 0.f, 1.f};
+  g_cachedScissor = {0, 0, width, height};
+  push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
+  push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
 }
 
 void end_offscreen() {
@@ -427,6 +432,8 @@ void end_offscreen() {
   ++g_currentRenderPass;
   set_efb_targets(g_renderPasses[g_currentRenderPass]);
 
+  g_cachedViewport = g_suspendedEfbViewport;
+  g_cachedScissor = g_suspendedEfbScissor;
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
 }

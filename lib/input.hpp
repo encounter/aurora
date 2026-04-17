@@ -34,6 +34,9 @@ struct GameController {
   constexpr bool operator==(const GameController& other) const {
     return m_controller == other.m_controller && m_index == other.m_index;
   }
+  uint8_t m_ledRed = 0xFF;
+  uint8_t m_ledGreen = 0xFF;
+  uint8_t m_ledBlue = 0xFF;
 };
 
 GameController* get_controller_for_player(uint32_t player) noexcept;
@@ -50,4 +53,7 @@ void controller_rumble(uint32_t instance, uint16_t low_freq_intensity, uint16_t 
 uint32_t controller_count() noexcept;
 void initialize() noexcept;
 extern absl::flat_hash_map<Uint32, GameController> g_GameControllers;
+
+void set_mouse_scroll(float scrollX, float scrollY) noexcept;
+void get_mouse_scroll(float* scrollX, float* scrollY) noexcept;
 } // namespace aurora::input

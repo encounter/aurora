@@ -54,23 +54,40 @@ OSTick OSGetTick() {
 
 OSTime OSGetTime() {
     // System time is provided in the number of timer ticks since 2000-01-01 00:00:00
+    // Use time_t arithmetic to avoid chrono duration_cast overflow issues on some platforms.
 
-    using Decananoseconds = chrono::duration<s64, std::ratio<1, 100'000'000>>;
+    // GCN epoch: 2000-01-01 00:00:00 UTC = 946684800 seconds after Unix epoch
+    static constexpr s64 gcnEpochUnix = 946684800LL;
 
-    static const auto gcnEpoch = chrono::local_days{chrono::year{2000} / chrono::January / 1};
+    // Get current wall-clock time
+    auto elapsed = chrono::steady_clock::now() - startupSteadyTime;
+    auto currentTime = startupTime + chrono::duration_cast<chrono::system_clock::duration>(elapsed);
 
-    auto elapsedSinceStartup = chrono::duration_cast<SystemDuration>(chrono::steady_clock::now() - startupSteadyTime);
-    auto currentLocalTime = startupLocalTime + elapsedSinceStartup;
-    auto clockTime = currentLocalTime - gcnEpoch;
+    // Convert to seconds since Unix epoch, then offset to GCN epoch
+    auto sinceUnix = chrono::duration_cast<chrono::microseconds>(currentTime.time_since_epoch());
+    s64 totalMicros = sinceUnix.count();
 
-    // The current time is around the order of 1e17 ns, which is about 1/22 of INT64_MAX. The
-    // effective ratio of ticks/nanoseconds is 81/200, which means if we try to convert directly
-    // from ns to ticks we cause an overflow when we multiply by 81. As a workaround, we first
-    // convert to units of 10 ns. This brings the effective multiplicand from 81 down to 8.1 which
-    // should be good for the next 300 or so years, at which point chrono::system_clock::now() would
-    // have broken already anyway.
-    auto ticksTotal = chrono::duration_cast<TickDuration>(chrono::duration_cast<Decananoseconds>(clockTime));
-    return ticksTotal.count();
+    // Apply local timezone offset
+    std::time_t wallClock = chrono::system_clock::to_time_t(currentTime);
+    std::tm localTm{};
+    std::tm gmTm{};
+#if defined(_WIN32)
+    localtime_s(&localTm, &wallClock);
+    gmtime_s(&gmTm, &wallClock);
+#else
+    localtime_r(&wallClock, &localTm);
+    gmtime_r(&wallClock, &gmTm);
+#endif
+    // Compute UTC offset in seconds
+    s64 utcOffsetSec = static_cast<s64>(mktime(&localTm)) - static_cast<s64>(mktime(&gmTm));
+
+    s64 secondsSinceGcnEpoch = (totalMicros / 1000000LL) - gcnEpochUnix + utcOffsetSec;
+    s64 remainderMicros = totalMicros % 1000000LL;
+
+    s64 ticksFromSeconds = secondsSinceGcnEpoch * static_cast<s64>(OS_TIMER_CLOCK);
+    s64 ticksFromRemainder = remainderMicros * static_cast<s64>(OS_TIMER_CLOCK) / 1000000LL;
+
+    return ticksFromSeconds + ticksFromRemainder;
 }
 
 void AuroraInitClock() {

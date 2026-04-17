@@ -38,7 +38,7 @@ static std::array<PADAxisMapping, PAD_AXIS_COUNT> g_defaultAxes{{
     {{SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_TRIGGER_R},
 }};
 
-template<typename T, size_t N>
+template <typename T, size_t N>
 constexpr const std::array<T, N>& toStdArray(const T (&array)[N]) {
   static_assert(sizeof(array) == sizeof(std::array<T, N>));
   return reinterpret_cast<const std::array<T, N>&>(array);
@@ -137,8 +137,8 @@ void __PADLoadMapping(aurora::input::GameController* controller) {
 
   controller->m_mappingLoaded = true;
 
-  auto path = fmt::format("{}/{}_{:04X}_{:04X}.controller", basePath, PADGetName(playerIndex),
-                          controller->m_vid, controller->m_pid);
+  auto path = fmt::format("{}/{}_{:04X}_{:04X}.controller", basePath, PADGetName(playerIndex), controller->m_vid,
+                          controller->m_pid);
   FILE* file = fopen(path.c_str(), "rb");
   if (file == nullptr) {
     return;
@@ -154,8 +154,8 @@ void __PADLoadMapping(aurora::input::GameController* controller) {
   uint32_t version = 0;
   fread(&version, 1, sizeof(uint32_t), file);
   if (version != k_mappingsFileVersion) {
-    aurora::input::Log.warn("Invalid controller mapping version! (Expected {0}, found {1})",
-                            k_mappingsFileVersion, version);
+    aurora::input::Log.warn("Invalid controller mapping version! (Expected {0}, found {1})", k_mappingsFileVersion,
+                            version);
     return;
   }
 
@@ -176,6 +176,12 @@ void __PADLoadMapping(aurora::input::GameController* controller) {
   fclose(file);
 }
 
+static void EnsureMappingLoaded(aurora::input::GameController* controller) {
+  if (!controller->m_mappingLoaded) {
+    __PADLoadMapping(controller);
+  }
+}
+
 static Sint16 _get_axis_value(aurora::input::GameController* controller, PADAxis axis) {
   auto iter = std::find_if(controller->m_axisMapping.cbegin(), controller->m_axisMapping.cend(),
                            [axis](const auto& pair) { return pair.padAxis == axis; });
@@ -186,10 +192,10 @@ static Sint16 _get_axis_value(aurora::input::GameController* controller, PADAxis
   if (iter->nativeAxis.nativeAxis != -1) {
     auto nativeAxis = iter->nativeAxis;
     // clamp value to avoid overflow when casting to Sint16 if -32768 is negated
-    return static_cast<Sint16>(std::min(
-        SDL_GetGamepadAxis(controller->m_controller, static_cast<SDL_GamepadAxis>(nativeAxis.nativeAxis)) * nativeAxis.sign,
-        SDL_JOYSTICK_AXIS_MAX
-    ));
+    return static_cast<Sint16>(
+        std::min(SDL_GetGamepadAxis(controller->m_controller, static_cast<SDL_GamepadAxis>(nativeAxis.nativeAxis)) *
+                     nativeAxis.sign,
+                 SDL_JOYSTICK_AXIS_MAX));
   } else {
     assert(iter->nativeButton != -1);
     if (SDL_GetGamepadButton(controller->m_controller, static_cast<SDL_GamepadButton>(iter->nativeButton))) {
@@ -215,12 +221,11 @@ uint32_t PADRead(PADStatus* status) {
       continue;
     }
 
-    if (!controller->m_mappingLoaded) {
-      __PADLoadMapping(controller);
-    }
+    EnsureMappingLoaded(controller);
     status[i].err = PAD_ERR_NONE;
     std::for_each(
-        controller->m_buttonMapping.begin(), controller->m_buttonMapping.end(), [&controller, &i, &status](const auto& mapping) {
+        controller->m_buttonMapping.begin(), controller->m_buttonMapping.end(),
+        [&controller, &i, &status](const auto& mapping) {
           if (SDL_GetGamepadButton(controller->m_controller, static_cast<SDL_GamepadButton>(mapping.nativeButton))) {
             status[i].button |= mapping.padButton;
           }
@@ -300,6 +305,9 @@ uint32_t PADRead(PADStatus* status) {
     if (controller->m_hasRumble) {
       rumbleSupport |= PAD_CHAN0_BIT >> i;
     }
+
+    // Update the LED colors when the controller is read (which should happen once per frame in most games)
+    SDL_SetGamepadLED(controller->m_controller, controller->m_ledRed, controller->m_ledGreen, controller->m_ledBlue);
   }
   return rumbleSupport;
 }
@@ -544,6 +552,8 @@ PADButtonMapping* PADGetButtonMappings(uint32_t port, uint32_t* buttonCount) {
     return nullptr;
   }
 
+  EnsureMappingLoaded(controller);
+
   *buttonCount = PAD_BUTTON_COUNT;
   return controller->m_buttonMapping.data();
 }
@@ -588,12 +598,10 @@ void PADSerializeMappings() {
   std::filesystem::path basePath{aurora::g_config.configPath};
 
   for (auto& controller : aurora::input::g_GameControllers) {
-    if (!controller.second.m_mappingLoaded) {
-      __PADLoadMapping(&controller.second);
-    }
-    std::filesystem::path filePath = basePath / fmt::format("{}_{:04X}_{:04X}.controller",
-                                   aurora::input::controller_name(controller.second.m_index), controller.second.m_vid,
-                                   controller.second.m_pid);
+    EnsureMappingLoaded(&controller.second);
+    std::filesystem::path filePath =
+        basePath / fmt::format("{}_{:04X}_{:04X}.controller", aurora::input::controller_name(controller.second.m_index),
+                               controller.second.m_vid, controller.second.m_pid);
     std::string filePathStr = filePath.string();
 
     // don't truncate the file if it already exists
@@ -694,8 +702,8 @@ const char* PADGetNativeButtonName(uint32_t button) {
 }
 
 const char* PADGetAxisName(PADAxis axis) {
-  auto it = std::find_if(skAxisNames.begin(), skAxisNames.end(),
-                         [&axis](const auto& pair) { return axis == pair.first; });
+  auto it =
+      std::find_if(skAxisNames.begin(), skAxisNames.end(), [&axis](const auto& pair) { return axis == pair.first; });
 
   if (it != skAxisNames.end()) {
     return it->second.data();
@@ -781,4 +789,58 @@ void PADSetDefaultMapping(const PADDefaultMapping* mapping) {
 
   g_defaultButtons = toStdArray(mapping->buttons);
   g_defaultAxes = toStdArray(mapping->axes);
+}
+
+BOOL PADSetColor(u32 port, u8 red, u8 green, u8 blue) {
+  const auto ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr) {
+    return FALSE;
+  }
+
+  ctrl->m_ledRed = red;
+  ctrl->m_ledGreen = green;
+  ctrl->m_ledBlue = blue;
+  return true;
+}
+
+BOOL PADGetColor(u32 port, u8* red, u8* green, u8* blue) {
+  const auto ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr) {
+    return FALSE;
+  }
+
+  *red = ctrl->m_ledRed;
+  *green = ctrl->m_ledGreen;
+  *blue = ctrl->m_ledBlue;
+  return TRUE;
+}
+
+BOOL PADSetSensorEnabled(u32 port, PADSensorType sensor, BOOL enabled) {
+  const auto* ctrl = aurora::input::get_controller_for_player(port);
+
+  if (ctrl == nullptr) {
+    return FALSE;
+  }
+
+  return SDL_SetGamepadSensorEnabled(ctrl->m_controller, static_cast<SDL_SensorType>(sensor), enabled ? true : false)
+             ? TRUE
+             : FALSE;
+}
+
+BOOL PADHasSensor(u32 port, PADSensorType sensor) {
+  const auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr) {
+    return FALSE;
+  }
+
+  return SDL_GamepadHasSensor(ctrl->m_controller, static_cast<SDL_SensorType>(sensor)) ? TRUE : FALSE;
+}
+
+BOOL PADGetSensorData(u32 port, PADSensorType sensor, f32* data, const int nValues) {
+  const auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr) {
+    return FALSE;
+  }
+
+  return SDL_GetGamepadSensorData(ctrl->m_controller, static_cast<SDL_SensorType>(sensor), data, nValues);
 }
