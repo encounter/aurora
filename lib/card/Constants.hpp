@@ -4,6 +4,9 @@
 
 #include "Util.hpp"
 
+#define CARD_FILENAME_MAX 32
+#define CARD_ICON_MAX 8
+
 namespace aurora::card {
 constexpr uint32_t BlockSize = 0x2000;
 constexpr uint32_t MaxFiles = 127;

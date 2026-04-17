@@ -10,7 +10,6 @@ namespace aurora::card {
 class FileIO {
   std::string m_path;
   bool m_ready = false;
-  bool m_isDirectory = false;
 
   bool isReady() const { return m_ready && !m_path.empty(); };
 
@@ -27,7 +26,6 @@ public:
   static SDL_IOStream* fileOpen(const std::string& path, const char* mode) {return path.empty() ? nullptr : SDL_IOFromFile(path.c_str(), mode);}
   bool fileRead(void* buf, size_t length, off_t offset);
   bool fileWrite(const void* buf, size_t length, off_t offset);
-  bool isFolder() const { return m_isDirectory; }
   explicit operator bool() const;
 };
 

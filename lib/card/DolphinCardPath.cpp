@@ -24,7 +24,7 @@ namespace {
 #endif
 
 namespace aurora::card {
-static aurora::Module Log("aurora::card");
+aurora::Module Log("aurora::card");
 
 #if WIN32
 

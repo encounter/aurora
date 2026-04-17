@@ -7,7 +7,7 @@
 
 namespace aurora::card {
 class BlockAllocationTable {
-  friend class Card;
+  friend class CardRawFile;
 #pragma pack(push, 4)
   union {
     struct {
