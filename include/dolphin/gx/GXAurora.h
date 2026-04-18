@@ -12,6 +12,18 @@ extern "C" {
 //
 
 /**
+ * Sets the actual render viewport in native framebuffer coordinates.
+ * Must be followed by six f32 values: left, top, width, height, nearz, farz.
+ */
+#define GX_LOAD_AURORA_VIEWPORT_RENDER 0x0001
+
+/**
+ * Sets the actual render scissor in native framebuffer coordinates.
+ * Must be followed by four u32 values: left, top, width, height.
+ */
+#define GX_LOAD_AURORA_SCISSOR_RENDER 0x0002
+
+/**
  * Aurora equivalent of CP_REG_ARRAYBASE_ID: sets the base address and size of a vertex array.
  * This command must be followed by a 64-bit memory address, 32-bit size, and 1-byte little-endian flag.
  * The index of the vertex array is given by the lowest 4 bits of the command ID,
@@ -67,6 +79,35 @@ void GXPopDebugGroup();
  * Sends a debug marker to the backend graphics API. These may show in debugging tools such as RenderDoc.
  */
 void GXInsertDebugMarker(const char* label);
+
+typedef enum _AuroraViewportPolicy {
+  AURORA_VIEWPORT_FIT = 0,     // Scale logical viewport to fit
+  AURORA_VIEWPORT_STRETCH = 1, // Stretch logical viewport to fit (widescreen enabled)
+  AURORA_VIEWPORT_NATIVE = 2,  // Use native framebuffer resolution
+} AuroraViewportPolicy;
+
+/**
+ * Configures how GXSetViewport/GXSetScissor parameters are applied to the actual render viewport.
+ * When AURORA_VIEWPORT_NATIVE is used, GXSetTexCopySrc/GXSetTexCopyDst will use native framebuffer resolution.
+ */
+void AuroraSetViewportPolicy(AuroraViewportPolicy policy);
+
+/**
+ * Retrieves the current render size based on the framebuffer size and viewport policy.
+ */
+void AuroraGetRenderSize(u32* width, u32* height);
+
+/**
+ * Sets the actual render viewport in native framebuffer coordinates.
+ * Overrides the automatically scaled values set by the logical GXSetViewport.
+ */
+void GXSetViewportRender(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz);
+
+/**
+ * Sets the actual render scissor in native framebuffer coordinates.
+ * Overrides the automatically scaled values set by the logical GXSetScissor.
+ */
+void GXSetScissorRender(u32 left, u32 top, u32 wd, u32 ht);
 
 /**
  * Create an offscreen framebuffer and switch rendering to it.

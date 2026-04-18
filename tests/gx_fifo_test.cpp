@@ -1963,6 +1963,22 @@ TEST_F(GXFifoTest, GetProjectionAndScissorShadowState) {
   EXPECT_EQ(height, 240u);
 }
 
+TEST_F(GXFifoTest, Scissor_EncodesBpAndDecodesLogicalState) {
+  GXSetScissor(16, 24, 320, 240);
+  auto bytes = capture_fifo();
+
+  EXPECT_TRUE(has_bp_write(bytes, 0x20));
+  EXPECT_TRUE(has_bp_write(bytes, 0x21));
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_EQ(g_gxState.logicalScissor.x, 16);
+  EXPECT_EQ(g_gxState.logicalScissor.y, 24);
+  EXPECT_EQ(g_gxState.logicalScissor.width, 320);
+  EXPECT_EQ(g_gxState.logicalScissor.height, 240);
+}
+
 TEST_F(GXFifoTest, GetViewportShadowState) {
   f32 vp[6]{};
 
@@ -1983,6 +1999,53 @@ TEST_F(GXFifoTest, GetViewportShadowState) {
   EXPECT_FLOAT_EQ(vp[3], 240.0f);
   EXPECT_FLOAT_EQ(vp[4], 0.2f);
   EXPECT_FLOAT_EQ(vp[5], 0.9f);
+}
+
+TEST_F(GXFifoTest, Viewport_DecodesLogicalViewportState) {
+  GXSetViewport(10.0f, 20.0f, 640.0f, 480.0f, 0.1f, 1.0f);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_FLOAT_EQ(g_gxState.logicalViewport.left, 10.0f);
+  EXPECT_FLOAT_EQ(g_gxState.logicalViewport.top, 20.0f);
+  EXPECT_FLOAT_EQ(g_gxState.logicalViewport.width, 640.0f);
+  EXPECT_FLOAT_EQ(g_gxState.logicalViewport.height, 480.0f);
+  EXPECT_FLOAT_EQ(g_gxState.renderViewport.left, 10.0f);
+  EXPECT_FLOAT_EQ(g_gxState.renderViewport.top, 20.0f);
+  EXPECT_FLOAT_EQ(g_gxState.renderViewport.width, 640.0f);
+  EXPECT_FLOAT_EQ(g_gxState.renderViewport.height, 480.0f);
+}
+
+TEST_F(GXFifoTest, ViewportRender_EncodesAuroraOverride) {
+  GXSetViewportRender(100.0f, 50.0f, 1280.0f, 720.0f, 0.0f, 1.0f);
+  auto bytes = capture_fifo();
+
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_VIEWPORT_RENDER));
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_FLOAT_EQ(g_gxState.renderViewport.left, 100.0f);
+  EXPECT_FLOAT_EQ(g_gxState.renderViewport.top, 50.0f);
+  EXPECT_FLOAT_EQ(g_gxState.renderViewport.width, 1280.0f);
+  EXPECT_FLOAT_EQ(g_gxState.renderViewport.height, 720.0f);
+}
+
+TEST_F(GXFifoTest, ScissorRender_EncodesAuroraOverride) {
+  GXSetScissorRender(100, 40, 800, 600);
+  auto bytes = capture_fifo();
+
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_SCISSOR_RENDER));
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  EXPECT_EQ(g_gxState.renderScissor.x, 100);
+  EXPECT_EQ(g_gxState.renderScissor.y, 40);
+  EXPECT_EQ(g_gxState.renderScissor.width, 800);
+  EXPECT_EQ(g_gxState.renderScissor.height, 600);
 }
 
 // --- GXLoadLightObjImm (XF 0x600-0x67F) ---

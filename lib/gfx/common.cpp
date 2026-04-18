@@ -9,6 +9,7 @@
 #include "tex_palette_conv.hpp"
 #include "texture_replacement.hpp"
 #include "texture.hpp"
+#include "../window.hpp"
 
 #include <optional>
 #include <ranges>
@@ -46,15 +47,6 @@ enum class CommandType {
   Draw,
   DebugMarker,
 };
-struct SetScissorCommand {
-  uint32_t x;
-  uint32_t y;
-  uint32_t w;
-  uint32_t h;
-
-  bool operator==(const SetScissorCommand& rhs) const { return x == rhs.x && y == rhs.y && w == rhs.w && h == rhs.h; }
-  bool operator!=(const SetScissorCommand& rhs) const { return !(*this == rhs); }
-};
 struct Command {
   CommandType type;
 #ifdef AURORA_GFX_DEBUG_GROUPS
@@ -62,7 +54,7 @@ struct Command {
 #endif
   union Data {
     Viewport setViewport;
-    SetScissorCommand setScissor;
+    ClipRect setScissor;
     ShaderDrawCommand draw;
     size_t debugMarkerIndex;
   } data;
@@ -149,7 +141,7 @@ static u32 g_currentRenderPass = UINT32_MAX;
 static bool g_inOffscreen = false;
 static std::optional<RenderPass> g_suspendedEfbPass;
 static Viewport g_suspendedEfbViewport;
-static SetScissorCommand g_suspendedEfbScissor;
+static ClipRect g_suspendedEfbScissor;
 static webgpu::TextureWithSampler g_offscreenColor;
 static webgpu::TextureWithSampler g_offscreenDepth;
 
@@ -214,20 +206,25 @@ static void push_draw_command(ShaderDrawCommand data) {
   ++g_stats.drawCallCount;
 }
 
-static Viewport g_cachedViewport;
-const Viewport& get_viewport() noexcept { return g_cachedViewport; }
+Vec2<uint32_t> get_render_target_size() noexcept {
+  if (g_currentRenderPass < g_renderPasses.size()) {
+    const auto& size = g_renderPasses[g_currentRenderPass].targetSize;
+    return {size.width, size.height};
+  }
+  const auto windowSize = window::get_window_size();
+  return {windowSize.fb_width, windowSize.fb_height};
+}
 
-void set_viewport(float left, float top, float width, float height, float znear, float zfar) noexcept {
-  Viewport cmd{left, top, width, height, znear, zfar};
+static Viewport g_cachedViewport;
+void set_viewport(const Viewport& cmd) noexcept {
   if (cmd != g_cachedViewport) {
     push_command(CommandType::SetViewport, Command::Data{.setViewport = cmd});
     g_cachedViewport = cmd;
   }
 }
 
-static SetScissorCommand g_cachedScissor;
-void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {
-  SetScissorCommand cmd{x, y, w, h};
+static ClipRect g_cachedScissor;
+void set_scissor(const ClipRect& cmd) noexcept {
   if (cmd != g_cachedScissor) {
     push_command(CommandType::SetScissor, Command::Data{.setScissor = cmd});
     g_cachedScissor = cmd;
@@ -407,7 +404,7 @@ void begin_offscreen(uint32_t width, uint32_t height) {
   g_inOffscreen = true;
 
   g_cachedViewport = {0.f, 0.f, static_cast<float>(width), static_cast<float>(height), 0.f, 1.f};
-  g_cachedScissor = {0, 0, width, height};
+  g_cachedScissor = {0, 0, static_cast<int32_t>(width), static_cast<int32_t>(height)};
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
 }
@@ -647,6 +644,9 @@ void begin_frame() {
   g_renderPasses[0].clearColorValue = gx::g_gxState.clearColor;
   g_renderPasses[0].clearDepthValue = gx::clear_depth_value();
   g_currentRenderPass = 0;
+  // Refresh render viewport/scissor from logical in case FB size changed
+  g_cachedViewport = gx::map_logical_viewport(gx::g_gxState.logicalViewport);
+  g_cachedScissor = gx::map_logical_scissor(gx::g_gxState.logicalScissor);
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
   begin_pipeline_frame();
@@ -857,10 +857,10 @@ void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
     case CommandType::SetScissor: {
       const auto& sc = cmd.data.setScissor;
       const auto& size = g_renderPasses[idx].targetSize;
-      const auto x = std::clamp(sc.x, 0u, size.width);
-      const auto y = std::clamp(sc.y, 0u, size.height);
-      const auto w = std::clamp(sc.w, 0u, size.width - x);
-      const auto h = std::clamp(sc.h, 0u, size.height - y);
+      const auto x = std::clamp(static_cast<uint32_t>(sc.x), 0u, size.width);
+      const auto y = std::clamp(static_cast<uint32_t>(sc.y), 0u, size.height);
+      const auto w = std::clamp(static_cast<uint32_t>(sc.width), 0u, size.width - x);
+      const auto h = std::clamp(static_cast<uint32_t>(sc.height), 0u, size.height - y);
       pass.SetScissorRect(x, y, w, h);
     } break;
     case CommandType::Draw: {

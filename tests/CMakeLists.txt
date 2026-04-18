@@ -29,6 +29,7 @@ if (AURORA_ENABLE_GX)
     ../lib/dolphin/gx/GXGet.cpp
     ../lib/dolphin/gx/GXLighting.cpp
     ../lib/dolphin/gx/GXManage.cpp
+    ../lib/dolphin/gx/GXAurora.cpp
     ../lib/dolphin/gx/GXPerf.cpp
     ../lib/dolphin/gx/GXPixel.cpp
     ../lib/dolphin/gx/GXTev.cpp
