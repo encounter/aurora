@@ -632,9 +632,15 @@ static void handle_bp(u32 value, bool bigEndian) {
   // Scissor registers (0x20, 0x21)
   case 0x20:
   case 0x21: {
-#ifndef NDEBUG
-    Log.debug("Unimplemented: BP register {:x} (scissor)", regId);
-#endif
+    const u32 scis0 = g_gxState.bpRegCache[0x20];
+    const u32 scis1 = g_gxState.bpRegCache[0x21];
+    const int32_t tp = static_cast<int32_t>(bp_get(scis0, 11, 0));
+    const int32_t lf = static_cast<int32_t>(bp_get(scis0, 11, 12));
+    const int32_t bm = static_cast<int32_t>(bp_get(scis1, 11, 0));
+    const int32_t rt = static_cast<int32_t>(bp_get(scis1, 11, 12));
+    if (rt >= lf && bm >= tp) {
+      set_logical_scissor({lf - 340, tp - 340, rt - lf + 1, bm - tp + 1});
+    }
     break;
   }
 
@@ -1380,11 +1386,14 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
           f32 oz = read_f32(xfData + 20, bigEndian);
           f32 width = sx * 2.0f;
           f32 height = -sy * 2.0f;
-          f32 left = ox - 340.0f - width / 2.0f;
-          f32 top = oy - 340.0f - height / 2.0f;
-          f32 farZ = oz / 1.6777215e7f;
-          f32 nearZ = (oz - sz) / 1.6777215e7f;
-          gfx::set_viewport(left, top, width, height, nearZ, farZ);
+          set_logical_viewport({
+              .left = ox - 340.0f - width / 2.0f,
+              .top = oy - 340.0f - height / 2.0f,
+              .width = width,
+              .height = height,
+              .znear = (oz - sz) / 1.6777215e7f,
+              .zfar = oz / 1.6777215e7f,
+          });
         }
         break;
       }
@@ -1660,7 +1669,40 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
   pos += 2;
 
   // Setting of vertex array bases.
-  if (subCmd >= GX_LOAD_AURORA_ARRAYBASE && subCmd <= (GX_LOAD_AURORA_ARRAYBASE | 0x0f)) {
+  if (subCmd == GX_LOAD_AURORA_VIEWPORT_RENDER) {
+    CHECK(pos + 24 <= size, "GX_LOAD_AURORA_VIEWPORT_RENDER read overrun");
+    const f32 left = read_f32(data + pos, bigEndian);
+    pos += 4;
+    const f32 top = read_f32(data + pos, bigEndian);
+    pos += 4;
+    const f32 width = read_f32(data + pos, bigEndian);
+    pos += 4;
+    const f32 height = read_f32(data + pos, bigEndian);
+    pos += 4;
+    const f32 nearZ = read_f32(data + pos, bigEndian);
+    pos += 4;
+    const f32 farZ = read_f32(data + pos, bigEndian);
+    pos += 4;
+    set_render_viewport({
+        .left = left,
+        .top = top,
+        .width = width,
+        .height = height,
+        .znear = nearZ,
+        .zfar = farZ,
+    });
+  } else if (subCmd == GX_LOAD_AURORA_SCISSOR_RENDER) {
+    CHECK(pos + 16 <= size, "GX_LOAD_AURORA_SCISSOR_RENDER read overrun");
+    const int32_t left = static_cast<int32_t>(read_u32(data + pos, bigEndian));
+    pos += 4;
+    const int32_t top = static_cast<int32_t>(read_u32(data + pos, bigEndian));
+    pos += 4;
+    const int32_t width = static_cast<int32_t>(read_u32(data + pos, bigEndian));
+    pos += 4;
+    const int32_t height = static_cast<int32_t>(read_u32(data + pos, bigEndian));
+    pos += 4;
+    set_render_scissor({left, top, width, height});
+  } else if (subCmd >= GX_LOAD_AURORA_ARRAYBASE && subCmd <= (GX_LOAD_AURORA_ARRAYBASE | 0x0f)) {
     CHECK(pos + 13 <= size, "GX_LOAD_AURORA_ARRAYBASE read overrun");
     u32 attrIdx = subCmd - GX_LOAD_AURORA_ARRAYBASE + GX_VA_POS;
 

@@ -5,8 +5,31 @@
 #include "../../gfx/texture.hpp"
 #include "../../window.hpp"
 #include "../../gfx/clear.hpp"
-#include "../../webgpu/wgpu.hpp"
 #include "../../webgpu/gpu.hpp"
+#include "../vi/vi_internal.hpp"
+
+#include <algorithm>
+#include <cmath>
+
+namespace {
+aurora::Vec2<uint32_t> scale_copy_dst(u32 logicalWidth, u32 logicalHeight) {
+  if (g_gxState.viewportPolicy == AURORA_VIEWPORT_NATIVE) {
+    return {logicalWidth, logicalHeight};
+  }
+
+  const auto [logicalFbWidth, logicalFbHeight] = aurora::gx::logical_fb_size();
+  const auto [targetWidth, targetHeight] = aurora::gfx::get_render_target_size();
+  if (logicalFbWidth == 0 || logicalFbHeight == 0 || targetWidth == 0 || targetHeight == 0) {
+    return {logicalWidth, logicalHeight};
+  }
+
+  const float scaleX = static_cast<float>(targetWidth) / static_cast<float>(logicalFbWidth);
+  const float scaleY = static_cast<float>(targetHeight) / static_cast<float>(logicalFbHeight);
+  const auto scaledWidth = std::max<u32>(static_cast<u32>(std::lround(static_cast<float>(logicalWidth) * scaleX)), 1);
+  const auto scaledHeight = std::max<u32>(static_cast<u32>(std::lround(static_cast<float>(logicalHeight) * scaleY)), 1);
+  return {scaledWidth, scaledHeight};
+}
+} // namespace
 
 extern "C" {
 GXRenderModeObj GXNtsc480IntDf = {
@@ -125,9 +148,8 @@ void GXSetDispCopyGamma(GXGamma gamma) {}
 void GXCopyDisp(void* dest, GXBool clear) {}
 
 void GXCopyTex(void* dest, GXBool clear) {
-  const auto& rect = g_gxState.texCopySrc;
-  const u32 dstWidth = g_gxState.texCopyDstWidth;
-  const u32 dstHeight = g_gxState.texCopyDstHeight;
+  const auto rect = aurora::gx::map_logical_scissor(g_gxState.texCopySrc);
+  const auto [dstWidth, dstHeight] = scale_copy_dst(g_gxState.texCopyDstWidth, g_gxState.texCopyDstHeight);
   const auto texCopyFmt = g_gxState.texCopyFmt;
 
   const aurora::gx::GXState::CopyTextureKey key{

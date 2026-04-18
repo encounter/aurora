@@ -52,6 +52,11 @@ namespace aurora::gx {
 GXState g_gxState{};
 } // namespace aurora::gx
 
+namespace aurora::vi {
+Vec2<uint32_t> configured_fb_size() noexcept { return {640, 480}; }
+void configure(const GXRenderModeObj*) noexcept {}
+} // namespace aurora::vi
+
 // --- Texture uploads ---
 namespace aurora::gfx {
 std::vector<TextureUpload> g_textureUploads;
@@ -63,6 +68,19 @@ const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.t
 void evict_texture_object(u32) noexcept {}
 void evict_tlut_object(u32) noexcept {}
 void shutdown() noexcept {}
+Vec2<uint32_t> logical_fb_size() noexcept { return {640, 480}; }
+gfx::Viewport map_logical_viewport(const gfx::Viewport& logicalViewport) noexcept { return logicalViewport; }
+gfx::ClipRect map_logical_scissor(const gfx::ClipRect& logicalScissor) noexcept { return logicalScissor; }
+void set_logical_viewport(const gfx::Viewport& viewport) noexcept {
+  g_gxState.logicalViewport = viewport;
+  set_render_viewport(map_logical_viewport(viewport));
+}
+void set_render_viewport(const gfx::Viewport& viewport) noexcept { g_gxState.renderViewport = viewport; }
+void set_logical_scissor(const gfx::ClipRect& scissor) noexcept {
+  g_gxState.logicalScissor = scissor;
+  set_render_scissor(map_logical_scissor(scissor));
+}
+void set_render_scissor(const gfx::ClipRect& scissor) noexcept { g_gxState.renderScissor = scissor; }
 } // namespace aurora::gx
 
 // --- Shader/pipeline stubs ---
@@ -88,11 +106,8 @@ Range push_indices(const uint8_t* data, size_t length) { return {}; }
 Range push_uniform(const uint8_t* data, size_t length) { return {}; }
 Range push_storage(const uint8_t* data, size_t length) { return {}; }
 
-const Viewport& get_viewport() noexcept {
-  static Viewport vp{0.f, 0.f, 640.f, 480.f, 0.f, 1.f};
-  return vp;
-}
-void set_viewport(float left, float top, float width, float height, float znear, float zfar) noexcept {}
+Vec2<uint32_t> get_render_target_size() noexcept { return {640, 480}; }
+void set_viewport(const Viewport& viewport) noexcept {}
 void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {}
 } // namespace aurora::gfx
 
@@ -143,6 +158,9 @@ void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {}
 void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
                   Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat) {}
 void queue_palette_conv(tex_palette_conv::ConvRequest req) {}
+void begin_offscreen(uint32_t width, uint32_t height) {}
+void end_offscreen() {}
+bool is_offscreen() noexcept { return false; }
 } // namespace aurora::gfx
 
 namespace aurora::gfx::tex_copy_conv {

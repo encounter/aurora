@@ -64,6 +64,41 @@ constexpr std::array<AuroraBackend, 0> PreferredBackendOrder{};
 
 bool g_initialFrame = false;
 
+#ifdef AURORA_ENABLE_GX
+struct PresentViewport {
+  float x;
+  float y;
+  float width;
+  float height;
+};
+
+PresentViewport calculate_present_viewport(uint32_t surface_width, uint32_t surface_height, uint32_t content_width,
+                                           uint32_t content_height) {
+  if (surface_width == 0 || surface_height == 0 || content_width == 0 || content_height == 0) {
+    return {};
+  }
+
+  uint32_t viewport_width = surface_width;
+  uint32_t viewport_height = std::min<uint32_t>(
+      surface_height, std::max<uint32_t>(1u, static_cast<uint32_t>(std::lround(static_cast<double>(viewport_width) *
+                                                                               static_cast<double>(content_height) /
+                                                                               static_cast<double>(content_width)))));
+  if (viewport_height == surface_height) {
+    viewport_width = std::min<uint32_t>(
+        surface_width, std::max<uint32_t>(1u, static_cast<uint32_t>(std::lround(static_cast<double>(viewport_height) *
+                                                                                static_cast<double>(content_width) /
+                                                                                static_cast<double>(content_height)))));
+  }
+
+  return {
+      .x = static_cast<float>((surface_width - viewport_width) / 2),
+      .y = static_cast<float>((surface_height - viewport_height) / 2),
+      .width = static_cast<float>(viewport_width),
+      .height = static_cast<float>(viewport_height),
+  };
+}
+#endif
+
 AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexcept {
   g_config = config;
   Log.info("Aurora initializing");
@@ -149,10 +184,7 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
   };
 }
 
-void aurora_set_log_level(AuroraLogLevel level) noexcept {
-  g_config.logLevel = level;
-}
-
+void aurora_set_log_level(AuroraLogLevel level) noexcept { g_config.logLevel = level; }
 
 #ifdef AURORA_ENABLE_GX
 wgpu::TextureView g_currentView;
@@ -244,13 +276,10 @@ void end_frame() noexcept {
     pass.SetPipeline(webgpu::g_CopyPipeline);
     pass.SetBindGroup(0, webgpu::g_CopyBindGroup, 0, nullptr);
 
-    // Center viewport to framebuffer size in case we're at an aspect ratio lock.
-    {
-      uint32_t pos_x = (webgpu::g_graphicsConfig.surfaceConfiguration.width - webgpu::g_frameBuffer.size.width) / 2;
-      uint32_t pos_y = (webgpu::g_graphicsConfig.surfaceConfiguration.height - webgpu::g_frameBuffer.size.height) / 2;
-
-      pass.SetViewport(pos_x, pos_y, webgpu::g_frameBuffer.size.width, webgpu::g_frameBuffer.size.height, 0, 1);
-    }
+    const auto viewport = calculate_present_viewport(
+        webgpu::g_graphicsConfig.surfaceConfiguration.width, webgpu::g_graphicsConfig.surfaceConfiguration.height,
+        webgpu::g_frameBuffer.size.width, webgpu::g_frameBuffer.size.height);
+    pass.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height, 0, 1);
 
     pass.Draw(3);
     imgui::render(pass);
