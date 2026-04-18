@@ -663,7 +663,7 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
     {{
       var lighting = {5};
       for (var i = 0u; i < {1}u; i++) {{
-          if ((ubuf.lightState{0} & (1u << i)) == 0u) {{ continue; }}
+          if ((ubuf.lightState{0}{9} & (1u << i)) == 0u) {{ continue; }}
           var light = ubuf.lights[i];
           var ldir = light.pos - {6};
           var dist2 = dot(ldir, ldir);
@@ -675,7 +675,8 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
       }}
       {7}{8} = ({4} * clamp(lighting, vec4f(0.0), vec4f(1.0))){8};
     }})""",
-                     i, GX::MaxLights, lightAttnFn, lightDiffFn, matSrc, ambSrc, posVar, outVar, swizzle);
+                     i, GX::MaxLights, lightAttnFn, lightDiffFn, matSrc, ambSrc, posVar, outVar, swizzle,
+                     alpha ? "a"sv : ""sv);
 }
 
 wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
