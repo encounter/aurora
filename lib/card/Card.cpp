@@ -770,8 +770,6 @@ void Card::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) const {
 
 void Card::getEncoding(uint16_t& encoding) const { encoding = m_ch.m_encoding; }
 
-static std::unique_ptr<uint8_t[]> DummyBlock;
-
 void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   m_ch.raw.fill(0xFF);
 
@@ -820,13 +818,11 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
     m_tmpBats[1] = m_bats[1];
     m_tmpBats[1].swapEndian();
     m_fileHandle.fileWrite(m_tmpBats[1].raw.data(), BlockSize, BlockSize * 4);
-    if (!DummyBlock) {
-      DummyBlock.reset(new uint8_t[BlockSize]);
-      memset(DummyBlock.get(), 0xFF, BlockSize);
-    }
-    for (uint32_t i = 0; i < blockCount; ++i) {
-      m_fileHandle.fileWrite(DummyBlock.get(), BlockSize, BlockSize * (i + 5));
-    }
+
+    std::unique_ptr<uint8_t[]> dummyBlock;
+    dummyBlock.reset(new uint8_t[BlockSize * blockCount]);
+    memset(dummyBlock.get(), 0xFF, BlockSize * blockCount);
+    m_fileHandle.fileWrite(dummyBlock.get(), BlockSize, BlockSize * blockCount);
     m_dirty = false;
   }
 }
