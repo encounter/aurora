@@ -173,7 +173,8 @@ void CARDInit(const char* game, const char* maker) {
   if (!loadedCard) {
     CardChannels[0].open(cardPaths[0]);
     CardChannels[0].format(aurora::card::ECardSlot::SlotA);
-    CardChannels[0].commit();
+    CardChannels[0].close();
+    CardChannels[0].open(cardPaths[0]);
   }
 }
 
@@ -484,6 +485,7 @@ s32 CARDMount(const s32 chan, void* workArea [[maybe_unused]], CARDCallback deta
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
+  
   return CARD_RESULT_READY;
 }
 s32 CARDMountAsync(const s32 chan, void* workArea [[maybe_unused]], const CARDCallback detachCallback [[maybe_unused]],
@@ -517,7 +519,7 @@ BOOL CARDProbe(const s32 chan) {
     return CARD_RESULT_FATAL_ERROR;
   }
   aurora::card::ProbeResults probeData = aurora::card::Card::probeCardFile(cardPaths[chan]);
-  return static_cast<s32>(probeData.x0_error);
+  return probeData.x0_error != aurora::card::ECardResult::NOCARD ? TRUE : FALSE;
 }
 
 s32 CARDProbeEx(const s32 chan, s32* memSize, s32* sectorSize) {

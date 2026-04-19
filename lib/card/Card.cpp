@@ -836,7 +836,7 @@ ProbeResults Card::probeCardFile(std::string_view filename) {
   if (!std::filesystem::exists(path))
     return {ECardResult::NOCARD, 0, 0};
   return {ECardResult::READY, static_cast<uint32_t>(std::filesystem::file_size(path) / BlockSize) / MbitToBlocks,
-          0x2000};
+          BlockSize};
 }
 
 void Card::commit() {
@@ -916,10 +916,5 @@ ECardResult Card::getError() const {
     return ECardResult::BROKEN;
 
   return ECardResult::READY;
-}
-
-void Card::waitForCompletion() const {
-  if (!m_fileHandle)
-    return;
 }
 } // namespace aurora::card

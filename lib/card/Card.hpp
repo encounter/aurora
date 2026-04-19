@@ -493,11 +493,6 @@ public:
   ECardResult getError() const;
 
   /**
-   * @brief Block caller until any asynchronous I/O operations have completed.
-   */
-  void waitForCompletion() const;
-
-  /**
    * @return Whether or not the card is within a ready state.
    */
   explicit operator bool() const { return getError() == ECardResult::READY; }
