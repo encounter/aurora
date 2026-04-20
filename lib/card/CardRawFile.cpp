@@ -768,9 +768,7 @@ void CardRawFile::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) co
 
 void CardRawFile::getEncoding(uint16_t& encoding) const { encoding = m_ch.m_encoding; }
 
-static std::unique_ptr<uint8_t[]> DummyBlock;
-
-void CardRawFile::format(ECardSlot id, ECardSize size, EEncoding encoding) {
+void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   m_ch.raw.fill(0xFF);
 
   uint64_t rand = static_cast<uint64_t>(getGCTime());
@@ -818,13 +816,11 @@ void CardRawFile::format(ECardSlot id, ECardSize size, EEncoding encoding) {
     m_tmpBats[1] = m_bats[1];
     m_tmpBats[1].swapEndian();
     m_fileHandle.fileWrite(m_tmpBats[1].raw.data(), BlockSize, BlockSize * 4);
-    if (!DummyBlock) {
-      DummyBlock.reset(new uint8_t[BlockSize]);
-      memset(DummyBlock.get(), 0xFF, BlockSize);
-    }
-    for (uint32_t i = 0; i < blockCount; ++i) {
-      m_fileHandle.fileWrite(DummyBlock.get(), BlockSize, BlockSize * (i + 5));
-    }
+
+    std::unique_ptr<uint8_t[]> dummyBlock;
+    dummyBlock.reset(new uint8_t[BlockSize * blockCount]);
+    memset(dummyBlock.get(), 0xFF, BlockSize * blockCount);
+    m_fileHandle.fileWrite(dummyBlock.get(), BlockSize, BlockSize * blockCount);
     m_dirty = false;
   }
 }
@@ -834,7 +830,7 @@ ProbeResults CardRawFile::probeCardFile(std::string_view filename) {
   if (!std::filesystem::exists(path))
     return {ECardResult::NOCARD, 0, 0};
   return {ECardResult::READY, static_cast<uint32_t>(std::filesystem::file_size(path) / BlockSize) / MbitToBlocks,
-          0x2000};
+          BlockSize};
 }
 
 void CardRawFile::commit() {
@@ -914,10 +910,5 @@ ECardResult CardRawFile::getError() const {
     return ECardResult::BROKEN;
 
   return ECardResult::READY;
-}
-
-void CardRawFile::waitForCompletion() const {
-  if (!m_fileHandle)
-    return;
 }
 } // namespace aurora::card

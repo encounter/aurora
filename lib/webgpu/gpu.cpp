@@ -591,7 +591,7 @@ bool initialize(AuroraBackend auroraBackend) {
       .textureAnisotropy = g_config.maxTextureAnisotropy,
   };
   create_copy_pipeline();
-  resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_width, true);
+  resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height, true);
   return true;
 }
 

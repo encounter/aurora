@@ -40,6 +40,12 @@ void VISetWindowPosition(uint32_t x, uint32_t y);
 void VICenterWindow();
 
 /**
+ * Sets the internal framebuffer resolution to a specific scale factor of the configured EFB size.
+ * A value of 0.0f means "Auto", which will use the underlying swapchain size (usually the window size).
+ */
+void VISetFrameBufferScale(float scale);
+
+/**
  * \brief Lock the GX framebuffer to a specific aspect ratio, without changing the native framebuffer.
  *
  * @param width Width part of the aspect ratio fraction.

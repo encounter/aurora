@@ -321,6 +321,11 @@ struct GXState {
   std::array<gfx::TextureBind, MaxTextures> textures;
   std::array<GXTexObj_, MaxTextures> loadedTextures;
   std::array<GXTlutObj_, MaxTluts> loadedTluts;
+  AuroraViewportPolicy viewportPolicy = AURORA_VIEWPORT_FIT;
+  gfx::Viewport logicalViewport{0.f, 0.f, 640.f, 480.f, 0.f, 1.f};
+  gfx::Viewport renderViewport{0.f, 0.f, 640.f, 480.f, 0.f, 1.f};
+  gfx::ClipRect logicalScissor{0, 0, 640, 480};
+  gfx::ClipRect renderScissor{0, 0, 640, 480};
   std::array<Mat3x4<float>, MaxTexMtx> texMtxs;
   std::array<Mat3x4<float>, MaxPTTexMtx> ptTexMtxs;
   std::array<TcgConfig, MaxTexCoord> tcgs;
@@ -385,6 +390,13 @@ void shutdown() noexcept;
 void clear_copy_texture_cache() noexcept;
 void evict_texture_object(u32 texObjId) noexcept;
 void evict_tlut_object(u32 tlutObjId) noexcept;
+Vec2<uint32_t> logical_fb_size() noexcept;
+gfx::Viewport map_logical_viewport(const gfx::Viewport& logicalViewport) noexcept;
+gfx::ClipRect map_logical_scissor(const gfx::ClipRect& logicalScissor) noexcept;
+void set_logical_viewport(const gfx::Viewport& viewport) noexcept;
+void set_render_viewport(const gfx::Viewport& viewport) noexcept;
+void set_logical_scissor(const gfx::ClipRect& scissor) noexcept;
+void set_render_scissor(const gfx::ClipRect& scissor) noexcept;
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept;
 void resolve_sampled_textures(const ShaderInfo& info) noexcept;
 

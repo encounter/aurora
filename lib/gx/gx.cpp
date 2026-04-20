@@ -1,6 +1,7 @@
 #include "gx.hpp"
 
 #include "pipeline.hpp"
+#include "../dolphin/vi/vi_internal.hpp"
 #include "../webgpu/gpu.hpp"
 #include "../internal.hpp"
 #include "../gfx/common.hpp"
@@ -240,6 +241,103 @@ u32 resolved_format_for_handle(const gfx::TextureHandle& handle) {
   return GX_TF_RGBA8_PC;
 }
 } // namespace
+
+Vec2<uint32_t> logical_fb_size() noexcept {
+  return gfx::is_offscreen() ? gfx::get_render_target_size() : vi::configured_fb_size();
+}
+
+gfx::Viewport map_logical_viewport(const gfx::Viewport& logicalViewport) noexcept {
+  if (g_gxState.viewportPolicy == AURORA_VIEWPORT_NATIVE) {
+    return logicalViewport;
+  }
+
+  const auto [logicalFbWidth, logicalFbHeight] = logical_fb_size();
+  const auto [targetWidth, targetHeight] = gfx::get_render_target_size();
+  if (logicalFbWidth == 0 || logicalFbHeight == 0 || targetWidth == 0 || targetHeight == 0) {
+    return logicalViewport;
+  }
+
+  const bool stretch = g_gxState.viewportPolicy == AURORA_VIEWPORT_STRETCH;
+  const float scaleX = static_cast<float>(targetWidth) / static_cast<float>(logicalFbWidth);
+  const float scaleY = static_cast<float>(targetHeight) / static_cast<float>(logicalFbHeight);
+  const float scale = std::min(scaleX, scaleY);
+  const float xOffset =
+      stretch ? 0.f : (static_cast<float>(targetWidth) - static_cast<float>(logicalFbWidth) * scale) * 0.5f;
+  const float yOffset =
+      stretch ? 0.f : (static_cast<float>(targetHeight) - static_cast<float>(logicalFbHeight) * scale) * 0.5f;
+  const float mappedScaleX = stretch ? scaleX : scale;
+  const float mappedScaleY = stretch ? scaleY : scale;
+  return {
+      .left = xOffset + logicalViewport.left * mappedScaleX,
+      .top = yOffset + logicalViewport.top * mappedScaleY,
+      .width = logicalViewport.width * mappedScaleX,
+      .height = logicalViewport.height * mappedScaleY,
+      .znear = logicalViewport.znear,
+      .zfar = logicalViewport.zfar,
+  };
+}
+
+gfx::ClipRect map_logical_scissor(const gfx::ClipRect& logicalScissor) noexcept {
+  if (g_gxState.viewportPolicy == AURORA_VIEWPORT_NATIVE) {
+    return logicalScissor;
+  }
+
+  const auto [logicalFbWidth, logicalFbHeight] = logical_fb_size();
+  const auto [targetWidth, targetHeight] = gfx::get_render_target_size();
+  if (logicalFbWidth == 0 || logicalFbHeight == 0 || targetWidth == 0 || targetHeight == 0) {
+    return logicalScissor;
+  }
+
+  const bool stretch = g_gxState.viewportPolicy == AURORA_VIEWPORT_STRETCH;
+  const float scaleX = static_cast<float>(targetWidth) / static_cast<float>(logicalFbWidth);
+  const float scaleY = static_cast<float>(targetHeight) / static_cast<float>(logicalFbHeight);
+  const float scale = std::min(scaleX, scaleY);
+  const float xOffset =
+      stretch ? 0.f : (static_cast<float>(targetWidth) - static_cast<float>(logicalFbWidth) * scale) * 0.5f;
+  const float yOffset =
+      stretch ? 0.f : (static_cast<float>(targetHeight) - static_cast<float>(logicalFbHeight) * scale) * 0.5f;
+  const float mappedScaleX = stretch ? scaleX : scale;
+  const float mappedScaleY = stretch ? scaleY : scale;
+
+  const float left = xOffset + static_cast<float>(logicalScissor.x) * mappedScaleX;
+  const float top = yOffset + static_cast<float>(logicalScissor.y) * mappedScaleY;
+  const float right = xOffset + static_cast<float>(logicalScissor.x + logicalScissor.width) * mappedScaleX;
+  const float bottom = yOffset + static_cast<float>(logicalScissor.y + logicalScissor.height) * mappedScaleY;
+
+  const auto mappedLeft = std::clamp(static_cast<int32_t>(std::floor(left)), 0, static_cast<int32_t>(targetWidth));
+  const auto mappedTop = std::clamp(static_cast<int32_t>(std::floor(top)), 0, static_cast<int32_t>(targetHeight));
+  const auto mappedRight =
+      std::clamp(static_cast<int32_t>(std::ceil(right)), mappedLeft, static_cast<int32_t>(targetWidth));
+  const auto mappedBottom =
+      std::clamp(static_cast<int32_t>(std::ceil(bottom)), mappedTop, static_cast<int32_t>(targetHeight));
+
+  return {
+      .x = mappedLeft,
+      .y = mappedTop,
+      .width = mappedRight - mappedLeft,
+      .height = mappedBottom - mappedTop,
+  };
+}
+
+void set_logical_viewport(const gfx::Viewport& viewport) noexcept {
+  g_gxState.logicalViewport = viewport;
+  set_render_viewport(map_logical_viewport(viewport));
+}
+
+void set_render_viewport(const gfx::Viewport& viewport) noexcept {
+  g_gxState.renderViewport = viewport;
+  gfx::set_viewport(viewport);
+}
+
+void set_logical_scissor(const gfx::ClipRect& scissor) noexcept {
+  g_gxState.logicalScissor = scissor;
+  set_render_scissor(map_logical_scissor(g_gxState.logicalScissor));
+}
+
+void set_render_scissor(const gfx::ClipRect& scissor) noexcept {
+  g_gxState.renderScissor = scissor;
+  gfx::set_scissor(scissor);
+}
 
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[static_cast<size_t>(id)]; }
 

@@ -117,9 +117,27 @@ void GXSetViewport(float left, float top, float width, float height, float nearZ
 }
 
 void GXSetViewportJitter(float left, float top, float width, float height, float nearZ, float farZ, u32 field) {
+  float sx;
+  float sy;
+  float sz;
+  float ox;
+  float oy;
+  float oz;
+  float zmin;
+  float zmax;
+
   if (field == 0) {
     top -= 0.5f;
   }
+
+  sx = width / 2.0f;
+  sy = -height / 2.0f;
+  ox = 340.0f + (left + width / 2.0f);
+  oy = 340.0f + (top + height / 2.0f);
+  zmin = 1.6777215e7f * nearZ;
+  zmax = 1.6777215e7f * farZ;
+  sz = zmax - zmin;
+  oz = zmax;
 
   __gx->vpLeft = left;
   __gx->vpTop = top;
@@ -128,8 +146,15 @@ void GXSetViewportJitter(float left, float top, float width, float height, float
   __gx->vpNearz = nearZ;
   __gx->vpFarz = farZ;
 
-  // TODO: custom aurora FIFO command
-  aurora::gfx::set_viewport(left, top, width, height, nearZ, farZ);
+  GX_WRITE_U8(0x10);
+  GX_WRITE_U32(0x0005101A);
+  GX_WRITE_XF_REG_F(26, sx);
+  GX_WRITE_XF_REG_F(27, sy);
+  GX_WRITE_XF_REG_F(28, sz);
+  GX_WRITE_XF_REG_F(29, ox);
+  GX_WRITE_XF_REG_F(30, oy);
+  GX_WRITE_XF_REG_F(31, oz);
+  __gx->bpSent = 0;
 }
 
 void GXProject(f32 x, f32 y, f32 z, const f32 mtx[3][4], const f32* pm, const f32* vp, f32* sx,

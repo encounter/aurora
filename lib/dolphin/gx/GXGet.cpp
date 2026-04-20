@@ -238,14 +238,13 @@ void GXGetProjectionv(f32* p) {
 void GXGetScissor(u32* left, u32* top, u32* wd, u32* ht) {
   CHECK(left != nullptr && top != nullptr && wd != nullptr && ht != nullptr, "null scissor output");
 
-  // NOTE: changed bit size from 11 to 16 to accommodate for higher resolutions
-  const u32 tp = GET_REG_FIELD(__gx->suScis0, 16, 0);
-  const u32 lf = GET_REG_FIELD(__gx->suScis0, 16, 16);
-  const u32 bm = GET_REG_FIELD(__gx->suScis1, 16, 0);
-  const u32 rt = GET_REG_FIELD(__gx->suScis1, 16, 16);
+  const u32 tp = GET_REG_FIELD(__gx->suScis0, 11, 0);
+  const u32 lf = GET_REG_FIELD(__gx->suScis0, 11, 12);
+  const u32 bm = GET_REG_FIELD(__gx->suScis1, 11, 0);
+  const u32 rt = GET_REG_FIELD(__gx->suScis1, 11, 12);
 
-  *left = lf - 342;
-  *top = tp - 342;
+  *left = lf - 340;
+  *top = tp - 340;
   *wd = rt - lf + 1;
   *ht = bm - tp + 1;
 }

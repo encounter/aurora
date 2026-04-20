@@ -5,6 +5,9 @@
 #include <tracy/Tracy.hpp>
 
 namespace aurora::gx {
+// TODO: remove, just for testing
+bool enableLodBias = true;
+
 namespace {
 Module Log("aurora::gx");
 
@@ -13,7 +16,11 @@ bool is_alpha_bump_channel(GXChannelID id) { return id == GX_ALPHA_BUMP || id ==
 Vec4<float> texture_size_bias(const gfx::TextureBind& tex) {
   auto width = static_cast<float>(tex.texObj.width());
   auto height = static_cast<float>(tex.texObj.height());
-  return {width, height, tex.texObj.lod_bias(), 0.0f};
+  const auto vpBias =
+      enableLodBias ? log2(std::min(g_gxState.renderViewport.width / std::max(g_gxState.logicalViewport.width, 1.f),
+                                    g_gxState.renderViewport.height / std::max(g_gxState.logicalViewport.height, 1.f)))
+                    : 0.f;
+  return {width, height, tex.texObj.lod_bias() + vpBias, 0.0f};
 }
 
 void color_arg_reg_info(GXTevColorArg arg, const TevStage& stage, ShaderInfo& info) {
@@ -169,7 +176,8 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   ZoneScoped;
 
   ShaderInfo info{
-      .uniformSize = 4 + 4 + 8 + 48 + 64, // vtx_start, current_pnmtx, viewport_size, array_start, proj
+      // vtx_start, current_pnmtx, render/logical viewport size, array_start, pad, proj
+      .uniformSize = 4 + 4 + 8 + 8 + 8 + 48 + 64,
   };
 
   if (config.lineMode != 0) {
@@ -343,15 +351,17 @@ static u32 line_texcoord_mask() noexcept {
   return mask;
 }
 
-gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart,
-                         const BindGroupRanges& ranges) noexcept {
+gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart, const BindGroupRanges& ranges) noexcept {
   ZoneScoped;
 
   auto [buf, range] = gfx::map_uniform(info.uniformSize);
   buf.append(vtxStart);
   buf.append(g_gxState.currentPnMtx);
-  buf.append<f32>(gfx::get_viewport().width);
-  buf.append<f32>(gfx::get_viewport().height);
+  buf.append<f32>(g_gxState.renderViewport.width);
+  buf.append<f32>(g_gxState.renderViewport.height);
+  buf.append<f32>(g_gxState.logicalViewport.width);
+  buf.append<f32>(g_gxState.logicalViewport.height);
+  buf.append_zeroes(8); // pad
   for (const auto& vaRange : ranges.vaRanges) {
     buf.append<u32>(vaRange.offset);
   }
