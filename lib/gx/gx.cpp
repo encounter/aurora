@@ -165,7 +165,9 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
         gfx::new_static_texture_2d(obj.width(), obj.height(), obj.mip_count(), obj.format(),
                                    {static_cast<const uint8_t*>(obj.data), UINT32_MAX}, false, "GX Static Texture");
   }
-  store_cached_texture(obj, handle);
+  if (!obj.no_cache()) {
+    store_cached_texture(obj, handle);
+  }
   return handle;
 }
 
@@ -197,7 +199,9 @@ gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GX
                                    {converted.data.data(), converted.data.size()}, false, "GX Static Palette Texture");
     handle->hasArbitraryMips = converted.hasArbitraryMips;
   }
-  store_cached_texture(obj, handle, tlut.tlutObjId, tlut.tlutDataVersion);
+  if (!obj.no_cache() && !tlut.no_cache()) {
+    store_cached_texture(obj, handle, tlut.tlutObjId, tlut.tlutDataVersion);
+  }
   return handle;
 }
 
@@ -342,6 +346,13 @@ void evict_texture_object(u32 texObjId) noexcept {
     clear_texture_dependency(texObjId, it->second.tlutObjId);
     s_textureObjectCaches.erase(it);
   }
+  // If there is a loaded slot with this ID, mark it as no_cache to avoid inserting it when it's resolved.
+  // This also handles the case where the texture was created, loaded, and immediately destroyed before we resolved it.
+  for (auto& obj : g_gxState.loadedTextures) {
+    if (obj.texObjId == texObjId) {
+      obj.set_no_cache(true);
+    }
+  }
 }
 
 void evict_tlut_object(u32 tlutObjId) noexcept {
@@ -350,6 +361,13 @@ void evict_tlut_object(u32 tlutObjId) noexcept {
       s_textureObjectCaches.erase(texObjId);
     }
     s_tlutObjectCaches.erase(it);
+  }
+  // If there is a loaded slot with this ID, mark it as no_cache to avoid inserting it when it's resolved.
+  // This also handles the case where the texture was created, loaded, and immediately destroyed before we resolved it.
+  for (auto& obj : g_gxState.loadedTluts) {
+    if (obj.tlutObjId == tlutObjId) {
+      obj.set_no_cache(true);
+    }
   }
 }
 
@@ -371,7 +389,8 @@ void resolve_sampled_textures(const ShaderInfo& info) noexcept {
 
     GXTexObj_ obj = g_gxState.loadedTextures[i];
     auto& textureBind = g_gxState.textures[i];
-    if (obj.texObjId == textureBind.texObj.texObjId && obj.texDataVersion == textureBind.texObj.texDataVersion) {
+    if (obj.texObjId != 0 && obj.texObjId == textureBind.texObj.texObjId &&
+        obj.texDataVersion == textureBind.texObj.texDataVersion) {
       // Texture bind unchanged
       continue;
     }

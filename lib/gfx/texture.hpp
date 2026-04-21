@@ -94,6 +94,10 @@ struct GXTexObj_ {
   GXBool bias_clamp() const noexcept { return get_bits(mode0, 1, 21) != 0 ? GX_TRUE : GX_FALSE; }
   float min_lod() const noexcept { return static_cast<float>(get_bits(mode1, 8, 0)) / 16.0f; }
   float max_lod() const noexcept { return static_cast<float>(get_bits(mode1, 8, 8)) / 16.0f; }
+
+  // Custom flag for texture caching
+  bool no_cache() const noexcept { return (flags & 0x80) != 0; }
+  void set_no_cache(bool value) noexcept { flags = value ? flags | 0x80 : flags & ~0x80; }
 };
 static_assert(sizeof(GXTexObj_) <= sizeof(GXTexObj), "GXTexObj too small!");
 struct GXTlutObj_ {
@@ -104,6 +108,11 @@ struct GXTlutObj_ {
   GXTlutFmt format = GX_TL_IA8;
   u32 tlutObjId = 0;
   u32 tlutDataVersion = 0;
+  u8 flags = 0;
+
+  // Custom flag for texture caching
+  bool no_cache() const noexcept { return (flags & 0x80) != 0; }
+  void set_no_cache(bool value) noexcept { flags = value ? flags | 0x80 : flags & ~0x80; }
 };
 static_assert(sizeof(GXTlutObj_) <= sizeof(GXTlutObj), "GXTlutObj too small!");
 
