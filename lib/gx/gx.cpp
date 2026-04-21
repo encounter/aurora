@@ -121,13 +121,6 @@ void store_cached_texture(const GXTexObj_& obj, gfx::TextureHandle handle, u32 t
   }
 }
 
-u32 mip_count_for(const GXTexObj_& obj) {
-  if (!obj.has_mips()) {
-    return 1;
-  }
-  return std::max<u32>(static_cast<u32>(obj.max_lod()) + 1, 1u);
-}
-
 gfx::TextureHandle get_tlut_texture(const GXTlutObj_& tlut) {
   if (tlut.tlutObjId != 0) {
     auto& cache = s_tlutObjectCaches[tlut.tlutObjId];
@@ -168,8 +161,9 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
   if (const auto replacement = gfx::texture_replacement::find_replacement(obj); replacement.has_value()) {
     handle = *replacement;
   } else {
-    handle = gfx::new_static_texture_2d(obj.width(), obj.height(), mip_count_for(obj), obj.format(),
-                                        {static_cast<const u8*>(obj.data), obj.dataSize}, false, "GX Static Texture");
+    handle =
+        gfx::new_static_texture_2d(obj.width(), obj.height(), obj.mip_count(), obj.format(),
+                                   {static_cast<const uint8_t*>(obj.data), UINT32_MAX}, false, "GX Static Texture");
   }
   store_cached_texture(obj, handle);
   return handle;
@@ -192,14 +186,16 @@ gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GX
   if (const auto replacement = gfx::texture_replacement::find_replacement(obj); replacement.has_value()) {
     handle = *replacement;
   } else {
-    auto decoded = gfx::convert_texture_palette(
-        obj.format(), obj.width(), obj.height(), mip_count_for(obj), {static_cast<const u8*>(obj.data), obj.dataSize},
+    auto converted = gfx::convert_texture_palette(
+        obj.format(), obj.width(), obj.height(), obj.mip_count(), {static_cast<const u8*>(obj.data), UINT32_MAX},
         tlut.format, tlut.numEntries, {static_cast<const u8*>(tlut.data), static_cast<size_t>(tlut.numEntries) * 2});
-    if (decoded.empty()) {
+    if (converted.data.empty()) {
       return {};
     }
-    handle = gfx::new_static_texture_2d(obj.width(), obj.height(), mip_count_for(obj), GX_TF_RGBA8_PC,
-                                        {decoded.data(), decoded.size()}, false, "GX Static Palette Texture");
+    handle =
+        gfx::new_static_texture_2d(obj.width(), obj.height(), obj.mip_count(), GX_TF_RGBA8_PC,
+                                   {converted.data.data(), converted.data.size()}, false, "GX Static Palette Texture");
+    handle->hasArbitraryMips = converted.hasArbitraryMips;
   }
   store_cached_texture(obj, handle, tlut.tlutObjId, tlut.tlutDataVersion);
   return handle;
@@ -948,9 +944,9 @@ static std::pair<wgpu::FilterMode, wgpu::MipmapFilterMode> wgpu_filter_mode(GXTe
   switch (filter) {
     DEFAULT_FATAL("invalid filter mode {}", static_cast<int>(filter));
   case GX_NEAR:
-    return {wgpu::FilterMode::Nearest, wgpu::MipmapFilterMode::Linear};
+    return {wgpu::FilterMode::Nearest, wgpu::MipmapFilterMode::Undefined};
   case GX_LINEAR:
-    return {wgpu::FilterMode::Linear, wgpu::MipmapFilterMode::Linear};
+    return {wgpu::FilterMode::Linear, wgpu::MipmapFilterMode::Undefined};
   case GX_NEAR_MIP_NEAR:
     return {wgpu::FilterMode::Nearest, wgpu::MipmapFilterMode::Nearest};
   case GX_LIN_MIP_NEAR:
@@ -978,6 +974,12 @@ static u16 wgpu_aniso(GXAnisotropy aniso) {
 wgpu::SamplerDescriptor aurora::gfx::TextureBind::get_descriptor() const noexcept {
   const auto [minFilter, mipFilter] = wgpu_filter_mode(texObj.min_filter());
   const auto [magFilter, _] = wgpu_filter_mode(texObj.mag_filter());
+  float minLod = texObj.min_lod();
+  float maxLod = texObj.max_lod();
+  if (mipFilter == wgpu::MipmapFilterMode::Undefined) {
+    minLod = 0.f;
+    maxLod = 0.f;
+  }
   return {
       .label = "Generated Filtering Sampler",
       .addressModeU = wgpu_address_mode(texObj.wrap_s()),
@@ -986,6 +988,8 @@ wgpu::SamplerDescriptor aurora::gfx::TextureBind::get_descriptor() const noexcep
       .magFilter = magFilter,
       .minFilter = minFilter,
       .mipmapFilter = mipFilter,
+      .lodMinClamp = minLod,
+      .lodMaxClamp = maxLod,
       .maxAnisotropy = wgpu_aniso(texObj.max_aniso()),
   };
 } // namespace aurora::gx

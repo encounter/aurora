@@ -71,7 +71,7 @@ static constexpr std::string_view FragI4 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let rgb = textureSample(src, src_samp, in.uv).rgb;
     let i = quantize4(intensity(rgb));
-    return vec4f(i, 0.0, 0.0, 1.0);
+    return vec4f(i, i, i, i);
 }
 )"sv;
 
@@ -80,7 +80,7 @@ static constexpr std::string_view FragI8 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let rgb = textureSample(src, src_samp, in.uv).rgb;
     let i = intensity(rgb);
-    return vec4f(i, 0.0, 0.0, 1.0);
+    return vec4f(i, i, i, i);
 }
 )"sv;
 
@@ -90,7 +90,7 @@ static constexpr std::string_view FragIA4 = R"(
     let c = textureSample(src, src_samp, in.uv);
     let i = quantize4(intensity(c.rgb));
     let a = quantize4(c.a);
-    return vec4f(i, a, 0.0, 1.0);
+    return vec4f(i, i, i, a);
 }
 )"sv;
 
@@ -99,7 +99,7 @@ static constexpr std::string_view FragIA8 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let c = textureSample(src, src_samp, in.uv);
     let i = intensity(c.rgb);
-    return vec4f(i, c.a, 0.0, 1.0);
+    return vec4f(i, i, i, c.a);
 }
 )"sv;
 
@@ -115,7 +115,7 @@ static constexpr std::string_view FragRGB565 = R"(
 static constexpr std::string_view FragR4 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let r = quantize4(textureSample(src, src_samp, in.uv).r);
-    return vec4f(r, 0.0, 0.0, 1.0);
+    return vec4f(r, r, r, r);
 }
 )"sv;
 
@@ -123,7 +123,8 @@ static constexpr std::string_view FragR4 = R"(
 static constexpr std::string_view FragRA4 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let c = textureSample(src, src_samp, in.uv);
-    return vec4f(quantize4(c.r), quantize4(c.a), 0.0, 1.0);
+    let r = quantize4(c.r);
+    return vec4f(r, r, r, quantize4(c.a));
 }
 )"sv;
 
@@ -131,7 +132,7 @@ static constexpr std::string_view FragRA4 = R"(
 static constexpr std::string_view FragRA8 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let c = textureSample(src, src_samp, in.uv);
-    return vec4f(c.ra, 0.0, 1.0);
+    return vec4f(c.r, c.r, c.r, c.a);
 }
 )"sv;
 
@@ -139,7 +140,7 @@ static constexpr std::string_view FragRA8 = R"(
 static constexpr std::string_view FragA8 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let a = textureSample(src, src_samp, in.uv).a;
-    return vec4f(a, 0.0, 0.0, 1.0);
+    return vec4f(a, a, a, a);
 }
 )"sv;
 
@@ -147,7 +148,7 @@ static constexpr std::string_view FragA8 = R"(
 static constexpr std::string_view FragR8 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let r = textureSample(src, src_samp, in.uv).r;
-    return vec4f(r, 0.0, 0.0, 1.0);
+    return vec4f(r, r, r, r);
 }
 )"sv;
 
@@ -155,7 +156,7 @@ static constexpr std::string_view FragR8 = R"(
 static constexpr std::string_view FragG8 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let g = textureSample(src, src_samp, in.uv).g;
-    return vec4f(g, 0.0, 0.0, 1.0);
+    return vec4f(g, g, g, g);
 }
 )"sv;
 
@@ -163,7 +164,7 @@ static constexpr std::string_view FragG8 = R"(
 static constexpr std::string_view FragB8 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let b = textureSample(src, src_samp, in.uv).b;
-    return vec4f(b, 0.0, 0.0, 1.0);
+    return vec4f(b, b, b, b);
 }
 )"sv;
 
@@ -171,7 +172,7 @@ static constexpr std::string_view FragB8 = R"(
 static constexpr std::string_view FragRG8 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let c = textureSample(src, src_samp, in.uv);
-    return vec4f(c.rg, 0.0, 1.0);
+    return vec4f(c.r, c.r, c.r, c.g);
 }
 )"sv;
 
@@ -179,7 +180,7 @@ static constexpr std::string_view FragRG8 = R"(
 static constexpr std::string_view FragGB8 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let c = textureSample(src, src_samp, in.uv);
-    return vec4f(c.gb, 0.0, 1.0);
+    return vec4f(c.g, c.g, c.g, c.b);
 }
 )"sv;
 
@@ -191,20 +192,20 @@ struct ConvPipeline {
 };
 
 static constexpr std::array ConvPipelines{
-    ConvPipeline{GX_TF_I4, FragI4, wgpu::TextureFormat::R8Unorm, "TexCopyConv I4"},
-    ConvPipeline{GX_TF_I8, FragI8, wgpu::TextureFormat::R8Unorm, "TexCopyConv I8"},
-    ConvPipeline{GX_TF_IA4, FragIA4, wgpu::TextureFormat::RG8Unorm, "TexCopyConv IA4"},
-    ConvPipeline{GX_TF_IA8, FragIA8, wgpu::TextureFormat::RG8Unorm, "TexCopyConv IA8"},
-    // ConvPipeline{GX_TF_RGB565, FragRGB565, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv RGB565"},
-    ConvPipeline{GX_CTF_R4, FragR4, wgpu::TextureFormat::R8Unorm, "TexCopyConv R4"},
-    ConvPipeline{GX_CTF_RA4, FragRA4, wgpu::TextureFormat::RG8Unorm, "TexCopyConv RA4"},
-    ConvPipeline{GX_CTF_RA8, FragRA8, wgpu::TextureFormat::RG8Unorm, "TexCopyConv RA8"},
-    ConvPipeline{GX_CTF_A8, FragA8, wgpu::TextureFormat::R8Unorm, "TexCopyConv A8"},
-    ConvPipeline{GX_CTF_R8, FragR8, wgpu::TextureFormat::R8Unorm, "TexCopyConv R8"},
-    ConvPipeline{GX_CTF_G8, FragG8, wgpu::TextureFormat::R8Unorm, "TexCopyConv G8"},
-    ConvPipeline{GX_CTF_B8, FragB8, wgpu::TextureFormat::R8Unorm, "TexCopyConv B8"},
-    ConvPipeline{GX_CTF_RG8, FragRG8, wgpu::TextureFormat::RG8Unorm, "TexCopyConv RG8"},
-    ConvPipeline{GX_CTF_GB8, FragGB8, wgpu::TextureFormat::RG8Unorm, "TexCopyConv GB8"},
+    ConvPipeline{GX_TF_I4, FragI4, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv I4"},
+    ConvPipeline{GX_TF_I8, FragI8, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv I8"},
+    ConvPipeline{GX_TF_IA4, FragIA4, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv IA4"},
+    ConvPipeline{GX_TF_IA8, FragIA8, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv IA8"},
+    ConvPipeline{GX_TF_RGB565, FragRGB565, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv RGB565"},
+    ConvPipeline{GX_CTF_R4, FragR4, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv R4"},
+    ConvPipeline{GX_CTF_RA4, FragRA4, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv RA4"},
+    ConvPipeline{GX_CTF_RA8, FragRA8, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv RA8"},
+    ConvPipeline{GX_CTF_A8, FragA8, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv A8"},
+    ConvPipeline{GX_CTF_R8, FragR8, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv R8"},
+    ConvPipeline{GX_CTF_G8, FragG8, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv G8"},
+    ConvPipeline{GX_CTF_B8, FragB8, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv B8"},
+    ConvPipeline{GX_CTF_RG8, FragRG8, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv RG8"},
+    ConvPipeline{GX_CTF_GB8, FragGB8, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv GB8"},
 };
 
 static wgpu::BindGroupLayout g_bindGroupLayout;

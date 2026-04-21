@@ -76,7 +76,6 @@ void init_texobj_common(GXTexObj_& obj, const void* data, u16 width, u16 height,
   SET_REG_FIELD(0, obj.image0, 4, 20, format & 0xF);
 
   obj.data = data;
-  obj.dataSize = aurora::gfx::texture_replacement::compute_texture_upload_size(obj);
 }
 
 void emit_loaded_texobj_metadata(const GXTexObj_& obj, GXTexMapID id) {
@@ -141,7 +140,6 @@ void GXInitTexObjLOD(GXTexObj* obj_, GXTexFilter minFilt, GXTexFilter magFilt, f
 void GXInitTexObjData(GXTexObj* obj_, const void* data) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
   obj->data = data;
-  obj->dataSize = aurora::gfx::texture_replacement::compute_texture_upload_size(*obj);
   ++obj->texDataVersion;
 }
 
