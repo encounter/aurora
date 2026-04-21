@@ -12,6 +12,7 @@
 #include <webgpu/webgpu.h>
 #include <webgpu/webgpu_cpp.h>
 
+#include "../gfx/common.hpp"
 #include "../internal.hpp"
 #include "../window.hpp"
 
@@ -655,7 +656,7 @@ void resize_swapchain(uint32_t width, uint32_t height, uint32_t native_width, ui
   }
   if (sizeChanged) {
     gx::clear_copy_texture_cache();
-    gfx::clear_offscreen_cache();
+    gfx::clear_caches();
   }
   g_graphicsConfig.surfaceConfiguration.width = native_width;
   g_graphicsConfig.surfaceConfiguration.height = native_height;
