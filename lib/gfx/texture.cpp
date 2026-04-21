@@ -24,14 +24,16 @@ using webgpu::g_queue;
 namespace {
 Module Log("aurora::gfx");
 
-struct TextureFormatInfo {
-  uint8_t blockWidth;
-  uint8_t blockHeight;
-  uint8_t blockSize;
-  bool compressed;
-};
+constexpr u32 div_ceil(u32 value, u32 divisor) noexcept { return (value + divisor - 1) / divisor; }
 
-TextureFormatInfo format_info(wgpu::TextureFormat format) {
+wgpu::Extent3D physical_size(wgpu::Extent3D size, TextureFormatInfo info) {
+  const uint32_t width = ((size.width + info.blockWidth - 1) / info.blockWidth) * info.blockWidth;
+  const uint32_t height = ((size.height + info.blockHeight - 1) / info.blockHeight) * info.blockHeight;
+  return {.width = width, .height = height, .depthOrArrayLayers = size.depthOrArrayLayers};
+}
+} // namespace
+
+TextureFormatInfo format_info(wgpu::TextureFormat format) noexcept {
   switch (format) {
     DEFAULT_FATAL("unimplemented texture format {}", magic_enum::enum_name(format));
   case wgpu::TextureFormat::R8Unorm:
@@ -52,31 +54,39 @@ TextureFormatInfo format_info(wgpu::TextureFormat format) {
   }
 }
 
-wgpu::Extent3D physical_size(wgpu::Extent3D size, TextureFormatInfo info) {
-  const uint32_t width = ((size.width + info.blockWidth - 1) / info.blockWidth) * info.blockWidth;
-  const uint32_t height = ((size.height + info.blockHeight - 1) / info.blockHeight) * info.blockHeight;
-  return {.width = width, .height = height, .depthOrArrayLayers = size.depthOrArrayLayers};
+uint64_t calc_texture_size(wgpu::TextureFormat format, u32 width, u32 height, u32 mips) noexcept {
+  const auto info = format_info(format);
+  uint64_t total = 0;
+  for (uint32_t mip = 0; mip < mips; ++mip) {
+    const uint32_t mipWidth = std::max(width >> mip, 1u);
+    const uint32_t mipHeight = std::max(height >> mip, 1u);
+    const uint64_t widthBlocks = div_ceil(mipWidth, info.blockWidth);
+    const uint64_t heightBlocks = div_ceil(mipHeight, info.blockHeight);
+    const uint64_t mipBytes = widthBlocks * heightBlocks * info.blockSize;
+    total += mipBytes;
+  }
+  return total;
 }
-} // namespace
 
 TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format, ArrayRef<uint8_t> data,
                                     bool tlut, const char* label) noexcept {
   ZoneScoped;
 
   auto handle = new_dynamic_texture_2d(width, height, mips, format, label);
-  const auto& ref = *handle;
+  auto& ref = *handle;
 
-  ByteBuffer buffer;
+  ConvertedTexture converted;
   if (ref.gxFormat != InvalidTextureFormat) {
     if (tlut) {
       CHECK(ref.size.height == 1, "new_static_texture_2d[{}]: expected tlut height 1, got {}", label, ref.size.height);
       CHECK(ref.mipCount == 1, "new_static_texture_2d[{}]: expected tlut mipCount 1, got {}", label, ref.mipCount);
-      buffer = convert_tlut(ref.gxFormat, ref.size.width, data);
+      converted = convert_tlut(ref.gxFormat, ref.size.width, data);
     } else {
-      buffer = convert_texture(ref.gxFormat, ref.size.width, ref.size.height, ref.mipCount, data);
+      converted = convert_texture(ref.gxFormat, ref.size.width, ref.size.height, ref.mipCount, data);
     }
-    if (!buffer.empty()) {
-      data = {buffer.data(), buffer.size()};
+    if (!converted.data.empty()) {
+      data = converted.data;
+      ref.hasArbitraryMips = converted.hasArbitraryMips;
     }
   }
 
@@ -122,34 +132,6 @@ TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mi
   return handle;
 }
 
-static bool setup_swizzle(wgpu::TextureComponentSwizzleDescriptor& swizzle, u32 format) {
-  switch (format) {
-  case GX_TF_I4:
-  case GX_TF_I8:
-  case GX_TF_R8_PC:
-    swizzle.swizzle.r = wgpu::ComponentSwizzle::R;
-    swizzle.swizzle.g = wgpu::ComponentSwizzle::R;
-    swizzle.swizzle.b = wgpu::ComponentSwizzle::R;
-    swizzle.swizzle.a = wgpu::ComponentSwizzle::R;
-    return true;
-  case GX_TF_IA4:
-  case GX_TF_IA8:
-    swizzle.swizzle.r = wgpu::ComponentSwizzle::R;
-    swizzle.swizzle.g = wgpu::ComponentSwizzle::R;
-    swizzle.swizzle.b = wgpu::ComponentSwizzle::R;
-    swizzle.swizzle.a = wgpu::ComponentSwizzle::G;
-    return true;
-  case GX_TF_RGB565:
-    swizzle.swizzle.r = wgpu::ComponentSwizzle::R;
-    swizzle.swizzle.g = wgpu::ComponentSwizzle::G;
-    swizzle.swizzle.b = wgpu::ComponentSwizzle::B;
-    swizzle.swizzle.a = wgpu::ComponentSwizzle::One;
-    return true;
-  default:
-    return false;
-  }
-}
-
 TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 gxFormat,
                                      const char* label) noexcept {
   ZoneScopedS(3);
@@ -176,13 +158,9 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
       .dimension = wgpu::TextureViewDimension::e2D,
       .mipLevelCount = mips,
   };
-  wgpu::TextureComponentSwizzleDescriptor swizzle;
-  if (setup_swizzle(swizzle, gxFormat)) {
-    textureViewDescriptor.nextInChain = &swizzle;
-  }
   auto textureView = texture.CreateView(&textureViewDescriptor);
   return std::make_shared<TextureRef>(std::move(texture), std::move(textureView), wgpu::TextureView{}, size, wgpuFormat,
-                                      mips, gxFormat, false);
+                                      mips, gxFormat);
 }
 
 TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept {
@@ -213,19 +191,9 @@ TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, 
       .dimension = wgpu::TextureViewDimension::e2D,
   };
   auto attachmentTextureView = texture.CreateView(&textureViewDescriptor);
-
-  // Create texture view for sampling, with swizzle if needed
-  wgpu::TextureView sampleTextureView;
-  wgpu::TextureComponentSwizzleDescriptor swizzle;
-  if (setup_swizzle(swizzle, gxFormat)) {
-    textureViewDescriptor.nextInChain = &swizzle;
-    sampleTextureView = texture.CreateView(&textureViewDescriptor);
-  } else {
-    sampleTextureView = attachmentTextureView;
-  }
-
+  wgpu::TextureView sampleTextureView = attachmentTextureView;
   return std::make_shared<TextureRef>(std::move(texture), std::move(sampleTextureView),
-                                      std::move(attachmentTextureView), size, wgpuFormat, 1, gxFormat, true);
+                                      std::move(attachmentTextureView), size, wgpuFormat, 1, gxFormat);
 }
 
 TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept {
@@ -256,29 +224,20 @@ TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, co
       .dimension = wgpu::TextureViewDimension::e2D,
   };
   auto attachmentTextureView = texture.CreateView(&textureViewDescriptor);
-
-  // Create texture view for sampling, with swizzle if needed
-  wgpu::TextureView sampleTextureView;
-  wgpu::TextureComponentSwizzleDescriptor swizzle;
-  if (setup_swizzle(swizzle, gxFormat)) {
-    textureViewDescriptor.nextInChain = &swizzle;
-    sampleTextureView = texture.CreateView(&textureViewDescriptor);
-  } else {
-    sampleTextureView = attachmentTextureView;
-  }
-
+  wgpu::TextureView sampleTextureView = attachmentTextureView;
   return std::make_shared<TextureRef>(std::move(texture), std::move(sampleTextureView),
-                                      std::move(attachmentTextureView), size, wgpuFormat, 1, gxFormat, false);
+                                      std::move(attachmentTextureView), size, wgpuFormat, 1, gxFormat);
 }
 
-void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
+void write_texture(TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
   ZoneScoped;
 
-  ByteBuffer buffer;
+  ConvertedTexture converted;
   if (ref.gxFormat != InvalidTextureFormat) {
-    buffer = convert_texture(ref.gxFormat, ref.size.width, ref.size.height, ref.mipCount, data);
-    if (!buffer.empty()) {
-      data = {buffer.data(), buffer.size()};
+    converted = convert_texture(ref.gxFormat, ref.size.width, ref.size.height, ref.mipCount, data);
+    ref.hasArbitraryMips = converted.hasArbitraryMips;
+    if (!converted.data.empty()) {
+      data = converted.data;
     }
   }
 

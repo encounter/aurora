@@ -87,8 +87,8 @@ struct CachedBindGroup {
   uint32_t lastUsedFrame = 0;
 };
 
-constexpr uint32_t BindGroupCacheRetainFrames = 120;
-constexpr uint32_t BindGroupCacheSweepPeriod = 32;
+constexpr uint32_t BindGroupCacheRetainFrames = 32;
+constexpr uint32_t BindGroupCacheSweepPeriod = 16;
 } // namespace
 
 static absl::flat_hash_map<BindGroupRef, CachedBindGroup> g_cachedBindGroups;
@@ -310,7 +310,10 @@ uint32_t get_sample_count() noexcept {
   return g_renderPasses[g_currentRenderPass].msaaSamples;
 }
 
-void clear_offscreen_cache() { g_offscreenCache.clear(); }
+void clear_caches() noexcept {
+  g_offscreenCache.clear();
+  g_cachedBindGroups.clear();
+}
 
 static OffscreenCacheEntry get_offscreen_textures(uint32_t width, uint32_t height) {
   OffscreenCacheKey key{width, height};

@@ -16,6 +16,15 @@ struct TextureUpload {
 };
 extern std::vector<TextureUpload> g_textureUploads;
 
+struct TextureFormatInfo {
+  uint8_t blockWidth;
+  uint8_t blockHeight;
+  uint8_t blockSize;
+  bool compressed;
+};
+TextureFormatInfo format_info(wgpu::TextureFormat format) noexcept;
+uint64_t calc_texture_size(wgpu::TextureFormat format, uint32_t width, uint32_t height, uint32_t mips) noexcept;
+
 constexpr u32 InvalidTextureFormat = -1;
 struct TextureRef {
   wgpu::Texture texture;
@@ -25,18 +34,17 @@ struct TextureRef {
   wgpu::TextureFormat format;
   uint32_t mipCount;
   u32 gxFormat;
-  bool isRenderTexture; // :shrug: for now
+  bool hasArbitraryMips = false;
 
   TextureRef(wgpu::Texture texture, wgpu::TextureView sampleTextureView, wgpu::TextureView attachmentTextureView,
-             wgpu::Extent3D size, wgpu::TextureFormat format, uint32_t mipCount, u32 gxFormat, bool isRenderTexture)
+             wgpu::Extent3D size, wgpu::TextureFormat format, uint32_t mipCount, u32 gxFormat)
   : texture(std::move(texture))
   , sampleTextureView(std::move(sampleTextureView))
   , attachmentTextureView(std::move(attachmentTextureView))
   , size(size)
   , format(format)
   , mipCount(mipCount)
-  , gxFormat(gxFormat)
-  , isRenderTexture(isRenderTexture) {}
+  , gxFormat(gxFormat) {}
 };
 
 TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 gxFormat,
@@ -45,7 +53,7 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
                                      const char* label) noexcept;
 TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept;
 TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept;
-void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept;
+void write_texture(TextureRef& ref, ArrayRef<uint8_t> data) noexcept;
 }; // namespace aurora::gfx
 
 struct GXTexObj_ {
@@ -55,7 +63,6 @@ struct GXTexObj_ {
   u32 image3 = 0;
   const void* userData = nullptr;
   const void* data = nullptr;
-  u32 dataSize = 0;
   u32 mWidth = 0;
   u32 mHeight = 0;
   u32 mFormat = aurora::gfx::InvalidTextureFormat;
@@ -80,6 +87,7 @@ struct GXTexObj_ {
   }
   GXTexFilter mag_filter() const noexcept { return get_bits(mode0, 1, 4) != 0 ? GX_LINEAR : GX_NEAR; }
   GXBool has_mips() const noexcept { return (flags & 1u) != 0 ? GX_TRUE : GX_FALSE; }
+  u32 mip_count() const noexcept { return has_mips() ? std::max<u32>(static_cast<u32>(max_lod()) + 1, 1u) : 1; }
   GXBool do_edge_lod() const noexcept { return get_bits(mode0, 1, 8) == 0 ? GX_TRUE : GX_FALSE; }
   float lod_bias() const noexcept { return static_cast<float>(static_cast<int8_t>(get_bits(mode0, 8, 9))) / 32.0f; }
   GXAnisotropy max_aniso() const noexcept { return static_cast<GXAnisotropy>(get_bits(mode0, 2, 19)); }

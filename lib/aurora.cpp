@@ -104,9 +104,13 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
   Log.info("Aurora initializing");
   if (g_config.appName == nullptr) {
     g_config.appName = "Aurora";
+  } else {
+    g_config.appName = strdup(g_config.appName);
   }
   if (g_config.configPath == nullptr) {
     g_config.configPath = SDL_GetPrefPath(nullptr, g_config.appName);
+  } else {
+    g_config.configPath = strdup(g_config.configPath);
   }
   if (g_config.msaa == 0) {
     g_config.msaa = 1;
