@@ -465,13 +465,21 @@ bool initialize(AuroraBackend auroraBackend) {
         requiredLimits.maxTextureDimension3D, requiredLimits.maxTextureArrayLayers,
         requiredLimits.maxDynamicStorageBuffersPerPipelineLayout, requiredLimits.maxStorageBuffersPerShaderStage,
         requiredLimits.minUniformBufferOffsetAlignment, requiredLimits.minStorageBufferOffsetAlignment);
-    std::vector requiredFeatures{wgpu::FeatureName::TextureComponentSwizzle};
+    std::vector<wgpu::FeatureName> requiredFeatures;
+    wgpu::SupportedFeatures supportedFeatures;
+    g_adapter.GetFeatures(&supportedFeatures);
+    for (size_t i = 0; i < supportedFeatures.featureCount; ++i) {
+      const auto feature = supportedFeatures.features[i];
+      if (feature == wgpu::FeatureName::TextureCompressionBC) {
+        requiredFeatures.push_back(feature);
+      }
+    }
 #ifdef WEBGPU_DAWN
     wgpu::DawnCacheDeviceDescriptor cacheDescriptor({
-      .isolationKey = nullptr,
-      .loadDataFunction = load_from_cache,
-      .storeDataFunction = store_to_cache,
-      .functionUserdata = nullptr,
+        .isolationKey = nullptr,
+        .loadDataFunction = load_from_cache,
+        .storeDataFunction = store_to_cache,
+        .functionUserdata = nullptr,
     });
 
     constexpr std::array enableToggles{

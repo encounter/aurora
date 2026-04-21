@@ -87,6 +87,7 @@ public:
   }
   ByteBuffer(ByteBuffer const&) = delete;
   ByteBuffer& operator=(ByteBuffer const&) = delete;
+  operator ArrayRef<uint8_t>() const noexcept { return {m_data, m_length}; }
 
   [[nodiscard]] uint8_t* data() noexcept { return m_data; }
   [[nodiscard]] const uint8_t* data() const noexcept { return m_data; }
@@ -124,6 +125,12 @@ public:
   }
 
   void reserve_extra(size_t size) { resize(m_length + size, true); }
+
+  ByteBuffer clone() const {
+    ByteBuffer clone{m_length};
+    std::memcpy(clone.data(), m_data, m_length);
+    return clone;
+  }
 
 private:
   uint8_t* m_data = nullptr;

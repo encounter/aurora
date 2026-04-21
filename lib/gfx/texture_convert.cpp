@@ -3,6 +3,10 @@
 #include "../internal.hpp"
 #include "../gx/gx_fmt.hpp"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+
 namespace aurora::gfx {
 static Module Log("aurora::gfx");
 
@@ -13,10 +17,96 @@ struct RGBA8 {
   uint8_t a;
 };
 
-struct RG8 {
-  uint8_t r;
-  uint8_t g;
-};
+namespace {
+constexpr float kArbMipThreshold = 15.0f;
+
+size_t calc_size_rgba8(uint32_t width, uint32_t height) {
+  return static_cast<size_t>(width) * static_cast<size_t>(height) * sizeof(RGBA8);
+}
+
+size_t calc_offset_rgba8(uint32_t x, uint32_t y, uint32_t width) {
+  return (static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * sizeof(RGBA8);
+}
+
+/**
+ * Downscales RGBA8 data using a simple box filter.
+ */
+ByteBuffer downscale(const uint8_t* src, uint32_t srcWidth, uint32_t srcHeight, uint32_t dstWidth, uint32_t dstHeight) {
+  ByteBuffer dst{calc_size_rgba8(dstWidth, dstHeight)};
+  auto* dstPixels = dst.data();
+  for (uint32_t y = 0; y < dstHeight; ++y) {
+    const uint32_t srcY0 = std::min(y * 2, srcHeight - 1);
+    const uint32_t srcY1 = std::min(srcY0 + 1, srcHeight - 1);
+    for (uint32_t x = 0; x < dstWidth; ++x) {
+      const uint32_t srcX0 = std::min(x * 2, srcWidth - 1);
+      const uint32_t srcX1 = std::min(srcX0 + 1, srcWidth - 1);
+      const size_t sampleOffsets[4] = {
+          calc_offset_rgba8(srcX0, srcY0, srcWidth),
+          calc_offset_rgba8(srcX1, srcY0, srcWidth),
+          calc_offset_rgba8(srcX0, srcY1, srcWidth),
+          calc_offset_rgba8(srcX1, srcY1, srcWidth),
+      };
+      uint8_t* out = dstPixels + calc_offset_rgba8(x, y, dstWidth);
+      for (size_t channel = 0; channel < 4; ++channel) {
+        uint32_t sum = 0;
+        for (const size_t offset : sampleOffsets) {
+          sum += src[offset + channel];
+        }
+        out[channel] = static_cast<uint8_t>((sum + 2) / 4);
+      }
+    }
+  }
+  return dst;
+}
+
+float avg_diff(const uint8_t* lhs, const uint8_t* rhs, uint32_t width, uint32_t height) {
+  double diffSum = 0.0;
+  const size_t byteCount = calc_size_rgba8(width, height);
+  for (size_t i = 0; i < byteCount; ++i) {
+    const int diff = static_cast<int>(lhs[i]) - static_cast<int>(rhs[i]);
+    diffSum += static_cast<double>(diff * diff);
+  }
+  const double sampleCount = static_cast<double>(width) * static_cast<double>(height) * 4.0;
+  return static_cast<float>(std::sqrt(diffSum / sampleCount) / 2.56);
+}
+
+/**
+ * Attempts to detect whether the mipmaps of a texture are manually-authored, which is sometimes used for mipmap-based
+ * distance effects. This is achieved by downscaling the mipmaps using a box filter and comparing the average pixel
+ * difference between the original and downscaled mipmaps.
+ */
+bool arb_mip_check(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
+  if (mips < 2) {
+    return false;
+  }
+
+  std::array<const uint8_t*, 10> levels{};
+  std::array<uint32_t, 10> widths{};
+  std::array<uint32_t, 10> heights{};
+  CHECK(mips <= levels.size(), "arb_mip_check: unsupported mip count {}", mips);
+
+  size_t offset = 0;
+  for (uint32_t mip = 0; mip < mips; ++mip) {
+    const size_t mipSize = calc_size_rgba8(width, height);
+    CHECK(offset + mipSize <= data.size(), "arb_mip_check: expected {} bytes, got {}", offset + mipSize, data.size());
+    levels[mip] = data.data() + offset;
+    widths[mip] = width;
+    heights[mip] = height;
+    offset += mipSize;
+    width = std::max(width >> 1, 1u);
+    height = std::max(height >> 1, 1u);
+  }
+
+  ByteBuffer downscaled;
+  float totalDiff = 0.0f;
+  for (uint32_t mip = 0; mip + 1 < mips; ++mip) {
+    const uint8_t* src = mip == 0 ? levels[mip] : downscaled.data();
+    downscaled = downscale(src, widths[mip], heights[mip], widths[mip + 1], heights[mip + 1]);
+    totalDiff += avg_diff(levels[mip + 1], downscaled.data(), widths[mip + 1], heights[mip + 1]);
+  }
+  return (totalDiff / static_cast<float>(mips - 1)) > kArbMipThreshold;
+}
+} // namespace
 
 // http://www.mindcontrol.org/~hplus/graphics/expand-bits.html
 template <uint8_t v>
@@ -114,54 +204,69 @@ static ByteBuffer DecodeLinear(uint32_t width, ArrayRef<uint8_t> data) {
 
 struct TextureDecoderI4 {
   using Source = uint8_t;
-  using Target = uint8_t;
+  using Target = RGBA8;
 
   static constexpr uint32_t Frac = 2;
   static constexpr uint32_t BlockWidth = 8;
   static constexpr uint32_t BlockHeight = 8;
 
   static void decode_texel(Target* target, const Source* in, const uint32_t x) {
-    target[x] = ExpandTo8<4>(in[x / 2] >> (x & 1 ? 0 : 4) & 0xf);
+    const uint8_t intensity = ExpandTo8<4>(in[x / 2] >> (x & 1 ? 0 : 4) & 0xf);
+    target[x].r = intensity;
+    target[x].g = intensity;
+    target[x].b = intensity;
+    target[x].a = intensity;
   }
 };
 
 struct TextureDecoderI8 {
   using Source = uint8_t;
-  using Target = uint8_t;
-
-  static constexpr uint32_t Frac = 1;
-  static constexpr uint32_t BlockWidth = 8;
-  static constexpr uint32_t BlockHeight = 4;
-
-  static void decode_texel(Target* target, const Source* in, const uint32_t x) { target[x] = in[x]; }
-};
-
-struct TextureDecoderIA4 {
-  using Source = uint8_t;
-  using Target = RG8;
+  using Target = RGBA8;
 
   static constexpr uint32_t Frac = 1;
   static constexpr uint32_t BlockWidth = 8;
   static constexpr uint32_t BlockHeight = 4;
 
   static void decode_texel(Target* target, const Source* in, const uint32_t x) {
-    target[x].r = ExpandTo8<4>(in[x] & 0xf);
-    target[x].g = ExpandTo8<4>(in[x] >> 4);
+    const uint8_t intensity = in[x];
+    target[x].r = intensity;
+    target[x].g = intensity;
+    target[x].b = intensity;
+    target[x].a = intensity;
+  }
+};
+
+struct TextureDecoderIA4 {
+  using Source = uint8_t;
+  using Target = RGBA8;
+
+  static constexpr uint32_t Frac = 1;
+  static constexpr uint32_t BlockWidth = 8;
+  static constexpr uint32_t BlockHeight = 4;
+
+  static void decode_texel(Target* target, const Source* in, const uint32_t x) {
+    const uint8_t intensity = ExpandTo8<4>(in[x] & 0xf);
+    target[x].r = intensity;
+    target[x].g = intensity;
+    target[x].b = intensity;
+    target[x].a = ExpandTo8<4>(in[x] >> 4);
   }
 };
 
 struct TextureDecoderIA8 {
   using Source = uint16_t;
-  using Target = RG8;
+  using Target = RGBA8;
 
   static constexpr uint32_t Frac = 1;
   static constexpr uint32_t BlockWidth = 4;
   static constexpr uint32_t BlockHeight = 4;
 
   static void decode_texel(Target* target, const Source* in, const uint32_t x) {
-    const auto texel = in[x];
-    target[x].r = texel >> 8;
-    target[x].g = texel & 0xff;
+    const uint8_t intensity = in[x] >> 8;
+    target[x].r = intensity;
+    target[x].g = intensity;
+    target[x].b = intensity;
+    target[x].a = in[x] & 0xff;
   }
 };
 
@@ -357,47 +462,84 @@ static ByteBuffer BuildRGBA8FromCMPR(uint32_t width, uint32_t height, uint32_t m
   return buf;
 }
 
-ByteBuffer convert_texture(u32 format, uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
+ConvertedTexture convert_texture(u32 format, uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
+  ByteBuffer converted;
   switch (format) {
     DEFAULT_FATAL("convert_texture: unknown texture format {}", format);
   case GX_TF_R8_PC:
+    converted = DecodeLinear<TextureDecoderI8>(width * height, data);
+    break;
   case GX_TF_RGBA8_PC:
     return {}; // No conversion
   case GX_TF_I4:
-    return DecodeTiled<TextureDecoderI4>(width, height, mips, data);
+    converted = DecodeTiled<TextureDecoderI4>(width, height, mips, data);
+    break;
   case GX_TF_I8:
-    return DecodeTiled<TextureDecoderI8>(width, height, mips, data);
+    converted = DecodeTiled<TextureDecoderI8>(width, height, mips, data);
+    break;
   case GX_TF_IA4:
-    return DecodeTiled<TextureDecoderIA4>(width, height, mips, data);
+    converted = DecodeTiled<TextureDecoderIA4>(width, height, mips, data);
+    break;
   case GX_TF_IA8:
-    return DecodeTiled<TextureDecoderIA8>(width, height, mips, data);
+    converted = DecodeTiled<TextureDecoderIA8>(width, height, mips, data);
+    break;
   case GX_TF_C4:
-    return DecodeTiled<TextureDecoderC4>(width, height, mips, data);
+    converted = DecodeTiled<TextureDecoderC4>(width, height, mips, data);
+    break;
   case GX_TF_C8:
-    return DecodeTiled<TextureDecoderC8>(width, height, mips, data);
+    converted = DecodeTiled<TextureDecoderC8>(width, height, mips, data);
+    break;
   case GX_TF_C14X2:
     FATAL("convert_texture: C14X2 unimplemented");
   case GX_TF_RGB565:
-    return DecodeTiled<TextureDecoderRGB565>(width, height, mips, data);
+    converted = DecodeTiled<TextureDecoderRGB565>(width, height, mips, data);
+    break;
   case GX_TF_RGB5A3:
-    return DecodeTiled<TextureDecoderRGB5A3>(width, height, mips, data);
+    converted = DecodeTiled<TextureDecoderRGB5A3>(width, height, mips, data);
+    break;
   case GX_TF_RGBA8:
-    return BuildRGBA8FromGCN(width, height, mips, data);
+    converted = BuildRGBA8FromGCN(width, height, mips, data);
+    break;
   case GX_TF_CMPR:
-    return BuildRGBA8FromCMPR(width, height, mips, data);
+    converted = BuildRGBA8FromCMPR(width, height, mips, data);
+    break;
   }
+  const auto wgpuFormat = to_wgpu(format);
+  bool hasArbitraryMips = false;
+  if (wgpuFormat == wgpu::TextureFormat::RGBA8Unorm && mips > 1) {
+    hasArbitraryMips = arb_mip_check(width, height, mips, converted);
+  }
+  return {
+      .format = wgpuFormat,
+      .width = width,
+      .height = height,
+      .mips = mips,
+      .data = std::move(converted),
+      .hasArbitraryMips = hasArbitraryMips,
+  };
 }
 
-ByteBuffer convert_tlut(u32 format, uint32_t width, ArrayRef<uint8_t> data) {
+ConvertedTexture convert_tlut(u32 format, uint32_t width, ArrayRef<uint8_t> data) {
+  ByteBuffer converted;
   switch (format) {
     DEFAULT_FATAL("convert_tlut: unsupported tlut format {}", format);
   case GX_TF_IA8: // GX_TL_IA8
-    return DecodeLinear<TextureDecoderIA8>(width, data);
+    converted = DecodeLinear<TextureDecoderIA8>(width, data);
+    break;
   case GX_TF_RGB565: // GX_TL_RGB565
-    return DecodeLinear<TextureDecoderRGB565>(width, data);
+    converted = DecodeLinear<TextureDecoderRGB565>(width, data);
+    break;
   case GX_TF_RGB5A3: // GX_TL_RGB5A3
-    return DecodeLinear<TextureDecoderRGB5A3>(width, data);
+    converted = DecodeLinear<TextureDecoderRGB5A3>(width, data);
+    break;
   }
+  return {
+      .format = wgpu::TextureFormat::R16Sint,
+      .width = width,
+      .height = 1,
+      .mips = 1,
+      .data = std::move(converted),
+  };
 }
 
 GXTexFmt tlut_texture_format(GXTlutFmt format) noexcept {
@@ -412,22 +554,22 @@ GXTexFmt tlut_texture_format(GXTlutFmt format) noexcept {
   }
 }
 
-ByteBuffer convert_texture_palette(u32 textureFormat, uint32_t width, uint32_t height, uint32_t mips,
-                                   ArrayRef<uint8_t> textureData, GXTlutFmt tlutFormat, uint16_t tlutEntries,
-                                   ArrayRef<uint8_t> tlutData) {
+ConvertedTexture convert_texture_palette(u32 textureFormat, uint32_t width, uint32_t height, uint32_t mips,
+                                         ArrayRef<uint8_t> textureData, GXTlutFmt tlutFormat, uint16_t tlutEntries,
+                                         ArrayRef<uint8_t> tlutData) {
   const auto indices = convert_texture(textureFormat, width, height, mips, textureData);
-  if (indices.empty()) {
+  if (indices.data.empty()) {
     return {};
   }
   const auto palette = convert_tlut(tlut_texture_format(tlutFormat), tlutEntries, tlutData);
-  if (palette.empty()) {
+  if (palette.data.empty()) {
     return {};
   }
 
   ByteBuffer pixels;
-  pixels.reserve_extra(indices.size() / sizeof(u16) * 4);
+  pixels.reserve_extra(indices.data.size() / sizeof(u16) * 4);
 
-  const auto* indexData = reinterpret_cast<const u16*>(indices.data());
+  const auto* indexData = reinterpret_cast<const u16*>(indices.data.data());
   size_t offset = 0;
   for (u32 mip = 0; mip < mips; ++mip) {
     const size_t pixelCount = static_cast<size_t>(width) * height;
@@ -440,18 +582,27 @@ ByteBuffer convert_texture_palette(u32 textureFormat, uint32_t width, uint32_t h
       }
       if (tlutFormat == GX_TL_IA8) {
         const size_t src = static_cast<size_t>(index) * 2;
-        const u8 intensity = palette.data()[src];
-        const uint8_t rgba[4] = {intensity, intensity, intensity, palette.data()[src + 1]};
+        const u8 intensity = palette.data.data()[src];
+        const uint8_t rgba[4] = {intensity, intensity, intensity, palette.data.data()[src + 1]};
         pixels.append(rgba, sizeof(rgba));
       } else {
         const size_t src = static_cast<size_t>(index) * 4;
-        pixels.append(palette.data() + src, 4);
+        pixels.append(palette.data.data() + src, 4);
       }
     }
     offset += pixelCount;
     width = std::max(width >> 1, 1u);
     height = std::max(height >> 1, 1u);
   }
-  return pixels;
+
+  bool hasArbitraryMips = arb_mip_check(width, height, mips, pixels);
+  return {
+      .format = wgpu::TextureFormat::RGBA8Unorm,
+      .width = width,
+      .height = height,
+      .mips = mips,
+      .data = std::move(pixels),
+      .hasArbitraryMips = hasArbitraryMips,
+  };
 }
 } // namespace aurora::gfx

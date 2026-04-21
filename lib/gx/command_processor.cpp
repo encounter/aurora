@@ -1099,7 +1099,6 @@ static void handle_bp(u32 value, bool bigEndian) {
         slot.mWidth = 0;
         slot.mHeight = 0;
         slot.mFormat = gfx::InvalidTextureFormat;
-        slot.dataSize = 0;
         break;
       case TexBpRegMapping::Kind::Image3:
         slot.image3 = value;
@@ -1749,7 +1748,6 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     pos += 4;
     slot.texDataVersion = read_u32(data + pos, bigEndian);
     pos += 4;
-    slot.dataSize = gfx::texture_replacement::compute_texture_upload_size(slot);
     g_gxState.stateDirty = true;
   } else if (subCmd == GX_LOAD_AURORA_TLUT) {
     CHECK(pos + 23 <= size, "GX_LOAD_AURORA_TLUT read overrun");
