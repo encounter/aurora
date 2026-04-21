@@ -768,7 +768,7 @@ void CardRawFile::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) co
 
 void CardRawFile::getEncoding(uint16_t& encoding) const { encoding = m_ch.m_encoding; }
 
-void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
+void CardRawFile::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   m_ch.raw.fill(0xFF);
 
   uint64_t rand = static_cast<uint64_t>(getGCTime());

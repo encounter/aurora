@@ -61,6 +61,8 @@ ECardResult CardGciFolder::createFile(const char* filename, size_t size, FileHan
 
   std::memcpy(gciFileHeader.m_game, m_game, 4);
   std::memcpy(gciFileHeader.m_maker, m_maker, 2);
+
+  gciFileHeader.m_modifiedTime = static_cast<uint32_t>(getGCTime());
   gciFileHeader.m_blockCount = neededBlocks;
 
   FileIO file((m_folderPath / gciFilename).string(), true);
