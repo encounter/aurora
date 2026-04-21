@@ -59,7 +59,7 @@ void write_texture(TextureRef& ref, ArrayRef<uint8_t> data) noexcept;
 struct GXTexObj_ {
   u32 mode0 = 0;
   u32 mode1 = 0;
-  u32 image0 = 0;
+  u32 image0 = UINT32_MAX;
   u32 image3 = 0;
   const void* userData = nullptr;
   const void* data = nullptr;
@@ -73,11 +73,8 @@ struct GXTexObj_ {
 
   static constexpr u32 get_bits(u32 reg, u32 size, u32 shift) noexcept { return (reg >> shift) & ((1u << size) - 1); }
 
-  // Don't fall back to raw_width/raw_height: when the object is zeroed, they will return 1 instead of 0
-  u32 width() const noexcept { return mWidth; }
-  u32 raw_width() const noexcept { return get_bits(image0, 10, 0) + 1; }
-  u32 height() const noexcept { return mHeight; }
-  u32 raw_height() const noexcept { return get_bits(image0, 10, 10) + 1; }
+  u32 width() const noexcept { return mWidth != 0 ? mWidth : get_bits(image0, 10, 0) + 1 & 0x3FF; }
+  u32 height() const noexcept { return mHeight != 0 ? mHeight : get_bits(image0, 10, 10) + 1 & 0x3FF; }
   u32 raw_format() const noexcept { return get_bits(image0, 4, 20); }
   u32 format() const noexcept { return mFormat != aurora::gfx::InvalidTextureFormat ? mFormat : raw_format(); }
   GXTexWrapMode wrap_s() const noexcept { return static_cast<GXTexWrapMode>(get_bits(mode0, 2, 0)); }
