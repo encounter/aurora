@@ -419,6 +419,10 @@ static inline bool requires_load_conversion(const GXTexObj_& obj) {
   }
 }
 static inline bool is_palette_format(u32 fmt) { return fmt == GX_TF_C4 || fmt == GX_TF_C8 || fmt == GX_TF_C14X2; }
+static inline bool is_depth_format(u32 fmt) {
+  return fmt == GX_TF_Z8 || fmt == GX_TF_Z16 || fmt == GX_TF_Z24X8 || fmt == GX_CTF_Z4 || fmt == GX_CTF_Z8M ||
+         fmt == GX_CTF_Z8L || fmt == GX_CTF_Z16L;
+}
 
 struct AttrConfig {
   u8 attrType = GX_NONE; // GXAttrType
