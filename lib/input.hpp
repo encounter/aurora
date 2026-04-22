@@ -56,4 +56,6 @@ extern absl::flat_hash_map<Uint32, GameController> g_GameControllers;
 
 void set_mouse_scroll(float scrollX, float scrollY) noexcept;
 void get_mouse_scroll(float* scrollX, float* scrollY) noexcept;
+
+void shutdown() noexcept;
 } // namespace aurora::input

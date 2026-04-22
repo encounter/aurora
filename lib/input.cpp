@@ -156,4 +156,14 @@ void get_mouse_scroll(float* scrollX, float* scrollY) noexcept {
   *scrollY = g_MouseStatus.scrollY;
 }
 
+void shutdown() noexcept {
+  // Upon shutdown we want to ensure all controllers are in a default state, so force all rumble supporting controllers
+  // to shut off their rumble motors. 
+  for (const auto& controller : g_GameControllers) {
+    if (!controller.second.m_hasRumble) {
+      continue;
+    }
+    controller_rumble(controller.first, 0, 0, 0);
+  }
+}
 } // namespace aurora::input
