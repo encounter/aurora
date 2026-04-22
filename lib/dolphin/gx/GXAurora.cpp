@@ -84,6 +84,11 @@ void GXSetScissorRender(u32 left, u32 top, u32 wd, u32 ht) {
   GX_WRITE_U32(ht);
 }
 
+void GXSetPixelLighting(bool enabled) {
+  GX_WRITE_AURORA(GX_LOAD_AURORA_PIXEL_LIGHTING);
+  GX_WRITE_U8(enabled ? 1 : 0);
+}
+
 void GXCreateFrameBuffer(u32 width, u32 height) {
   aurora::gx::fifo::drain();
   aurora::gfx::begin_offscreen(width, height);

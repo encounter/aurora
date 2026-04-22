@@ -1784,6 +1784,9 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
   } else if (subCmd == GX_LOAD_AURORA_DEBUG_MARKER_INSERT) {
     auto label = read_string(data, pos, size, bigEndian);
     gfx::insert_debug_marker(std::move(label));
+  } else if (subCmd == GX_LOAD_AURORA_PIXEL_LIGHTING) {
+    g_gxState.perPixelLighting = data[pos++] != 0;
+    g_gxState.stateDirty = true;
   }
 
   else {

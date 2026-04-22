@@ -592,7 +592,7 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
   std::string_view swizzle = alpha ? ".a"sv : ""sv;
   std::string outVar;
   std::string_view posVar;
-  if (UsePerPixelLighting) {
+  if (config.perPixelLighting) {
     outVar = fmt::format("rast{}", i);
     posVar = "in.mv_pos"sv;
   } else {
@@ -601,7 +601,7 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
   }
   std::string ambSrc, matSrc;
   if (cc.ambSrc == GX_SRC_VTX) {
-    if (UsePerPixelLighting) {
+    if (config.perPixelLighting) {
       ambSrc = fmt::format("in.clr{}", i);
     } else {
       ambSrc = vtx_attr(config, static_cast<GXAttr>(GX_VA_CLR0 + i));
@@ -610,7 +610,7 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
     ambSrc = fmt::format("ubuf.cc{0}{1}_amb", i, alpha ? "a"sv : ""sv);
   }
   if (cc.matSrc == GX_SRC_VTX) {
-    if (UsePerPixelLighting) {
+    if (config.perPixelLighting) {
       matSrc = fmt::format("in.clr{}", i);
     } else {
       matSrc = vtx_attr(config, static_cast<GXAttr>(GX_VA_CLR0 + i));
@@ -632,7 +632,7 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
           var dist_attn = dot(light.dist_att, vec3f(1.0, dist, dist2));
           attn = max(0.0, cos_attn / dist_attn);)""");
   } else if (cc.attnFn == GX_AF_SPEC) {
-    std::string_view normal = UsePerPixelLighting ? "in.mv_nrm"sv : "mv_nrm"sv;
+    std::string_view normal = config.perPixelLighting ? "in.mv_nrm"sv : "mv_nrm"sv;
     std::string dist_attn = diffFn != GX_DF_NONE
                                 ? "max(0.0, dot(normalize(light.dist_att), vec3f(1.0, attn, attn * attn)));"
                                 : "max(0.0, dot(light.dist_att, vec3f(1.0, attn, attn * attn)));";
@@ -647,13 +647,13 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
   if (diffFn == GX_DF_NONE) {
     lightDiffFn = "1.0"sv;
   } else if (diffFn == GX_DF_SIGN) {
-    if (UsePerPixelLighting) {
+    if (config.perPixelLighting) {
       lightDiffFn = "dot(ldir, in.mv_nrm)"sv;
     } else {
       lightDiffFn = "dot(ldir, mv_nrm)"sv;
     }
   } else if (diffFn == GX_DF_CLAMP) {
-    if (UsePerPixelLighting) {
+    if (config.perPixelLighting) {
       lightDiffFn = "max(0.0, dot(ldir, in.mv_nrm))"sv;
     } else {
       lightDiffFn = "max(0.0, dot(ldir, mv_nrm))"sv;
@@ -936,7 +936,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
         "    cos_att: vec3f,\n"
         "    dist_att: vec3f,\n"
         "};";
-    if (UsePerPixelLighting) {
+    if (config.perPixelLighting) {
       vtxOutAttrs += fmt::format("\n    @location({}) mv_pos: vec3f,", vtxOutIdx++);
       vtxOutAttrs += fmt::format("\n    @location({}) mv_nrm: vec3f,", vtxOutIdx++);
       vtxXfrAttrs += fmt::format(FMT_STRING(R"""(
@@ -966,7 +966,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     }
 
     // Output vertex color if necessary
-    if (UsePerPixelLighting) {
+    if (config.perPixelLighting) {
       if ((cc.lightingEnabled && cc.ambSrc == GX_SRC_VTX) || cc.matSrc == GX_SRC_VTX ||
           (cca.lightingEnabled && cca.ambSrc == GX_SRC_VTX) || cca.matSrc == GX_SRC_VTX) {
         vtxOutAttrs += fmt::format("\n    @location({}) clr{}: vec4f,", vtxOutIdx++, i);
@@ -974,7 +974,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
       }
     }
 
-    if (UsePerPixelLighting) {
+    if (config.perPixelLighting) {
       fragmentFnPre += fmt::format("\n    var rast{}: vec4f;", i);
       fragmentFnPre += lighting_func(config, cc, i, false);
       fragmentFnPre += lighting_func(config, cca, i, true);

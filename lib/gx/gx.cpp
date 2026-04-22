@@ -776,10 +776,13 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     config.shaderConfig.indStages[i] = g_gxState.indStages[i];
   }
   config.shaderConfig.numIndStages = g_gxState.numIndStages;
+
+  bool anyLightingEnabled = false;
   for (u8 i = 0; i < MaxColorChannels; ++i) {
     const auto& cc = g_gxState.colorChannelConfig[i];
     if (cc.lightingEnabled) {
       config.shaderConfig.colorChannels[i] = cc;
+      anyLightingEnabled = true;
     } else {
       // Only matSrc matters when lighting disabled
       config.shaderConfig.colorChannels[i] = {
@@ -787,6 +790,10 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
       };
     }
   }
+
+  // Only set this bit if lighting actually is enabled, avoid creating unnecessary pipeline permutations.
+  config.shaderConfig.perPixelLighting = anyLightingEnabled && g_gxState.perPixelLighting;
+
   for (u8 i = 0; i < g_gxState.numTexGens; ++i) {
     config.shaderConfig.tcgs[i] = g_gxState.tcgs[i];
   }
