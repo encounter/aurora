@@ -59,6 +59,10 @@ extern "C" {
 
 #define GX_LOAD_AURORA_DESTROY_TLUT 0x0033
 
+/**
+ * Sets whether per-pixel lighting is enabled. Must be followed by a single-byte value (1 or 0).
+ */
+#define GX_LOAD_AURORA_PIXEL_LIGHTING 0x0040
 
 /*
  * Debug marker stuff
@@ -121,6 +125,11 @@ void GXCreateFrameBuffer(u32 width, u32 height);
  * Must be called after GXCreateFrameBuffer() to resume normal rendering.
  */
 void GXRestoreFrameBuffer(void);
+
+/**
+ * Sets whether per-pixel lighting is enabled.
+ */
+void GXSetPixelLighting(bool enabled);
 
 #if __cplusplus
 }

@@ -47,7 +47,6 @@ constexpr float GX_LARGE_NUMBER = -1048576.0f;
 namespace aurora::gx {
 constexpr bool EnableNormalVisualization = false;
 constexpr bool EnableDebugPrints = false;
-constexpr bool UsePerPixelLighting = true;
 constexpr bool UseReversedZ = true;
 
 constexpr u32 MaxTextures = GX_MAX_TEXMAP;
@@ -294,6 +293,7 @@ struct GXState {
   Mat4x4<float> proj;
   GXProjectionType projType; // for GXGetProjectionv
   FogState fog;
+  bool perPixelLighting = false;
   GXCullMode cullMode = GX_CULL_BACK;
   u8 lineWidth = 0;
   u8 pointSize = 0;
@@ -438,7 +438,8 @@ struct ShaderConfig {
   u8 fogType = GX_FOG_NONE;
   u8 vtxStride = 0;
   u8 lineMode : 2 = 0; // 1 = GX_LINES, 2 = GX_LINESTRIP, 3 = GX_POINTS
-  u8 pad1 : 6 = 0;
+  bool perPixelLighting : 1 = false;
+  u8 pad1 : 5 = 0;
   u8 pad2 = 0;
   std::array<AttrConfig, MaxVtxAttr> attrs;
   std::array<TevSwap, MaxTevSwap> tevSwapTable;
