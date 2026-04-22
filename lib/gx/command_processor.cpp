@@ -1748,6 +1748,7 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     pos += 4;
     slot.texDataVersion = read_u32(data + pos, bigEndian);
     pos += 4;
+    slot.set_no_cache(false); // Reset no-cache flag
     g_gxState.stateDirty = true;
   } else if (subCmd == GX_LOAD_AURORA_TLUT) {
     CHECK(pos + 23 <= size, "GX_LOAD_AURORA_TLUT read overrun");
@@ -1765,6 +1766,7 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     pos += 4;
     slot.tlutDataVersion = read_u32(data + pos, bigEndian);
     pos += 4;
+    slot.set_no_cache(false); // Reset no-cache flag
     g_gxState.stateDirty = true;
   } else if (subCmd == GX_LOAD_AURORA_DESTROY_TEXOBJ) {
     CHECK(pos + 4 <= size, "GX_LOAD_AURORA_DESTROY_TEXOBJ read overrun");

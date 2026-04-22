@@ -13,7 +13,7 @@ enum class SampleFilter : uint8_t {
 
 struct ConvRequest {
   GXTexFmt fmt;
-  wgpu::TextureView srcView; // View of resolved EFB / offscreen color
+  wgpu::TextureView srcView; // View of resolved EFB / offscreen color/depth
   Range uniformRange;        // UV transform uniform (offset + scale)
   TextureHandle dst;         // Destination texture
   SampleFilter sampleFilter = SampleFilter::Nearest;

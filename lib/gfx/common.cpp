@@ -122,6 +122,7 @@ struct RenderPass {
   wgpu::TextureView depthView;
   wgpu::Texture copySourceTexture;
   wgpu::TextureView copySourceView;
+  wgpu::TextureView copySourceDepthView;
   wgpu::Extent3D targetSize;
   uint32_t msaaSamples = 1;
 
@@ -153,6 +154,7 @@ static void set_efb_targets(RenderPass& pass) {
       webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.texture : webgpu::g_frameBuffer.texture;
   pass.copySourceView =
       webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.view : webgpu::g_frameBuffer.view;
+  pass.copySourceDepthView = webgpu::g_depthBuffer.view;
   pass.targetSize = webgpu::g_frameBuffer.size;
   pass.msaaSamples = webgpu::g_graphicsConfig.msaaSamples;
 }
@@ -267,6 +269,7 @@ void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool cl
       .depthView = prevPass.depthView,
       .copySourceTexture = prevPass.copySourceTexture,
       .copySourceView = prevPass.copySourceView,
+      .copySourceDepthView = prevPass.copySourceDepthView,
       .targetSize = prevPass.targetSize,
       .msaaSamples = msaaSamples,
       .clearColorValue = clearColorValue,
@@ -394,6 +397,7 @@ void begin_offscreen(uint32_t width, uint32_t height) {
       .depthView = g_offscreenDepth.view,
       .copySourceTexture = g_offscreenColor.texture,
       .copySourceView = g_offscreenColor.view,
+      .copySourceDepthView = g_offscreenDepth.view,
       .targetSize = {width, height, 1},
       .msaaSamples = 1,
       .clearColorValue = {0.f, 0.f, 0.f, 0.f},
@@ -772,9 +776,13 @@ void render(wgpu::CommandEncoder& cmd) {
       const bool needsConversion = tex_copy_conv::needs_conversion(passInfo.resolveFormat);
       const bool needsScaling = dstSize.width != static_cast<uint32_t>(passInfo.resolveRect.width) ||
                                 dstSize.height != static_cast<uint32_t>(passInfo.resolveRect.height);
+      const bool isDepth = gx::is_depth_format(passInfo.resolveFormat);
+      if (isDepth && passInfo.msaaSamples > 1) {
+        Log.fatal("Depth tex copies from multisampled EFB targets are not supported");
+      }
       const tex_copy_conv::ConvRequest convReq{
           .fmt = passInfo.resolveFormat,
-          .srcView = passInfo.copySourceView,
+          .srcView = isDepth ? passInfo.copySourceDepthView : passInfo.copySourceView,
           .uniformRange = passInfo.resolveUniformRange,
           .dst = passInfo.resolveTarget,
           .sampleFilter = needsScaling ? tex_copy_conv::SampleFilter::Linear : tex_copy_conv::SampleFilter::Nearest,

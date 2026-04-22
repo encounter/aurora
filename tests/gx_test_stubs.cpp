@@ -65,8 +65,20 @@ std::vector<TextureUpload> g_textureUploads;
 // --- get_texture ---
 namespace aurora::gx {
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[id]; }
-void evict_texture_object(u32) noexcept {}
-void evict_tlut_object(u32) noexcept {}
+void evict_texture_object(u32 texObjId) noexcept {
+  for (auto& obj : g_gxState.loadedTextures) {
+    if (obj.texObjId == texObjId) {
+      obj.set_no_cache(true);
+    }
+  }
+}
+void evict_tlut_object(u32 tlutObjId) noexcept {
+  for (auto& obj : g_gxState.loadedTluts) {
+    if (obj.tlutObjId == tlutObjId) {
+      obj.set_no_cache(true);
+    }
+  }
+}
 void shutdown() noexcept {}
 Vec2<uint32_t> logical_fb_size() noexcept { return {640, 480}; }
 gfx::Viewport map_logical_viewport(const gfx::Viewport& logicalViewport) noexcept { return logicalViewport; }
