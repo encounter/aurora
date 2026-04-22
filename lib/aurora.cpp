@@ -201,6 +201,7 @@ void shutdown() noexcept {
   gfx::shutdown();
   webgpu::shutdown();
 #endif
+  input::shutdown();
   window::shutdown();
 }
 
