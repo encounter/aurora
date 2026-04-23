@@ -21,9 +21,7 @@ CardGciFolder::GciFile* CardGciFolder::getFile(uint32_t idx) {
   return nullptr;
 }
 
-CardGciFolder::GciFile* CardGciFolder::getFile(FileHandle& fh) {
-  return getFile(fh.getFileNo());
-}
+CardGciFolder::GciFile* CardGciFolder::getFile(FileHandle& fh) { return getFile(fh.getFileNo()); }
 
 const CardGciFolder::GciFile* CardGciFolder::getFile(uint32_t idx) const {
   if (m_files.size() > idx) {
@@ -34,9 +32,7 @@ const CardGciFolder::GciFile* CardGciFolder::getFile(uint32_t idx) const {
   return nullptr;
 }
 
-const CardGciFolder::GciFile* CardGciFolder::getFile(FileHandle& fh) const {
-  return getFile(fh.getFileNo());
-}
+const CardGciFolder::GciFile* CardGciFolder::getFile(FileHandle& fh) const { return getFile(fh.getFileNo()); }
 
 CardGciFolder::CardGciFolder() {}
 
@@ -50,9 +46,7 @@ CardGciFolder::CardGciFolder(CardGciFolder&& other) {
   CardGciFolder::setCurrentMaker(other.m_maker);
 }
 
-CardGciFolder& CardGciFolder::operator=(CardGciFolder&& other) {
-  return *this;
-}
+CardGciFolder& CardGciFolder::operator=(CardGciFolder&& other) { return *this; }
 
 void CardGciFolder::InitCard(const char* game, const char* maker) {
   setCurrentGame(game);
@@ -110,6 +104,8 @@ ECardResult CardGciFolder::createFile(const char* filename, size_t size, FileHan
 
   m_files.push_back({*gciFileHeader, fileSize, gciFilename, false}); // push non-endian swapped header first
 
+  handleOut = FileHandle(m_files.size() - 1, 0);
+
   // write big endian header for dolphin compat
   gciFileHeader->swapEndian();
   FileIO file((m_folderPath / gciFilename).string(), true);
@@ -138,13 +134,9 @@ void CardGciFolder::deleteFile(const FileHandle& fh) {
     fileIO.deleteFile();
 }
 
-ECardResult CardGciFolder::deleteFile(const char* filename) {
-  return ECardResult::NOCARD;
-}
+ECardResult CardGciFolder::deleteFile(const char* filename) { return ECardResult::NOCARD; }
 
-ECardResult CardGciFolder::deleteFile(uint32_t fileno) {
-  return ECardResult::NOCARD;
-}
+ECardResult CardGciFolder::deleteFile(uint32_t fileno) { return ECardResult::NOCARD; }
 
 ECardResult CardGciFolder::renameFile(const char* oldName, const char* newName) {
   for (auto& gciFile : m_files) {
@@ -322,9 +314,7 @@ void CardGciFolder::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) 
   filesNotUsed = MaxFiles;
 }
 
-void CardGciFolder::getEncoding(uint16_t& encoding) const {
-  encoding = (uint16_t)m_encoding;
-}
+void CardGciFolder::getEncoding(uint16_t& encoding) const { encoding = (uint16_t)m_encoding; }
 
 void CardGciFolder::format(ECardSlot deviceId, ECardSize size, EEncoding encoding) {
   m_encoding = encoding;

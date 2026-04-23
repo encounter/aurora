@@ -14,6 +14,15 @@ extern "C" {
 #define CARD_MAX_FILE 127
 #define CARD_ICON_MAX 8
 
+#if TARGET_PC
+
+enum CARDFileType {
+  RawImage,
+  GciFolder,
+};
+
+#endif
+
 typedef void (*CARDCallback)(s32 chan, s32 result);
 
 typedef struct CARDFileInfo {
@@ -241,8 +250,7 @@ void CARDSetGameAndMaker(const s32 chan, const char* game, const char* maker);
 void CARDDetectDolphin(s32 chan);
 // pass -1 to set both
 void CARDSetBasePath(const char*, s32 chan);
-// 0 for RAW card format, 1 for GCI folder
-void CARDSetLoadType(s32 type);
+void CARDSetLoadType(CARDFileType type);
 
 #else
 void CARDInit(void);

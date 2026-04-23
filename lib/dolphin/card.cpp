@@ -15,14 +15,17 @@ std::array<std::unique_ptr<aurora::card::ICard>, 2> CardChannels = {{}};
 std::array<std::string, 2> cardPaths;
 
 constexpr uint16_t CARD_SECTOR_SIZE = 8192;
-#define GET_CARD(slot) CardChannels[slot]
-#define CARD_READY(slot) (UseGciFolder ? true : std::filesystem::exists(CardChannels[slot]->cardFilename()))
-#define CARD_STUB Log.debug("{} is stubbed.", __FUNCTION__);
 
 #define CARD_REGION "USA"
 
+#define GET_CARD(slot) CardChannels[slot]
+#define CARD_READY(slot) (SelectedFileType == GciFolder ? true : std::filesystem::exists(CardChannels[slot]->cardFilename()))
+#define CARD_STUB Log.debug("{} is stubbed.", __FUNCTION__);
+
+#define CARD_USE_GCI_FOLDER SelectedFileType == GciFolder
+
 bool Initialized = false;
-bool UseGciFolder = true;
+CARDFileType SelectedFileType = CARDFileType::GciFolder;
 bool UseFastMode = false;
 
 void CopyKabuFileHandleToDolphin(const s32 chan, const aurora::card::FileHandle& handle, CARDFileInfo* fileInfo) {
@@ -41,7 +44,7 @@ std::string GetCardFullPath(const std::string& path, const aurora::card::ECardSl
 
   std::filesystem::path filePath(path);
 
-  if (UseGciFolder) {
+  if (CARD_USE_GCI_FOLDER) {
     return (filePath / CARD_REGION / (slot == aurora::card::ECardSlot::SlotA ? "Card A" : "Card B")).string();
   } else {
     return (filePath / fmt::format("MemoryCard{}.{}.raw", slot == aurora::card::ECardSlot::SlotA ? "A" : "B", CARD_REGION)).string();
@@ -96,15 +99,15 @@ void CARDDetectDolphin(const s32 chan) {
 
   if (chan == 0 || chan == 1) {
     cardPaths[chan] =
-        aurora::card::ResolveDolphinCardPath(static_cast<aurora::card::ECardSlot>(chan), CARD_REGION, UseGciFolder);
+        aurora::card::ResolveDolphinCardPath(static_cast<aurora::card::ECardSlot>(chan), CARD_REGION, CARD_USE_GCI_FOLDER);
     if (cardPaths[chan].empty()) {
       Log.error("Failed to detect Dolphin Card!");
       return;
     }
     Log.info("Detected Dolphin Card at: {}", cardPaths[chan]);
   } else {
-    cardPaths[0] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotA, CARD_REGION, UseGciFolder);
-    cardPaths[1] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotB, CARD_REGION, UseGciFolder);
+    cardPaths[0] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotA, CARD_REGION, CARD_USE_GCI_FOLDER);
+    cardPaths[1] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotB, CARD_REGION, CARD_USE_GCI_FOLDER);
 
     if (cardPaths[0].empty() && cardPaths[1].empty()) {
       Log.error("Failed to detect Dolphin Card!");
@@ -135,14 +138,8 @@ void CARDSetBasePath(const char* path, const s32 chan) {
   }
 }
 
-void CARDSetLoadType(s32 type) {
-  if (type == 0) {
-    UseGciFolder = false;
-  }else if (type == 1) {
-    UseGciFolder = true;
-  }else {
-    Log.error("Invalid CARD load type! Type: {}", type);
-  }
+void CARDSetLoadType(CARDFileType type) {
+  SelectedFileType = type;
 }
 
 void CARDInit(const char* game, const char* maker) {
@@ -153,10 +150,14 @@ void CARDInit(const char* game, const char* maker) {
   Log.info("CARD API Initialized BUILT <{} {}>", __DATE__, __TIME__);
 
   for (int i = 0; i < CardChannels.size(); ++i) {
-    if (UseGciFolder)
-      CardChannels[i] = std::make_unique<aurora::card::CardGciFolder>();
-    else
+    switch (SelectedFileType) {
+    case RawImage:
       CardChannels[i] = std::make_unique<aurora::card::CardRawFile>();
+      break;
+    case GciFolder:
+      CardChannels[i] = std::make_unique<aurora::card::CardGciFolder>();
+      break;
+    }
     CardChannels[i]->InitCard(game, maker);
   }
 
