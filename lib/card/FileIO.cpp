@@ -1,6 +1,7 @@
 #include "FileIO.hpp"
 
 #include <SDL3/SDL_iostream.h>
+#include <SDL3/SDL_filesystem.h>
 
 #include <cstdint>
 #include <utility>
@@ -96,6 +97,23 @@ bool FileIO::fileWrite(const void* buf, size_t length, off_t offset) {
   SDL_FlushIO(stream);
   SDL_CloseIO(stream);
   return true;
+}
+
+size_t FileIO::fileSize() const {
+  SDL_PathInfo info;
+  if (SDL_GetPathInfo(m_path.c_str(), &info)) {
+    return info.size;
+  }
+  return 0;
+}
+
+bool FileIO::deleteFile() {
+  if (SDL_RemovePath(m_path.c_str())) {
+    m_ready = false;
+    m_path.clear();
+    return true;
+  }
+  return false;
 }
 
 FileIO::operator bool() const { return isReady(); }

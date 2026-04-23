@@ -514,41 +514,6 @@ bool CardRawFile::canMove(const FileHandle& fh) const {
   return !static_cast<bool>(file->m_permissions & EPermissions::NoMove);
 }
 
-static uint32_t BannerSize(EImageFormat fmt) {
-  switch (fmt) {
-  default:
-  case EImageFormat::None:
-    return 0;
-  case EImageFormat::C8:
-    return 3584;
-  case EImageFormat::RGB5A3:
-    return 6144;
-  }
-}
-
-static uint32_t IconSize(EImageFormat fmt) {
-  switch (fmt) {
-  default:
-  case EImageFormat::None:
-    return 0;
-  case EImageFormat::C8:
-    return 1024;
-  case EImageFormat::RGB5A3:
-    return 2048;
-  }
-}
-
-static uint32_t TlutSize(EImageFormat fmt) {
-  switch (fmt) {
-  default:
-  case EImageFormat::None:
-  case EImageFormat::RGB5A3:
-    return 0;
-  case EImageFormat::C8:
-    return 512;
-  }
-}
-
 ECardResult CardRawFile::getStatus(const FileHandle& fh, CardStat& statOut) const {
   if (!fh) {
     NullFileAccess();

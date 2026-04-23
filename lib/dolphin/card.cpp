@@ -16,7 +16,7 @@ std::array<std::string, 2> cardPaths;
 
 constexpr uint16_t CARD_SECTOR_SIZE = 8192;
 #define GET_CARD(slot) CardChannels[slot]
-#define CARD_READY(slot) std::filesystem::exists(CardChannels[slot]->cardFilename())
+#define CARD_READY(slot) (UseGciFolder ? true : std::filesystem::exists(CardChannels[slot]->cardFilename()))
 #define CARD_STUB Log.debug("{} is stubbed.", __FUNCTION__);
 
 #define CARD_REGION "USA"
@@ -132,6 +132,16 @@ void CARDSetBasePath(const char* path, const s32 chan) {
   } else {
     cardPaths[0] = GetCardFullPath(filePath.string(), aurora::card::ECardSlot::SlotA);
     cardPaths[1] = GetCardFullPath(filePath.string(), aurora::card::ECardSlot::SlotB);
+  }
+}
+
+void CARDSetLoadType(s32 type) {
+  if (type == 0) {
+    UseGciFolder = false;
+  }else if (type == 1) {
+    UseGciFolder = true;
+  }else {
+    Log.error("Invalid CARD load type! Type: {}", type);
   }
 }
 

@@ -9,6 +9,7 @@ namespace aurora::card {
 
 class FileHandle {
   friend class CardRawFile;
+  friend class CardGciFolder;
   uint32_t idx = UINT32_MAX;
   int32_t offset = 0;
   explicit FileHandle(uint32_t idx) : idx(idx) {}

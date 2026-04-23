@@ -241,6 +241,8 @@ void CARDSetGameAndMaker(const s32 chan, const char* game, const char* maker);
 void CARDDetectDolphin(s32 chan);
 // pass -1 to set both
 void CARDSetBasePath(const char*, s32 chan);
+// 0 for RAW card format, 1 for GCI folder
+void CARDSetLoadType(s32 type);
 
 #else
 void CARDInit(void);

@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <vector>
 
+#include "BlockAllocationTable.hpp"
 #include "CommonData.h"
 #include "File.hpp"
 #include "ICard.hpp"
@@ -12,15 +13,24 @@ class CardGciFolder : public ICard {
 private:
   struct GciFile {
     File file;
-    std::string_view filename;
+    size_t fileSize;
+    std::string filename;
     bool opened = false;
   };
 
   std::vector<GciFile> m_files;
   std::filesystem::path m_folderPath;
+  BlockAllocationTable m_bat;
+
+  EEncoding m_encoding = EEncoding::ASCII;
 
   char m_game[5] = {'\0'};
   char m_maker[3] = {'\0'};
+
+  GciFile* getFile(FileHandle& fh);
+  const GciFile* getFile(FileHandle& fh) const;
+  GciFile* getFile(uint32_t idx);
+  const GciFile* getFile(uint32_t idx) const;
 public:
   CardGciFolder();
   ~CardGciFolder() override = default;
