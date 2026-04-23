@@ -531,15 +531,15 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
     return vtx_attr(config, attr);
   }
   auto buf = "vbuf"sv;
-  auto offs = fmt::format("ubuf.vtx_start + {} * {}u + {}u", vidx, config.vtxStride, mapping.offset);
+  auto offs = fmt::format("imm.vtx_start + {} * {}u + {}u", vidx, config.vtxStride, mapping.offset);
   auto le = false; // Vertex buffer is always big endian (for now)
   if (mapping.attrType == GX_INDEX8) {
-    offs = fmt::format("ubuf.array_start[{}] + raw_fetch_u8_1(&{}, {}) * {}u", attr - GX_VA_POS, buf, offs,
-                       mapping.stride);
+    offs =
+        fmt::format("imm.array_start[{}] + raw_fetch_u8_1(&{}, {}) * {}u", attr - GX_VA_POS, buf, offs, mapping.stride);
     buf = "abuf"sv;
     le = mapping.le;
   } else if (mapping.attrType == GX_INDEX16) {
-    offs = fmt::format("ubuf.array_start[{}] + raw_fetch_u16_1(&{}, {}, {}) * {}u", attr - GX_VA_POS, buf, offs, le,
+    offs = fmt::format("imm.array_start[{}] + raw_fetch_u16_1(&{}, {}, {}) * {}u", attr - GX_VA_POS, buf, offs, le,
                        mapping.stride);
     buf = "abuf"sv;
     le = mapping.le;
@@ -829,8 +829,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     // GX_POINTS: expand single vertex to axis-aligned screen-space square
     vtxXfrAttrsPre +=
         "\n    let clip = vec4f(mv_pos, 1.0) * ubuf.proj;"
-        "\n    let viewport_scale = ubuf.render_viewport_size / max(ubuf.logical_viewport_size, vec2f(1.0));"
-        "\n    let point_size = ubuf.line_width * min(viewport_scale.x, viewport_scale.y);"
+        "\n    let point_size = ubuf.line_width * ubuf.viewport_scale;"
         "\n    let x_sign = select(-1.0, 1.0, (vidx & 1u) != 0u);"
         "\n    let y_sign = select(-1.0, 1.0, vidx >= 2u);"
         "\n    let offset_px = vec2f(x_sign, y_sign) * (point_size / 2.0);"
@@ -843,11 +842,10 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
         "\n    let clip_b = vec4f(mv_pos_b, 1.0) * ubuf.proj;"
         "\n    let ndc_a = clip_a.xy / clip_a.w;"
         "\n    let ndc_b = clip_b.xy / clip_b.w;"
-        "\n    let viewport_scale = ubuf.render_viewport_size / max(ubuf.logical_viewport_size, vec2f(1.0));"
         "\n    let delta_px = (ndc_b - ndc_a) / 2.0 * ubuf.render_viewport_size;"
         "\n    let dir_px = select(vec2f(1.0, 0.0), normalize(delta_px), dot(delta_px, delta_px) > 1e-10);"
         "\n    let perp_px = vec2f(-dir_px.y, dir_px.x);"
-        "\n    let line_width = ubuf.line_width * min(viewport_scale.x, viewport_scale.y);"
+        "\n    let line_width = ubuf.line_width * ubuf.viewport_scale;"
         "\n    let offset_px = perp_px * (line_width / 2.0) * select(-1.0, 1.0, (vidx & 1u) != 0u);"
         "\n    let offset_ndc = (offset_px * 2.0) / ubuf.render_viewport_size;"
         "\n    let clip_base = select(clip_a, clip_b, use_b);"
@@ -1688,13 +1686,16 @@ fn tev_overflow_vec4f(in: vec4f) -> vec4f {{
 
 {8}
 
-struct Uniform {{
+struct Immediate {{
     vtx_start: u32,
+    array_start: array<u32, 12>,
+}};
+var<immediate> imm: Immediate;
+
+struct Uniform {{
     current_pnmtx: u32,
-    render_viewport_size: vec2f,
-    logical_viewport_size: vec2f,
-    pad: vec2u,
-    array_start: array<u32, 12>,{0}
+    viewport_scale: f32,
+    render_viewport_size: vec2f,{0}
 }};
 @group(0) @binding(0)
 var<storage, read> vbuf: array<u32>;

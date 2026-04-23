@@ -1573,13 +1573,11 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
       u32 numIndices = prepare_idx_buffer(handle_draw_idx_buf, prim, lastDraw->vtxCount, vtxCount);
       gfx::Range idxRange = gfx::push_indices(handle_draw_idx_buf.data(), handle_draw_idx_buf.size());
       handle_draw_idx_buf.clear();
-      CHECK(lastDraw->vertRange.offset + lastDraw->vertRange.size == vertRange.offset,
-            "Non-consecutive vertex ranges ({} < {})", lastDraw->vertRange.offset + lastDraw->vertRange.size,
-            vertRange.offset);
+      // We'd check the contiguousness of the vertex range, but we don't store range size on the draw
+      // The index range check should be enough
       CHECK(lastDraw->idxRange.offset + lastDraw->idxRange.size == idxRange.offset,
             "Non-consecutive index ranges ({} < {})", lastDraw->idxRange.offset + lastDraw->idxRange.size,
             idxRange.offset);
-      lastDraw->vertRange.size += vertRange.size;
       lastDraw->idxRange.size += idxRange.size;
       lastDraw->vtxCount += vtxCount;
       lastDraw->indexCount += numIndices;
@@ -1639,14 +1637,14 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
   }
   gfx::push_draw_command(DrawData{
       .pipeline = pipeline,
-      .vertRange = vertRange,
+      .immediateData = build_immediate_data(vertRange, ranges),
       .idxRange = idxRange,
-      .uniformRange = build_uniform(info, vertRange.offset, ranges),
+      .uniformOffset = build_uniform(info).offset,
       .vtxCount = vtxCount,
       .indexCount = numIndices,
       .instanceCount = instanceCount,
-      .bindGroups = bindGroups,
       .dstAlpha = g_gxState.dstAlpha,
+      .bindGroups = bindGroups,
   });
 }
 

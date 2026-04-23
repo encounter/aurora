@@ -915,6 +915,7 @@ void initialize() noexcept {
         .label = "GX Pipeline Layout",
         .bindGroupLayoutCount = layouts.size(),
         .bindGroupLayouts = layouts.data(),
+        .immediateSize = DrawImmediateDataSize,
     };
     sPipelineLayout = g_device.CreatePipelineLayout(&desc);
   }

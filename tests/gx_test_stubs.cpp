@@ -102,9 +102,8 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
 }
 GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept { return {}; }
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept { return {}; }
-gfx::Range build_uniform(const ShaderInfo& info, uint32_t vtxStart, const BindGroupRanges& ranges) noexcept {
-  return {};
-}
+gfx::Range build_uniform(const ShaderInfo& info) noexcept { return {}; }
+DrawImmediateData build_immediate_data(uint32_t, const BindGroupRanges&) noexcept { return {}; }
 void resolve_sampled_textures(const ShaderInfo& info) noexcept {}
 u8 color_channel(GXChannelID id) noexcept { return 0; }
 u8 comp_type_size(GXAttr attr, GXCompType type) noexcept { return 0; }

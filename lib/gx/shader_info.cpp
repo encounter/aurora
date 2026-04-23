@@ -177,8 +177,8 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   ZoneScoped;
 
   ShaderInfo info{
-      // vtx_start, current_pnmtx, render/logical viewport size, array_start, pad, proj
-      .uniformSize = 4 + 4 + 8 + 8 + 8 + 48 + 64,
+      // current_pnmtx, viewport_scale, render_viewport_size, proj
+      .uniformSize = 4 + 4 + 8 + 64,
   };
 
   if (config.lineMode != 0) {
@@ -314,6 +314,14 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
   return info;
 }
 
+DrawImmediateData build_immediate_data(const gfx::Range vertRange, const BindGroupRanges& ranges) noexcept {
+  DrawImmediateData data{.vtxStart = vertRange.offset};
+  for (size_t i = 0; i < ranges.vaRanges.size(); ++i) {
+    data.arrayStart[i] = ranges.vaRanges[i].offset;
+  }
+  return data;
+}
+
 static f32 tex_offset(GXTexOffset offs) noexcept {
   switch (offs) {
     DEFAULT_FATAL("invalid tex offset {}", underlying(offs));
@@ -352,20 +360,17 @@ static u32 line_texcoord_mask() noexcept {
   return mask;
 }
 
-gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart, const BindGroupRanges& ranges) noexcept {
+gfx::Range build_uniform(const ShaderInfo& info) noexcept {
   ZoneScoped;
 
+  const auto viewportScale = std::min(g_gxState.renderViewport.width / g_gxState.logicalViewport.width,
+                                      g_gxState.renderViewport.height / g_gxState.logicalViewport.height);
+
   auto [buf, range] = gfx::map_uniform(info.uniformSize);
-  buf.append(vtxStart);
-  buf.append(g_gxState.currentPnMtx);
+  buf.append<u32>(g_gxState.currentPnMtx);
+  buf.append<f32>(viewportScale);
   buf.append<f32>(g_gxState.renderViewport.width);
   buf.append<f32>(g_gxState.renderViewport.height);
-  buf.append<f32>(g_gxState.logicalViewport.width);
-  buf.append<f32>(g_gxState.logicalViewport.height);
-  buf.append_zeroes(8); // pad
-  for (const auto& vaRange : ranges.vaRanges) {
-    buf.append<u32>(vaRange.offset);
-  }
   if (info.lineMode != 0) {
     if (info.lineMode == 3) { // GX_POINTS
       buf.append<f32>(static_cast<f32>(g_gxState.pointSize) / 6.f);

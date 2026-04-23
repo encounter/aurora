@@ -19,8 +19,8 @@ void render(const DrawData& data, const wgpu::RenderPassEncoder& pass) {
     return;
   }
 
-  const std::array offsets{data.uniformRange.offset};
-  pass.SetBindGroup(1, gfx::g_uniformBindGroup, offsets.size(), offsets.data());
+  pass.SetImmediates(0, &data.immediateData, sizeof(data.immediateData));
+  pass.SetBindGroup(1, gfx::g_uniformBindGroup, 1, &data.uniformOffset);
   if (data.bindGroups.textureBindGroup) {
     pass.SetBindGroup(2, gfx::find_bind_group(data.bindGroups.textureBindGroup));
   }

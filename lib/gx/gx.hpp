@@ -477,6 +477,17 @@ struct ShaderInfo {
   bool lightingEnabled : 1 = false;
   u8 lineMode : 2 = 0;
 };
+
+struct DrawImmediateData {
+  u32 vtxStart;
+  std::array<u32, MaxIndexAttr> arrayStart;
+
+  bool operator==(const DrawImmediateData& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
+  bool operator!=(const DrawImmediateData& rhs) const { return !(*this == rhs); }
+};
+static_assert(std::has_unique_object_representations_v<DrawImmediateData>);
+constexpr u32 DrawImmediateDataSize = sizeof(DrawImmediateData);
+
 struct BindGroupRanges {
   std::array<gfx::Range, MaxIndexAttr> vaRanges{};
 };

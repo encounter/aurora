@@ -6,14 +6,14 @@
 namespace aurora::gx {
 struct DrawData {
   gfx::PipelineRef pipeline;
-  gfx::Range vertRange;
+  DrawImmediateData immediateData;
   gfx::Range idxRange;
-  gfx::Range uniformRange;
+  uint32_t uniformOffset;
   uint32_t vtxCount;
   uint32_t indexCount;
   uint32_t instanceCount;
-  GXBindGroups bindGroups;
   uint32_t dstAlpha;
+  GXBindGroups bindGroups;
 };
 
 constexpr uint32_t GXPipelineConfigVersion = 11;
