@@ -16,10 +16,10 @@ extern "C" {
 
 #if TARGET_PC
 
-enum CARDFileType {
-  RawImage,
-  GciFolder,
-};
+typedef enum {
+  CARD_RAWIMAGE,
+  CARD_GCIFOLDER,
+} CARDFileType;
 
 #endif
 

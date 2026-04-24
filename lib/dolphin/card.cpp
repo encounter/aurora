@@ -19,13 +19,12 @@ constexpr uint16_t CARD_SECTOR_SIZE = 8192;
 #define CARD_REGION "USA"
 
 #define GET_CARD(slot) CardChannels[slot]
-#define CARD_READY(slot) (SelectedFileType == GciFolder ? true : std::filesystem::exists(CardChannels[slot]->cardFilename()))
+#define CARD_USE_GCI_FOLDER SelectedFileType == CARD_GCIFOLDER
+#define CARD_READY(slot) (CARD_USE_GCI_FOLDER ? true : std::filesystem::exists(CardChannels[slot]->cardFilename()))
 #define CARD_STUB Log.debug("{} is stubbed.", __FUNCTION__);
 
-#define CARD_USE_GCI_FOLDER SelectedFileType == GciFolder
-
 bool Initialized = false;
-CARDFileType SelectedFileType = CARDFileType::GciFolder;
+CARDFileType SelectedFileType = CARD_GCIFOLDER;
 bool UseFastMode = false;
 
 void CopyKabuFileHandleToDolphin(const s32 chan, const aurora::card::FileHandle& handle, CARDFileInfo* fileInfo) {
@@ -151,10 +150,10 @@ void CARDInit(const char* game, const char* maker) {
 
   for (int i = 0; i < CardChannels.size(); ++i) {
     switch (SelectedFileType) {
-    case RawImage:
+    case CARD_RAWIMAGE:
       CardChannels[i] = std::make_unique<aurora::card::CardRawFile>();
       break;
-    case GciFolder:
+    case CARD_GCIFOLDER:
       CardChannels[i] = std::make_unique<aurora::card::CardGciFolder>();
       break;
     }
