@@ -2,6 +2,7 @@
 
 #include <filesystem>
 
+#include "../internal.hpp"
 #include "dolphin/types.h"
 
 #include "../card/CardRawFile.hpp"
@@ -16,7 +17,17 @@ std::array<std::string, 2> cardPaths;
 
 constexpr uint16_t CARD_SECTOR_SIZE = 8192;
 
-#define CARD_REGION "USA"
+const char* GetCardRegion() {
+  switch (aurora::g_gameName[3]) {
+  case 'E':
+  default:
+    return "USA";
+  case 'P':
+    return "EUR";
+  case 'J':
+    return "JAP";
+  }
+}
 
 #define GET_CARD(slot) CardChannels[slot]
 #define CARD_USE_GCI_FOLDER SelectedFileType == CARD_GCIFOLDER
@@ -44,9 +55,9 @@ std::string GetCardFullPath(const std::string& path, const aurora::card::ECardSl
   std::filesystem::path filePath(path);
 
   if (CARD_USE_GCI_FOLDER) {
-    return (filePath / CARD_REGION / (slot == aurora::card::ECardSlot::SlotA ? "Card A" : "Card B")).string();
+    return (filePath / GetCardRegion() / (slot == aurora::card::ECardSlot::SlotA ? "Card A" : "Card B")).string();
   } else {
-    return (filePath / fmt::format("MemoryCard{}.{}.raw", slot == aurora::card::ECardSlot::SlotA ? "A" : "B", CARD_REGION)).string();
+    return (filePath / fmt::format("MemoryCard{}.{}.raw", slot == aurora::card::ECardSlot::SlotA ? "A" : "B", GetCardRegion())).string();
   }
 }
 } // namespace
@@ -98,15 +109,15 @@ void CARDDetectDolphin(const s32 chan) {
 
   if (chan == 0 || chan == 1) {
     cardPaths[chan] =
-        aurora::card::ResolveDolphinCardPath(static_cast<aurora::card::ECardSlot>(chan), CARD_REGION, CARD_USE_GCI_FOLDER);
+        aurora::card::ResolveDolphinCardPath(static_cast<aurora::card::ECardSlot>(chan), GetCardRegion(), CARD_USE_GCI_FOLDER);
     if (cardPaths[chan].empty()) {
       Log.error("Failed to detect Dolphin Card!");
       return;
     }
     Log.info("Detected Dolphin Card at: {}", cardPaths[chan]);
   } else {
-    cardPaths[0] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotA, CARD_REGION, CARD_USE_GCI_FOLDER);
-    cardPaths[1] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotB, CARD_REGION, CARD_USE_GCI_FOLDER);
+    cardPaths[0] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotA, GetCardRegion(), CARD_USE_GCI_FOLDER);
+    cardPaths[1] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotB, GetCardRegion(), CARD_USE_GCI_FOLDER);
 
     if (cardPaths[0].empty() && cardPaths[1].empty()) {
       Log.error("Failed to detect Dolphin Card!");
