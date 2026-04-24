@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include "../../internal.hpp"
+
 namespace {
 
 struct FSTEntry {
@@ -378,6 +380,8 @@ bool aurora_dvd_open(const char* disc_path) {
     s_diskID.gameVersion = header.disc_version;
     s_diskID.streaming = header.audio_streaming;
     s_diskID.streamingBufSize = header.audio_stream_buf_size;
+
+    std::memcpy(aurora::g_gameName, s_diskID.gameName, sizeof(s_diskID.gameName));
   }
 
   if (!rebuildFST()) {
