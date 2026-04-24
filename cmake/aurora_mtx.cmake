@@ -7,5 +7,6 @@ add_library(aurora_mtx STATIC
   lib/dolphin/mtx/quat.c
 )
 add_library(aurora::mtx ALIAS aurora_mtx)
+set_target_properties(aurora_mtx PROPERTIES FOLDER "aurora")
 
 target_include_directories(aurora_mtx PUBLIC include)

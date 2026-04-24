@@ -10,7 +10,7 @@ add_library(aurora_gd STATIC
         lib/dolphin/gd/gd.hpp
         lib/dolphin/gd/GDAurora.cpp
 )
-
 add_library(aurora::gd ALIAS aurora_gd)
+set_target_properties(aurora_gd PROPERTIES FOLDER "aurora")
 
 target_link_libraries(aurora_gd PUBLIC aurora::gx)

@@ -9,6 +9,7 @@ add_library(aurora_os STATIC lib/dolphin/os/OSInit.cpp
         lib/dolphin/os/OSReport.cpp
         lib/dolphin/AR.cpp)
 add_library(aurora::os ALIAS aurora_os)
+set_target_properties(aurora_os PROPERTIES FOLDER "aurora")
 
 target_include_directories(aurora_os PUBLIC include)
 target_link_libraries(aurora_os PRIVATE aurora::core)
