@@ -89,7 +89,7 @@ public:
    *
    * @return A result indicating the error status of the operation.
    */
-  ECardResult openFile(const char* filename, FileHandle& handleOut);
+  ECardResult openFile(const char* filename, FileHandle& handleOut) override;
 
   /**
    * @brief openFile
@@ -99,7 +99,7 @@ public:
    *
    * @return A result indicating the error status of the operation.
    */
-  ECardResult openFile(uint32_t fileno, FileHandle& handleOut);
+  ECardResult openFile(uint32_t fileno, FileHandle& handleOut) override;
 
   /**
    * @brief createFile
@@ -109,7 +109,7 @@ public:
    *
    * @return A result indicating the error status of the operation.
    */
-  ECardResult createFile(const char* filename, size_t size, FileHandle& handleOut);
+  ECardResult createFile(const char* filename, size_t size, FileHandle& handleOut) override;
 
   /**
    * @brief closeFile
@@ -118,7 +118,7 @@ public:
    *
    * @return READY
    */
-  ECardResult closeFile(FileHandle& fh);
+  ECardResult closeFile(FileHandle& fh) override;
 
   /**
    * @brief firstFile
@@ -153,21 +153,21 @@ public:
    *
    * @param fh File handle to delete.
    */
-  void deleteFile(const FileHandle& fh);
+  void deleteFile(const FileHandle& fh) override;
 
   /**
    * @brief deleteFile
    *
    * @param filename The name of the file to delete.
    */
-  ECardResult deleteFile(const char* filename);
+  ECardResult deleteFile(const char* filename) override;
 
   /**
    * @brief deleteFile
    *
    * @param fileno The file number indicating the file to delete.
    */
-  ECardResult deleteFile(uint32_t fileno);
+  ECardResult deleteFile(uint32_t fileno) override;
 
   /**
    * @brief renameFile
@@ -175,7 +175,7 @@ public:
    * @param oldName The old name of the file.
    * @param newName The new name to assign to the file.
    */
-  ECardResult renameFile(const char* oldName, const char* newName);
+  ECardResult renameFile(const char* oldName, const char* newName) override;
 
   /**
    * @brief write
@@ -184,7 +184,7 @@ public:
    * @param buf  The buffer to write to the file.
    * @param size The size of the given buffer.
    */
-  ECardResult fileWrite(FileHandle& fh, const void* buf, size_t size);
+  ECardResult fileWrite(FileHandle& fh, const void* buf, size_t size) override;
 
   /**
    * @brief read
@@ -193,7 +193,7 @@ public:
    * @param dst  A buffer to read data into.
    * @param size The size of the buffer to read into.
    */
-  ECardResult fileRead(FileHandle& fh, void* dst, size_t size);
+  ECardResult fileRead(FileHandle& fh, void* dst, size_t size) override;
 
   /**
    * @brief seek
@@ -202,7 +202,7 @@ public:
    * @param pos    The position to seek to.
    * @param whence The origin to seek relative to.
    */
-  void seek(FileHandle& fh, int32_t pos, SeekOrigin whence);
+  void seek(FileHandle& fh, int32_t pos, SeekOrigin whence) override;
 
   /**
    * @brief Returns the current offset of the specified file.
@@ -272,7 +272,7 @@ public:
    *
    * @return NOFILE or READY
    */
-  ECardResult getStatus(const FileHandle& fh, CardStat& statOut) const;
+  ECardResult getStatus(const FileHandle& fh, CardStat& statOut) const override;
 
   /**
    * @brief getStatus
@@ -282,7 +282,7 @@ public:
    *
    * @return NOFILE or READY
    */
-  ECardResult getStatus(uint32_t fileNo, CardStat& statOut) const;
+  ECardResult getStatus(uint32_t fileNo, CardStat& statOut) const override;
 
   /**
    * @brief setStatus
@@ -292,7 +292,7 @@ public:
    *
    * @return NOFILE or READY
    */
-  ECardResult setStatus(const FileHandle& fh, const CardStat& stat);
+  ECardResult setStatus(const FileHandle& fh, const CardStat& stat) override;
 
   /**
    * @brief setStatus
@@ -302,7 +302,7 @@ public:
    *
    * @return NOFILE or READY
    */
-  ECardResult setStatus(uint32_t fileNo, const CardStat& stat);
+  ECardResult setStatus(uint32_t fileNo, const CardStat& stat) override;
 
 #if 0 // TODO: Async-friendly implementations
     /**
@@ -329,14 +329,14 @@ public:
    *
    * @sa openFile
    */
-  void setCurrentGame(const char* game);
+  void setCurrentGame(const char* game) override;
 
   /**
    * @brief Returns the currently selected game.
    *
    * @return The selected game, or nullptr
    */
-  const uint8_t* getCurrentGame() const;
+  const uint8_t* getCurrentGame() const override;
 
   /**
    * @brief Sets the current maker, if not null any openFile requests will only return files that match this maker.
@@ -345,21 +345,21 @@ public:
    *
    * @sa openFile
    */
-  void setCurrentMaker(const char* maker);
+  void setCurrentMaker(const char* maker) override;
 
   /**
    * @brief Returns the currently selected maker.
    *
    * @return The selected maker, or nullptr.
    */
-  const uint8_t* getCurrentMaker() const;
+  const uint8_t* getCurrentMaker() const override;
 
   /**
    * @brief Retrieves the format assigned serial.
    *
    * @param[out] serial Out reference that will contain the serial number.
    */
-  void getSerial(uint64_t& serial);
+  void getSerial(uint64_t& serial) override;
 
   /**
    * @brief Retrieves the checksum values of the Card system header.
@@ -367,7 +367,7 @@ public:
    * @param checksum The checksum of the system header.
    * @param inverse  The inverse checksum of the system header.
    */
-  void getChecksum(uint16_t& checksum, uint16_t& inverse) const;
+  void getChecksum(uint16_t& checksum, uint16_t& inverse) const override;
 
   /**
    * @brief Retrieves the available storage and directory space.
@@ -375,14 +375,14 @@ public:
    * @param bytesNotUsed Number of free bytes out.
    * @param filesNotUsed Number of free files out.
    */
-  void getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) const;
+  void getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) const override;
 
   /**
    * @brief Retrieves the current file's encoding.
    *
    * @param encoding File encoding out.
    */
-  void getEncoding(uint16_t& encoding) const;
+  void getEncoding(uint16_t& encoding) const override;
 
   /**
    * @brief Formats the memory card and assigns a new serial.
@@ -391,44 +391,44 @@ public:
    * @param size     The desired size of the file @sa ECardSize.
    * @param encoding The desired encoding @sa EEncoding.
    */
-  void format(ECardSlot deviceId, ECardSize size = ECardSize::Card2043Mb, EEncoding encoding = EEncoding::ASCII);
+  void format(ECardSlot deviceId, ECardSize size = ECardSize::Card2043Mb, EEncoding encoding = EEncoding::ASCII) override;
 
   /**
    * @brief Returns basic stats about a card image without opening a handle.
    *
    * @return ProbeResults structure.
    */
-  static ProbeResults probeCardFile(std::string_view filename);
+  ProbeResults probeCardFile(std::string_view filename) override;
 
   /**
    * @brief Writes any changes to the Card instance immediately to disk. <br />
    * <b>Note:</b> <i>Under normal circumstances there is no need to call this function.</i>
    */
-  void commit();
+  void commit() override;
 
   /**
    * @brief Opens card image (does nothing if currently open path matches).
    */
-  bool open(std::string_view filepath);
+  bool open(std::string_view filepath) override;
 
   /**
    * @brief Commits changes to disk and closes host file.
    */
-  void close();
+  void close() override;
 
   /**
    * @brief Access host filename of card.
    *
    * @return A view to the card's filename.
    */
-  std::string_view cardFilename() const { return m_filename; }
+  std::string_view cardFilename() const override { return m_filename; }
 
   /**
    * @brief Gets card-scope error state.
    *
    * @return READY, BROKEN, or NOCARD
    */
-  ECardResult getError() const;
+  ECardResult getError() const override;
 
   /**
    * @return Whether or not the card is within a ready state.

@@ -39,16 +39,6 @@ public:
   virtual void close() = 0;
   virtual std::string_view cardFilename() const = 0;
   virtual ECardResult getError() const = 0;
-
-  // virtual FileHandle firstFile() = 0;
-  // virtual FileHandle nextFile(const FileHandle& cur) = 0;
-  // virtual const char* getFilename(const FileHandle& fh) const = 0;
-  // virtual int32_t tell(const FileHandle& fh) const = 0;
-  // virtual void setPublic(const FileHandle& fh, bool pub) = 0;
-  // virtual bool isPublic(const FileHandle& fh) const = 0;
-  // virtual void setCanCopy(const FileHandle& fh, bool copy) const = 0;
-  // virtual bool canCopy(const FileHandle& fh) const = 0;
-  // virtual void setCanMove(const FileHandle& fh, bool move) = 0;
-  // virtual bool canMove(const FileHandle& fh) const = 0;
+  virtual ProbeResults probeCardFile(std::string_view filename) = 0;
 };
 }

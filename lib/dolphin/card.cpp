@@ -534,7 +534,9 @@ BOOL CARDProbe(const s32 chan) {
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
-  aurora::card::ProbeResults probeData = aurora::card::CardRawFile::probeCardFile(cardPaths[chan]);
+  const auto& card = GET_CARD(chan);
+
+  aurora::card::ProbeResults probeData = card->probeCardFile(cardPaths[chan]);
   return probeData.x0_error != aurora::card::ECardResult::NOCARD ? TRUE : FALSE;
 }
 
@@ -542,9 +544,10 @@ s32 CARDProbeEx(const s32 chan, s32* memSize, s32* sectorSize) {
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
+  const auto& card = GET_CARD(chan);
 
   // ReSharper disable once CppUseStructuredBinding
-  const aurora::card::ProbeResults probeData = aurora::card::CardRawFile::probeCardFile(cardPaths[chan]);
+  const aurora::card::ProbeResults probeData = card->probeCardFile(cardPaths[chan]);
   *memSize = probeData.x4_cardSize;
   *sectorSize = probeData.x8_sectorSize;
 

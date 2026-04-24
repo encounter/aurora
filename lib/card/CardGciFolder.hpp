@@ -71,6 +71,7 @@ public:
   void close() override;
   std::string_view cardFilename() const override;
   ECardResult getError() const override;
+  ProbeResults probeCardFile(std::string_view filename) override;
 };
 
 }
