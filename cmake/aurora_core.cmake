@@ -5,6 +5,7 @@ add_library(aurora_core STATIC
         lib/logging.cpp
 )
 add_library(aurora::core ALIAS aurora_core)
+set_target_properties(aurora_core PROPERTIES FOLDER "aurora")
 
 target_compile_definitions(aurora_core PUBLIC AURORA TARGET_PC)
 target_include_directories(aurora_core PUBLIC include)

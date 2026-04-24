@@ -64,7 +64,8 @@ static wgpu::PresentMode best_present_mode(bool vsync) {
       return wgpu::PresentMode::FifoRelaxed;
     }
   } else {
-    if (supports(wgpu::PresentMode::Mailbox)) {
+    // Dawn only disables CAMetalLayer displaySyncEnabled for Immediate on Metal
+    if (g_backendType != wgpu::BackendType::Metal && supports(wgpu::PresentMode::Mailbox)) {
       return wgpu::PresentMode::Mailbox;
     }
     if (supports(wgpu::PresentMode::Immediate)) {
