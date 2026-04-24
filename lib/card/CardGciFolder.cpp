@@ -376,30 +376,7 @@ ECardResult CardGciFolder::getError() const { return ECardResult::READY; }
 ProbeResults CardGciFolder::probeCardFile(std::string_view filename) {
   if (!std::filesystem::exists(filename) || !std::filesystem::is_directory(filename))
     return {ECardResult::NOCARD, 0, 0};
-
-  for (const auto& dir : std::filesystem::directory_iterator(filename)) {
-    if (!dir.is_regular_file()) {
-      continue;
-    }
-    auto path = dir.path();
-
-    if (path.extension() != ".gci")
-      continue;
-
-    FileIO file(path.string());
-
-    File fileData;
-    file.fileRead(&fileData, sizeof(File), 0);
-    fileData.swapEndian();
-
-    bool isGameSame = memcmp(fileData.m_game, m_game, std::size(fileData.m_game)) == 0;
-    bool isMakerSame = memcmp(fileData.m_maker, m_maker, std::size(fileData.m_maker)) == 0;
-
-    if (isGameSame && isMakerSame)
-      return {ECardResult::READY, static_cast<uint32_t>(file.fileSize()), BlockSize};
-  }
-
-  return {ECardResult::NOFILE, 0, 0};
+  return {ECardResult::READY, static_cast<uint32_t>(ECardSize::Card2043Mb), BlockSize};
 }
 
 } // namespace aurora::card
