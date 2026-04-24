@@ -239,6 +239,7 @@ void end_frame(const wgpu::CommandEncoder& cmd);
 uint32_t current_frame() noexcept;
 void render(wgpu::CommandEncoder& cmd);
 void render_pass(const wgpu::RenderPassEncoder& pass, uint32_t idx);
+void after_submit() noexcept;
 void map_staging_buffer();
 void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
                   Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat = GX_TF_RGBA8);

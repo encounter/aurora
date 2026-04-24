@@ -5,6 +5,7 @@
 #include "gx/gx.hpp"
 #include "gfx/clear.hpp"
 #include "gfx/common.hpp"
+#include "gfx/depth_peek.hpp"
 #include "gfx/tex_copy_conv.hpp"
 #include "gfx/tex_palette_conv.hpp"
 #include "gfx/texture.hpp"
@@ -174,6 +175,48 @@ void begin_offscreen(uint32_t width, uint32_t height) {}
 void end_offscreen() {}
 bool is_offscreen() noexcept { return false; }
 } // namespace aurora::gfx
+
+namespace aurora::gfx::depth_peek {
+namespace {
+bool s_snapshotRequested = false;
+uint32_t s_width = 0;
+uint32_t s_height = 0;
+std::vector<uint32_t> s_data;
+} // namespace
+
+void initialize() {}
+void shutdown() {}
+void request_snapshot() noexcept { s_snapshotRequested = true; }
+void poll() noexcept {}
+void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureView& depthView,
+                           wgpu::Extent3D sourceSize, uint32_t msaaSamples) noexcept {}
+void after_submit() noexcept {}
+
+bool read_latest(uint16_t x, uint16_t y, uint32_t& z) noexcept {
+  if (x >= s_width || y >= s_height || s_data.empty()) {
+    return false;
+  }
+  z = s_data[static_cast<size_t>(y) * s_width + x] & 0x00ffffffu;
+  return true;
+}
+
+namespace testing {
+void reset() noexcept {
+  s_snapshotRequested = false;
+  s_width = 0;
+  s_height = 0;
+  s_data.clear();
+}
+
+bool snapshot_requested() noexcept { return s_snapshotRequested; }
+
+void set_latest(uint32_t width, uint32_t height, const std::vector<uint32_t>& data) {
+  s_width = width;
+  s_height = height;
+  s_data = data;
+}
+} // namespace testing
+} // namespace aurora::gfx::depth_peek
 
 namespace aurora::gfx::tex_copy_conv {
 bool needs_conversion(GXTexFmt fmt) { return false; }
