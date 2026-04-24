@@ -1,6 +1,7 @@
 add_library(aurora_card STATIC
         lib/card/BlockAllocationTable.cpp
-        lib/card/Card.cpp
+        lib/card/CardRawFile.cpp
+        lib/card/CardGciFolder.cpp
         lib/card/Directory.cpp
         lib/card/DolphinCardPath.cpp
         lib/card/File.cpp

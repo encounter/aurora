@@ -4,6 +4,9 @@
 
 #include "Util.hpp"
 
+#define CARD_FILENAME_MAX 32
+#define CARD_ICON_MAX 8
+
 namespace aurora::card {
 constexpr uint32_t BlockSize = 0x2000;
 constexpr uint32_t MaxFiles = 127;
@@ -72,4 +75,40 @@ enum class EEncoding : uint16_t {
   ASCII, /**< Standard ASCII Encoding */
   SJIS   /**< SJIS Encoding for japanese */
 };
+
+constexpr uint32_t BannerSize(EImageFormat fmt) {
+  switch (fmt) {
+  default:
+  case EImageFormat::None:
+    return 0;
+  case EImageFormat::C8:
+    return 3584;
+  case EImageFormat::RGB5A3:
+    return 6144;
+  }
+}
+
+constexpr uint32_t IconSize(EImageFormat fmt) {
+  switch (fmt) {
+  default:
+  case EImageFormat::None:
+    return 0;
+  case EImageFormat::C8:
+    return 1024;
+  case EImageFormat::RGB5A3:
+    return 2048;
+  }
+}
+
+constexpr uint32_t TlutSize(EImageFormat fmt) {
+  switch (fmt) {
+  default:
+  case EImageFormat::None:
+  case EImageFormat::RGB5A3:
+    return 0;
+  case EImageFormat::C8:
+    return 512;
+  }
+}
+
 } // namespace aurora::card

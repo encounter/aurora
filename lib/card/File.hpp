@@ -9,7 +9,8 @@ namespace aurora::card {
 class File {
   friend class IFileHandle;
   friend class Directory;
-  friend class Card;
+  friend class CardRawFile;
+  friend class CardGciFolder;
 #pragma pack(push, 4)
   using RawData = std::array<uint8_t, 0x40>;
   union {

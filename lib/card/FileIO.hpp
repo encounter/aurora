@@ -26,6 +26,8 @@ public:
   static SDL_IOStream* fileOpen(const std::string& path, const char* mode) {return path.empty() ? nullptr : SDL_IOFromFile(path.c_str(), mode);}
   bool fileRead(void* buf, size_t length, off_t offset);
   bool fileWrite(const void* buf, size_t length, off_t offset);
+  size_t fileSize() const;
+  bool deleteFile();
   explicit operator bool() const;
 };
 

@@ -38,6 +38,8 @@
   }
 #endif
 
+#define ROUND_UP_8192(val) (((val) + 8191) & ~8191)
+
 namespace aurora::card {
 
 uint64_t getGCTime();

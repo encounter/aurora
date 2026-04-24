@@ -7,7 +7,7 @@
 
 namespace aurora::card {
 class Directory {
-  friend class Card;
+  friend class CardRawFile;
 
 #pragma pack(push, 4)
   using RawData = std::array<uint8_t, BlockSize>;

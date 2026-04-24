@@ -1,4 +1,4 @@
-#include "Card.hpp"
+#include "CardRawFile.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -11,11 +11,9 @@
 
 namespace aurora::card {
 
-#define ROUND_UP_8192(val) (((val) + 8191) & ~8191)
-
 static void NullFileAccess() { fprintf(stderr, "Attempted to access null file\n"); }
 
-void Card::CardHeader::_swapEndian() {
+void CardRawFile::CardHeader::_swapEndian() {
   m_formatTime = bswap(m_formatTime);
   m_sramBias = bswap(m_sramBias);
   m_sramLanguage = bswap(m_sramLanguage);
@@ -28,9 +26,9 @@ void Card::CardHeader::_swapEndian() {
   m_checksumInv = bswap(m_checksumInv);
 }
 
-Card::Card() { m_ch.raw.fill(0xFF); }
+CardRawFile::CardRawFile() { m_ch.raw.fill(0xFF); }
 
-Card::Card(Card&& other) {
+CardRawFile::CardRawFile(CardRawFile&& other) {
   m_ch.raw = other.m_ch.raw;
   m_filename = std::move(other.m_filename);
   m_fileHandle = std::move(other.m_fileHandle);
@@ -44,7 +42,7 @@ Card::Card(Card&& other) {
   std::copy(std::cbegin(other.m_maker), std::cend(other.m_maker), std::begin(m_maker));
 }
 
-Card& Card::operator=(Card&& other) {
+CardRawFile& CardRawFile::operator=(CardRawFile&& other) {
   close();
 
   m_ch.raw = other.m_ch.raw;
@@ -62,7 +60,7 @@ Card& Card::operator=(Card&& other) {
   return *this;
 }
 
-ECardResult Card::_pumpOpen() {
+ECardResult CardRawFile::_pumpOpen() {
   if (m_opened)
     return ECardResult::READY;
 
@@ -102,7 +100,7 @@ ECardResult Card::_pumpOpen() {
   return ECardResult::READY;
 }
 
-Card::Card(const char* game, const char* maker) {
+void CardRawFile::InitCard(const char* game, const char* maker) {
   m_ch.raw.fill(0xFF);
 
   if (game != nullptr && std::strlen(game) == 4) {
@@ -113,9 +111,9 @@ Card::Card(const char* game, const char* maker) {
   }
 }
 
-Card::~Card() { close(); }
+CardRawFile::~CardRawFile() { CardRawFile::close(); }
 
-ECardResult Card::openFile(const char* filename, FileHandle& handleOut) {
+ECardResult CardRawFile::openFile(const char* filename, FileHandle& handleOut) {
   const ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY) {
     return openRes;
@@ -136,7 +134,7 @@ ECardResult Card::openFile(const char* filename, FileHandle& handleOut) {
   return ECardResult::FATAL_ERROR;
 }
 
-ECardResult Card::openFile(uint32_t fileno, FileHandle& handleOut) {
+ECardResult CardRawFile::openFile(uint32_t fileno, FileHandle& handleOut) {
   ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
@@ -149,7 +147,7 @@ ECardResult Card::openFile(uint32_t fileno, FileHandle& handleOut) {
   return ECardResult::READY;
 }
 
-void Card::_updateDirAndBat(const Directory& dir, const BlockAllocationTable& bat) {
+void CardRawFile::_updateDirAndBat(const Directory& dir, const BlockAllocationTable& bat) {
   m_currentDir = !m_currentDir;
   Directory& updateDir = m_dirs[m_currentDir];
   updateDir = dir;
@@ -165,13 +163,13 @@ void Card::_updateDirAndBat(const Directory& dir, const BlockAllocationTable& ba
   m_dirty = true;
 }
 
-void Card::_updateChecksum() {
+void CardRawFile::_updateChecksum() {
   m_ch._swapEndian();
   calculateChecksumBE(reinterpret_cast<uint16_t*>(m_ch.raw.data()), 0xFE, &m_ch.m_checksum, &m_ch.m_checksumInv);
   m_ch._swapEndian();
 }
 
-File* Card::_fileFromHandle(const FileHandle& fh) const {
+File* CardRawFile::_fileFromHandle(const FileHandle& fh) const {
   if (!fh) {
     NullFileAccess();
     return nullptr;
@@ -179,7 +177,7 @@ File* Card::_fileFromHandle(const FileHandle& fh) const {
   return const_cast<Directory&>(m_dirs[m_currentDir]).getFile(fh.idx);
 }
 
-ECardResult Card::createFile(const char* filename, size_t size, FileHandle& handleOut) {
+ECardResult CardRawFile::createFile(const char* filename, size_t size, FileHandle& handleOut) {
   ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
@@ -215,12 +213,12 @@ ECardResult Card::createFile(const char* filename, size_t size, FileHandle& hand
   return ECardResult::FATAL_ERROR;
 }
 
-ECardResult Card::closeFile(FileHandle& fh) {
+ECardResult CardRawFile::closeFile(FileHandle& fh) {
   fh.offset = 0;
   return ECardResult::READY;
 }
 
-FileHandle Card::firstFile() {
+FileHandle CardRawFile::firstFile() {
   const File* const f = m_dirs[m_currentDir].getFirstNonFreeFile(0, m_game, m_maker);
 
   if (f == nullptr) {
@@ -230,7 +228,7 @@ FileHandle Card::firstFile() {
   return FileHandle(m_dirs[m_currentDir].indexForFile(f));
 }
 
-FileHandle Card::nextFile(const FileHandle& cur) {
+FileHandle CardRawFile::nextFile(const FileHandle& cur) {
   if (!cur) {
     NullFileAccess();
     return {};
@@ -244,7 +242,7 @@ FileHandle Card::nextFile(const FileHandle& cur) {
   return FileHandle(m_dirs[m_currentDir].indexForFile(next));
 }
 
-const char* Card::getFilename(const FileHandle& fh) const {
+const char* CardRawFile::getFilename(const FileHandle& fh) const {
   const File* const f = _fileFromHandle(fh);
 
   if (f == nullptr) {
@@ -254,7 +252,7 @@ const char* Card::getFilename(const FileHandle& fh) const {
   return f->m_filename;
 }
 
-void Card::_deleteFile(File& f, BlockAllocationTable& bat) {
+void CardRawFile::_deleteFile(File& f, BlockAllocationTable& bat) {
   uint16_t block = f.m_firstBlock;
   while (block != 0xFFFF) {
     /* TODO: add a fragmentation check */
@@ -265,7 +263,7 @@ void Card::_deleteFile(File& f, BlockAllocationTable& bat) {
   f = File();
 }
 
-void Card::deleteFile(const FileHandle& fh) {
+void CardRawFile::deleteFile(const FileHandle& fh) {
   if (!fh) {
     NullFileAccess();
     return;
@@ -276,7 +274,7 @@ void Card::deleteFile(const FileHandle& fh) {
   _updateDirAndBat(dir, bat);
 }
 
-ECardResult Card::deleteFile(const char* filename) {
+ECardResult CardRawFile::deleteFile(const char* filename) {
   ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
@@ -292,7 +290,7 @@ ECardResult Card::deleteFile(const char* filename) {
   return ECardResult::READY;
 }
 
-ECardResult Card::deleteFile(uint32_t fileno) {
+ECardResult CardRawFile::deleteFile(uint32_t fileno) {
   ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
@@ -308,7 +306,7 @@ ECardResult Card::deleteFile(uint32_t fileno) {
   return ECardResult::READY;
 }
 
-ECardResult Card::renameFile(const char* oldName, const char* newName) {
+ECardResult CardRawFile::renameFile(const char* oldName, const char* newName) {
   const ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY) {
     return openRes;
@@ -338,7 +336,7 @@ ECardResult Card::renameFile(const char* oldName, const char* newName) {
   return ECardResult::READY;
 }
 
-ECardResult Card::asyncWrite(FileHandle& fh, const void* buf, size_t size) {
+ECardResult CardRawFile::fileWrite(FileHandle& fh, const void* buf, size_t size) {
   ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
@@ -387,7 +385,7 @@ ECardResult Card::asyncWrite(FileHandle& fh, const void* buf, size_t size) {
   return ECardResult::READY;
 }
 
-ECardResult Card::asyncRead(FileHandle& fh, void* dst, size_t size) {
+ECardResult CardRawFile::fileRead(FileHandle& fh, void* dst, size_t size) {
   ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
@@ -435,7 +433,7 @@ ECardResult Card::asyncRead(FileHandle& fh, void* dst, size_t size) {
   return ECardResult::READY;
 }
 
-void Card::seek(FileHandle& fh, int32_t pos, SeekOrigin whence) {
+void CardRawFile::seek(FileHandle& fh, int32_t pos, SeekOrigin whence) {
   if (!fh) {
     NullFileAccess();
     return;
@@ -457,9 +455,9 @@ void Card::seek(FileHandle& fh, int32_t pos, SeekOrigin whence) {
   }
 }
 
-int32_t Card::tell(const FileHandle& fh) const { return fh.offset; }
+int32_t CardRawFile::tell(const FileHandle& fh) const { return fh.offset; }
 
-void Card::setPublic(const FileHandle& fh, bool pub) {
+void CardRawFile::setPublic(const FileHandle& fh, bool pub) {
   File* file = _fileFromHandle(fh);
   if (!file)
     return;
@@ -470,7 +468,7 @@ void Card::setPublic(const FileHandle& fh, bool pub) {
     file->m_permissions &= ~EPermissions::Public;
 }
 
-bool Card::isPublic(const FileHandle& fh) const {
+bool CardRawFile::isPublic(const FileHandle& fh) const {
   File* file = _fileFromHandle(fh);
   if (!file)
     return false;
@@ -478,7 +476,7 @@ bool Card::isPublic(const FileHandle& fh) const {
   return static_cast<bool>(file->m_permissions & EPermissions::Public);
 }
 
-void Card::setCanCopy(const FileHandle& fh, bool copy) const {
+void CardRawFile::setCanCopy(const FileHandle& fh, bool copy) const {
   File* file = _fileFromHandle(fh);
   if (!file)
     return;
@@ -489,7 +487,7 @@ void Card::setCanCopy(const FileHandle& fh, bool copy) const {
     file->m_permissions |= EPermissions::NoCopy;
 }
 
-bool Card::canCopy(const FileHandle& fh) const {
+bool CardRawFile::canCopy(const FileHandle& fh) const {
   File* file = _fileFromHandle(fh);
   if (!file)
     return false;
@@ -497,7 +495,7 @@ bool Card::canCopy(const FileHandle& fh) const {
   return !static_cast<bool>(file->m_permissions & EPermissions::NoCopy);
 }
 
-void Card::setCanMove(const FileHandle& fh, bool move) {
+void CardRawFile::setCanMove(const FileHandle& fh, bool move) {
   File* file = _fileFromHandle(fh);
   if (!file)
     return;
@@ -508,7 +506,7 @@ void Card::setCanMove(const FileHandle& fh, bool move) {
     file->m_permissions |= EPermissions::NoMove;
 }
 
-bool Card::canMove(const FileHandle& fh) const {
+bool CardRawFile::canMove(const FileHandle& fh) const {
   File* file = _fileFromHandle(fh);
   if (!file)
     return false;
@@ -516,42 +514,7 @@ bool Card::canMove(const FileHandle& fh) const {
   return !static_cast<bool>(file->m_permissions & EPermissions::NoMove);
 }
 
-static uint32_t BannerSize(EImageFormat fmt) {
-  switch (fmt) {
-  default:
-  case EImageFormat::None:
-    return 0;
-  case EImageFormat::C8:
-    return 3584;
-  case EImageFormat::RGB5A3:
-    return 6144;
-  }
-}
-
-static uint32_t IconSize(EImageFormat fmt) {
-  switch (fmt) {
-  default:
-  case EImageFormat::None:
-    return 0;
-  case EImageFormat::C8:
-    return 1024;
-  case EImageFormat::RGB5A3:
-    return 2048;
-  }
-}
-
-static uint32_t TlutSize(EImageFormat fmt) {
-  switch (fmt) {
-  default:
-  case EImageFormat::None:
-  case EImageFormat::RGB5A3:
-    return 0;
-  case EImageFormat::C8:
-    return 512;
-  }
-}
-
-ECardResult Card::getStatus(const FileHandle& fh, CardStat& statOut) const {
+ECardResult CardRawFile::getStatus(const FileHandle& fh, CardStat& statOut) const {
   if (!fh) {
     NullFileAccess();
     return ECardResult::NOFILE;
@@ -559,8 +522,8 @@ ECardResult Card::getStatus(const FileHandle& fh, CardStat& statOut) const {
   return getStatus(fh.idx, statOut);
 }
 
-ECardResult Card::getStatus(uint32_t fileNo, CardStat& statOut) const {
-  ECardResult openRes = const_cast<Card*>(this)->_pumpOpen();
+ECardResult CardRawFile::getStatus(uint32_t fileNo, CardStat& statOut) const {
+  ECardResult openRes = const_cast<CardRawFile*>(this)->_pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
 
@@ -612,7 +575,7 @@ ECardResult Card::getStatus(uint32_t fileNo, CardStat& statOut) const {
   return ECardResult::READY;
 }
 
-ECardResult Card::setStatus(const FileHandle& fh, const CardStat& stat) {
+ECardResult CardRawFile::setStatus(const FileHandle& fh, const CardStat& stat) {
   if (!fh) {
     NullFileAccess();
     return ECardResult::NOFILE;
@@ -620,7 +583,7 @@ ECardResult Card::setStatus(const FileHandle& fh, const CardStat& stat) {
   return setStatus(fh.idx, stat);
 }
 
-ECardResult Card::setStatus(uint32_t fileNo, const CardStat& stat) {
+ECardResult CardRawFile::setStatus(uint32_t fileNo, const CardStat& stat) {
   ECardResult openRes = _pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
@@ -701,7 +664,7 @@ bool Card::moveFileTo(FileHandle& fh, Card& dest)
 }
 #endif
 
-void Card::setCurrentGame(const char* game) {
+void CardRawFile::setCurrentGame(const char* game) {
   if (game == nullptr) {
     std::memset(m_game, 0, sizeof(m_game));
     return;
@@ -715,7 +678,7 @@ void Card::setCurrentGame(const char* game) {
   std::memcpy(m_game, game, copy_amount);
 }
 
-const uint8_t* Card::getCurrentGame() const {
+const uint8_t* CardRawFile::getCurrentGame() const {
   if (std::strlen(m_game) == sizeof(m_game) - 1) {
     return reinterpret_cast<const uint8_t*>(m_game);
   }
@@ -723,7 +686,7 @@ const uint8_t* Card::getCurrentGame() const {
   return nullptr;
 }
 
-void Card::setCurrentMaker(const char* maker) {
+void CardRawFile::setCurrentMaker(const char* maker) {
   if (maker == nullptr) {
     std::memset(m_maker, 0, sizeof(m_maker));
     return;
@@ -737,7 +700,7 @@ void Card::setCurrentMaker(const char* maker) {
   std::memcpy(m_maker, maker, copy_amount);
 }
 
-const uint8_t* Card::getCurrentMaker() const {
+const uint8_t* CardRawFile::getCurrentMaker() const {
   if (std::strlen(m_maker) == sizeof(m_maker) - 1) {
     return reinterpret_cast<const uint8_t*>(m_maker);
   }
@@ -745,7 +708,7 @@ const uint8_t* Card::getCurrentMaker() const {
   return nullptr;
 }
 
-void Card::getSerial(uint64_t& serial) {
+void CardRawFile::getSerial(uint64_t& serial) {
   m_ch._swapEndian();
 
   std::array<uint32_t, 8> serialBuf{};
@@ -758,19 +721,19 @@ void Card::getSerial(uint64_t& serial) {
   m_ch._swapEndian();
 }
 
-void Card::getChecksum(uint16_t& checksum, uint16_t& inverse) const {
+void CardRawFile::getChecksum(uint16_t& checksum, uint16_t& inverse) const {
   checksum = m_ch.m_checksum;
   inverse = m_ch.m_checksumInv;
 }
 
-void Card::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) const {
+void CardRawFile::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) const {
   bytesNotUsed = m_bats[m_currentBat].numFreeBlocks() * 0x2000;
   filesNotUsed = m_dirs[m_currentDir].numFreeFiles();
 }
 
-void Card::getEncoding(uint16_t& encoding) const { encoding = m_ch.m_encoding; }
+void CardRawFile::getEncoding(uint16_t& encoding) const { encoding = m_ch.m_encoding; }
 
-void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
+void CardRawFile::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   m_ch.raw.fill(0xFF);
 
   uint64_t rand = static_cast<uint64_t>(getGCTime());
@@ -827,7 +790,7 @@ void Card::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   }
 }
 
-ProbeResults Card::probeCardFile(std::string_view filename) {
+ProbeResults CardRawFile::probeCardFile(std::string_view filename) {
   std::filesystem::path path(filename);
   if (!std::filesystem::exists(path))
     return {ECardResult::NOCARD, 0, 0};
@@ -835,7 +798,7 @@ ProbeResults Card::probeCardFile(std::string_view filename) {
           BlockSize};
 }
 
-void Card::commit() {
+void CardRawFile::commit() {
   if (!m_dirty)
     return;
   if (m_fileHandle) {
@@ -862,7 +825,7 @@ void Card::commit() {
   }
 }
 
-bool Card::open(std::string_view filepath) {
+bool CardRawFile::open(std::string_view filepath) {
   m_opened = false;
   m_filename = filepath;
   m_fileHandle = FileIO(m_filename);
@@ -882,7 +845,7 @@ bool Card::open(std::string_view filepath) {
   return false;
 }
 
-void Card::close() {
+void CardRawFile::close() {
   m_opened = false;
   if (m_fileHandle) {
     commit();
@@ -890,19 +853,19 @@ void Card::close() {
   }
 }
 
-ECardResult Card::getError() const {
+ECardResult CardRawFile::getError() const {
   if (!m_fileHandle)
     return ECardResult::NOCARD;
 
-  ECardResult openRes = const_cast<Card*>(this)->_pumpOpen();
+  ECardResult openRes = const_cast<CardRawFile*>(this)->_pumpOpen();
   if (openRes != ECardResult::READY)
     return openRes;
 
   uint16_t ckSum, ckSumInv;
-  const_cast<Card&>(*this).m_ch._swapEndian();
+  const_cast<CardRawFile&>(*this).m_ch._swapEndian();
   calculateChecksumBE(reinterpret_cast<const uint16_t*>(m_ch.raw.data()), 0xFE, &ckSum, &ckSumInv);
   bool res = ckSum == m_ch.m_checksum && ckSumInv == m_ch.m_checksumInv;
-  const_cast<Card&>(*this).m_ch._swapEndian();
+  const_cast<CardRawFile&>(*this).m_ch._swapEndian();
 
   if (!res)
     return ECardResult::BROKEN;

@@ -1,6 +1,7 @@
 #ifndef _DOLPHIN_CARD_H_
 #define _DOLPHIN_CARD_H_
 
+#include <string_view>
 #include <dolphin/os.h>
 #include <dolphin/dsp.h>
 #include <dolphin/dvd.h>
@@ -12,6 +13,15 @@ extern "C" {
 #define CARD_FILENAME_MAX 32
 #define CARD_MAX_FILE 127
 #define CARD_ICON_MAX 8
+
+#if TARGET_PC
+
+enum CARDFileType {
+  RawImage,
+  GciFolder,
+};
+
+#endif
 
 typedef void (*CARDCallback)(s32 chan, s32 result);
 
@@ -240,6 +250,7 @@ void CARDSetGameAndMaker(const s32 chan, const char* game, const char* maker);
 void CARDDetectDolphin(s32 chan);
 // pass -1 to set both
 void CARDSetBasePath(const char*, s32 chan);
+void CARDSetLoadType(CARDFileType type);
 
 #else
 void CARDInit(void);
