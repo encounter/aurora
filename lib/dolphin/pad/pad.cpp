@@ -868,7 +868,7 @@ BOOL PADSetRumbleIntensity(u32 port, u16 low, u16 high) {
 
 BOOL PADGetRumbleIntensity(u32 port, u16* high, u16* low) {
   const auto* ctrl = aurora::input::get_controller_for_player(port);
-  if (ctrl == nullptr || !ctrl->m_isGameCube || !ctrl->m_hasRumble) {
+  if (ctrl == nullptr || ctrl->m_isGameCube || !ctrl->m_hasRumble) {
     *high = 0;
     *low = 0;
     return FALSE;
