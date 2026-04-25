@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <mutex>
 #include <string>
 
@@ -20,9 +21,13 @@ using webgpu::g_device;
 using webgpu::g_instance;
 using webgpu::g_queue;
 
+using Clock = std::chrono::steady_clock;
+
 constexpr size_t SlotCount = 3;
 constexpr uint32_t WorkgroupSizeX = 8;
 constexpr uint32_t WorkgroupSizeY = 8;
+constexpr uint32_t DepthPeekSnapshotHz = 30;
+constexpr auto SnapshotInterval = std::chrono::nanoseconds{1'000'000'000 / DepthPeekSnapshotHz};
 
 struct Params {
   uint32_t dstWidth = 0;
@@ -69,6 +74,7 @@ size_t g_nextSlot = 0;
 wgpu::BindGroupLayout g_bindGroupLayout;
 wgpu::ComputePipeline g_pipeline;
 bool g_snapshotRequested = false;
+Clock::time_point g_nextSnapshotTime;
 LatestSnapshot g_latest;
 std::mutex g_mutex;
 
@@ -310,7 +316,10 @@ void shutdown() {
   }
 }
 
-void request_snapshot() noexcept { g_snapshotRequested = true; }
+void request_snapshot() noexcept {
+  std::lock_guard lock{g_mutex};
+  g_snapshotRequested = true;
+}
 
 bool read_latest(uint16_t x, uint16_t y, uint32_t& z) noexcept {
   std::lock_guard lock{g_mutex};
@@ -330,10 +339,15 @@ void poll() noexcept {
 void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureView& depthView,
                            wgpu::Extent3D sourceSize, uint32_t msaaSamples) noexcept {
   ZoneScoped;
-  if (!g_snapshotRequested) {
-    return;
+  const auto now = Clock::now();
+  {
+    std::lock_guard lock{g_mutex};
+    if (!g_snapshotRequested || now < g_nextSnapshotTime) {
+      return;
+    }
+    g_snapshotRequested = false;
+    g_nextSnapshotTime = now + SnapshotInterval;
   }
-  g_snapshotRequested = false;
 
   const auto dstSize = vi::configured_fb_size();
   if (!depthView || dstSize.x == 0 || dstSize.y == 0 || sourceSize.width == 0 || sourceSize.height == 0) {
@@ -429,16 +443,20 @@ void after_submit() noexcept {
 
 namespace testing {
 void reset() noexcept {
+  std::lock_guard lock{g_mutex};
   g_snapshotRequested = false;
   g_nextSlot = 0;
-  std::lock_guard lock{g_mutex};
+  g_nextSnapshotTime = {};
   g_latest = {};
   for (auto& slot : g_slots) {
     slot.state = SlotState::Available;
   }
 }
 
-bool snapshot_requested() noexcept { return g_snapshotRequested; }
+bool snapshot_requested() noexcept {
+  std::lock_guard lock{g_mutex};
+  return g_snapshotRequested;
+}
 
 void set_latest(uint32_t width, uint32_t height, const std::vector<uint32_t>& data) {
   std::lock_guard lock{g_mutex};
