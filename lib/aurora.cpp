@@ -294,6 +294,7 @@ void end_frame() noexcept {
   const wgpu::CommandBufferDescriptor cmdBufDescriptor{.label = "Redraw command buffer"};
   const auto buffer = encoder.Finish(&cmdBufDescriptor);
   g_queue.Submit(1, &buffer);
+  gfx::after_submit();
   auto presentStatus = g_surface.Present();
   if (presentStatus != wgpu::Status::Success) {
     Log.warn("Surface present failed: {}", static_cast<int>(presentStatus));

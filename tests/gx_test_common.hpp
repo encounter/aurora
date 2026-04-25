@@ -7,6 +7,7 @@
 #include "gx/gx.hpp"
 #include "gx/fifo.hpp"
 #include "gx/command_processor.hpp"
+#include "gfx/depth_peek.hpp"
 
 #include <cstring>
 #include <vector>
@@ -20,6 +21,7 @@ protected:
     GXInit(nullptr, 0);
     aurora::gx::fifo::clear_buffer();
     aurora::gx::g_gxState = aurora::gx::GXState{};
+    aurora::gfx::depth_peek::testing::reset();
   }
 
   // Copy the internal FIFO buffer contents and clear it

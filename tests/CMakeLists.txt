@@ -20,6 +20,7 @@ if (AURORA_ENABLE_GX)
     # GX API implementations (encoders)
     ../lib/dolphin/gx/GXBump.cpp
     ../lib/dolphin/gx/GXCull.cpp
+    ../lib/dolphin/gx/GXCpu2Efb.cpp
     ../lib/dolphin/gx/GXDispList.cpp
     ../lib/dolphin/gx/GXDraw.cpp
     ../lib/dolphin/gx/GXExtra.cpp

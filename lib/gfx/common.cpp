@@ -1,6 +1,7 @@
 #include "common.hpp"
 
 #include "clear.hpp"
+#include "depth_peek.hpp"
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"
 #include "../gx/pipeline.hpp"
@@ -454,6 +455,7 @@ PipelineRef pipeline_ref(const gx::PipelineConfig& config) {
 
 void initialize() {
   g_frameIndex = 0;
+  depth_peek::initialize();
   tex_copy_conv::initialize();
   tex_palette_conv::initialize();
   texture_replacement::initialize();
@@ -574,6 +576,7 @@ void initialize() {
 
 void shutdown() {
   shutdown_pipeline_cache();
+  depth_peek::shutdown();
   tex_copy_conv::shutdown();
   tex_palette_conv::shutdown();
   texture_replacement::shutdown();
@@ -771,6 +774,10 @@ void render(wgpu::CommandEncoder& cmd) {
     render_pass(pass, i);
     pass.End();
 
+    if (i == g_renderPasses.size() - 1) {
+      depth_peek::encode_frame_snapshot(cmd, passInfo.copySourceDepthView, passInfo.targetSize, passInfo.msaaSamples);
+    }
+
     if (passInfo.resolveTarget) {
       const auto& dstSize = passInfo.resolveTarget->size;
       const bool needsConversion = tex_copy_conv::needs_conversion(passInfo.resolveFormat);
@@ -828,6 +835,8 @@ void render(wgpu::CommandEncoder& cmd) {
   }
 #endif
 }
+
+void after_submit() noexcept { depth_peek::after_submit(); }
 
 void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
   g_currentPipeline = UINTPTR_MAX;

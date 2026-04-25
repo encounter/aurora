@@ -1,6 +1,7 @@
 add_library(aurora_gx STATIC
         lib/gfx/clear.cpp
         lib/gfx/common.cpp
+        lib/gfx/depth_peek.cpp
         lib/gfx/pipeline_cache.cpp
         lib/gfx/dds_io.cpp
         lib/gfx/tex_copy_conv.cpp
@@ -16,6 +17,7 @@ add_library(aurora_gx STATIC
         lib/gx/shader_info.cpp
         lib/dolphin/gx/GXBump.cpp
         lib/dolphin/gx/GXCull.cpp
+        lib/dolphin/gx/GXCpu2Efb.cpp
         lib/dolphin/gx/GXDispList.cpp
         lib/dolphin/gx/GXDraw.cpp
         lib/dolphin/gx/GXExtra.cpp

@@ -2972,6 +2972,37 @@ TEST_F(GXFifoTest, CopyClear_MaxDepth) {
   EXPECT_EQ(g_gxState.clearDepth, 0xFFFFFFu);
 }
 
+TEST_F(GXFifoTest, PeekZ_ReturnsClearDepthFallbackAndRequestsSnapshot) {
+  g_gxState.clearDepth = 0x123456;
+
+  u32 z = 0;
+  GXPeekZ(10, 20, &z);
+
+  EXPECT_EQ(z, 0x123456u);
+  EXPECT_TRUE(aurora::gfx::depth_peek::testing::snapshot_requested());
+}
+
+TEST_F(GXFifoTest, PeekZ_ReturnsLatestCompletedSnapshot) {
+  aurora::gfx::depth_peek::testing::set_latest(2, 2, {0x000001, 0x000002, 0x000003, 0x01000004});
+
+  u32 z = 0;
+  GXPeekZ(1, 1, &z);
+
+  EXPECT_EQ(z, 0x000004u);
+  EXPECT_TRUE(aurora::gfx::depth_peek::testing::snapshot_requested());
+}
+
+TEST_F(GXFifoTest, PeekZ_OutOfRangeReturnsClearDepthFallback) {
+  g_gxState.clearDepth = 0xabcdef;
+  aurora::gfx::depth_peek::testing::set_latest(1, 1, {0x000001});
+
+  u32 z = 0;
+  GXPeekZ(1, 0, &z);
+
+  EXPECT_EQ(z, 0xabcdefu);
+  EXPECT_TRUE(aurora::gfx::depth_peek::testing::snapshot_requested());
+}
+
 // ============================================================================
 // Composite tests (multiple state changes in a single FIFO stream)
 // ============================================================================
