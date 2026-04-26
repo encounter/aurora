@@ -379,6 +379,17 @@ void clear_copy_texture_cache() noexcept {
   }
 }
 
+void evict_copy_texture(const void* dest) noexcept {
+  g_gxState.copyTextures.erase(dest);
+  for (auto it = g_gxState.copyTextureCache.begin(); it != g_gxState.copyTextureCache.end();) {
+    if (it->first.dest == dest) {
+      g_gxState.copyTextureCache.erase(it++);
+    } else {
+      ++it;
+    }
+  }
+}
+
 void resolve_sampled_textures(const ShaderInfo& info) noexcept {
   ZoneScoped;
 

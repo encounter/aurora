@@ -20,4 +20,11 @@ void GXDestroyTlutObj(GXTlutObj* obj_) {
   }
   obj->tlutObjId = 0;
 }
+
+void GXDestroyCopyTex(void* dest) {
+  if (dest != nullptr) {
+    GX_WRITE_AURORA(GX_LOAD_AURORA_DESTROY_COPY_TEX);
+    GX_WRITE_U64(reinterpret_cast<u64>(dest));
+  }
+}
 }
