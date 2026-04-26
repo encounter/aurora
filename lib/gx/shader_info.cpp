@@ -265,8 +265,13 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
     }
   }
   if (info.lightingEnabled) {
+    info.enhancedLighting = config.enhancedLighting;
     // Lights + light state for all channels
     info.uniformSize += 16 + sizeof(Light) * GX::MaxLights;
+    if (info.enhancedLighting) {
+      // specular_intensity, rim_intensity, ambient_multiplier, diffuse_multiplier
+      info.uniformSize += 16;
+    }
   }
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
     if (info.sampledColorChannels.test(i)) {
@@ -405,6 +410,12 @@ gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart, const BindGroupRa
     // Light state for all channels
     for (int i = 0; i < 4; ++i) {
       buf.append<u32>(g_gxState.colorChannelState[i].lightMask.to_ulong());
+    }
+    if (info.enhancedLighting) {
+      buf.append<f32>(g_specularIntensity);
+      buf.append<f32>(g_rimIntensity);
+      buf.append<f32>(g_ambientMultiplier);
+      buf.append<f32>(g_diffuseMultiplier);
     }
   }
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
