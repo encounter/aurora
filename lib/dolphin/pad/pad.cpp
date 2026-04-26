@@ -857,7 +857,7 @@ BOOL PADGetSensorData(u32 port, PADSensorType sensor, f32* data, const int nValu
 
 BOOL PADSetRumbleIntensity(u32 port, u16 low, u16 high) {
   auto* ctrl = aurora::input::get_controller_for_player(port);
-  if (ctrl == nullptr || !ctrl->m_isGameCube || !ctrl->m_hasRumble) {
+  if (ctrl == nullptr || ctrl->m_isGameCube || !ctrl->m_hasRumble) {
     return FALSE;
   }
   ctrl->m_rumbleIntensityLow = low;
@@ -866,16 +866,16 @@ BOOL PADSetRumbleIntensity(u32 port, u16 low, u16 high) {
   return TRUE;
 }
 
-BOOL PADGetRumbleIntensity(u32 port, u16* high, u16* low) {
+BOOL PADGetRumbleIntensity(u32 port, u16* low, u16* high) {
   const auto* ctrl = aurora::input::get_controller_for_player(port);
   if (ctrl == nullptr || ctrl->m_isGameCube || !ctrl->m_hasRumble) {
-    *high = 0;
     *low = 0;
+    *high = 0;
     return FALSE;
   }
 
-  *high = ctrl->m_rumbleIntensityHigh;
   *low = ctrl->m_rumbleIntensityLow;
+  *high = ctrl->m_rumbleIntensityHigh;
   return TRUE;
 }
 
