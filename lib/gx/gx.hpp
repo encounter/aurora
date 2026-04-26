@@ -47,7 +47,7 @@ constexpr float GX_LARGE_NUMBER = -1048576.0f;
 namespace aurora::gx {
 constexpr bool EnableNormalVisualization = false;
 constexpr bool EnableDebugPrints = false;
-constexpr bool UsePerPixelLighting = false;
+constexpr bool UsePerPixelLighting = true;
 constexpr bool UseReversedZ = true;
 
 constexpr u32 MaxTextures = GX_MAX_TEXMAP;
@@ -383,6 +383,13 @@ struct GXState {
   void clearVtxSizeCache() { lastVtxFmt = GX_MAX_VTXFMT; }
 };
 extern GXState g_gxState;
+extern bool g_enhancedLighting;
+extern bool g_enableSpecular;
+extern bool g_enableRim;
+extern float g_specularIntensity;
+extern float g_rimIntensity;
+extern float g_ambientMultiplier;
+extern float g_diffuseMultiplier;
 struct ShaderInfo;
 
 void initialize() noexcept;
@@ -438,7 +445,10 @@ struct ShaderConfig {
   u8 fogType = GX_FOG_NONE;
   u8 vtxStride = 0;
   u8 lineMode : 2 = 0; // 1 = GX_LINES, 2 = GX_LINESTRIP, 3 = GX_POINTS
-  u8 pad1 : 6 = 0;
+  u8 enhancedLighting : 1 = 1;
+  u8 enableSpecular : 1 = 1;
+  u8 enableRim : 1 = 1;
+  u8 pad1 : 3 = 0;
   u8 pad2 = 0;
   std::array<AttrConfig, MaxVtxAttr> attrs;
   std::array<TevSwap, MaxTevSwap> tevSwapTable;
@@ -475,6 +485,7 @@ struct ShaderInfo {
   u32 uniformSize = 0;
   bool usesFog : 1 = false;
   bool lightingEnabled : 1 = false;
+  bool enhancedLighting : 1 = false;
   u8 lineMode : 2 = 0;
 };
 struct BindGroupRanges {

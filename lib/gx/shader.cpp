@@ -592,7 +592,7 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
   std::string_view swizzle = alpha ? ".a"sv : ""sv;
   std::string outVar;
   std::string_view posVar;
-  if (UsePerPixelLighting) {
+  if (config.enhancedLighting) {
     outVar = fmt::format("rast{}", i);
     posVar = "in.mv_pos"sv;
   } else {
@@ -601,7 +601,7 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
   }
   std::string ambSrc, matSrc;
   if (cc.ambSrc == GX_SRC_VTX) {
-    if (UsePerPixelLighting) {
+    if (config.enhancedLighting) {
       ambSrc = fmt::format("in.clr{}", i);
     } else {
       ambSrc = vtx_attr(config, static_cast<GXAttr>(GX_VA_CLR0 + i));
@@ -610,7 +610,7 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
     ambSrc = fmt::format("ubuf.cc{0}{1}_amb", i, alpha ? "a"sv : ""sv);
   }
   if (cc.matSrc == GX_SRC_VTX) {
-    if (UsePerPixelLighting) {
+    if (config.enhancedLighting) {
       matSrc = fmt::format("in.clr{}", i);
     } else {
       matSrc = vtx_attr(config, static_cast<GXAttr>(GX_VA_CLR0 + i));
@@ -632,7 +632,7 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
           var dist_attn = dot(light.dist_att, vec3f(1.0, dist, dist2));
           attn = max(0.0, cos_attn / dist_attn);)""");
   } else if (cc.attnFn == GX_AF_SPEC) {
-    std::string_view normal = UsePerPixelLighting ? "in.mv_nrm"sv : "mv_nrm"sv;
+    std::string_view normal = config.enhancedLighting ? "in.mv_nrm"sv : "mv_nrm"sv;
     std::string dist_attn = diffFn != GX_DF_NONE
                                 ? "max(0.0, dot(normalize(light.dist_att), vec3f(1.0, attn, attn * attn)));"
                                 : "max(0.0, dot(light.dist_att, vec3f(1.0, attn, attn * attn)));";
@@ -647,21 +647,49 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
   if (diffFn == GX_DF_NONE) {
     lightDiffFn = "1.0"sv;
   } else if (diffFn == GX_DF_SIGN) {
-    if (UsePerPixelLighting) {
+    if (config.enhancedLighting) {
       lightDiffFn = "dot(ldir, in.mv_nrm)"sv;
     } else {
       lightDiffFn = "dot(ldir, mv_nrm)"sv;
     }
   } else if (diffFn == GX_DF_CLAMP) {
-    if (UsePerPixelLighting) {
+    if (config.enhancedLighting) {
       lightDiffFn = "max(0.0, dot(ldir, in.mv_nrm))"sv;
     } else {
       lightDiffFn = "max(0.0, dot(ldir, mv_nrm))"sv;
     }
   }
+  // Blinn-Phong specular + rim lighting for per-pixel lighting
+  // Skips GX_AF_SPEC (which already computes specular in a worse way)
+  std::string ambientScale;
+  std::string diffuseScale;
+  std::string viewDirCode;
+  std::string specularCode;
+  std::string postLoopCode;
+  if (config.enhancedLighting) {
+    ambientScale = " * ubuf.ambient_multiplier";
+    diffuseScale = " * ubuf.diffuse_multiplier";
+    if (!alpha && diffFn != GX_DF_NONE && cc.attnFn != GX_AF_SPEC &&
+        (config.enableSpecular || config.enableRim)) {
+      viewDirCode = R"""(
+      let view_dir = normalize(-in.mv_pos);)""";
+      if (config.enableSpecular) {
+        specularCode = R"""(
+          if (diff > 0.0) {
+              let h = normalize(ldir + view_dir);
+              spec_contrib = pow(max(0.0, dot(in.mv_nrm, h)), 32.0) * ubuf.specular_intensity;
+          })""";
+      }
+      if (config.enableRim) {
+        postLoopCode = R"""(
+      let rim = pow(1.0 - max(0.0, dot(view_dir, in.mv_nrm)), 3.0) * ubuf.rim_intensity;
+      lighting = lighting + vec4f(rim, rim, rim, 0.0);)""";
+      }
+    }
+  }
   return fmt::format(R"""(
     {{
-      var lighting = {5};
+      var lighting = {5}{13};{11}
       for (var i = 0u; i < {1}u; i++) {{
           if ((ubuf.lightState{0}{9} & (1u << i)) == 0u) {{ continue; }}
           var light = ubuf.lights[i];
@@ -671,12 +699,13 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
           ldir = ldir / dist;
           var attn: f32;{2}
           var diff = {3};
-          lighting = lighting + (attn * diff * light.color);
-      }}
+          var spec_contrib: f32 = 0.0;{10}
+          lighting = lighting + (attn * (diff{14} + spec_contrib) * light.color);
+      }}{12}
       {7}{8} = ({4} * clamp(lighting, vec4f(0.0), vec4f(1.0))){8};
     }})""",
                      i, GX::MaxLights, lightAttnFn, lightDiffFn, matSrc, ambSrc, posVar, outVar, swizzle,
-                     alpha ? "a"sv : ""sv);
+                     alpha ? "a"sv : ""sv, specularCode, viewDirCode, postLoopCode, ambientScale, diffuseScale);
 }
 
 wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
@@ -927,6 +956,12 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     lightState0a: u32,
     lightState1a: u32,)"""),
                                GX::MaxLights);
+    if (config.enhancedLighting) {
+      uniBufAttrs += "\n    specular_intensity: f32,";
+      uniBufAttrs += "\n    rim_intensity: f32,";
+      uniBufAttrs += "\n    ambient_multiplier: f32,";
+      uniBufAttrs += "\n    diffuse_multiplier: f32,";
+    }
     uniformPre +=
         "\n"
         "struct Light {\n"
@@ -936,7 +971,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
         "    cos_att: vec3f,\n"
         "    dist_att: vec3f,\n"
         "};";
-    if (UsePerPixelLighting) {
+    if (config.enhancedLighting) {
       vtxOutAttrs += fmt::format("\n    @location({}) mv_pos: vec3f,", vtxOutIdx++);
       vtxOutAttrs += fmt::format("\n    @location({}) mv_nrm: vec3f,", vtxOutIdx++);
       vtxXfrAttrs += fmt::format(FMT_STRING(R"""(
@@ -966,7 +1001,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     }
 
     // Output vertex color if necessary
-    if (UsePerPixelLighting) {
+    if (config.enhancedLighting) {
       if ((cc.lightingEnabled && cc.ambSrc == GX_SRC_VTX) || cc.matSrc == GX_SRC_VTX ||
           (cca.lightingEnabled && cca.ambSrc == GX_SRC_VTX) || cca.matSrc == GX_SRC_VTX) {
         vtxOutAttrs += fmt::format("\n    @location({}) clr{}: vec4f,", vtxOutIdx++, i);
@@ -974,7 +1009,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
       }
     }
 
-    if (UsePerPixelLighting) {
+    if (config.enhancedLighting) {
       fragmentFnPre += fmt::format("\n    var rast{}: vec4f;", i);
       fragmentFnPre += lighting_func(config, cc, i, false);
       fragmentFnPre += lighting_func(config, cca, i, true);

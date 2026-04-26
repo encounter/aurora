@@ -32,6 +32,22 @@ const AuroraStats* aurora_get_stats();
 
 void aurora_enable_vsync(bool enabled);
 
+void aurora_set_enhanced_lighting(bool enabled);
+bool aurora_get_enhanced_lighting();
+
+void aurora_set_specular_lighting(bool enabled);
+bool aurora_get_specular_lighting();
+void aurora_set_rim_lighting(bool enabled);
+bool aurora_get_rim_lighting();
+void aurora_set_specular_intensity(float intensity);
+float aurora_get_specular_intensity();
+void aurora_set_rim_intensity(float intensity);
+float aurora_get_rim_intensity();
+void aurora_set_ambient_multiplier(float multiplier);
+float aurora_get_ambient_multiplier();
+void aurora_set_diffuse_multiplier(float multiplier);
+float aurora_get_diffuse_multiplier();
+
 #ifdef __cplusplus
 }
 #endif

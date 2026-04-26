@@ -1058,3 +1058,19 @@ void pop_debug_group() {
 }
 
 const AuroraStats* aurora_get_stats() { return &aurora::gfx::g_stats; }
+
+void aurora_set_enhanced_lighting(const bool enabled) { aurora::gx::g_enhancedLighting = enabled; }
+bool aurora_get_enhanced_lighting() { return aurora::gx::g_enhancedLighting; }
+
+void aurora_set_specular_lighting(const bool enabled) { aurora::gx::g_enableSpecular = enabled; }
+bool aurora_get_specular_lighting() { return aurora::gx::g_enableSpecular; }
+void aurora_set_rim_lighting(const bool enabled) { aurora::gx::g_enableRim = enabled; }
+bool aurora_get_rim_lighting() { return aurora::gx::g_enableRim; }
+void aurora_set_specular_intensity(const float intensity) { aurora::gx::g_specularIntensity = intensity; }
+float aurora_get_specular_intensity() { return aurora::gx::g_specularIntensity; }
+void aurora_set_rim_intensity(const float intensity) { aurora::gx::g_rimIntensity = intensity; }
+float aurora_get_rim_intensity() { return aurora::gx::g_rimIntensity; }
+void aurora_set_ambient_multiplier(const float multiplier) { aurora::gx::g_ambientMultiplier = multiplier; }
+float aurora_get_ambient_multiplier() { return aurora::gx::g_ambientMultiplier; }
+void aurora_set_diffuse_multiplier(const float multiplier) { aurora::gx::g_diffuseMultiplier = multiplier; }
+float aurora_get_diffuse_multiplier() { return aurora::gx::g_diffuseMultiplier; }
