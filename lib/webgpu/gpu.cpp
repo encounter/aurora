@@ -13,6 +13,7 @@
 #include <webgpu/webgpu_cpp.h>
 
 #include "../gfx/common.hpp"
+#include "../gx/gx.hpp"
 #include "../internal.hpp"
 #include "../window.hpp"
 
@@ -364,8 +365,16 @@ bool initialize(AuroraBackend auroraBackend) {
         .requiredFeatures = requiredInstanceFeatures.data(),
     };
 #ifdef WEBGPU_DAWN
+    static constexpr std::array enabledToggles{
+      "allow_unsafe_apis", // Required for immediates
+    };
+    const wgpu::DawnTogglesDescriptor instanceTogglesDescriptor({
+        .enabledToggleCount = enabledToggles.size(),
+        .enabledToggles = enabledToggles.data(),
+    });
     dawn::native::DawnInstanceDescriptor dawnInstanceDescriptor;
     dawnInstanceDescriptor.backendValidationLevel = dawn::native::BackendValidationLevel::Disabled;
+    dawnInstanceDescriptor.nextInChain = &instanceTogglesDescriptor;
     instanceDescriptor.nextInChain = &dawnInstanceDescriptor;
 #endif
     g_instance = wgpu::CreateInstance(&instanceDescriptor);
@@ -452,6 +461,7 @@ bool initialize(AuroraBackend auroraBackend) {
             supportedLimits.minUniformBufferOffsetAlignment < 64 ? 64 : supportedLimits.minUniformBufferOffsetAlignment,
         .minStorageBufferOffsetAlignment =
             supportedLimits.minStorageBufferOffsetAlignment < 16 ? 16 : supportedLimits.minStorageBufferOffsetAlignment,
+        .maxImmediateSize = gx::DrawImmediateDataSize
     };
     Log.info(
         "Using limits:"
@@ -462,11 +472,13 @@ bool initialize(AuroraBackend auroraBackend) {
         "\n  maxDynamicStorageBuffersPerPipelineLayout: {}"
         "\n  maxStorageBuffersPerShaderStage: {}"
         "\n  minUniformBufferOffsetAlignment: {}"
-        "\n  minStorageBufferOffsetAlignment: {}",
+        "\n  minStorageBufferOffsetAlignment: {}"
+        "\n  maxImmediateSize: {}",
         requiredLimits.maxTextureDimension1D, requiredLimits.maxTextureDimension2D,
         requiredLimits.maxTextureDimension3D, requiredLimits.maxTextureArrayLayers,
         requiredLimits.maxDynamicStorageBuffersPerPipelineLayout, requiredLimits.maxStorageBuffersPerShaderStage,
-        requiredLimits.minUniformBufferOffsetAlignment, requiredLimits.minStorageBufferOffsetAlignment);
+        requiredLimits.minUniformBufferOffsetAlignment, requiredLimits.minStorageBufferOffsetAlignment,
+        requiredLimits.maxImmediateSize);
     std::vector<wgpu::FeatureName> requiredFeatures;
     wgpu::SupportedFeatures supportedFeatures;
     g_adapter.GetFeatures(&supportedFeatures);

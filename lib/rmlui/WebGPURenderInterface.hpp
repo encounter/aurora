@@ -9,7 +9,6 @@ namespace aurora::rmlui {
 struct UniformBlock {
   float MVP[4][4];
   float Gamma;
-  float translation[2];
 };
 
 class WebGPURenderInterface : public Rml::RenderInterface {
@@ -24,6 +23,7 @@ private:
 
   wgpu::BindGroup m_CommonBindGroup = nullptr;
   wgpu::BindGroupLayout m_ImageBindGroupLayout = nullptr;
+  Rml::TextureHandle m_nullTexture = 0;
 
   Rml::Vector2i m_windowSize;
   float m_gamma = 0.0f;
@@ -33,6 +33,9 @@ private:
   void CreateUniformBuffer();
 
   void SetupRenderState(const Rml::Vector2f& translation);
+
+  void CreateNullTexture();
+
 public:
 	Rml::CompiledGeometryHandle CompileGeometry(Rml::Span<const Rml::Vertex> vertices, Rml::Span<const int> indices) override;
 	void RenderGeometry(Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation, Rml::TextureHandle texture) override;

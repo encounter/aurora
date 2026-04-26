@@ -49,15 +49,15 @@ struct VertexOutput {
 struct Uniforms {
     mvp: mat4x4<f32>,
     gamma: f32,
-    translate: vec2<f32>
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+var<immediate> translation: vec4<f32>;
 
 @vertex
 fn main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    var translatedPos = in.position + uniforms.translate;
+    var translatedPos = translation.xy + in.position;
 
     out.position = uniforms.mvp * vec4<f32>(translatedPos, 0.0, 1.0);
     out.color = in.color;
@@ -76,12 +76,12 @@ struct VertexOutput {
 struct Uniforms {
     mvp: mat4x4<f32>,
     gamma: f32,
-    translate: vec2<f32>
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var s: sampler;
 @group(1) @binding(0) var t: texture_2d<f32>;
+var<immediate> translation: vec4<f32>;
 
 @fragment
 fn main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -188,14 +188,12 @@ Rml::CompiledGeometryHandle WebGPURenderInterface::CompileGeometry(Rml::Span<con
 }
 
 void WebGPURenderInterface::RenderGeometry(Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation, Rml::TextureHandle texture) {
-  if (texture == 0 || geometry == 0) return;
-
   Log.info("Rendering Geometry. Geo Handle: {} Translation: {} {} Texture Handle: {}", geometry, translation.x, translation.y, texture);
 
   SetupRenderState(translation);
 
   auto* geometry_data = (ShaderGeometryData*)geometry;
-  auto* texture_data = (ShaderTextureData*)texture;
+  auto* texture_data = (ShaderTextureData*)(texture != 0 ? texture : m_nullTexture);
 
   m_pass->SetVertexBuffer(0, geometry_data->m_vertexBuffer, 0, geometry_data->m_vertexBuffer.GetSize());
   m_pass->SetIndexBuffer(geometry_data->m_indexBuffer, wgpu::IndexFormat::Uint32, 0, geometry_data->m_indexBuffer.GetSize());
@@ -408,6 +406,7 @@ void WebGPURenderInterface::CreateDeviceObjects() {
     wgpu::PipelineLayoutDescriptor layout_desc = {};
     layout_desc.bindGroupLayoutCount = 2;
     layout_desc.bindGroupLayouts = bg_layouts;
+    layout_desc.immediateSize = sizeof(Rml::Vector4f);
     graphics_pipeline_desc.layout = webgpu::g_device.CreatePipelineLayout(&layout_desc);
 
     // Create the vertex shader
@@ -531,6 +530,7 @@ void WebGPURenderInterface::CreateDeviceObjects() {
         m_gamma = 1.0f;
     }
 
+    CreateNullTexture();
 }
 
 void WebGPURenderInterface::SetupRenderState(const Rml::Vector2f& translation) {
@@ -538,21 +538,28 @@ void WebGPURenderInterface::SetupRenderState(const Rml::Vector2f& translation) {
     float R = m_windowSize.x;
     float T = 0;
     float B = m_windowSize.y;
-    float mvp[4][4] = {
+    UniformBlock ubo = {};
+
+    ubo = {
+      {
         { 2.0f/(R-L),   0.0f,           0.0f,       0.0f },
         { 0.0f,         2.0f/(T-B),     0.0f,       0.0f },
         { 0.0f,         0.0f,           0.5f,       0.0f },
         { (R+L)/(L-R),  (T+B)/(B-T),    0.5f,       1.0f },
+        },
+        m_gamma
     };
 
-    float translate[2] = {
+    webgpu::g_queue.WriteBuffer(m_uniformBuffer, 0, &ubo, sizeof(UniformBlock));
+
+    // push translate to immediates
+    float translationData[] = {
       translation.x,
-      translation.y
+      translation.y,
+      0.0f,
+      1.0f
     };
-
-    webgpu::g_queue.WriteBuffer(m_uniformBuffer, offsetof(UniformBlock, MVP), mvp, sizeof(UniformBlock::MVP));
-    webgpu::g_queue.WriteBuffer(m_uniformBuffer, offsetof(UniformBlock, translation), translate, sizeof(UniformBlock::translation));
-    webgpu::g_queue.WriteBuffer(m_uniformBuffer, offsetof(UniformBlock, Gamma), &m_gamma, sizeof(UniformBlock::Gamma));
+    m_pass->SetImmediates(0, translationData, sizeof(translationData));
 
     // setup viewport
     m_pass->SetViewport(0,0, m_windowSize.x, m_windowSize.y, 0, 1);
@@ -561,6 +568,15 @@ void WebGPURenderInterface::SetupRenderState(const Rml::Vector2f& translation) {
     // Setup blend factor
     wgpu::Color blend_color = { 0.f, 0.f, 0.f, 0.f };
     m_pass->SetBlendConstant(&blend_color);
+}
+
+void WebGPURenderInterface::CreateNullTexture() {
+  const Rml::byte tex_bytes[] = {
+    0xFF, 0xFF, 0xFF, 0xFF
+  };
+  Rml::Span tex(tex_bytes, sizeof(tex_bytes));
+
+  m_nullTexture = GenerateTexture(tex, {1,1});
 }
 
 void WebGPURenderInterface::CreateUniformBuffer() {
