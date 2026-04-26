@@ -8,6 +8,7 @@
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
+#include <aurora/hd_texture.hpp>
 #include <fmt/format.h>
 #include <tracy/Tracy.hpp>
 
@@ -15,6 +16,7 @@
 #include <array>
 #include <charconv>
 #include <cstring>
+#include <set>
 #include <filesystem>
 #include <list>
 #include <memory>
@@ -77,6 +79,46 @@ uint64_t s_replacementCacheBytes = 0;
 constexpr uint64_t kReplacementCacheBudgetBytes = 4294967296; // 4GB, reasonable for modern hardware?
 constexpr uint64_t kReplacementWildcardTextureHash = 0xFFFFFFFFFFFFFFFFull;
 constexpr uint64_t kReplacementWildcardTlutHash = 0xFFFFFFFFFFFFFFFEull;
+
+u32 mip_count(const GXTexObj_& obj) noexcept {
+  return obj.has_mips() ? std::max<u32>(static_cast<u32>(obj.max_lod()) + 1, 1) : 1;
+}
+
+u32 summed_mip_size(u32 width, u32 height, u32 bytesPerPixel, u32 mips) noexcept {
+  u32 total = 0;
+  for (u32 mip = 0; mip < mips; ++mip) {
+    total += width * height * bytesPerPixel;
+    width = std::max(width >> 1, 1u);
+    height = std::max(height >> 1, 1u);
+  }
+  return total;
+}
+
+u32 compute_texture_upload_size(const GXTexObj_& obj) noexcept {
+  const u32 mips = mip_count(obj);
+  switch (obj.format()) {
+  case GX_TF_R8_PC:
+    return summed_mip_size(obj.width(), obj.height(), 1, mips);
+  case GX_TF_RG8_PC:
+    return summed_mip_size(obj.width(), obj.height(), 2, mips);
+  case GX_TF_RGBA8_PC:
+    return summed_mip_size(obj.width(), obj.height(), 4, mips);
+  case GX_TF_BC1_PC: {
+    // BC1: 4x4 pixel blocks, 8 bytes each. Sum across all mip levels.
+    u32 total = 0;
+    u32 w = obj.width();
+    u32 h = obj.height();
+    for (u32 i = 0; i < mips; ++i) {
+      total += ((std::max(w, 1u) + 3) / 4) * ((std::max(h, 1u) + 3) / 4) * 8;
+      w = w >> 1;
+      h = h >> 1;
+    }
+    return total;
+  }
+  default:
+    return GXGetTexBufferSize(obj.width(), obj.height(), obj.format(), obj.has_mips(), static_cast<u8>(mips - 1));
+  }
+}
 
 bool iequals_ascii(std::string_view lhs, std::string_view rhs) noexcept {
   if (lhs.size() != rhs.size()) {
@@ -171,8 +213,12 @@ uint32_t texture_base_level_size(const GXTexObj_& obj) noexcept {
   switch (obj.format()) {
   case GX_TF_R8_PC:
     return obj.width() * obj.height();
+  case GX_TF_RG8_PC:
+    return obj.width() * obj.height() * 2;
   case GX_TF_RGBA8_PC:
     return obj.width() * obj.height() * 4;
+  case GX_TF_BC1_PC:
+    return ((obj.width() + 3) / 4) * ((obj.height() + 3) / 4) * 8;
   default:
     return GXGetTexBufferSize(obj.width(), obj.height(), obj.format(), false, 0);
   }
@@ -265,8 +311,12 @@ RuntimeTextureKey build_runtime_key(const GXTexObj_& obj) noexcept {
       .format = obj.format(),
   };
 
-  const uint32_t textureSize = texture_base_level_size(obj);
+  u32 textureSize = texture_base_level_size(obj);
   if (obj.data != nullptr && textureSize != 0) {
+    std::size_t rem = 0;
+    if (hd_find_arc_range(obj.data, &rem) != nullptr && rem < textureSize) {
+      textureSize = static_cast<u32>(rem);
+    }
     key.textureHash = XXH64(obj.data, textureSize, 0);
   }
   if (key.hasTlut) {

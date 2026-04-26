@@ -519,8 +519,11 @@ bool initialize(AuroraBackend auroraBackend) {
     g_adapter.GetFeatures(&supportedFeatures);
     for (size_t i = 0; i < supportedFeatures.featureCount; ++i) {
       const auto feature = supportedFeatures.features[i];
-      if (feature == wgpu::FeatureName::TextureCompressionBC) {
-        g_bcTexturesSupported = true;
+      if (feature == wgpu::FeatureName::TextureCompressionBC ||
+          feature == wgpu::FeatureName::TextureComponentSwizzle) {
+        if (feature == wgpu::FeatureName::TextureCompressionBC) {
+          g_bcTexturesSupported = true;
+        }
         requiredFeatures.push_back(feature);
       }
     }

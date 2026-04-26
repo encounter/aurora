@@ -71,7 +71,7 @@ uint64_t calc_texture_size(wgpu::TextureFormat format, u32 width, u32 height, u3
 TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mips, u32 format, ArrayRef<uint8_t> data,
                                     bool tlut, const char* label) noexcept {
   ZoneScoped;
-
+  
   auto handle = new_dynamic_texture_2d(width, height, mips, format, label);
   auto& ref = *handle;
 
@@ -158,6 +158,26 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
       .dimension = wgpu::TextureViewDimension::e2D,
       .mipLevelCount = mips,
   };
+  // R8_PC/RG8_PC store GC's intensity (+ alpha) layout. Apply .rrrr / .rrrg
+  // view swizzle so the GPU samples them as (I,I,I,A) instead of raw R / RG.
+  wgpu::TextureComponentSwizzleDescriptor swizzle;
+  bool needsSwizzle = false;
+  if (gxFormat == GX_TF_R8_PC) {
+    swizzle.swizzle.r = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.g = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.b = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.a = wgpu::ComponentSwizzle::R;
+    needsSwizzle = true;
+  } else if (gxFormat == GX_TF_RG8_PC) {
+    swizzle.swizzle.r = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.g = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.b = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.a = wgpu::ComponentSwizzle::G;
+    needsSwizzle = true;
+  }
+  if (needsSwizzle) {
+    textureViewDescriptor.nextInChain = &swizzle;
+  }
   auto textureView = texture.CreateView(&textureViewDescriptor);
   return std::make_shared<TextureRef>(std::move(texture), std::move(textureView), wgpu::TextureView{}, size, wgpuFormat,
                                       mips, gxFormat);

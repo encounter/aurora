@@ -4,10 +4,67 @@
 #include "../../gfx/texture.hpp"
 #include "../../gfx/texture_replacement.hpp"
 #include "dolphin/gx/GXAurora.h"
+#include <aurora/hd_texture.hpp>
 
 #include <algorithm>
+#include <shared_mutex>
+#include <unordered_map>
 
 #include "tracy/Tracy.hpp"
+
+namespace aurora::gfx {
+namespace {
+std::unordered_map<const void*, HdReplacement> s_hdReplacements;
+std::shared_mutex s_hdReplacementsMutex;
+
+std::vector<HdArcRange> s_hdArcRanges;
+std::shared_mutex s_hdArcRangesMutex;
+}
+
+void hd_register_replacement(const void* gcDataPtr, HdReplacement replacement) noexcept {
+  if (gcDataPtr == nullptr) return;
+  std::unique_lock lk(s_hdReplacementsMutex);
+  s_hdReplacements[gcDataPtr] = std::move(replacement);
+}
+
+const HdReplacement* hd_lookup_replacement(const void* gcDataPtr) noexcept {
+  if (gcDataPtr == nullptr) return nullptr;
+  std::shared_lock lk(s_hdReplacementsMutex);
+  auto it = s_hdReplacements.find(gcDataPtr);
+  return (it == s_hdReplacements.end()) ? nullptr : &it->second;
+}
+
+void hd_clear_replacements() noexcept {
+  std::unique_lock lk(s_hdReplacementsMutex);
+  s_hdReplacements.clear();
+}
+
+void hd_register_arc_range(const void* begin, size_t size, std::string_view label) noexcept {
+  if (begin == nullptr || size == 0) return;
+  std::unique_lock lk(s_hdArcRangesMutex);
+  s_hdArcRanges.push_back(HdArcRange{begin, size, std::string(label)});
+}
+
+const HdArcRange* hd_find_arc_range(const void* ptr, size_t* out_remaining) noexcept {
+  if (ptr == nullptr) return nullptr;
+  const auto p = reinterpret_cast<uintptr_t>(ptr);
+  std::shared_lock lk(s_hdArcRangesMutex);
+  for (const auto& r : s_hdArcRanges) {
+    const auto begin = reinterpret_cast<uintptr_t>(r.begin);
+    const auto end = begin + r.size;
+    if (p >= begin && p < end) {
+      if (out_remaining) *out_remaining = static_cast<size_t>(end - p);
+      return &r;
+    }
+  }
+  return nullptr;
+}
+
+void hd_clear_arc_ranges() noexcept {
+  std::unique_lock lk(s_hdArcRangesMutex);
+  s_hdArcRanges.clear();
+}
+} // namespace aurora::gfx
 
 namespace {
 constexpr u8 GXTexMode0Ids[8] = {0x80, 0x81, 0x82, 0x83, 0xA0, 0xA1, 0xA2, 0xA3};
@@ -50,6 +107,15 @@ int __cntlzw(unsigned int val) {
 
 void init_texobj_common(GXTexObj_& obj, const void* data, u16 width, u16 height, u32 format, GXTexWrapMode wrapS,
                         GXTexWrapMode wrapT, GXBool mipmap) {
+  // HD texture replacement
+  const auto* repl = aurora::gfx::hd_lookup_replacement(data);
+  if (repl != nullptr) {
+    data = repl->bytes.data();
+    width = static_cast<u16>(repl->width);
+    height = static_cast<u16>(repl->height);
+    format = repl->gxFormat;
+    mipmap = (repl->mipCount > 1) ? GX_TRUE : GX_FALSE;
+  }
   obj = {};
   obj.mWidth = width;
   obj.mHeight = height;

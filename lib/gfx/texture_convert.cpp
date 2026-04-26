@@ -467,9 +467,9 @@ ConvertedTexture convert_texture(u32 format, uint32_t width, uint32_t height, ui
   switch (format) {
     DEFAULT_FATAL("convert_texture: unknown texture format {}", format);
   case GX_TF_R8_PC:
-    converted = DecodeLinear<TextureDecoderI8>(width * height, data);
-    break;
+  case GX_TF_RG8_PC:
   case GX_TF_RGBA8_PC:
+  case GX_TF_BC1_PC:
     return {}; // No conversion
   case GX_TF_I4:
     converted = DecodeTiled<TextureDecoderI4>(width, height, mips, data);

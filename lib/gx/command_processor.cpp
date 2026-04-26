@@ -1095,9 +1095,14 @@ static void handle_bp(u32 value, bool bigEndian) {
         break;
       case TexBpRegMapping::Kind::Image0:
         slot.image0 = value;
-        slot.mWidth = 0;
-        slot.mHeight = 0;
-        slot.mFormat = gfx::InvalidTextureFormat;
+        // Preserve mFormat for HD-substituted slots (PC formats have the
+        // 0x40 flag). Otherwise format() would fall back to image0's 4-bit
+        // raw_format and lose the PC variant (e.g. BC1_PC -> CMPR).
+        if ((static_cast<u32>(slot.mFormat) & 0x40u) == 0) {
+            slot.mWidth = 0;
+            slot.mHeight = 0;
+            slot.mFormat = gfx::InvalidTextureFormat;
+        }
         break;
       case TexBpRegMapping::Kind::Image3:
         slot.image3 = value;

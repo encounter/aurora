@@ -7,10 +7,16 @@
 namespace aurora::gfx {
 static constexpr wgpu::TextureFormat to_wgpu(u32 gxFormat) {
   switch (gxFormat) {
+  case GX_TF_R8_PC:
+    return wgpu::TextureFormat::R8Unorm;
+  case GX_TF_RG8_PC:
+    return wgpu::TextureFormat::RG8Unorm;
   case GX_TF_C4:
   case GX_TF_C8:
   case GX_TF_C14X2:
     return wgpu::TextureFormat::R16Sint;
+  case GX_TF_BC1_PC:
+    return wgpu::TextureFormat::BC1RGBAUnorm;
   default:
     return wgpu::TextureFormat::RGBA8Unorm;
   }
