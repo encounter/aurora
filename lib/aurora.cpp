@@ -8,6 +8,10 @@
 #include <webgpu/webgpu_cpp.h>
 #endif
 
+#ifdef AURORA_ENABLE_RMLUI
+#include "rmlui.hpp"
+#endif
+
 #include "input.hpp"
 #include "internal.hpp"
 #include "window.hpp"
@@ -179,6 +183,10 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
   imgui::initialize();
 #endif
 
+#ifdef AURORA_ENABLE_RMLUI
+  rmlui::initialize(size);
+#endif
+
   g_initialFrame = true;
   g_config.desiredBackend = selectedBackend;
   return {
@@ -288,6 +296,9 @@ void end_frame() noexcept {
     pass.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height, 0, 1);
 
     pass.Draw(3);
+#if AURORA_ENABLE_RMLUI
+    rmlui::render(pass);
+#endif
     imgui::render(pass);
     pass.End();
   }

@@ -24,6 +24,7 @@
 #include <cmath>
 #include <vector>
 
+#include "rmlui.hpp"
 #include "dolphin/vi/vi_internal.hpp"
 
 namespace aurora::window {
@@ -102,6 +103,10 @@ const AuroraEvent* poll_events() {
   while (SDL_PollEvent(&event)) {
 #ifdef AURORA_ENABLE_GX
     imgui::process_event(event);
+#endif
+
+#ifdef AURORA_ENABLE_RMLUI
+    rmlui::handle_event(event);
 #endif
 
     switch (event.type) {
