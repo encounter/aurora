@@ -18,6 +18,7 @@ typedef struct {
 
 void GXDestroyTexObj(GXTexObj* obj);
 void GXDestroyTlutObj(GXTlutObj* obj);
+void GXDestroyCopyTex(void* dest);
 
 void GXColor4f32(float r, float g, float b, float a);
 
