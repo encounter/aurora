@@ -48,11 +48,14 @@ void handle_event(SDL_Event& event) noexcept {
   RmlSDL::InputEventHandler(g_context, window::get_sdl_window(), event);
 }
 
+
 void render(const wgpu::RenderPassEncoder& pass) noexcept {
   g_context->Update();
 
   WebGPURenderInterface* render_interface = static_cast<WebGPURenderInterface*>(Backend::GetRenderInterface());
   render_interface->SetRenderPass(&pass);
+  render_interface->SetWindowSize(g_context->GetDimensions());
+  render_interface->NewFrame();
 
   pass.PushDebugGroup("Aurora: RmlUi");
 

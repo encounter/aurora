@@ -1,14 +1,20 @@
 #pragma once
 #include <dawn/webgpu_cpp.h>
 
+#include "../gfx/clear.hpp"
 #include "RmlUi/Core/RenderInterface.h"
 
 namespace aurora::rmlui {
 
 // copied from imgui wgpu impl
 struct UniformBlock {
-  float MVP[4][4];
+  Rml::Matrix4f MVP;
   float Gamma;
+};
+
+struct ImmediateData {
+  Rml::Vector4f m_translation;
+  Rml::Matrix4f m_transformMtx;
 };
 
 class WebGPURenderInterface : public Rml::RenderInterface {
@@ -25,9 +31,12 @@ private:
   wgpu::BindGroupLayout m_ImageBindGroupLayout = nullptr;
   Rml::TextureHandle m_nullTexture = 0;
 
-  Rml::Vector2i m_windowSize;
-  float m_gamma = 0.0f;
+  Rml::Vector2i m_windowSize = Rml::Vector2i(0, 0);
+  Rml::Matrix4f m_translationMatrix = Rml::Matrix4f::Identity();
+  Rml::Rectanglei m_scissorRegion = Rml::Rectanglei();
 
+  float m_gamma = 0.0f;
+  uint32_t m_uniformCurrentOffset = 0;
   bool m_enableScissorRegion = false;
 
   void CreateUniformBuffer();
@@ -45,12 +54,15 @@ public:
 	void ReleaseTexture(Rml::TextureHandle texture) override;
 	void EnableScissorRegion(bool enable) override;
 	void SetScissorRegion(Rml::Rectanglei region) override;
+  void SetTransform(const Rml::Matrix4f* transform) override;
 
   void SetRenderPass(const wgpu::RenderPassEncoder* pass) { m_pass = pass; }
   void SetWindowSize(const Rml::Vector2i& window_size) { m_windowSize = window_size; }
   void SetRenderTargetFormat(wgpu::TextureFormat render_target_format) { m_renderTargetFormat = render_target_format; }
 
   void CreateDeviceObjects();
+
+  void NewFrame();
 
 };
 }

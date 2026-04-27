@@ -6,6 +6,7 @@
 #include "../logging.hpp"
 #include "../webgpu/gpu.hpp"
 #include "../internal.hpp"
+#include "../gfx/clear.hpp"
 
 namespace aurora::rmlui {
 
@@ -14,7 +15,6 @@ struct Image {
   size_t size;
   uint32_t width;
   uint32_t height;
-  uint8_t bytesPerPixel;
 };
 
 struct ShaderGeometryData {
@@ -91,10 +91,12 @@ fn main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 )";
 
+inline constexpr uint64_t UniformBufferSize = 1048576;  // 1mb
+
 // helper func from dusk
 Image GetImage(const std::string& path) {
   SDL_PathInfo pathInfo{};
-  if (SDL_GetPathInfo(path.c_str(), &pathInfo) && pathInfo.type == SDL_PATHTYPE_FILE) {
+  if (!(SDL_GetPathInfo(path.c_str(), &pathInfo) && pathInfo.type == SDL_PATHTYPE_FILE)) {
     Log.warn("Image '{}' does not exist", path);
     return {};
   }
@@ -124,15 +126,12 @@ Image GetImage(const std::string& path) {
     std::memcpy(dst, src, rowSize);
   }
 
-  uint8_t bitsPerPixel = SDL_BITSPERPIXEL(rgbaSurface->format);
-
   SDL_DestroySurface(rgbaSurface);
   return Image{
     std::move(ptr),
     size,
     iconWidth,
-    iconHeight,
-    bitsPerPixel
+    iconHeight
 };
 }
 
@@ -154,8 +153,6 @@ static wgpu::ComputeState CreateShaderModule(const std::string_view& wgsl_source
 }
 
 Rml::CompiledGeometryHandle WebGPURenderInterface::CompileGeometry(Rml::Span<const Rml::Vertex> vertices, Rml::Span<const int> indices) {
-  Log.info("Compiling Geometry. Vertex Count: {}, Index Count: {} ", vertices.size(), indices.size());
-
   ShaderGeometryData* shader_data = new ShaderGeometryData();
 
   shader_data->m_pipeline = m_pipeline;
@@ -188,8 +185,6 @@ Rml::CompiledGeometryHandle WebGPURenderInterface::CompileGeometry(Rml::Span<con
 }
 
 void WebGPURenderInterface::RenderGeometry(Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation, Rml::TextureHandle texture) {
-  Log.info("Rendering Geometry. Geo Handle: {} Translation: {} {} Texture Handle: {}", geometry, translation.x, translation.y, texture);
-
   SetupRenderState(translation);
 
   auto* geometry_data = (ShaderGeometryData*)geometry;
@@ -198,82 +193,39 @@ void WebGPURenderInterface::RenderGeometry(Rml::CompiledGeometryHandle geometry,
   m_pass->SetVertexBuffer(0, geometry_data->m_vertexBuffer, 0, geometry_data->m_vertexBuffer.GetSize());
   m_pass->SetIndexBuffer(geometry_data->m_indexBuffer, wgpu::IndexFormat::Uint32, 0, geometry_data->m_indexBuffer.GetSize());
   m_pass->SetPipeline(geometry_data->m_pipeline);
-  m_pass->SetBindGroup(0, m_CommonBindGroup, 0, nullptr);
+
+  const std::array offsets{m_uniformCurrentOffset};
+  m_pass->SetBindGroup(0, m_CommonBindGroup, offsets.size(), offsets.data());
 
   m_pass->SetBindGroup(1, texture_data->m_bindGroup);
 
   m_pass->DrawIndexed(geometry_data->m_indexBuffer.GetSize() / sizeof(int));
+
+  m_uniformCurrentOffset += AURORA_ALIGN(sizeof(UniformBlock), 64);
 }
 
 void WebGPURenderInterface::ReleaseGeometry(Rml::CompiledGeometryHandle geometry) {
-  Log.info("Releasing Geometry: {}", geometry);
-
   auto* shader_data = (ShaderGeometryData*)geometry;
   delete shader_data;
 }
 
 Rml::TextureHandle WebGPURenderInterface::LoadTexture(Rml::Vector2i& texture_dimensions, const Rml::String& source) {
-  Log.info("Loading Texture: {} (Width: {} Height: {})", source, texture_dimensions.x, texture_dimensions.y);
+  // load texels from image source
+  Image image_data = GetImage(source);
 
-  auto* tex_data = new ShaderTextureData();
-
-  // create texture
-  {
-    wgpu::TextureDescriptor tex_desc = {};
-    tex_desc.label = "RmlUi Texture";
-    tex_desc.dimension = wgpu::TextureDimension::e2D;
-    tex_desc.size.width = texture_dimensions.x;
-    tex_desc.size.height = texture_dimensions.y;
-    tex_desc.size.depthOrArrayLayers = 1;
-    tex_desc.sampleCount = 1;
-    tex_desc.format = wgpu::TextureFormat::RGBA8Unorm;
-    tex_desc.mipLevelCount = 1;
-    tex_desc.usage = wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::TextureBinding;
-
-    tex_data->m_texture = webgpu::g_device.CreateTexture(&tex_desc);
+  if (image_data.size == 0) {
+    Log.error("Failed to load texture! Path: {}", source);
+    return 0;
   }
 
-  // create view
-  {
-    wgpu::TextureViewDescriptor tex_view_desc = {};
-    tex_view_desc.format = wgpu::TextureFormat::RGBA8Unorm;
-    tex_view_desc.dimension = wgpu::TextureViewDimension::e2D;
-    tex_view_desc.baseMipLevel = 0;
-    tex_view_desc.mipLevelCount = 1;
-    tex_view_desc.baseArrayLayer = 0;
-    tex_view_desc.arrayLayerCount = 1;
-    tex_view_desc.aspect = wgpu::TextureAspect::All;
-    tex_data->m_textureView = tex_data->m_texture.CreateView(&tex_view_desc);
-  }
+  texture_dimensions.x = (int)image_data.width;
+  texture_dimensions.y = (int)image_data.height;
 
-  // get texels from image source, load into texture
-  {
-    Image image_data = GetImage(source);
-
-    wgpu::TexelCopyTextureInfo dst_view = {};
-    dst_view.texture = tex_data->m_texture;
-    dst_view.mipLevel = 0;
-    dst_view.origin = { 0, 0, 0 };
-    dst_view.aspect = wgpu::TextureAspect::All;
-    wgpu::TexelCopyBufferLayout layout = {};
-    layout.offset = 0;
-    layout.bytesPerRow = texture_dimensions.x * image_data.bytesPerPixel;
-    layout.rowsPerImage = texture_dimensions.y;
-    wgpu::Extent3D size = {
-      (uint32_t)texture_dimensions.x,
-      (uint32_t)texture_dimensions.y,
-      1
-    };
-    webgpu::g_queue.WriteTexture(&dst_view, image_data.data.get(),
-      (uint32_t)(texture_dimensions.x * image_data.bytesPerPixel * texture_dimensions.y), &layout, &size);
-  }
-
-  return (Rml::TextureHandle)tex_data;
+  Rml::Span<const Rml::byte> tex_bytes(image_data.data.get(), image_data.size);
+  return GenerateTexture(tex_bytes, texture_dimensions);
 }
 
 Rml::TextureHandle WebGPURenderInterface::GenerateTexture(Rml::Span<const Rml::byte> source, Rml::Vector2i source_dimensions) {
-  Log.info("Generating Texture: (Byte Count: {}) (Width: {} Height: {})", source.size(), source_dimensions.x, source_dimensions.y);
-
   auto* tex_data = new ShaderTextureData();
 
   // create texture
@@ -348,22 +300,25 @@ void WebGPURenderInterface::ReleaseTexture(Rml::TextureHandle texture) {
 }
 
 void WebGPURenderInterface::EnableScissorRegion(bool enable) {
-  Log.info("Scissor Region {}", enable ? "Enabled" : "Disabled");
+  m_enableScissorRegion = enable;
 
-  if (m_pass && m_enableScissorRegion && !enable) {
-    // if scissor was previously enabled, reset scissor state to full window
+  if (!m_enableScissorRegion) {
     m_pass->SetScissorRect(0, 0, m_windowSize.x, m_windowSize.y);
   }
-
-  m_enableScissorRegion = enable;
 }
 
 void WebGPURenderInterface::SetScissorRegion(Rml::Rectanglei region) {
-  if (m_pass == nullptr)
-    return;
-  Log.info("Setting Scissor Region: (X: {}, Y: {}, Width: {}, Height: {})", region.Top(), region.Left(), region.Width(), region.Height());
+  if (m_enableScissorRegion) {
+    m_pass->SetScissorRect(region.Left(), region.Top(), region.Width(), region.Height());
+  }
+}
 
-  m_pass->SetScissorRect(region.Top(), region.Left(), region.Width(), region.Height());
+void WebGPURenderInterface::SetTransform(const Rml::Matrix4f* transform) {
+  if (transform == nullptr) {
+    m_translationMatrix = Rml::Matrix4f::Identity();
+  }else {
+    m_translationMatrix = *transform;
+  }
 }
 
 // code heavily based of imgui wgpu impl
@@ -381,6 +336,7 @@ void WebGPURenderInterface::CreateDeviceObjects() {
     common_bg_layout_entries[0].binding = 0;
     common_bg_layout_entries[0].visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
     common_bg_layout_entries[0].buffer.type = wgpu::BufferBindingType::Uniform;
+    common_bg_layout_entries[0].buffer.hasDynamicOffset = true;
     common_bg_layout_entries[1].binding = 1;
     common_bg_layout_entries[1].visibility = wgpu::ShaderStage::Fragment;
     common_bg_layout_entries[1].sampler.type = wgpu::SamplerBindingType::Filtering;
@@ -538,19 +494,20 @@ void WebGPURenderInterface::SetupRenderState(const Rml::Vector2f& translation) {
     float R = m_windowSize.x;
     float T = 0;
     float B = m_windowSize.y;
-    UniformBlock ubo = {};
 
-    ubo = {
-      {
-        { 2.0f/(R-L),   0.0f,           0.0f,       0.0f },
-        { 0.0f,         2.0f/(T-B),     0.0f,       0.0f },
-        { 0.0f,         0.0f,           0.5f,       0.0f },
-        { (R+L)/(L-R),  (T+B)/(B-T),    0.5f,       1.0f },
-        },
+    Rml::Matrix4f proj = Rml::Matrix4f::FromColumns(
+    { 2.0f/(R-L),   0.0f,           0.0f,       0.0f },
+    { 0.0f,         2.0f/(T-B),     0.0f,       0.0f },
+    { 0.0f,         0.0f,           0.5f,       0.0f },
+    { (R+L)/(L-R),  (T+B)/(B-T),    0.5f,       1.0f }
+    );
+
+    UniformBlock ubo = {
+      proj * m_translationMatrix,
         m_gamma
     };
 
-    webgpu::g_queue.WriteBuffer(m_uniformBuffer, 0, &ubo, sizeof(UniformBlock));
+    webgpu::g_queue.WriteBuffer(m_uniformBuffer, m_uniformCurrentOffset, &ubo, sizeof(UniformBlock));
 
     // push translate to immediates
     float translationData[] = {
@@ -560,10 +517,6 @@ void WebGPURenderInterface::SetupRenderState(const Rml::Vector2f& translation) {
       1.0f
     };
     m_pass->SetImmediates(0, translationData, sizeof(translationData));
-
-    // setup viewport
-    m_pass->SetViewport(0,0, m_windowSize.x, m_windowSize.y, 0, 1);
-    m_pass->SetScissorRect(0,0,m_windowSize.x, m_windowSize.y);
 
     // Setup blend factor
     wgpu::Color blend_color = { 0.f, 0.f, 0.f, 0.f };
@@ -584,10 +537,14 @@ void WebGPURenderInterface::CreateUniformBuffer() {
     nullptr,
     "RmlUi Uniform Buffer",
       wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Uniform,
-    AURORA_ALIGN(sizeof(UniformBlock), 16),
+    AURORA_ALIGN(UniformBufferSize, 16),
     false
   };
   m_uniformBuffer = webgpu::g_device.CreateBuffer(&ub_desc);
+}
+
+void WebGPURenderInterface::NewFrame() {
+  m_uniformCurrentOffset = 0;
 }
 
 }
