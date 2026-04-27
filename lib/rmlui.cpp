@@ -51,12 +51,6 @@ void handle_event(SDL_Event& event) noexcept {
     return;
   }
 
-  if (event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) {
-    const auto size = window::get_window_size();
-    g_context->SetDimensions({static_cast<int>(size.native_fb_width), static_cast<int>(size.native_fb_height)});
-    g_context->SetDensityIndependentPixelRatio(size.scale);
-  }
-
   RmlSDL::InputEventHandler(g_context, window::get_sdl_window(), event);
 }
 
