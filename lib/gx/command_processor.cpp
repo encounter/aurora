@@ -1776,6 +1776,10 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     CHECK(pos + 4 <= size, "GX_LOAD_AURORA_DESTROY_TLUT read overrun");
     evict_tlut_object(read_u32(data + pos, bigEndian));
     pos += 4;
+  } else if (subCmd == GX_LOAD_AURORA_DESTROY_COPY_TEX) {
+    CHECK(pos + 8 <= size, "GX_LOAD_AURORA_DESTROY_COPY_TEX read overrun");
+    evict_copy_texture(reinterpret_cast<const void*>(read_u64(data + pos, bigEndian)));
+    pos += 8;
   } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_PUSH) {
     auto label = read_string(data, pos, size, bigEndian);
     gfx::push_debug_group(std::move(label));

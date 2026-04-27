@@ -80,6 +80,16 @@ void evict_tlut_object(u32 tlutObjId) noexcept {
     }
   }
 }
+void evict_copy_texture(const void* dest) noexcept {
+  g_gxState.copyTextures.erase(dest);
+  for (auto it = g_gxState.copyTextureCache.begin(); it != g_gxState.copyTextureCache.end();) {
+    if (it->first.dest == dest) {
+      g_gxState.copyTextureCache.erase(it++);
+    } else {
+      ++it;
+    }
+  }
+}
 void shutdown() noexcept {}
 Vec2<uint32_t> logical_fb_size() noexcept { return {640, 480}; }
 gfx::Viewport map_logical_viewport(const gfx::Viewport& logicalViewport) noexcept { return logicalViewport; }
