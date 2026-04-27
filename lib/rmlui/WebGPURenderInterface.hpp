@@ -9,12 +9,8 @@ namespace aurora::rmlui {
 // copied from imgui wgpu impl
 struct UniformBlock {
   Rml::Matrix4f MVP;
+  Rml::Vector4f translation;
   float Gamma;
-};
-
-struct ImmediateData {
-  Rml::Vector4f m_translation;
-  Rml::Matrix4f m_transformMtx;
 };
 
 class WebGPURenderInterface : public Rml::RenderInterface {

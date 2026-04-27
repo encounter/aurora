@@ -48,16 +48,16 @@ struct VertexOutput {
 
 struct Uniforms {
     mvp: mat4x4<f32>,
+    translation: vec4<f32>,
     gamma: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
-var<immediate> translation: vec4<f32>;
 
 @vertex
 fn main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    var translatedPos = translation.xy + in.position;
+    var translatedPos = uniforms.translation.xy + in.position;
 
     out.position = uniforms.mvp * vec4<f32>(translatedPos, 0.0, 1.0);
     out.color = in.color;
@@ -75,13 +75,13 @@ struct VertexOutput {
 
 struct Uniforms {
     mvp: mat4x4<f32>,
+    translation: vec4<f32>,
     gamma: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var s: sampler;
 @group(1) @binding(0) var t: texture_2d<f32>;
-var<immediate> translation: vec4<f32>;
 
 @fragment
 fn main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -362,7 +362,6 @@ void WebGPURenderInterface::CreateDeviceObjects() {
     wgpu::PipelineLayoutDescriptor layout_desc = {};
     layout_desc.bindGroupLayoutCount = 2;
     layout_desc.bindGroupLayouts = bg_layouts;
-    layout_desc.immediateSize = sizeof(Rml::Vector4f);
     graphics_pipeline_desc.layout = webgpu::g_device.CreatePipelineLayout(&layout_desc);
 
     // Create the vertex shader
@@ -504,19 +503,11 @@ void WebGPURenderInterface::SetupRenderState(const Rml::Vector2f& translation) {
 
     UniformBlock ubo = {
       proj * m_translationMatrix,
+      {translation.x, translation.y, 0.0f, 1.0f},
         m_gamma
     };
 
     webgpu::g_queue.WriteBuffer(m_uniformBuffer, m_uniformCurrentOffset, &ubo, sizeof(UniformBlock));
-
-    // push translate to immediates
-    float translationData[] = {
-      translation.x,
-      translation.y,
-      0.0f,
-      1.0f
-    };
-    m_pass->SetImmediates(0, translationData, sizeof(translationData));
 
     // Setup blend factor
     wgpu::Color blend_color = { 0.f, 0.f, 0.f, 0.f };
