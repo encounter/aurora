@@ -3,6 +3,9 @@
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_surface.h>
 
+#include <string>
+#include <string_view>
+
 #include "../logging.hpp"
 #include "../webgpu/gpu.hpp"
 #include "../internal.hpp"
@@ -30,6 +33,40 @@ struct ShaderTextureData {
 };
 
 static Module Log("aurora::rmlui::RenderInterface");
+
+bool IsFile(const std::string& path) {
+  SDL_PathInfo pathInfo{};
+  return SDL_GetPathInfo(path.c_str(), &pathInfo) && pathInfo.type == SDL_PATHTYPE_FILE;
+}
+
+std::string ResolveTextureSource(const Rml::String& source) {
+  std::string path(source);
+  constexpr std::string_view file_scheme = "file://";
+  if (path.compare(0, file_scheme.size(), file_scheme) == 0) {
+    path.erase(0, file_scheme.size());
+  }
+  if (IsFile(path)) {
+    return path;
+  }
+
+  if (!path.empty() && path.front() != '/') {
+    const std::string absolute_path = "/" + path;
+    if (IsFile(absolute_path)) {
+      return absolute_path;
+    }
+  }
+
+  const char* base_path = SDL_GetBasePath();
+  if (base_path != nullptr && base_path[0] != '\0') {
+    const std::string base(base_path);
+    const std::string base_relative = base + path;
+    if (IsFile(base_relative)) {
+      return base_relative;
+    }
+  }
+
+  return path;
+}
 
 // shader source from imgui
 
@@ -211,10 +248,11 @@ void WebGPURenderInterface::ReleaseGeometry(Rml::CompiledGeometryHandle geometry
 
 Rml::TextureHandle WebGPURenderInterface::LoadTexture(Rml::Vector2i& texture_dimensions, const Rml::String& source) {
   // load texels from image source
-  Image image_data = GetImage(source);
+  const std::string resolved_source = ResolveTextureSource(source);
+  Image image_data = GetImage(resolved_source);
 
   if (image_data.size == 0) {
-    Log.error("Failed to load texture! Path: {}", source);
+    Log.error("Failed to load texture! Path: {}", resolved_source);
     return 0;
   }
 
