@@ -204,6 +204,9 @@ wgpu::TextureView g_currentView;
 #endif
 
 void shutdown() noexcept {
+#ifdef AURORA_ENABLE_RMLUI
+  rmlui::shutdown();
+#endif
 #ifdef AURORA_ENABLE_GX
   g_currentView = {};
   imgui::shutdown();

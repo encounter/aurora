@@ -162,16 +162,22 @@ if (AURORA_ENABLE_GX)
   endif ()
 
   if(AURORA_ENABLE_RMLUI AND NOT TARGET RmlUi)
-    message(STATUS "aurora: Fetching Freetype")
-    FetchContent_Declare(Freetype
-            URL https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.gz
-            URL_HASH SHA256=e61b31ab26358b946e767ed7eb7f4bb2e507da1cfefeb7a8861ace7fd5c899a1
-            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-            EXCLUDE_FROM_ALL
-    )
-    FetchContent_MakeAvailable(Freetype)
+    if(NOT TARGET Freetype::Freetype)
+      message(STATUS "aurora: Fetching Freetype")
+      FetchContent_Declare(Freetype
+              URL https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.gz
+              URL_HASH SHA256=e61b31ab26358b946e767ed7eb7f4bb2e507da1cfefeb7a8861ace7fd5c899a1
+              DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+              EXCLUDE_FROM_ALL
+      )
+      FetchContent_MakeAvailable(Freetype)
 
-    add_library(Freetype::Freetype ALIAS freetype)
+      if(NOT TARGET Freetype::Freetype)
+        add_library(Freetype::Freetype ALIAS freetype)
+      endif()
+    else()
+      message(STATUS "aurora: Using existing Freetype")
+    endif()
 
     message(STATUS "aurora: Fetching RmlUi")
     FetchContent_Declare(rmlui

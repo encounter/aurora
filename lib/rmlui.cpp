@@ -44,12 +44,34 @@ void initialize(const AuroraWindowSize& window_size) noexcept {
   }
 }
 
+Rml::Context* get_context() noexcept {
+  return g_context;
+}
+
+bool is_initialized() noexcept {
+  return g_context != nullptr;
+}
+
 void handle_event(SDL_Event& event) noexcept {
+  if (g_context == nullptr) {
+    return;
+  }
+
+  if (event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || event.type == SDL_EVENT_WINDOW_RESIZED ||
+      event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) {
+    const auto size = window::get_window_size();
+    g_context->SetDimensions({static_cast<int>(size.width), static_cast<int>(size.height)});
+  }
+
   RmlSDL::InputEventHandler(g_context, window::get_sdl_window(), event);
 }
 
 
 void render(const wgpu::RenderPassEncoder& pass) noexcept {
+  if (g_context == nullptr) {
+    return;
+  }
+
   g_context->Update();
 
   WebGPURenderInterface* render_interface = static_cast<WebGPURenderInterface*>(Backend::GetRenderInterface());
@@ -69,7 +91,12 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
 }
 
 void shutdown() noexcept {
+  if (g_context == nullptr) {
+    return;
+  }
+
   Rml::Shutdown();
   Backend::Shutdown();
+  g_context = nullptr;
 }
 } // namespace aurora::imgui

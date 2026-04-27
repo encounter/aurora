@@ -1,5 +1,6 @@
 #pragma once
 #include <SDL3/SDL_events.h>
+#include <aurora/rmlui.hpp>
 #include <dawn/webgpu_cpp.h>
 
 #include "aurora/aurora.h"
