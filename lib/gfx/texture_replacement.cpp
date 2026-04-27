@@ -70,6 +70,8 @@ std::filesystem::path s_replacementRoot;
 std::filesystem::path s_dumpRoot;
 uint64_t s_replacementCacheBytes = 0;
 constexpr uint64_t kReplacementCacheBudgetBytes = 4294967296; // 4GB, reasonable for modern hardware?
+constexpr uint64_t kReplacementWildcardTextureHash = 0xFFFFFFFFFFFFFFFFull;
+constexpr uint64_t kReplacementWildcardTlutHash = 0xFFFFFFFFFFFFFFFEull;
 
 bool iequals_ascii(std::string_view lhs, std::string_view rhs) noexcept {
   if (lhs.size() != rhs.size()) {
@@ -310,24 +312,39 @@ std::optional<RuntimeTextureKey> parse_replacement_filename(std::string_view fil
     return std::nullopt;
   }
 
-  const auto texHash = parse_hex(parts[index]);
+  uint64_t textureHash = 0;
+  if (parts[index] == "$") {
+    textureHash = kReplacementWildcardTextureHash;
+  } else {
+    const auto parsedTex = parse_hex(parts[index]);
+    if (!parsedTex.has_value()) {
+      return std::nullopt;
+    }
+    textureHash = *parsedTex;
+  }
+
   const auto format = parse_u32(parts[partCount - 1]);
-  if (!texHash.has_value() || !format.has_value()) {
+  if (!format.has_value()) {
     return std::nullopt;
   }
 
   uint64_t tlutHash = 0;
   const bool hasTlut = remaining == 3;
   if (hasTlut) {
-    const auto parsedTlutHash = parse_hex(parts[index + 1]);
-    if (!parsedTlutHash.has_value()) {
-      return std::nullopt;
+    const std::string_view tlutPart = parts[index + 1];
+    if (tlutPart == "$") {
+      tlutHash = kReplacementWildcardTlutHash;
+    } else {
+      const auto parsedTlutHash = parse_hex(tlutPart);
+      if (!parsedTlutHash.has_value()) {
+        return std::nullopt;
+      }
+      tlutHash = *parsedTlutHash;
     }
-    tlutHash = *parsedTlutHash;
   }
 
   return RuntimeTextureKey{
-      .textureHash = *texHash,
+      .textureHash = textureHash,
       .tlutHash = tlutHash,
       .width = dimensions->first,
       .height = dimensions->second,
@@ -404,8 +421,25 @@ void build_index() noexcept {
 }
 
 const std::filesystem::path* find_replacement_path(const RuntimeTextureKey& key) noexcept {
-  const auto indexed = s_replacementIndex.find(key);
-  return indexed != s_replacementIndex.end() ? &indexed->second : nullptr;
+  if (const auto it = s_replacementIndex.find(key); it != s_replacementIndex.end()) {
+    return &it->second;
+  }
+
+  if (key.hasTlut) {
+    RuntimeTextureKey tlutWildcardKey = key;
+    tlutWildcardKey.tlutHash = kReplacementWildcardTlutHash;
+    if (const auto it = s_replacementIndex.find(tlutWildcardKey); it != s_replacementIndex.end()) {
+      return &it->second;
+    }
+  }
+
+  RuntimeTextureKey textureWildcardKey = key;
+  textureWildcardKey.textureHash = kReplacementWildcardTextureHash;
+  if (const auto it = s_replacementIndex.find(textureWildcardKey); it != s_replacementIndex.end()) {
+    return &it->second;
+  }
+
+  return nullptr;
 }
 
 const gfx::TextureHandle* find_cached_replacement(const RuntimeTextureKey& key) noexcept {
