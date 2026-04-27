@@ -70,6 +70,8 @@ std::filesystem::path s_replacementRoot;
 std::filesystem::path s_dumpRoot;
 uint64_t s_replacementCacheBytes = 0;
 constexpr uint64_t kReplacementCacheBudgetBytes = 4294967296; // 4GB, reasonable for modern hardware?
+constexpr uint64_t kReplacementWildcardTextureHash = 0xFFFFFFFFFFFFFFFFull;
+constexpr uint64_t kReplacementWildcardTlutHash = 0xFFFFFFFFFFFFFFFEull;
 
 bool iequals_ascii(std::string_view lhs, std::string_view rhs) noexcept {
   if (lhs.size() != rhs.size()) {
@@ -95,6 +97,20 @@ bool is_relative_to(const std::filesystem::path& path, const std::filesystem::pa
     }
   }
   return true;
+}
+
+bool is_sidecar_mip(std::string_view stem) noexcept {
+  constexpr std::string_view tag = "_mip";
+  size_t i = stem.size();
+  while (i > 0 && stem[i - 1] >= '0' && stem[i - 1] <= '9') {
+    --i;
+  }
+
+  if (i == stem.size() || i < tag.size()) {
+    return false;
+  }
+
+  return stem.substr(i - tag.size(), tag.size()) == tag;
 }
 
 std::optional<uint64_t> parse_hex(std::string_view text) noexcept {
@@ -310,30 +326,123 @@ std::optional<RuntimeTextureKey> parse_replacement_filename(std::string_view fil
     return std::nullopt;
   }
 
-  const auto texHash = parse_hex(parts[index]);
+  uint64_t textureHash = 0;
+  if (parts[index] == "$") {
+    textureHash = kReplacementWildcardTextureHash;
+  } else {
+    const auto parsedTex = parse_hex(parts[index]);
+    if (!parsedTex.has_value()) {
+      return std::nullopt;
+    }
+    textureHash = *parsedTex;
+  }
+
   const auto format = parse_u32(parts[partCount - 1]);
-  if (!texHash.has_value() || !format.has_value()) {
+  if (!format.has_value()) {
     return std::nullopt;
   }
 
   uint64_t tlutHash = 0;
   const bool hasTlut = remaining == 3;
   if (hasTlut) {
-    const auto parsedTlutHash = parse_hex(parts[index + 1]);
-    if (!parsedTlutHash.has_value()) {
-      return std::nullopt;
+    const std::string_view tlutPart = parts[index + 1];
+    if (tlutPart == "$") {
+      tlutHash = kReplacementWildcardTlutHash;
+    } else {
+      const auto parsedTlutHash = parse_hex(tlutPart);
+      if (!parsedTlutHash.has_value()) {
+        return std::nullopt;
+      }
+      tlutHash = *parsedTlutHash;
     }
-    tlutHash = *parsedTlutHash;
   }
 
   return RuntimeTextureKey{
-      .textureHash = *texHash,
+      .textureHash = textureHash,
       .tlutHash = tlutHash,
       .width = dimensions->first,
       .height = dimensions->second,
       .hasMips = hasMips,
       .hasTlut = hasTlut,
       .format = *format,
+  };
+}
+
+std::optional<ConvertedTexture> load_replacement(const std::filesystem::path& path, bool hasMips) noexcept {
+  auto base = dds::load_dds_file(path);
+  if (!base.has_value()) {
+    Log.warn("texture_replacement: failed to load texture {}", path.string());
+    return std::nullopt;
+  }
+  if (!hasMips) {
+    return base;
+  }
+
+  std::vector<ConvertedTexture> more;
+  std::error_code ec;
+  for (uint32_t mipLevel = 1;; ++mipLevel) {
+    const auto mipPath = path.parent_path() / fmt::format("{}_mip{}{}", path.stem().string(), mipLevel, path.extension().string());
+    if (!std::filesystem::is_regular_file(mipPath, ec)) {
+      break;
+    }
+
+    auto lvl = dds::load_dds_file(mipPath);
+    const uint32_t ew = std::max(base->width >> mipLevel, 1u);
+    const uint32_t eh = std::max(base->height >> mipLevel, 1u);
+    const bool ok = lvl.has_value() && lvl->format == base->format && lvl->width == ew && lvl->height == eh;
+    if (!ok) {
+      if (more.empty()) {
+        if (!lvl.has_value()) {
+          Log.warn("texture_replacement: could not load mip {}", mipPath.string());
+        } else {
+          Log.warn("texture_replacement: expected {}x{} for mip {}, got {}x{}", mipPath.string(), ew, eh, lvl->width, lvl->height);
+        }
+        return std::nullopt;
+      }
+      break;
+    }
+    more.push_back(std::move(*lvl));
+  }
+
+  if (more.empty()) {
+    return std::nullopt;
+  }
+
+  const uint32_t mips = 1u + static_cast<uint32_t>(more.size());
+  const uint64_t n = calc_texture_size(base->format, base->width, base->height, mips);
+  if (n == 0) {
+    return std::nullopt;
+  }
+
+  ByteBuffer blob{static_cast<size_t>(n)};
+  uint8_t* const dst = blob.data();
+  uint64_t o = 0;
+  const auto append = [&](const ByteBuffer& d) noexcept -> bool {
+    if (o + d.size() > n) {
+      return false;
+    }
+    std::memcpy(dst + o, d.data(), d.size());
+    o += d.size();
+    return true;
+  };
+  if (!append(base->data)) {
+    return std::nullopt;
+  }
+  for (const auto& mip : more) {
+    if (!append(mip.data)) {
+      return std::nullopt;
+    }
+  }
+  if (o != n) {
+    return std::nullopt;
+  }
+
+  return ConvertedTexture{
+      .format = base->format,
+      .width = base->width,
+      .height = base->height,
+      .mips = mips,
+      .data = std::move(blob),
   };
 }
 
@@ -394,6 +503,10 @@ void build_index() noexcept {
       continue;
     }
 
+    if (is_sidecar_mip(path.stem().string())) {
+      continue;
+    }
+
     const auto parsed = parse_replacement_filename(path.filename().string());
     if (!parsed.has_value()) {
       continue;
@@ -404,8 +517,25 @@ void build_index() noexcept {
 }
 
 const std::filesystem::path* find_replacement_path(const RuntimeTextureKey& key) noexcept {
-  const auto indexed = s_replacementIndex.find(key);
-  return indexed != s_replacementIndex.end() ? &indexed->second : nullptr;
+  if (const auto it = s_replacementIndex.find(key); it != s_replacementIndex.end()) {
+    return &it->second;
+  }
+
+  if (key.hasTlut) {
+    RuntimeTextureKey tlutWildcardKey = key;
+    tlutWildcardKey.tlutHash = kReplacementWildcardTlutHash;
+    if (const auto it = s_replacementIndex.find(tlutWildcardKey); it != s_replacementIndex.end()) {
+      return &it->second;
+    }
+  }
+
+  RuntimeTextureKey textureWildcardKey = key;
+  textureWildcardKey.textureHash = kReplacementWildcardTextureHash;
+  if (const auto it = s_replacementIndex.find(textureWildcardKey); it != s_replacementIndex.end()) {
+    return &it->second;
+  }
+
+  return nullptr;
 }
 
 const gfx::TextureHandle* find_cached_replacement(const RuntimeTextureKey& key) noexcept {
@@ -419,7 +549,7 @@ const gfx::TextureHandle* find_cached_replacement(const RuntimeTextureKey& key) 
 }
 
 gfx::TextureHandle load_replacement_texture(const RuntimeTextureKey& key, const std::filesystem::path& path) noexcept {
-  const auto replacement = dds::load_dds_file(path);
+  const auto replacement = load_replacement(path, key.hasMips);
   if (!replacement.has_value()) {
     s_failedKeys.insert(key);
     return {};
