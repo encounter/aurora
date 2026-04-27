@@ -6,7 +6,9 @@
 #include <array>
 #include <sys/stat.h>
 
-static const int32_t k_mappingsFileVersion = 2;
+#include "../../imgui.hpp"
+
+static const int32_t k_mappingsFileVersion = 3;
 
 static std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtons{{
     {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
@@ -173,6 +175,10 @@ void __PADLoadMapping(aurora::input::GameController* controller) {
   fread(&controller->m_deadZones, 1, sizeof(PADDeadZones), file);
   fread(&controller->m_buttonMapping, 1, sizeof(PADButtonMapping) * PAD_BUTTON_COUNT, file);
   fread(&controller->m_axisMapping, 1, sizeof(PADAxisMapping) * PAD_AXIS_COUNT, file);
+  if (!isGameCube) {
+    fread(&controller->m_rumbleIntensityLow, 1, sizeof(u16), file);
+    fread(&controller->m_rumbleIntensityHigh, 1, sizeof(u16), file);
+  }
   fclose(file);
 }
 
@@ -206,10 +212,28 @@ static Sint16 _get_axis_value(aurora::input::GameController* controller, PADAxis
   }
 }
 
+static uint32_t clear_status(PADStatus* status) {
+  uint32_t rumbleSupport = 0;
+  for (uint32_t i = 0; i < PAD_CHANMAX; ++i) {
+    memset(&status[i], 0, sizeof(PADStatus));
+    const auto controller = aurora::input::get_controller_for_player(i);
+    if (controller == nullptr) {
+      status[i].err = PAD_ERR_NO_CONTROLLER;
+      continue;
+    }
+
+    status[i].err = PAD_ERR_NONE;
+    if (controller->m_hasRumble) {
+      rumbleSupport |= PAD_CHAN0_BIT >> i;
+    }
+  }
+  return rumbleSupport;
+}
+
 bool gBlockPAD = false;
 uint32_t PADRead(PADStatus* status) {
-  if (gBlockPAD) {
-    return 0;
+  if (gBlockPAD || aurora::imgui::want_capture_controller()) {
+    return clear_status(status);
   }
 
   uint32_t rumbleSupport = 0;
@@ -331,7 +355,8 @@ void PADControlMotor(int32_t chan, uint32_t command) {
     if (command == PAD_MOTOR_STOP) {
       aurora::input::controller_rumble(instance, 0, 0, 1);
     } else if (command == PAD_MOTOR_RUMBLE) {
-      aurora::input::controller_rumble(instance, 32767, 32767, 0);
+      aurora::input::controller_rumble(instance, controller->m_rumbleIntensityLow, controller->m_rumbleIntensityHigh,
+                                       0);
     } else if (command == PAD_MOTOR_STOP_HARD) {
       aurora::input::controller_rumble(instance, 0, 0, 0);
     }
@@ -633,6 +658,11 @@ void PADSerializeMappings() {
     __PADWriteDeadZones(file, controller.second);
     fwrite(controller.second.m_buttonMapping.data(), 1, sizeof(PADButtonMapping) * PAD_BUTTON_COUNT, file);
     fwrite(controller.second.m_axisMapping.data(), 1, sizeof(PADAxisMapping) * PAD_AXIS_COUNT, file);
+
+    if (!controller.second.m_isGameCube) {
+      fwrite(&controller.second.m_rumbleIntensityLow, 1, sizeof(u16), file);
+      fwrite(&controller.second.m_rumbleIntensityHigh, 1, sizeof(u16), file);
+    }
     fclose(file);
   }
 }
@@ -843,4 +873,37 @@ BOOL PADGetSensorData(u32 port, PADSensorType sensor, f32* data, const int nValu
   }
 
   return SDL_GetGamepadSensorData(ctrl->m_controller, static_cast<SDL_SensorType>(sensor), data, nValues);
+}
+
+BOOL PADSetRumbleIntensity(u32 port, u16 low, u16 high) {
+  auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr || ctrl->m_isGameCube || !ctrl->m_hasRumble) {
+    return FALSE;
+  }
+  ctrl->m_rumbleIntensityLow = low;
+  ctrl->m_rumbleIntensityHigh = high;
+
+  return TRUE;
+}
+
+BOOL PADGetRumbleIntensity(u32 port, u16* low, u16* high) {
+  const auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr || ctrl->m_isGameCube || !ctrl->m_hasRumble) {
+    *low = 0;
+    *high = 0;
+    return FALSE;
+  }
+
+  *low = ctrl->m_rumbleIntensityLow;
+  *high = ctrl->m_rumbleIntensityHigh;
+  return TRUE;
+}
+
+BOOL PADSupportsRumbleIntensity(u32 port) {
+  const auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr) {
+    return FALSE;
+  }
+
+  return !ctrl->m_isGameCube && ctrl->m_hasRumble;
 }

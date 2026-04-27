@@ -1461,6 +1461,45 @@ TEST_F(GXFifoTest, DestroyTlutObj_MarksLoadedSlotNoCacheUntilReloaded) {
   EXPECT_FALSE(slot.no_cache());
 }
 
+TEST_F(GXFifoTest, DestroyCopyTex_EmitsAuroraDestroyCommand) {
+  alignas(32) u8 image[32]{};
+
+  GXDestroyCopyTex(image);
+  auto bytes = capture_fifo();
+
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_DESTROY_COPY_TEX));
+
+  reset_gx_state();
+  decode_fifo(bytes);
+}
+
+TEST_F(GXFifoTest, DestroyCopyTex_RemovesActiveCopyTextureAndCacheEntriesForPointer) {
+  alignas(32) u8 imageA[32]{};
+  alignas(32) u8 imageB[32]{};
+
+  const aurora::gx::GXState::CopyTextureRef ref{.revision = 1};
+  gxState().copyTextures[imageA] = ref;
+  gxState().copyTextures[imageB] = ref;
+  gxState().copyTextureCache.emplace(
+      aurora::gx::GXState::CopyTextureKey{.dest = imageA, .width = 32, .height = 32, .format = GX_TF_I4}, ref);
+  gxState().copyTextureCache.emplace(
+      aurora::gx::GXState::CopyTextureKey{.dest = imageA, .width = 64, .height = 64, .format = GX_TF_I8}, ref);
+  gxState().copyTextureCache.emplace(
+      aurora::gx::GXState::CopyTextureKey{.dest = imageB, .width = 32, .height = 32, .format = GX_TF_I4}, ref);
+
+  GXDestroyCopyTex(imageA);
+  auto bytes = capture_fifo();
+
+  decode_fifo(bytes);
+
+  EXPECT_FALSE(gxState().copyTextures.contains(imageA));
+  EXPECT_TRUE(gxState().copyTextures.contains(imageB));
+  for (const auto& [key, _] : gxState().copyTextureCache) {
+    EXPECT_NE(key.dest, imageA);
+  }
+  EXPECT_EQ(gxState().copyTextureCache.size(), 1u);
+}
+
 // ============================================================================
 // BP genMode (requires __GXSetDirtyState() flush)
 // ============================================================================
@@ -2970,6 +3009,37 @@ TEST_F(GXFifoTest, CopyClear_MaxDepth) {
   EXPECT_NEAR(g_gxState.clearColor[2], 1.f, 1.f / 255.f);
   EXPECT_NEAR(g_gxState.clearColor[3], 128.f / 255.f, 1.f / 255.f);
   EXPECT_EQ(g_gxState.clearDepth, 0xFFFFFFu);
+}
+
+TEST_F(GXFifoTest, PeekZ_ReturnsClearDepthFallbackAndRequestsSnapshot) {
+  g_gxState.clearDepth = 0x123456;
+
+  u32 z = 0;
+  GXPeekZ(10, 20, &z);
+
+  EXPECT_EQ(z, 0x123456u);
+  EXPECT_TRUE(aurora::gfx::depth_peek::testing::snapshot_requested());
+}
+
+TEST_F(GXFifoTest, PeekZ_ReturnsLatestCompletedSnapshot) {
+  aurora::gfx::depth_peek::testing::set_latest(2, 2, {0x000001, 0x000002, 0x000003, 0x01000004});
+
+  u32 z = 0;
+  GXPeekZ(1, 1, &z);
+
+  EXPECT_EQ(z, 0x000004u);
+  EXPECT_TRUE(aurora::gfx::depth_peek::testing::snapshot_requested());
+}
+
+TEST_F(GXFifoTest, PeekZ_OutOfRangeReturnsClearDepthFallback) {
+  g_gxState.clearDepth = 0xabcdef;
+  aurora::gfx::depth_peek::testing::set_latest(1, 1, {0x000001});
+
+  u32 z = 0;
+  GXPeekZ(1, 0, &z);
+
+  EXPECT_EQ(z, 0xabcdefu);
+  EXPECT_TRUE(aurora::gfx::depth_peek::testing::snapshot_requested());
 }
 
 // ============================================================================
