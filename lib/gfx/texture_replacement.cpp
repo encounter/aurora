@@ -99,6 +99,20 @@ bool is_relative_to(const std::filesystem::path& path, const std::filesystem::pa
   return true;
 }
 
+bool is_sidecar_mip(std::string_view stem) noexcept {
+  constexpr std::string_view tag = "_mip";
+  size_t i = stem.size();
+  while (i > 0 && stem[i - 1] >= '0' && stem[i - 1] <= '9') {
+    --i;
+  }
+
+  if (i == stem.size() || i < tag.size()) {
+    return false;
+  }
+
+  return stem.substr(i - tag.size(), tag.size()) == tag;
+}
+
 std::optional<uint64_t> parse_hex(std::string_view text) noexcept {
   if (text.empty()) {
     return std::nullopt;
@@ -354,6 +368,84 @@ std::optional<RuntimeTextureKey> parse_replacement_filename(std::string_view fil
   };
 }
 
+std::optional<ConvertedTexture> load_replacement(const std::filesystem::path& path, bool hasMips) noexcept {
+  auto base = dds::load_dds_file(path);
+  if (!base.has_value()) {
+    Log.warn("texture_replacement: failed to load texture {}", path.string());
+    return std::nullopt;
+  }
+  if (!hasMips) {
+    return base;
+  }
+
+  std::vector<ConvertedTexture> more;
+  std::error_code ec;
+  for (uint32_t mipLevel = 1;; ++mipLevel) {
+    const auto mipPath = path.parent_path() / fmt::format("{}_mip{}{}", path.stem().string(), mipLevel, path.extension().string());
+    if (!std::filesystem::is_regular_file(mipPath, ec)) {
+      break;
+    }
+
+    auto lvl = dds::load_dds_file(mipPath);
+    const uint32_t ew = std::max(base->width >> mipLevel, 1u);
+    const uint32_t eh = std::max(base->height >> mipLevel, 1u);
+    const bool ok = lvl.has_value() && lvl->format == base->format && lvl->width == ew && lvl->height == eh;
+    if (!ok) {
+      if (more.empty()) {
+        if (!lvl.has_value()) {
+          Log.warn("texture_replacement: could not load mip {}", mipPath.string());
+        } else {
+          Log.warn("texture_replacement: expected {}x{} for mip {}, got {}x{}", mipPath.string(), ew, eh, lvl->width, lvl->height);
+        }
+        return std::nullopt;
+      }
+      break;
+    }
+    more.push_back(std::move(*lvl));
+  }
+
+  if (more.empty()) {
+    return std::nullopt;
+  }
+
+  const uint32_t mips = 1u + static_cast<uint32_t>(more.size());
+  const uint64_t n = calc_texture_size(base->format, base->width, base->height, mips);
+  if (n == 0) {
+    return std::nullopt;
+  }
+
+  ByteBuffer blob{static_cast<size_t>(n)};
+  uint8_t* const dst = blob.data();
+  uint64_t o = 0;
+  const auto append = [&](const ByteBuffer& d) noexcept -> bool {
+    if (o + d.size() > n) {
+      return false;
+    }
+    std::memcpy(dst + o, d.data(), d.size());
+    o += d.size();
+    return true;
+  };
+  if (!append(base->data)) {
+    return std::nullopt;
+  }
+  for (const auto& mip : more) {
+    if (!append(mip.data)) {
+      return std::nullopt;
+    }
+  }
+  if (o != n) {
+    return std::nullopt;
+  }
+
+  return ConvertedTexture{
+      .format = base->format,
+      .width = base->width,
+      .height = base->height,
+      .mips = mips,
+      .data = std::move(blob),
+  };
+}
+
 void touch_cached_replacement(decltype(s_replacementCache)::iterator it) noexcept {
   if (it->second.lruIt != s_replacementLru.begin()) {
     s_replacementLru.splice(s_replacementLru.begin(), s_replacementLru, it->second.lruIt);
@@ -411,6 +503,10 @@ void build_index() noexcept {
       continue;
     }
 
+    if (is_sidecar_mip(path.stem().string())) {
+      continue;
+    }
+
     const auto parsed = parse_replacement_filename(path.filename().string());
     if (!parsed.has_value()) {
       continue;
@@ -453,7 +549,7 @@ const gfx::TextureHandle* find_cached_replacement(const RuntimeTextureKey& key) 
 }
 
 gfx::TextureHandle load_replacement_texture(const RuntimeTextureKey& key, const std::filesystem::path& path) noexcept {
-  const auto replacement = dds::load_dds_file(path);
+  const auto replacement = load_replacement(path, key.hasMips);
   if (!replacement.has_value()) {
     s_failedKeys.insert(key);
     return {};
