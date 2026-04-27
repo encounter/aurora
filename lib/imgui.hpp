@@ -18,4 +18,6 @@ void shutdown() noexcept;
 void process_event(const SDL_Event& event) noexcept;
 void new_frame(const AuroraWindowSize& size) noexcept;
 void render(const wgpu::RenderPassEncoder& pass) noexcept;
+
+bool want_capture_controller() noexcept;
 } // namespace aurora::imgui

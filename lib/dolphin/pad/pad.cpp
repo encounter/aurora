@@ -6,6 +6,8 @@
 #include <array>
 #include <sys/stat.h>
 
+#include "../../imgui.hpp"
+
 static const int32_t k_mappingsFileVersion = 3;
 
 static std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtons{{
@@ -210,10 +212,28 @@ static Sint16 _get_axis_value(aurora::input::GameController* controller, PADAxis
   }
 }
 
+static uint32_t clear_status(PADStatus* status) {
+  uint32_t rumbleSupport = 0;
+  for (uint32_t i = 0; i < PAD_CHANMAX; ++i) {
+    memset(&status[i], 0, sizeof(PADStatus));
+    const auto controller = aurora::input::get_controller_for_player(i);
+    if (controller == nullptr) {
+      status[i].err = PAD_ERR_NO_CONTROLLER;
+      continue;
+    }
+
+    status[i].err = PAD_ERR_NONE;
+    if (controller->m_hasRumble) {
+      rumbleSupport |= PAD_CHAN0_BIT >> i;
+    }
+  }
+  return rumbleSupport;
+}
+
 bool gBlockPAD = false;
 uint32_t PADRead(PADStatus* status) {
-  if (gBlockPAD) {
-    return 0;
+  if (gBlockPAD || aurora::imgui::want_capture_controller()) {
+    return clear_status(status);
   }
 
   uint32_t rumbleSupport = 0;

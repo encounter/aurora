@@ -7,6 +7,7 @@
 #include <webgpu/webgpu_cpp.h>
 #include <SDL3/SDL_render.h>
 
+#include "input.hpp"
 #include "internal.hpp"
 #include "webgpu/gpu.hpp"
 #include "window.hpp"
@@ -25,11 +26,27 @@ static bool g_useSdlRenderer = false;
 
 static std::vector<SDL_Texture*> g_sdlTextures;
 static std::vector<wgpu::Texture> g_wgpuTextures;
+static std::vector<SDL_Gamepad*> g_imguiGamepads;
+
+static void update_gamepads() noexcept {
+  g_imguiGamepads.clear();
+  g_imguiGamepads.reserve(input::g_GameControllers.size());
+  for (auto& [_, controller] : input::g_GameControllers) {
+    if (controller.m_controller != nullptr) {
+      g_imguiGamepads.push_back(controller.m_controller);
+    }
+  }
+
+  ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_Manual,
+                                g_imguiGamepads.empty() ? nullptr : g_imguiGamepads.data(),
+                                static_cast<int>(g_imguiGamepads.size()));
+}
 
 void create_context() noexcept {
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGuiIO& io = ImGui::GetIO();
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
   g_imguiSettings = std::string{g_config.configPath} + "/imgui.ini";
   g_imguiLog = std::string{g_config.configPath} + "/imgui.log";
   io.IniFilename = g_imguiSettings.c_str();
@@ -65,6 +82,7 @@ void shutdown() noexcept {
   }
   g_sdlTextures.clear();
   g_wgpuTextures.clear();
+  g_imguiGamepads.clear();
 }
 
 void process_event(const SDL_Event& event) noexcept {
@@ -90,6 +108,7 @@ void new_frame(const AuroraWindowSize& size) noexcept {
     }
     ImGui_ImplWGPU_NewFrame();
   }
+  update_gamepads();
   ImGui_ImplSDL3_NewFrame();
 
   ImGuiIO& io = ImGui::GetIO();
@@ -163,6 +182,16 @@ ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) no
   }
   g_wgpuTextures.push_back(texture);
   return reinterpret_cast<ImTextureID>(textureView.MoveToCHandle());
+}
+
+bool want_capture_controller() noexcept {
+  if (ImGui::GetCurrentContext() != nullptr) {
+    const ImGuiIO& io = ImGui::GetIO();
+    return ((io.ConfigFlags & ImGuiConfigFlags_NavEnableGamepad) != 0 &&
+            (io.BackendFlags & ImGuiBackendFlags_HasGamepad) != 0 && io.NavActive) ||
+           ImGui::IsKeyDown(ImGuiKey_GamepadBack);
+  }
+  return false;
 }
 } // namespace aurora::imgui
 
