@@ -51,10 +51,6 @@ Rml::Context* get_context() noexcept { return g_context; }
 
 bool is_initialized() noexcept { return g_context != nullptr; }
 
-wgpu::TextureView prepare_stencil_view(const wgpu::Extent3D& size) noexcept {
-  return get_render_interface()->GetClipMaskStencilView(size);
-}
-
 void handle_event(SDL_Event& event) noexcept {
   if (g_context == nullptr) {
     return;
@@ -63,7 +59,8 @@ void handle_event(SDL_Event& event) noexcept {
   RmlSDL::InputEventHandler(g_context, window::get_sdl_window(), event);
 }
 
-void render(const wgpu::RenderPassEncoder& pass) noexcept {
+void render(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& outputView, const wgpu::Extent3D& size,
+            const gfx::Viewport& viewport) noexcept {
   if (g_context == nullptr) {
     return;
   }
@@ -71,19 +68,14 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
   g_context->Update();
 
   auto* renderInterface = get_render_interface();
-  renderInterface->SetRenderPass(&pass);
   renderInterface->SetWindowSize(g_context->GetDimensions());
-  renderInterface->NewFrame();
-
-  pass.PushDebugGroup("Aurora: RmlUi");
+  renderInterface->BeginFrame(encoder, outputView, size, viewport);
 
   Backend::BeginFrame();
   g_context->Render();
   Backend::PresentFrame();
 
-  pass.PopDebugGroup();
-
-  renderInterface->SetRenderPass(nullptr);
+  renderInterface->EndFrame();
 }
 
 void shutdown() noexcept {

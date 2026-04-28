@@ -70,15 +70,8 @@ constexpr std::array<AuroraBackend, 0> PreferredBackendOrder{};
 bool g_initialFrame = false;
 
 #ifdef AURORA_ENABLE_GX
-struct PresentViewport {
-  float x;
-  float y;
-  float width;
-  float height;
-};
-
-PresentViewport calculate_present_viewport(uint32_t surface_width, uint32_t surface_height, uint32_t content_width,
-                                           uint32_t content_height) {
+gfx::Viewport calculate_present_viewport(uint32_t surface_width, uint32_t surface_height, uint32_t content_width,
+                                         uint32_t content_height) {
   if (surface_width == 0 || surface_height == 0 || content_width == 0 || content_height == 0) {
     return {};
   }
@@ -96,10 +89,12 @@ PresentViewport calculate_present_viewport(uint32_t surface_width, uint32_t surf
   }
 
   return {
-      .x = static_cast<float>((surface_width - viewport_width) / 2),
-      .y = static_cast<float>((surface_height - viewport_height) / 2),
+      .left = static_cast<float>((surface_width - viewport_width) / 2),
+      .top = static_cast<float>((surface_height - viewport_height) / 2),
       .width = static_cast<float>(viewport_width),
       .height = static_cast<float>(viewport_height),
+      .znear = 0.f,
+      .zfar = 1.f,
   };
 }
 #endif
@@ -278,6 +273,17 @@ void end_frame() noexcept {
   const auto viewport = calculate_present_viewport(webgpu::g_graphicsConfig.surfaceConfiguration.width,
                                                    webgpu::g_graphicsConfig.surfaceConfiguration.height,
                                                    webgpu::g_frameBuffer.size.width, webgpu::g_frameBuffer.size.height);
+#if AURORA_ENABLE_RMLUI
+  if (rmlui::is_initialized()) {
+    rmlui::render(encoder, g_currentView,
+                  {
+                      .width = webgpu::g_graphicsConfig.surfaceConfiguration.width,
+                      .height = webgpu::g_graphicsConfig.surfaceConfiguration.height,
+                      .depthOrArrayLayers = 1,
+                  },
+                  viewport);
+  } else
+#endif
   {
     const std::array attachments{
         wgpu::RenderPassColorAttachment{
@@ -295,42 +301,11 @@ void end_frame() noexcept {
     // Copy EFB -> XFB (swapchain)
     pass.SetPipeline(webgpu::g_CopyPipeline);
     pass.SetBindGroup(0, webgpu::g_CopyBindGroup, 0, nullptr);
-    pass.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height, 0.f, 1.f);
+    pass.SetViewport(viewport.left, viewport.top, viewport.width, viewport.height, viewport.znear, viewport.zfar);
 
     pass.Draw(3);
     pass.End();
   }
-#if AURORA_ENABLE_RMLUI
-  if (rmlui::is_initialized()) {
-    const std::array attachments{
-        wgpu::RenderPassColorAttachment{
-            .view = g_currentView,
-            .loadOp = wgpu::LoadOp::Load,
-            .storeOp = wgpu::StoreOp::Store,
-        },
-    };
-    const wgpu::RenderPassDepthStencilAttachment depthStencilAttachment{
-        .view = rmlui::prepare_stencil_view({
-            .width = webgpu::g_graphicsConfig.surfaceConfiguration.width,
-            .height = webgpu::g_graphicsConfig.surfaceConfiguration.height,
-            .depthOrArrayLayers = 1,
-        }),
-        .stencilLoadOp = wgpu::LoadOp::Clear,
-        .stencilStoreOp = wgpu::StoreOp::Store,
-        .stencilClearValue = 0,
-    };
-    const wgpu::RenderPassDescriptor renderPassDescriptor{
-        .label = "RmlUi render pass",
-        .colorAttachmentCount = attachments.size(),
-        .colorAttachments = attachments.data(),
-        .depthStencilAttachment = &depthStencilAttachment,
-    };
-    const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
-    pass.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height, 0.f, 1.f);
-    rmlui::render(pass);
-    pass.End();
-  }
-#endif
   {
     const std::array attachments{
         wgpu::RenderPassColorAttachment{
@@ -345,7 +320,7 @@ void end_frame() noexcept {
         .colorAttachments = attachments.data(),
     };
     const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
-    pass.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height, 0.f, 1.f);
+    pass.SetViewport(viewport.left, viewport.top, viewport.width, viewport.height, viewport.znear, viewport.zfar);
     imgui::render(pass);
     pass.End();
   }
