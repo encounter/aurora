@@ -10,29 +10,34 @@
 #include "webgpu/gpu.hpp"
 
 namespace aurora::rmlui {
+namespace {
 Module Log("aurora::rmlui");
+
+WebGPURenderInterface* get_render_interface() noexcept {
+  return static_cast<WebGPURenderInterface*>(Backend::GetRenderInterface()); // NOLINT(*-pro-type-static-cast-downcast)
+}
+} // namespace
 
 Rml::Context* g_context = nullptr;
 
-void initialize(const AuroraWindowSize& window_size) noexcept {
-  if (!Backend::Initialize("Aurora RmlUi Backend", window_size.native_fb_width, window_size.native_fb_height, false)) {
+void initialize(const AuroraWindowSize& size) noexcept {
+  int width = static_cast<int>(size.native_fb_width);
+  int height = static_cast<int>(size.native_fb_height);
+  if (!Backend::Initialize("Aurora RmlUi Backend", width, height, false)) {
     Log.error("Failed to initialize RmlUI Backend!");
     return;
   }
 
-  WebGPURenderInterface* render_interface = static_cast<WebGPURenderInterface*>(Backend::GetRenderInterface());
-
+  auto* renderInterface = get_render_interface();
   Rml::SetSystemInterface(Backend::GetSystemInterface());
-  Rml::SetRenderInterface(render_interface);
+  Rml::SetRenderInterface(renderInterface);
 
-  render_interface->SetWindowSize({(int)window_size.native_fb_width, (int)window_size.native_fb_height});
-  render_interface->SetRenderTargetFormat(webgpu::g_graphicsConfig.surfaceConfiguration.format);
-
-  render_interface->CreateDeviceObjects();
+  renderInterface->SetWindowSize({width, height});
+  renderInterface->SetRenderTargetFormat(webgpu::g_graphicsConfig.surfaceConfiguration.format);
+  renderInterface->CreateDeviceObjects();
 
   Rml::Initialise();
-
-  g_context = Rml::CreateContext("main", Rml::Vector2i(window_size.native_fb_width, window_size.native_fb_height));
+  g_context = Rml::CreateContext("main", Rml::Vector2i(width, height));
 
   if (!g_context) {
     Log.error("Failed to initialize RmlUI Context!");
@@ -45,6 +50,10 @@ void initialize(const AuroraWindowSize& window_size) noexcept {
 Rml::Context* get_context() noexcept { return g_context; }
 
 bool is_initialized() noexcept { return g_context != nullptr; }
+
+wgpu::TextureView prepare_stencil_view(const wgpu::Extent3D& size) noexcept {
+  return get_render_interface()->GetClipMaskStencilView(size);
+}
 
 void handle_event(SDL_Event& event) noexcept {
   if (g_context == nullptr) {
@@ -61,10 +70,10 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
 
   g_context->Update();
 
-  WebGPURenderInterface* render_interface = static_cast<WebGPURenderInterface*>(Backend::GetRenderInterface());
-  render_interface->SetRenderPass(&pass);
-  render_interface->SetWindowSize(g_context->GetDimensions());
-  render_interface->NewFrame();
+  auto* renderInterface = get_render_interface();
+  renderInterface->SetRenderPass(&pass);
+  renderInterface->SetWindowSize(g_context->GetDimensions());
+  renderInterface->NewFrame();
 
   pass.PushDebugGroup("Aurora: RmlUi");
 
@@ -74,7 +83,7 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
 
   pass.PopDebugGroup();
 
-  render_interface->SetRenderPass(nullptr);
+  renderInterface->SetRenderPass(nullptr);
 }
 
 void shutdown() noexcept {

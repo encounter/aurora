@@ -6,8 +6,9 @@
 #include "aurora/aurora.h"
 
 namespace aurora::rmlui {
-void initialize(const AuroraWindowSize& window_size) noexcept;
+void initialize(const AuroraWindowSize& size) noexcept;
 void handle_event(SDL_Event& event) noexcept;
+wgpu::TextureView prepare_stencil_view(const wgpu::Extent3D& size) noexcept;
 void render(const wgpu::RenderPassEncoder& pass) noexcept;
 void shutdown() noexcept;
-} // namespace aurora::imgui
+} // namespace aurora::rmlui

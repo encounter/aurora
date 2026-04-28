@@ -275,6 +275,9 @@ void end_frame() noexcept {
   auto encoder = g_device.CreateCommandEncoder(&encoderDescriptor);
   gfx::end_frame(encoder);
   gfx::render(encoder);
+  const auto viewport = calculate_present_viewport(webgpu::g_graphicsConfig.surfaceConfiguration.width,
+                                                   webgpu::g_graphicsConfig.surfaceConfiguration.height,
+                                                   webgpu::g_frameBuffer.size.width, webgpu::g_frameBuffer.size.height);
   {
     const std::array attachments{
         wgpu::RenderPassColorAttachment{
@@ -284,24 +287,65 @@ void end_frame() noexcept {
         },
     };
     const wgpu::RenderPassDescriptor renderPassDescriptor{
-        .label = "Post render pass",
+        .label = "EFB copy render pass",
         .colorAttachmentCount = attachments.size(),
         .colorAttachments = attachments.data(),
     };
-    auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
+    const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
     // Copy EFB -> XFB (swapchain)
     pass.SetPipeline(webgpu::g_CopyPipeline);
     pass.SetBindGroup(0, webgpu::g_CopyBindGroup, 0, nullptr);
-
-    const auto viewport = calculate_present_viewport(
-        webgpu::g_graphicsConfig.surfaceConfiguration.width, webgpu::g_graphicsConfig.surfaceConfiguration.height,
-        webgpu::g_frameBuffer.size.width, webgpu::g_frameBuffer.size.height);
-    pass.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height, 0, 1);
+    pass.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height, 0.f, 1.f);
 
     pass.Draw(3);
+    pass.End();
+  }
 #if AURORA_ENABLE_RMLUI
+  if (rmlui::is_initialized()) {
+    const std::array attachments{
+        wgpu::RenderPassColorAttachment{
+            .view = g_currentView,
+            .loadOp = wgpu::LoadOp::Load,
+            .storeOp = wgpu::StoreOp::Store,
+        },
+    };
+    const wgpu::RenderPassDepthStencilAttachment depthStencilAttachment{
+        .view = rmlui::prepare_stencil_view({
+            .width = webgpu::g_graphicsConfig.surfaceConfiguration.width,
+            .height = webgpu::g_graphicsConfig.surfaceConfiguration.height,
+            .depthOrArrayLayers = 1,
+        }),
+        .stencilLoadOp = wgpu::LoadOp::Clear,
+        .stencilStoreOp = wgpu::StoreOp::Store,
+        .stencilClearValue = 0,
+    };
+    const wgpu::RenderPassDescriptor renderPassDescriptor{
+        .label = "RmlUi render pass",
+        .colorAttachmentCount = attachments.size(),
+        .colorAttachments = attachments.data(),
+        .depthStencilAttachment = &depthStencilAttachment,
+    };
+    const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
+    pass.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height, 0.f, 1.f);
     rmlui::render(pass);
+    pass.End();
+  }
 #endif
+  {
+    const std::array attachments{
+        wgpu::RenderPassColorAttachment{
+            .view = g_currentView,
+            .loadOp = wgpu::LoadOp::Load,
+            .storeOp = wgpu::StoreOp::Store,
+        },
+    };
+    const wgpu::RenderPassDescriptor renderPassDescriptor{
+        .label = "ImGui render pass",
+        .colorAttachmentCount = attachments.size(),
+        .colorAttachments = attachments.data(),
+    };
+    const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
+    pass.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height, 0.f, 1.f);
     imgui::render(pass);
     pass.End();
   }
