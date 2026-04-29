@@ -310,8 +310,8 @@ uint32_t PADRead(PADStatus* status) {
       rumbleSupport |= PAD_CHAN0_BIT >> i;
     }
 
-    // Update the LED colors when the controller is read (which should happen once per frame in most games)
-    if (controller->m_isColorDirty) {
+    // Update the LED colors when they exist and the controller is read (which should happen once per frame in most games)
+    if (controller->m_hasRgbLed && controller->m_isColorDirty) {
       SDL_SetGamepadLED(controller->m_controller, controller->m_ledRed, controller->m_ledGreen, controller->m_ledBlue);
       controller->m_isColorDirty = false;
     }
