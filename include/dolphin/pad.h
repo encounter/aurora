@@ -71,6 +71,8 @@ extern "C" {
 
 #define PAD_NATIVE_BUTTON_INVALID 0xFFFFFFFF
 #define PAD_KEY_MASK 0x80000000
+#define PADIsScancode(x) (((s32)x & PAD_KEY_MASK) == PAD_KEY_MASK)
+#define PADCreateScancode(x) ((s32)x | PAD_KEY_MASK)
 
 typedef struct PADStatus {
   u16 button;
