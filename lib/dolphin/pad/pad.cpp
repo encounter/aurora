@@ -915,5 +915,5 @@ void PADSetScancodeBinding(u32 port, PADButton button, s32 scancode) {
   PADButtonMapping* mapping =
       std::find_if(ctrl->m_buttonMapping.begin(), ctrl->m_buttonMapping.end(),
                    [&button](const PADButtonMapping& mapping) { return mapping.padButton == button; });
-  mapping->nativeButton = scancode | 0x80000000;
+  mapping->nativeButton = scancode | PAD_KEY_MASK;
 }
