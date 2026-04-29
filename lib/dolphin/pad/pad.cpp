@@ -907,13 +907,18 @@ BOOL PADIsGCAdapter(u32 port) {
   return ctrl->m_isGameCube;
 }
 
-void PADSetScancodeBinding(u32 port, PADButton button, s32 scancode) {
+BOOL PADSetScancodeBinding(u32 port, PADButton button, s32 scancode) {
   auto* ctrl = aurora::input::get_controller_for_player(port);
   if (ctrl == nullptr) {
-    return;
+    return FALSE;
   }
-  auto* mapping =
-      std::find_if(ctrl->m_buttonMapping.begin(), ctrl->m_buttonMapping.end(),
-                   [&button](const PADButtonMapping& mapping) { return mapping.padButton == button; });
-  mapping->nativeButton = scancode | PAD_KEY_MASK;
+  
+  for (auto& mapping : ctrl->m_buttonMapping) {
+    if (mapping.padButton == button) {
+      mapping.nativeButton = scancode | PAD_KEY_MASK;
+      return TRUE;
+    }
+  }
+
+  return FALSE;
 }

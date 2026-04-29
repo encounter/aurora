@@ -155,7 +155,7 @@ const char* PADGetName(u32 port);
 // To set a key value the top bit of the scancode must be set.
 void PADSetButtonMapping(u32 port, PADButtonMapping mapping);
 void PADSetAllButtonMappings(u32 port, PADButtonMapping buttons[PAD_BUTTON_COUNT]);
-void PADSetScancodeBinding(u32 port, PADButton, u16 scancode);
+BOOL PADSetScancodeBinding(u32 port, PADButton, u16 scancode);
 PADButtonMapping* PADGetButtonMappings(u32 port, u32* buttonCount);
 void PADSetAxisMapping(u32 port, PADAxisMapping mapping);
 void PADSetAllAxisMappings(u32 port, PADAxisMapping axes[PAD_AXIS_COUNT]);
