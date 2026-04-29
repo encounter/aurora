@@ -230,8 +230,15 @@ uint32_t PADRead(PADStatus* status) {
     std::for_each(
         controller->m_buttonMapping.begin(), controller->m_buttonMapping.end(),
         [&controller, &i, &status](const auto& mapping) {
-          if (SDL_GetGamepadButton(controller->m_controller, static_cast<SDL_GamepadButton>(mapping.nativeButton))) {
-            status[i].button |= mapping.padButton;
+          if (!(mapping.nativeButton & PAD_KEY_MASK)) {
+            if (SDL_GetGamepadButton(controller->m_controller, static_cast<SDL_GamepadButton>(mapping.nativeButton))) {
+              status[i].button |= mapping.padButton;
+            }
+          } else if (mapping.nativeButton != PAD_NATIVE_BUTTON_INVALID) {
+            const bool* state = SDL_GetKeyboardState(nullptr);
+            if (state[mapping.nativeButton & ~PAD_KEY_MASK]) {
+              status[i].button |= mapping.padButton;
+            }
           }
         });
 
@@ -898,4 +905,15 @@ BOOL PADIsGCAdapter(u32 port) {
     return FALSE;
   }
   return ctrl->m_isGameCube;
+}
+
+void PADSetScancodeBinding(u32 port, PADButton button, s32 scancode) {
+  auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr) {
+    return;
+  }
+  PADButtonMapping* mapping =
+      std::find_if(ctrl->m_buttonMapping.begin(), ctrl->m_buttonMapping.end(),
+                   [&button](const PADButtonMapping& mapping) { return mapping.padButton == button; });
+  mapping->nativeButton = scancode | 0x80000000;
 }

@@ -70,6 +70,7 @@ extern "C" {
 #endif
 
 #define PAD_NATIVE_BUTTON_INVALID 0xFFFFFFFF
+#define PAD_KEY_MASK 0x80000000
 
 typedef struct PADStatus {
   u16 button;
@@ -147,8 +148,12 @@ s32 PADGetIndexForPort(u32 port);
 void PADGetVidPid(u32 port, u32* vid, u32* pid);
 void PADClearPort(u32 port);
 const char* PADGetName(u32 port);
+// All the button mapping functions can be used to set either key or button bindings.
+// To set a button binding simply use the SDL pad value
+// To set a key value the top bit of the scancode must be set.
 void PADSetButtonMapping(u32 port, PADButtonMapping mapping);
 void PADSetAllButtonMappings(u32 port, PADButtonMapping buttons[PAD_BUTTON_COUNT]);
+void PADSetScancodeBinding(u32 port, PADButton, u16 scancode);
 PADButtonMapping* PADGetButtonMappings(u32 port, u32* buttonCount);
 void PADSetAxisMapping(u32 port, PADAxisMapping mapping);
 void PADSetAllAxisMappings(u32 port, PADAxisMapping axes[PAD_AXIS_COUNT]);
