@@ -605,14 +605,29 @@ void bind_replacement(GXTexObj_& obj, GXTexMapID id, const gfx::TextureHandle& h
 }
 
 bool dump_editable_texture_dds(const RuntimeTextureKey& key, const GXTexObj_& obj) noexcept {
-  const auto pixels = convert_texture(obj.format(), obj.width(), obj.height(), obj.mip_count(),
-                                      {static_cast<const uint8_t*>(obj.data), UINT32_MAX});
-  if (pixels.data.empty()) {
+  const ArrayRef<uint8_t> texData{static_cast<const uint8_t*>(obj.data), UINT32_MAX};
+  const uint32_t texWidth = obj.width();
+  const uint32_t texHeight = obj.height();
+
+  ConvertedTexture pixels;
+  if (is_palette_format(obj.format())) {
+    const TlutMetadata* tlut = get_loaded_tlut(obj);
+    if (tlut == nullptr) {
+      return false;
+    }
+    pixels = convert_texture_palette(obj.format(), texWidth, texHeight, 1, texData, static_cast<GXTlutFmt>(tlut->format), tlut->entries, {tlut->data.data(), tlut->data.size()});
+  } else {
+    pixels = convert_texture(obj.format(), texWidth, texHeight, 1, texData);
+  }
+
+  const uint64_t rgbaBytes = calc_texture_size(wgpu::TextureFormat::RGBA8Unorm, texWidth, texHeight, 1);
+
+  if (pixels.data.empty() || pixels.format != wgpu::TextureFormat::RGBA8Unorm || pixels.data.size() != rgbaBytes) {
     return false;
   }
 
   const auto path = s_dumpRoot / format_replacement_filename(key);
-  return dds::write_rgba8_dds(path, obj.width(), obj.height(), pixels.data);
+  return dds::write_rgba8_dds(path, texWidth, texHeight, pixels.data);
 }
 
 bool report_missing_key(const RuntimeTextureKey& key, const GXTexObj_& obj) noexcept {
@@ -650,7 +665,7 @@ void register_tlut(const GXTlutObj* obj, const void* data, GXTlutFmt format, uin
 
   const size_t sz = static_cast<size_t>(entries) * 2;
   ByteBuffer buffer{sz};
-  std::memcpy(buffer.data(), buffer.data(), sz);
+  std::memcpy(buffer.data(), static_cast<const uint8_t*>(data), sz);
   s_pendingTluts[obj] = {
       .size = static_cast<uint32_t>(entries) * 2,
       .format = static_cast<uint32_t>(format),
