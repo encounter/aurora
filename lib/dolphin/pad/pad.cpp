@@ -264,7 +264,7 @@ uint32_t PADRead(PADStatus* status) {
   for (uint32_t i = 0; i < PAD_CHANMAX; ++i) {
     memset(&status[i], 0, sizeof(PADStatus));
     auto controller = aurora::input::get_controller_for_player(i);
-    if (controller == nullptr || !g_keyboardBindings[i].m_mappingsSet) {
+    if (controller == nullptr && !g_keyboardBindings[i].m_mappingsSet) {
       status[i].err = PAD_ERR_NO_CONTROLLER;
       continue;
     }
