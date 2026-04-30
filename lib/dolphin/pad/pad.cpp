@@ -269,7 +269,7 @@ uint32_t PADRead(PADStatus* status) {
       continue;
     }
 
-    
+    status[i].err = PAD_ERR_NONE;
     if (g_keyboardBindings[i].m_mappingsSet) {
       std::for_each(g_keyboardBindings[i].m_buttonMapping.begin(), g_keyboardBindings[i].m_buttonMapping.end(),
                     [&kbState, &i, &status](const PADKeyButtonBinding& mapping) {
@@ -281,7 +281,6 @@ uint32_t PADRead(PADStatus* status) {
     
     if (controller) {
       EnsureMappingLoaded(controller);
-      status[i].err = PAD_ERR_NONE;
       std::for_each(
           controller->m_buttonMapping.begin(), controller->m_buttonMapping.end(),
           [&controller, &i, &status](const auto& mapping) {
