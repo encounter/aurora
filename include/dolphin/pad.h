@@ -108,6 +108,21 @@ void PADControlAllMotors(const u32* cmdArr);
 void PADSetAnalogMode(u32 mode);
 
 #ifdef TARGET_PC
+#define PAD_KEY_INVALID (-1)
+typedef u16 PADButton;
+typedef u16 PADAxis;
+
+struct PADKeyButtonBinding {
+  s32 scancode;
+  PADButton padButton;
+};
+
+struct PADKeyAxisBinding {
+  s32 scancode;
+  PADAxis padAxis;
+  s16 influence; // normalized percentage between 0 and 1
+};
+
 /* New API to facilitate controller interactions */
 typedef struct PADDeadZones {
   bool emulateTriggers;
@@ -118,14 +133,12 @@ typedef struct PADDeadZones {
   u16 rightTriggerActivationZone;
 } PADDeadZones;
 
-typedef u16 PADButton;
 
 typedef struct PADButtonMapping {
   u32 nativeButton;
   PADButton padButton;
 } PADButtonMapping;
 
-typedef u16 PADAxis;
 
 typedef struct PADAxisMapping {
   PADSignedNativeAxis nativeAxis;
@@ -154,12 +167,22 @@ void PADSetAxisMapping(u32 port, PADAxisMapping mapping);
 void PADSetAllAxisMappings(u32 port, PADAxisMapping axes[PAD_AXIS_COUNT]);
 PADAxisMapping* PADGetAxisMappings(u32 port, u32* axisCount);
 void PADSerializeMappings();
+
+BOOL PADSetKeyButtonBinding(u32 port, PADKeyButtonBinding binding);
+BOOL PADSetKeyButtonBindings(u32 port, PADKeyButtonBinding bindings[PAD_BUTTON_COUNT]);
+PADKeyButtonBinding* PADGetKeyButtonBindings(u32 port, u32* buttonCount);
+BOOL PADSetKeyAxisBinding(u32 port, PADKeyAxisBinding binding);
+BOOL PADSetKeyAxisBindings(u32 port, PADKeyAxisBinding bindings[PAD_BUTTON_COUNT]);
+PADKeyAxisBinding* PADGetKeyAxisBindings(u32 port, u32* axisCount);
+void PADClearKeyBindings(u32 port);
+
 PADDeadZones* PADGetDeadZones(u32 port);
 const char* PADGetButtonName(PADButton);
 const char* PADGetNativeButtonName(u32 button);
 const char* PADGetAxisName(PADAxis);
 const char* PADGetAxisDirectionLabel(PADAxis);
 const char* PADGetNativeAxisName(PADSignedNativeAxis axis);
+
 BOOL PADIsGCAdapter(u32 port);
 
 /**
