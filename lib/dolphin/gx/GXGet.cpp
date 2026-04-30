@@ -243,8 +243,8 @@ void GXGetScissor(u32* left, u32* top, u32* wd, u32* ht) {
   const u32 bm = GET_REG_FIELD(__gx->suScis1, 11, 0);
   const u32 rt = GET_REG_FIELD(__gx->suScis1, 11, 12);
 
-  *left = lf - 340;
-  *top = tp - 340;
+  *left = lf - 342;
+  *top = tp - 342;
   *wd = rt - lf + 1;
   *ht = bm - tp + 1;
 }
