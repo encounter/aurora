@@ -160,6 +160,7 @@ const char* PADGetNativeButtonName(u32 button);
 const char* PADGetAxisName(PADAxis);
 const char* PADGetAxisDirectionLabel(PADAxis);
 const char* PADGetNativeAxisName(PADSignedNativeAxis axis);
+BOOL PADIsGCAdapter(u32 port);
 
 /**
  * Returns the SDL gamepad for the index into the controller map.

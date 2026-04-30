@@ -208,7 +208,8 @@ fn vs_main(@builtin(vertex_index) vtxIdx: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(efb_texture, efb_sampler, in.uv);
+    let color = textureSample(efb_texture, efb_sampler, in.uv);
+    return vec4(color.rgb, 1.0);
 }
 )""";
   const wgpu::ShaderModuleDescriptor moduleDescriptor{

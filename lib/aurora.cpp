@@ -8,6 +8,10 @@
 #include <webgpu/webgpu_cpp.h>
 #endif
 
+#ifdef AURORA_ENABLE_RMLUI
+#include "rmlui.hpp"
+#endif
+
 #include "input.hpp"
 #include "internal.hpp"
 #include "window.hpp"
@@ -66,15 +70,8 @@ constexpr std::array<AuroraBackend, 0> PreferredBackendOrder{};
 bool g_initialFrame = false;
 
 #ifdef AURORA_ENABLE_GX
-struct PresentViewport {
-  float x;
-  float y;
-  float width;
-  float height;
-};
-
-PresentViewport calculate_present_viewport(uint32_t surface_width, uint32_t surface_height, uint32_t content_width,
-                                           uint32_t content_height) {
+gfx::Viewport calculate_present_viewport(uint32_t surface_width, uint32_t surface_height, uint32_t content_width,
+                                         uint32_t content_height) {
   if (surface_width == 0 || surface_height == 0 || content_width == 0 || content_height == 0) {
     return {};
   }
@@ -92,10 +89,12 @@ PresentViewport calculate_present_viewport(uint32_t surface_width, uint32_t surf
   }
 
   return {
-      .x = static_cast<float>((surface_width - viewport_width) / 2),
-      .y = static_cast<float>((surface_height - viewport_height) / 2),
+      .left = static_cast<float>((surface_width - viewport_width) / 2),
+      .top = static_cast<float>((surface_height - viewport_height) / 2),
       .width = static_cast<float>(viewport_width),
       .height = static_cast<float>(viewport_height),
+      .znear = 0.f,
+      .zfar = 1.f,
   };
 }
 #endif
@@ -179,6 +178,10 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
   imgui::initialize();
 #endif
 
+#ifdef AURORA_ENABLE_RMLUI
+  rmlui::initialize(size);
+#endif
+
   g_initialFrame = true;
   g_config.desiredBackend = selectedBackend;
   return {
@@ -196,6 +199,9 @@ wgpu::TextureView g_currentView;
 #endif
 
 void shutdown() noexcept {
+#ifdef AURORA_ENABLE_RMLUI
+  rmlui::shutdown();
+#endif
 #ifdef AURORA_ENABLE_GX
   g_currentView = {};
   imgui::shutdown();
@@ -264,6 +270,20 @@ void end_frame() noexcept {
   auto encoder = g_device.CreateCommandEncoder(&encoderDescriptor);
   gfx::end_frame(encoder);
   gfx::render(encoder);
+  const auto viewport = calculate_present_viewport(webgpu::g_graphicsConfig.surfaceConfiguration.width,
+                                                   webgpu::g_graphicsConfig.surfaceConfiguration.height,
+                                                   webgpu::g_frameBuffer.size.width, webgpu::g_frameBuffer.size.height);
+#if AURORA_ENABLE_RMLUI
+  if (rmlui::is_initialized()) {
+    rmlui::render(encoder, g_currentView,
+                  {
+                      .width = webgpu::g_graphicsConfig.surfaceConfiguration.width,
+                      .height = webgpu::g_graphicsConfig.surfaceConfiguration.height,
+                      .depthOrArrayLayers = 1,
+                  },
+                  viewport);
+  } else
+#endif
   {
     const std::array attachments{
         wgpu::RenderPassColorAttachment{
@@ -273,21 +293,34 @@ void end_frame() noexcept {
         },
     };
     const wgpu::RenderPassDescriptor renderPassDescriptor{
-        .label = "Post render pass",
+        .label = "EFB copy render pass",
         .colorAttachmentCount = attachments.size(),
         .colorAttachments = attachments.data(),
     };
-    auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
+    const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
     // Copy EFB -> XFB (swapchain)
     pass.SetPipeline(webgpu::g_CopyPipeline);
     pass.SetBindGroup(0, webgpu::g_CopyBindGroup, 0, nullptr);
-
-    const auto viewport = calculate_present_viewport(
-        webgpu::g_graphicsConfig.surfaceConfiguration.width, webgpu::g_graphicsConfig.surfaceConfiguration.height,
-        webgpu::g_frameBuffer.size.width, webgpu::g_frameBuffer.size.height);
-    pass.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height, 0, 1);
+    pass.SetViewport(viewport.left, viewport.top, viewport.width, viewport.height, viewport.znear, viewport.zfar);
 
     pass.Draw(3);
+    pass.End();
+  }
+  {
+    const std::array attachments{
+        wgpu::RenderPassColorAttachment{
+            .view = g_currentView,
+            .loadOp = wgpu::LoadOp::Load,
+            .storeOp = wgpu::StoreOp::Store,
+        },
+    };
+    const wgpu::RenderPassDescriptor renderPassDescriptor{
+        .label = "ImGui render pass",
+        .colorAttachmentCount = attachments.size(),
+        .colorAttachments = attachments.data(),
+    };
+    const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
+    pass.SetViewport(viewport.left, viewport.top, viewport.width, viewport.height, viewport.znear, viewport.zfar);
     imgui::render(pass);
     pass.End();
   }

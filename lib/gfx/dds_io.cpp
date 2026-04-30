@@ -197,7 +197,7 @@ std::optional<ConvertedTexture> parse_dds_bytes(ArrayRef<uint8_t> bytes) noexcep
     return std::nullopt;
   }
 
-  const uint32_t mipCount = std::max(header->mipMapCount, 1u);
+  const uint32_t mipCount = 1u;
   const auto expectedSize = calc_texture_size(parsedLayout->format, header->width, header->height, mipCount);
   if (expectedSize == 0 || parsedLayout->dataOffset + expectedSize > bytes.size()) {
     return std::nullopt;

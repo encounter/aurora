@@ -634,13 +634,13 @@ static void handle_bp(u32 value, bool bigEndian) {
   case 0x21: {
     const u32 scis0 = g_gxState.bpRegCache[0x20];
     const u32 scis1 = g_gxState.bpRegCache[0x21];
-    const int32_t tp = static_cast<int32_t>(bp_get(scis0, 11, 0));
-    const int32_t lf = static_cast<int32_t>(bp_get(scis0, 11, 12));
-    const int32_t bm = static_cast<int32_t>(bp_get(scis1, 11, 0));
-    const int32_t rt = static_cast<int32_t>(bp_get(scis1, 11, 12));
-    if (rt >= lf && bm >= tp) {
-      set_logical_scissor({lf - 340, tp - 340, rt - lf + 1, bm - tp + 1});
-    }
+    const int32_t tp = static_cast<int32_t>(bp_get(scis0, 11, 0)) - 342;
+    const int32_t lf = static_cast<int32_t>(bp_get(scis0, 11, 12)) - 342;
+    const int32_t bm = static_cast<int32_t>(bp_get(scis1, 11, 0)) - 342;
+    const int32_t rt = static_cast<int32_t>(bp_get(scis1, 11, 12)) - 342;
+    const int32_t wd = std::max(rt - lf + 1, 0);
+    const int32_t ht = std::max(bm - tp + 1, 0);
+    set_logical_scissor({lf, tp, wd, ht});
     break;
   }
 
@@ -1776,6 +1776,10 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     CHECK(pos + 4 <= size, "GX_LOAD_AURORA_DESTROY_TLUT read overrun");
     evict_tlut_object(read_u32(data + pos, bigEndian));
     pos += 4;
+  } else if (subCmd == GX_LOAD_AURORA_DESTROY_COPY_TEX) {
+    CHECK(pos + 8 <= size, "GX_LOAD_AURORA_DESTROY_COPY_TEX read overrun");
+    evict_copy_texture(reinterpret_cast<const void*>(read_u64(data + pos, bigEndian)));
+    pos += 8;
   } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_PUSH) {
     auto label = read_string(data, pos, size, bigEndian);
     gfx::push_debug_group(std::move(label));

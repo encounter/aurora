@@ -59,6 +59,8 @@ extern "C" {
 
 #define GX_LOAD_AURORA_DESTROY_TLUT 0x0033
 
+#define GX_LOAD_AURORA_DESTROY_COPY_TEX 0x0034
+
 
 /*
  * Debug marker stuff

@@ -1461,6 +1461,45 @@ TEST_F(GXFifoTest, DestroyTlutObj_MarksLoadedSlotNoCacheUntilReloaded) {
   EXPECT_FALSE(slot.no_cache());
 }
 
+TEST_F(GXFifoTest, DestroyCopyTex_EmitsAuroraDestroyCommand) {
+  alignas(32) u8 image[32]{};
+
+  GXDestroyCopyTex(image);
+  auto bytes = capture_fifo();
+
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_DESTROY_COPY_TEX));
+
+  reset_gx_state();
+  decode_fifo(bytes);
+}
+
+TEST_F(GXFifoTest, DestroyCopyTex_RemovesActiveCopyTextureAndCacheEntriesForPointer) {
+  alignas(32) u8 imageA[32]{};
+  alignas(32) u8 imageB[32]{};
+
+  const aurora::gx::GXState::CopyTextureRef ref{.revision = 1};
+  gxState().copyTextures[imageA] = ref;
+  gxState().copyTextures[imageB] = ref;
+  gxState().copyTextureCache.emplace(
+      aurora::gx::GXState::CopyTextureKey{.dest = imageA, .width = 32, .height = 32, .format = GX_TF_I4}, ref);
+  gxState().copyTextureCache.emplace(
+      aurora::gx::GXState::CopyTextureKey{.dest = imageA, .width = 64, .height = 64, .format = GX_TF_I8}, ref);
+  gxState().copyTextureCache.emplace(
+      aurora::gx::GXState::CopyTextureKey{.dest = imageB, .width = 32, .height = 32, .format = GX_TF_I4}, ref);
+
+  GXDestroyCopyTex(imageA);
+  auto bytes = capture_fifo();
+
+  decode_fifo(bytes);
+
+  EXPECT_FALSE(gxState().copyTextures.contains(imageA));
+  EXPECT_TRUE(gxState().copyTextures.contains(imageB));
+  for (const auto& [key, _] : gxState().copyTextureCache) {
+    EXPECT_NE(key.dest, imageA);
+  }
+  EXPECT_EQ(gxState().copyTextureCache.size(), 1u);
+}
+
 // ============================================================================
 // BP genMode (requires __GXSetDirtyState() flush)
 // ============================================================================

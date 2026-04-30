@@ -4,8 +4,8 @@
 extern "C" {
 
 void GXSetScissor(u32 left, u32 top, u32 width, u32 height) {
-  const u32 tp = top + 340;
-  const u32 lf = left + 340;
+  const u32 tp = top + 342;
+  const u32 lf = left + 342;
   const u32 bm = tp + height - 1;
   const u32 rt = lf + width - 1;
 
