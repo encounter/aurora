@@ -23,6 +23,7 @@ u32 GXGetTexBufferSize(u16 width, u16 height, u32 format, GXBool mipmap, u8 max_
 void GXInvalidateTexAll();
 void GXInitTexObjWrapMode(GXTexObj* obj, GXTexWrapMode s, GXTexWrapMode t);
 void GXInitTlutObj(GXTlutObj* obj, const void* data, GXTlutFmt format, u16 entries);
+void GXInitTlutObjData(GXTlutObj* obj, const void* data);
 void GXLoadTlut(const GXTlutObj* obj, u32 idx);
 void GXSetTexCoordScaleManually(GXTexCoordID coord, GXBool enable, u16 ss, u16 ts);
 void GXSetTexCoordCylWrap(GXTexCoordID coord, GXBool s_enable, GXBool t_enable);
