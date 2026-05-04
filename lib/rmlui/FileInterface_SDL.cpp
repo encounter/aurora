@@ -10,7 +10,6 @@ Module Log("aurora::rmlui::FileInterface");
 } // namespace
 
 Rml::FileHandle FileInterface_SDL::Open(const Rml::String& path) {
-  Log.debug("Opening File: {}", path);
   auto stream = SDL_IOFromFile(path.c_str(), "r+b");
 
   if (stream == nullptr) {
@@ -18,13 +17,10 @@ Rml::FileHandle FileInterface_SDL::Open(const Rml::String& path) {
     return 0;
   }
 
-  Log.debug("File Handle Addr: {}", (Rml::FileHandle)stream);
-
   return (Rml::FileHandle)stream;
 }
 
 void FileInterface_SDL::Close(Rml::FileHandle file) {
-  Log.debug("Closing File: {}", file);
   if (file != 0) {
     auto stream = (SDL_IOStream*)file;
     SDL_CloseIO(stream);
@@ -48,7 +44,7 @@ size_t FileInterface_SDL::Read(void* buffer, size_t size, Rml::FileHandle file) 
         Log.error("Read failed! Reason: {}", SDL_GetError());
         SDL_CloseIO(stream);
         return total;
-      }else {
+      } else {
         return size;
       }
     }
@@ -65,8 +61,6 @@ bool FileInterface_SDL::Seek(Rml::FileHandle file, long offset, int origin) {
   }
 
   auto stream = (SDL_IOStream*)file;
-
-  Log.debug("Seeking File: {} (Offset: {} Origin: {})", file, offset, origin);
 
   if (SDL_SeekIO(stream, offset, (SDL_IOWhence)origin) < 0) {
     Log.warn("Seek failed! Reason: {}", SDL_GetError());
@@ -97,4 +91,4 @@ size_t FileInterface_SDL::Length(Rml::FileHandle file) {
   return SDL_GetIOSize(stream);
 }
 
-}
+} // namespace aurora::rmlui
