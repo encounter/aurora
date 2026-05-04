@@ -174,14 +174,20 @@ const char* PADGetNameForControllerIndex(uint32_t idx) {
 
 void PADSetPortForIndex(uint32_t idx, int32_t port) {
   auto* ctrl = __PADGetControllerForIndex(idx);
-  auto* dest = aurora::input::get_controller_for_player(port);
   if (ctrl == nullptr) {
     return;
   }
-  if (dest != nullptr) {
+
+  const int32_t oldPort = SDL_GetGamepadPlayerIndex(ctrl->m_controller);
+  auto* dest = aurora::input::get_controller_for_player(port);
+  if (dest != nullptr && dest != ctrl) {
     SDL_SetGamepadPlayerIndex(dest->m_controller, -1);
   }
+  if (oldPort >= 0 && oldPort != port) {
+    aurora::input::persist_controller_for_player(oldPort, nullptr);
+  }
   SDL_SetGamepadPlayerIndex(ctrl->m_controller, port);
+  aurora::input::persist_controller_for_player(port, ctrl);
 }
 
 int32_t PADGetIndexForPort(uint32_t port) {
@@ -201,6 +207,7 @@ int32_t PADGetIndexForPort(uint32_t port) {
 }
 
 void PADClearPort(uint32_t port) {
+  aurora::input::persist_controller_for_player(port, nullptr);
   auto* ctrl = aurora::input::get_controller_for_player(port);
   if (ctrl == nullptr) {
     return;
