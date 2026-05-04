@@ -2,6 +2,10 @@
 #include <math.h>
 #include <dolphin/mtx.h>
 
+#if EMULATE_PS_MATH
+#include <dolphin/ppc_math.h>
+#endif
+
 void C_VECAdd(const Vec* a, const Vec* b, Vec* ab) {
   assert(a && "VECAdd():  NULL VecPtr 'a' ");
   assert(b && "VECAdd():  NULL VecPtr 'b' ");
@@ -29,31 +33,49 @@ void C_VECScale(const Vec* src, Vec* dst, f32 scale) {
 }
 
 void C_VECNormalize(const Vec* src, Vec* unit) {
-  f32 mag;
+  f32 sqsum;
+  f32 rsqrt;
 
   assert(src && "VECNormalize():  NULL VecPtr 'src' ");
   assert(unit && "VECNormalize():  NULL VecPtr 'unit' ");
 
-  mag = (src->z * src->z) + ((src->x * src->x) + (src->y * src->y));
-  assert(0.0f != mag && "VECNormalize():  zero magnitude vector ");
+#if EMULATE_PS_MATH
+  sqsum = (src->z * src->z + src->x * src->x) + src->y * src->y;
+#else
+  sqsum = (src->z * src->z) + ((src->x * src->x) + (src->y * src->y));
+#endif
+  assert(0.0f != sqsum && "VECNormalize():  zero magnitude vector ");
 
-  mag = 1.0f/ sqrtf(mag);
-  unit->x = src->x * mag;
-  unit->y = src->y * mag;
-  unit->z = src->z * mag;
+#if EMULATE_PS_MATH
+  rsqrt = ppc_rsqrte(sqsum);
+#else
+  rsqrt = 1.0f / sqrtf(sqsum);
+#endif
+  unit->x = src->x * rsqrt;
+  unit->y = src->y * rsqrt;
+  unit->z = src->z * rsqrt;
 }
 
 f32 C_VECSquareMag(const Vec* v) {
-  f32 sqmag;
-
   assert(v && "VECMag():  NULL VecPtr 'v' ");
-
-  sqmag = v->z * v->z + ((v->x * v->x) + (v->y * v->y));
-  return sqmag;
+#if EMULATE_PS_MATH
+  return (v->z * v->z + v->x * v->x) + v->y * v->y;
+#else
+  return v->z * v->z + ((v->x * v->x) + (v->y * v->y));
+#endif
 }
 
 f32 C_VECMag(const Vec* v) {
+#if EMULATE_PS_MATH
+  f32 sqmag;
+  sqmag = C_VECSquareMag(v);
+  if (sqmag == 0.0f) {
+    return 0.0f;
+  }
+  return sqmag * ppc_rsqrte(sqmag);
+#else
   return sqrtf(C_VECSquareMag(v));
+#endif
 }
 
 f32 C_VECDotProduct(const Vec* a, const Vec* b) {
@@ -131,14 +153,25 @@ void C_VECReflect(const Vec* src, const Vec* normal, Vec* dst) {
 }
 
 f32 C_VECSquareDistance(const Vec* a, const Vec* b) {
-  Vec diff;
-
-  diff.x = a->x - b->x;
-  diff.y = a->y - b->y;
-  diff.z = a->z - b->z;
-  return (diff.z * diff.z) + ((diff.x * diff.x) + (diff.y * diff.y));
+  f32 dx = a->x - b->x;
+  f32 dy = a->y - b->y;
+  f32 dz = a->z - b->z;
+#if EMULATE_PS_MATH
+  return (dx * dx + dy * dy) + dz * dz;
+#else
+  return (dz * dz) + ((dx * dx) + (dy * dy));
+#endif
 }
 
 f32 C_VECDistance(const Vec* a, const Vec* b) {
+#if EMULATE_PS_MATH
+  f32 sqdist;
+  sqdist = C_VECSquareDistance(a, b);
+  if (sqdist == 0.0f) {
+    return 0.0f;
+  }
+  return sqdist * ppc_rsqrte(sqdist);
+#else
   return sqrtf(C_VECSquareDistance(a, b));
+#endif
 }
