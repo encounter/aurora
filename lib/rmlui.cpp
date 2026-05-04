@@ -7,6 +7,7 @@
 #include "window.hpp"
 #include "internal.hpp"
 #include "imgui.hpp"
+#include "rmlui/FileInterface_SDL.h"
 #include "rmlui/SystemInterface_Aurora.h"
 #include "rmlui/WebGPURenderInterface.hpp"
 #include "webgpu/gpu.hpp"
@@ -21,6 +22,7 @@ WebGPURenderInterface* get_render_interface() noexcept {
 } // namespace
 
 Rml::Context* g_context = nullptr;
+FileInterface_SDL* g_fileInterface = nullptr;
 
 void initialize(const AuroraWindowSize& size) noexcept {
   int width = static_cast<int>(size.native_fb_width);
@@ -30,9 +32,12 @@ void initialize(const AuroraWindowSize& size) noexcept {
     return;
   }
 
+  g_fileInterface = new FileInterface_SDL();
+
   auto* renderInterface = get_render_interface();
   Rml::SetSystemInterface(Backend::GetSystemInterface());
   Rml::SetRenderInterface(renderInterface);
+  Rml::SetFileInterface(g_fileInterface);
 
   renderInterface->SetWindowSize({width, height});
   renderInterface->SetRenderTargetFormat(webgpu::g_graphicsConfig.surfaceConfiguration.format);

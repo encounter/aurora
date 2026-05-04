@@ -29,6 +29,7 @@ if(AURORA_ENABLE_RMLUI)
             lib/rmlui/RmlUi_Backend_Aurora.cpp
             lib/rmlui/WebGPURenderInterface.cpp
             lib/rmlui/SystemInterface_Aurora.cpp
+            lib/rmlui/FileInterface_SDL.cpp
     )
     target_link_libraries(aurora_core PUBLIC rmlui)
 
