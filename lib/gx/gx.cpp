@@ -246,6 +246,31 @@ Vec2<uint32_t> logical_fb_size() noexcept {
   return gfx::is_offscreen() ? gfx::get_render_target_size() : vi::configured_fb_size();
 }
 
+std::tuple<float, float, float, float> calculate_inner_box(const int targetWidth, const int targetHeight,
+                                                           const int logicalFbWidth, const int logicalFbHeight) noexcept {
+  if (g_gxState.viewportPolicy == AURORA_VIEWPORT_STRETCH) {
+    return {
+        0.0f,
+        0.0f,
+        static_cast<float>(targetWidth),
+        static_cast<float>(targetHeight),
+    };
+  } else {
+    const auto scale = std::min(static_cast<float>(targetWidth) / static_cast<float>(logicalFbWidth),
+                                static_cast<float>(targetHeight) / static_cast<float>(logicalFbHeight));
+    const auto offsetX =
+        std::floor((static_cast<float>(targetWidth) - static_cast<float>(logicalFbWidth) * scale) * 0.5f);
+    const auto offsetY =
+        std::floor((static_cast<float>(targetHeight) - static_cast<float>(logicalFbHeight) * scale) * 0.5f);
+    return {
+        offsetX,
+        offsetY,
+        static_cast<float>(targetWidth) - 2.0f * offsetX,
+        static_cast<float>(targetHeight) - 2.0f * offsetY,
+    };
+  }
+}
+
 gfx::Viewport map_logical_viewport(const gfx::Viewport& logicalViewport) noexcept {
   if (g_gxState.viewportPolicy == AURORA_VIEWPORT_NATIVE) {
     return logicalViewport;
@@ -257,21 +282,14 @@ gfx::Viewport map_logical_viewport(const gfx::Viewport& logicalViewport) noexcep
     return logicalViewport;
   }
 
-  const bool stretch = g_gxState.viewportPolicy == AURORA_VIEWPORT_STRETCH;
-  const float scaleX = static_cast<float>(targetWidth) / static_cast<float>(logicalFbWidth);
-  const float scaleY = static_cast<float>(targetHeight) / static_cast<float>(logicalFbHeight);
-  const float scale = std::min(scaleX, scaleY);
-  const float xOffset =
-      stretch ? 0.f : (static_cast<float>(targetWidth) - static_cast<float>(logicalFbWidth) * scale) * 0.5f;
-  const float yOffset =
-      stretch ? 0.f : (static_cast<float>(targetHeight) - static_cast<float>(logicalFbHeight) * scale) * 0.5f;
-  const float mappedScaleX = stretch ? scaleX : scale;
-  const float mappedScaleY = stretch ? scaleY : scale;
+  const auto [offsetX, offsetY, innerWidth, innerHeight] =
+      calculate_inner_box(targetWidth, targetHeight, logicalFbWidth, logicalFbHeight);
+
   return {
-      .left = xOffset + logicalViewport.left * mappedScaleX,
-      .top = yOffset + logicalViewport.top * mappedScaleY,
-      .width = logicalViewport.width * mappedScaleX,
-      .height = logicalViewport.height * mappedScaleY,
+      .left = offsetX + (logicalViewport.left / static_cast<float>(logicalFbWidth)) * innerWidth,
+      .top = offsetY + (logicalViewport.top / static_cast<float>(logicalFbHeight)) * innerHeight,
+      .width = (logicalViewport.width / static_cast<float>(logicalFbWidth)) * innerWidth,
+      .height = (logicalViewport.height / static_cast<float>(logicalFbHeight)) * innerHeight,
       .znear = logicalViewport.znear,
       .zfar = logicalViewport.zfar,
   };
@@ -288,21 +306,13 @@ gfx::ClipRect map_logical_scissor(const gfx::ClipRect& logicalScissor) noexcept 
     return logicalScissor;
   }
 
-  const bool stretch = g_gxState.viewportPolicy == AURORA_VIEWPORT_STRETCH;
-  const float scaleX = static_cast<float>(targetWidth) / static_cast<float>(logicalFbWidth);
-  const float scaleY = static_cast<float>(targetHeight) / static_cast<float>(logicalFbHeight);
-  const float scale = std::min(scaleX, scaleY);
-  const float xOffset =
-      stretch ? 0.f : (static_cast<float>(targetWidth) - static_cast<float>(logicalFbWidth) * scale) * 0.5f;
-  const float yOffset =
-      stretch ? 0.f : (static_cast<float>(targetHeight) - static_cast<float>(logicalFbHeight) * scale) * 0.5f;
-  const float mappedScaleX = stretch ? scaleX : scale;
-  const float mappedScaleY = stretch ? scaleY : scale;
+  const auto [offsetX, offsetY, innerWidth, innerHeight] =
+      calculate_inner_box(targetWidth, targetHeight, logicalFbWidth, logicalFbHeight);
 
-  const float left = xOffset + static_cast<float>(logicalScissor.x) * mappedScaleX;
-  const float top = yOffset + static_cast<float>(logicalScissor.y) * mappedScaleY;
-  const float right = xOffset + static_cast<float>(logicalScissor.x + logicalScissor.width) * mappedScaleX;
-  const float bottom = yOffset + static_cast<float>(logicalScissor.y + logicalScissor.height) * mappedScaleY;
+  const float left = offsetX + (static_cast<float>(logicalScissor.x) / static_cast<float>(logicalFbWidth)) * innerWidth;
+  const float top = offsetY + (static_cast<float>(logicalScissor.y) / static_cast<float>(logicalFbHeight)) * innerHeight;
+  const float right = offsetX + (static_cast<float>(logicalScissor.x + logicalScissor.width) / static_cast<float>(logicalFbWidth)) * innerWidth;
+  const float bottom = offsetY + (static_cast<float>(logicalScissor.y + logicalScissor.height) / static_cast<float>(logicalFbHeight)) * innerHeight;
 
   const auto mappedLeft = std::clamp(static_cast<int32_t>(std::floor(left)), 0, static_cast<int32_t>(targetWidth));
   const auto mappedTop = std::clamp(static_cast<int32_t>(std::floor(top)), 0, static_cast<int32_t>(targetHeight));
