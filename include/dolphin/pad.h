@@ -108,7 +108,12 @@ void PADControlAllMotors(const u32* cmdArr);
 void PADSetAnalogMode(u32 mode);
 
 #ifdef TARGET_PC
-#define PAD_KEY_INVALID (-1)
+#define PAD_KEY_INVALID      (-1)
+#define PAD_KEY_MOUSE_LEFT   (-2)
+#define PAD_KEY_MOUSE_MIDDLE (-3)
+#define PAD_KEY_MOUSE_RIGHT  (-4)
+#define PAD_KEY_MOUSE_X1     (-5)
+#define PAD_KEY_MOUSE_X2     (-6)
 typedef u16 PADButton;
 typedef u16 PADAxis;
 
@@ -175,6 +180,7 @@ BOOL PADSetKeyAxisBinding(u32 port, PADKeyAxisBinding binding);
 BOOL PADSetKeyAxisBindings(u32 port, PADKeyAxisBinding bindings[PAD_BUTTON_COUNT]);
 PADKeyAxisBinding* PADGetKeyAxisBindings(u32 port, u32* axisCount);
 void PADClearKeyBindings(u32 port);
+void PADSetKeyboardActive(u32 port, BOOL active);
 
 PADDeadZones* PADGetDeadZones(u32 port);
 const char* PADGetButtonName(PADButton);
