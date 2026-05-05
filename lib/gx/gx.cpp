@@ -259,9 +259,9 @@ std::tuple<float, float, float, float> calculate_inner_box(const int targetWidth
     const auto scale = std::min(static_cast<float>(targetWidth) / static_cast<float>(logicalFbWidth),
                                 static_cast<float>(targetHeight) / static_cast<float>(logicalFbHeight));
     const auto offsetX =
-        std::floor((static_cast<float>(targetWidth) - static_cast<float>(logicalFbWidth) * scale) * 0.5f);
+        std::trunc((static_cast<float>(targetWidth) - static_cast<float>(logicalFbWidth) * scale) * 0.5f);
     const auto offsetY =
-        std::floor((static_cast<float>(targetHeight) - static_cast<float>(logicalFbHeight) * scale) * 0.5f);
+        std::trunc((static_cast<float>(targetHeight) - static_cast<float>(logicalFbHeight) * scale) * 0.5f);
     return {
         offsetX,
         offsetY,
