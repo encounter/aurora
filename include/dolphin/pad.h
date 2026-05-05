@@ -117,16 +117,16 @@ void PADSetAnalogMode(u32 mode);
 typedef u16 PADButton;
 typedef u16 PADAxis;
 
-struct PADKeyButtonBinding {
+typedef struct PADKeyButtonBinding {
   s32 scancode;
   PADButton padButton;
-};
+} PADKeyButtonBinding;
 
-struct PADKeyAxisBinding {
+typedef struct PADKeyAxisBinding {
   s32 scancode;
   PADAxis padAxis;
   s16 influence; // normalized percentage between 0 and 1
-};
+} PADKeyAxisBinding;
 
 /* New API to facilitate controller interactions */
 typedef struct PADDeadZones {
