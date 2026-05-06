@@ -136,6 +136,7 @@ void PADSetAnalogMode(u32 mode);
 #define PAD_KEY_MOUSE_X1 (-5)
 #define PAD_KEY_MOUSE_X2 (-6)
 typedef u16 PADButton;
+typedef u32 PADExtButton;
 typedef u16 PADAxis;
 
 typedef struct PADKeyButtonBinding {

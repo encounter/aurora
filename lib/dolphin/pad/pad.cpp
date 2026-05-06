@@ -463,7 +463,7 @@ uint32_t PADRead(PADStatus* status) {
           });
       
       // TODO: Add serializable mappings for these (probably not necessary)?
-      static constexpr std::array<std::pair<SDL_GamepadButton, PADButton>, PAD_EXT_BUTTON_COUNT> kExtButtonMappings{
+      static constexpr std::array<std::pair<SDL_GamepadButton, PADExtButton>, PAD_EXT_BUTTON_COUNT> kExtButtonMappings{
           {
             {SDL_GAMEPAD_BUTTON_BACK, PAD_BUTTON_BACK},
             {SDL_GAMEPAD_BUTTON_GUIDE, PAD_BUTTON_GUIDE},
