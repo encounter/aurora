@@ -485,7 +485,7 @@ uint32_t PADRead(PADStatus* status) {
       
       for (const auto& mapping : kExtButtonMappings) {
         if (SDL_GetGamepadButton(controller->m_controller, mapping.first)) {
-          status[i].extButtons |= mapping.second;
+          status[i].extButton |= mapping.second;
         }
       }
 

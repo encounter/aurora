@@ -101,7 +101,7 @@ typedef struct PADStatus {
   u8 analogB;
   s8 err;
 #ifdef TARGET_PC
-  u16 extButtons;
+  u16 extButton;
 #endif
 } PADStatus;
 
