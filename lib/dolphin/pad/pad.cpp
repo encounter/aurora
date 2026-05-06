@@ -461,6 +461,33 @@ uint32_t PADRead(PADStatus* status) {
               status[i].button |= mapping.padButton;
             }
           });
+      
+      // TODO: Add serializable mappings for these (probably not necessary)?
+      static constexpr std::array<std::pair<SDL_GamepadButton, PADButton>, PAD_EXT_BUTTON_COUNT> kExtButtonMappings{
+          {
+            {SDL_GAMEPAD_BUTTON_BACK, PAD_BUTTON_BACK},
+            {SDL_GAMEPAD_BUTTON_GUIDE, PAD_BUTTON_GUIDE},
+            {SDL_GAMEPAD_BUTTON_MISC1, PAD_BUTTON_MISC1},
+            {SDL_GAMEPAD_BUTTON_MISC2, PAD_BUTTON_MISC2},
+            {SDL_GAMEPAD_BUTTON_MISC3, PAD_BUTTON_MISC3},
+            {SDL_GAMEPAD_BUTTON_MISC4, PAD_BUTTON_MISC4},
+            {SDL_GAMEPAD_BUTTON_MISC5, PAD_BUTTON_MISC5},
+            {SDL_GAMEPAD_BUTTON_MISC6, PAD_BUTTON_MISC6},
+            {SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1, PAD_BUTTON_RIGHT_PADDLE1},
+            {SDL_GAMEPAD_BUTTON_LEFT_PADDLE1, PAD_BUTTON_LEFT_PADDLE1},
+            {SDL_GAMEPAD_BUTTON_RIGHT_PADDLE2, PAD_BUTTON_RIGHT_PADDLE2},
+            {SDL_GAMEPAD_BUTTON_LEFT_PADDLE2, PAD_BUTTON_LEFT_PADDLE2},
+            {SDL_GAMEPAD_BUTTON_RIGHT_STICK, PAD_BUTTON_RIGHT_STICK},
+            {SDL_GAMEPAD_BUTTON_LEFT_STICK, PAD_BUTTON_LEFT_STICK},
+            {SDL_GAMEPAD_BUTTON_TOUCHPAD, PAD_BUTTON_TOUCHPAD},
+          }
+      };
+      
+      for (const auto& mapping : kExtButtonMappings) {
+        if (SDL_GetGamepadButton(controller->m_controller, mapping.first)) {
+          status[i].extButtons |= mapping.second;
+        }
+      }
 
       Sint16 xlPos = _get_axis_value(controller, PAD_AXIS_LEFT_X_POS);
       Sint16 xlNeg = _get_axis_value(controller, PAD_AXIS_LEFT_X_NEG);
