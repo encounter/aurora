@@ -248,20 +248,20 @@ void __PADLoadMapping(aurora::input::GameController* controller) {
 
   auto path = fmt::format("{}/{}_{:04X}_{:04X}.controller", basePath, PADGetName(playerIndex), controller->m_vid,
                           controller->m_pid);
-  FILE* file = fopen(path.c_str(), "rb");
+  SDL_IOStream* file = SDL_IOFromFile(path.c_str(), "rb");
   if (file == nullptr) {
     return;
   }
 
   uint32_t magic = 0;
-  fread(&magic, 1, sizeof(uint32_t), file);
+  SDL_ReadU32LE(file, &magic);
   if (magic != SBIG('CTRL')) {
     aurora::input::Log.warn("Invalid controller mapping magic!");
     return;
   }
 
   uint32_t version = 0;
-  fread(&version, 1, sizeof(uint32_t), file);
+  SDL_ReadU32LE(file, &version);
   if (version != k_mappingsFileVersion) {
     aurora::input::Log.warn("Invalid controller mapping version! (Expected {0}, found {1})", k_mappingsFileVersion,
                             version);
@@ -269,24 +269,24 @@ void __PADLoadMapping(aurora::input::GameController* controller) {
   }
 
   bool isGameCube = false;
-  fread(&isGameCube, 1, 1, file);
-  fseek(file, (ftell(file) + 31) & ~31, SEEK_SET);
-  uint32_t dataStart = ftell(file);
+  SDL_ReadIO( file, &isGameCube, sizeof(bool));
+  SDL_SeekIO(file, (SDL_TellIO(file) + 31) & ~31, SDL_IO_SEEK_SET);
+  uint32_t dataStart = SDL_TellIO(file);
   if (isGameCube) {
     uint32_t dzSecLen = sizeof(PADDeadZones);
     uint32_t btnSecLen = sizeof(PADButtonMapping) * PAD_BUTTON_COUNT;
     uint32_t axisSecLen = sizeof(PADAxisMapping) * PAD_AXIS_COUNT;
-    fseek(file, dataStart + ((dzSecLen + btnSecLen + axisSecLen) * playerIndex), SEEK_SET);
+    SDL_SeekIO(file, dataStart + ((dzSecLen + btnSecLen + axisSecLen) * playerIndex), SDL_IO_SEEK_SET);
   }
 
-  fread(&controller->m_deadZones, 1, sizeof(PADDeadZones), file);
-  fread(&controller->m_buttonMapping, 1, sizeof(PADButtonMapping) * PAD_BUTTON_COUNT, file);
-  fread(&controller->m_axisMapping, 1, sizeof(PADAxisMapping) * PAD_AXIS_COUNT, file);
+  SDL_ReadIO(file, &controller->m_deadZones, sizeof(PADDeadZones));
+  SDL_ReadIO(file, &controller->m_buttonMapping, sizeof(PADButtonMapping) * PAD_BUTTON_COUNT);
+  SDL_ReadIO(file, &controller->m_axisMapping, sizeof(PADAxisMapping) * PAD_AXIS_COUNT);
   if (!isGameCube) {
-    fread(&controller->m_rumbleIntensityLow, 1, sizeof(u16), file);
-    fread(&controller->m_rumbleIntensityHigh, 1, sizeof(u16), file);
+    SDL_ReadIO(file, &controller->m_rumbleIntensityLow, sizeof(u16));
+    SDL_ReadIO(file, &controller->m_rumbleIntensityHigh, sizeof(u16));
   }
-  fclose(file);
+  SDL_CloseIO(file);
 
 
   bool axisCorrupt = false;
@@ -431,24 +431,45 @@ uint32_t PADRead(PADStatus* status) {
           continue;
         }
         switch (binding.padAxis) {
-        case PAD_AXIS_LEFT_X_POS:  lx += 127; break;
-        case PAD_AXIS_LEFT_X_NEG:  lx -= 127; break;
-        case PAD_AXIS_LEFT_Y_POS:  ly += 127; break;
-        case PAD_AXIS_LEFT_Y_NEG:  ly -= 127; break;
-        case PAD_AXIS_RIGHT_X_POS: rx += 127; break;
-        case PAD_AXIS_RIGHT_X_NEG: rx -= 127; break;
-        case PAD_AXIS_RIGHT_Y_POS: ry += 127; break;
-        case PAD_AXIS_RIGHT_Y_NEG: ry -= 127; break;
-        case PAD_AXIS_TRIGGER_L:   tl += 255; break;
-        case PAD_AXIS_TRIGGER_R:   tr += 255; break;
-        default: break;
+        case PAD_AXIS_LEFT_X_POS:
+          lx += 127;
+          break;
+        case PAD_AXIS_LEFT_X_NEG:
+          lx -= 127;
+          break;
+        case PAD_AXIS_LEFT_Y_POS:
+          ly += 127;
+          break;
+        case PAD_AXIS_LEFT_Y_NEG:
+          ly -= 127;
+          break;
+        case PAD_AXIS_RIGHT_X_POS:
+          rx += 127;
+          break;
+        case PAD_AXIS_RIGHT_X_NEG:
+          rx -= 127;
+          break;
+        case PAD_AXIS_RIGHT_Y_POS:
+          ry += 127;
+          break;
+        case PAD_AXIS_RIGHT_Y_NEG:
+          ry -= 127;
+          break;
+        case PAD_AXIS_TRIGGER_L:
+          tl += 255;
+          break;
+        case PAD_AXIS_TRIGGER_R:
+          tr += 255;
+          break;
+        default:
+          break;
         }
       }
-      status[i].stickX    = static_cast<s8>(std::clamp((int)status[i].stickX    + lx, -127, 127));
-      status[i].stickY    = static_cast<s8>(std::clamp((int)status[i].stickY    + ly, -127, 127));
+      status[i].stickX = static_cast<s8>(std::clamp((int)status[i].stickX + lx, -127, 127));
+      status[i].stickY = static_cast<s8>(std::clamp((int)status[i].stickY + ly, -127, 127));
       status[i].substickX = static_cast<s8>(std::clamp((int)status[i].substickX + rx, -127, 127));
       status[i].substickY = static_cast<s8>(std::clamp((int)status[i].substickY + ry, -127, 127));
-      status[i].triggerLeft  = static_cast<u8>(std::min((int)status[i].triggerLeft  + tl, 255));
+      status[i].triggerLeft = static_cast<u8>(std::min((int)status[i].triggerLeft + tl, 255));
       status[i].triggerRight = static_cast<u8>(std::min((int)status[i].triggerRight + tr, 255));
     }
 
@@ -915,78 +936,75 @@ constexpr uint32_t k_keyboardMagic = SBIG('KBND');
 constexpr int32_t k_keyboardVersion = 2;
 
 static void load_keyboard_bindings() {
-  std::filesystem::path filePath =
-      std::filesystem::path{aurora::g_config.configPath} / "keyboard_bindings.dat";
-  FILE* file = fopen(filePath.string().c_str(), "rb");
+  std::filesystem::path filePath = std::filesystem::path{aurora::g_config.configPath} / "keyboard_bindings.dat";
+  SDL_IOStream* file = SDL_IOFromFile(filePath.string().c_str(), "rb");
   if (file == nullptr) {
     return;
   }
 
   uint32_t magic = 0;
-  fread(&magic, 1, sizeof(uint32_t), file);
+  SDL_ReadU32LE(file, &magic);
   if (magic != k_keyboardMagic) {
     aurora::input::Log.warn("keyboard_bindings.dat: invalid magic");
-    fclose(file);
+    SDL_CloseIO(file);
     return;
   }
 
   uint32_t version = 0;
-  fread(&version, 1, sizeof(uint32_t), file);
+  SDL_ReadU32LE(file, &version);
   if (version != k_keyboardVersion) {
-    aurora::input::Log.warn("keyboard_bindings.dat: version mismatch (expected {}, got {})",
-      k_keyboardVersion, version);
-    fclose(file);
+    aurora::input::Log.warn("keyboard_bindings.dat: version mismatch (expected {}, got {})", k_keyboardVersion,
+                            version);
+    SDL_CloseIO(file);
     return;
   }
 
-  int32_t dataStart = (ftell(file) + 31) & ~31;
-  fseek(file, dataStart, SEEK_SET);
+  int64_t dataStart = (SDL_TellIO(file) + 31) & ~31;
+  SDL_SeekIO(file, dataStart, SDL_IO_SEEK_SET);
 
   for (uint32_t port = 0; port < g_keyboardBindings.size(); ++port) {
     auto& state = g_keyboardBindings[port];
-    fread(&state.m_mappingsSet, 1, sizeof(bool), file);
-    fread(state.m_buttonMapping.data(), 1, sizeof(PADKeyButtonBinding) * PAD_BUTTON_COUNT, file);
-    fread(state.m_axisMapping.data(), 1, sizeof(PADKeyAxisBinding) * PAD_AXIS_COUNT, file);
+    SDL_ReadIO(file, &state.m_mappingsSet, sizeof(bool));
+    SDL_ReadIO(file, state.m_buttonMapping.data(), sizeof(PADKeyButtonBinding) * PAD_BUTTON_COUNT);
+    SDL_ReadIO(file, state.m_axisMapping.data(), sizeof(PADKeyAxisBinding) * PAD_AXIS_COUNT);
 
     if (state.m_mappingsSet) {
-      const bool anyBound =
-          std::any_of(state.m_buttonMapping.begin(), state.m_buttonMapping.end(),
-                      [](const PADKeyButtonBinding& b) { return b.scancode != PAD_KEY_INVALID; }) ||
-          std::any_of(state.m_axisMapping.begin(), state.m_axisMapping.end(),
-                      [](const PADKeyAxisBinding& b) { return b.scancode != PAD_KEY_INVALID; });
+      const bool anyBound = std::any_of(state.m_buttonMapping.begin(), state.m_buttonMapping.end(),
+                                        [](const PADKeyButtonBinding& b) { return b.scancode != PAD_KEY_INVALID; }) ||
+                            std::any_of(state.m_axisMapping.begin(), state.m_axisMapping.end(),
+                                        [](const PADKeyAxisBinding& b) { return b.scancode != PAD_KEY_INVALID; });
       if (!anyBound) {
         state.m_mappingsSet = false;
       }
     }
   }
-  fclose(file);
+  SDL_CloseIO(file);
 }
 
 static void save_keyboard_bindings() {
-  std::filesystem::path filePath =
-      std::filesystem::path{aurora::g_config.configPath} / "keyboard_bindings.dat";
-  FILE* file = fopen(filePath.string().c_str(), "wb");
+  std::filesystem::path filePath = std::filesystem::path{aurora::g_config.configPath} / "keyboard_bindings.dat";
+  SDL_IOStream* file = SDL_IOFromFile(filePath.string().c_str(), "wb");
   if (file == nullptr) {
     aurora::input::Log.warn("save_keyboard_bindings: failed to open {} for writing", filePath.string());
     return;
   }
 
-  fwrite(&k_keyboardMagic, 1, sizeof(uint32_t), file);
-  fwrite(&k_keyboardVersion, 1, sizeof(uint32_t), file);
+  SDL_WriteU32LE(file, k_keyboardMagic);
+  SDL_WriteS32LE(file, k_keyboardVersion);
 
-  int32_t dataStart = (ftell(file) + 31) & ~31;
-  fseek(file, dataStart, SEEK_SET);
+  int64_t dataStart = (SDL_TellIO(file) + 31) & ~31;
+  SDL_SeekIO(file, dataStart, SDL_IO_SEEK_SET);
 
   for (const auto& state : g_keyboardBindings) {
-    fwrite(&state.m_mappingsSet, 1, sizeof(bool), file);
-    fwrite(state.m_buttonMapping.data(), 1, sizeof(PADKeyButtonBinding) * PAD_BUTTON_COUNT, file);
-    fwrite(state.m_axisMapping.data(), 1, sizeof(PADKeyAxisBinding) * PAD_AXIS_COUNT, file);
+    SDL_WriteU8(file, state.m_mappingsSet);
+    SDL_WriteIO(file, state.m_buttonMapping.data(), sizeof(PADKeyButtonBinding) * PAD_BUTTON_COUNT);
+    SDL_WriteIO(file, state.m_axisMapping.data(), sizeof(PADKeyAxisBinding) * PAD_AXIS_COUNT);
   }
-  fclose(file);
+  SDL_CloseIO(file);
 }
 
-void __PADWriteDeadZones(FILE* file, aurora::input::GameController& controller) {
-  fwrite(&controller.m_deadZones, 1, sizeof(PADDeadZones), file);
+void __PADWriteDeadZones(SDL_IOStream* file, aurora::input::GameController& controller) {
+  SDL_WriteIO(file, &controller.m_deadZones, sizeof(PADDeadZones));
 }
 
 void PADSerializeMappings() {
@@ -1001,21 +1019,21 @@ void PADSerializeMappings() {
 
     // don't truncate the file if it already exists
     const char* openMode = std::filesystem::exists(filePath) ? "r+b" : "wb";
-    FILE* file = fopen(filePathStr.c_str(), openMode);
+    SDL_IOStream* file = SDL_IOFromFile(filePathStr.c_str(), openMode);
     if (file == nullptr) {
       return;
     }
-    fseek(file, 0, SEEK_SET);
+    SDL_SeekIO(file, 0, SDL_IO_SEEK_SET);
 
     // write header
     uint32_t magic = SBIG('CTRL');
-    fwrite(&magic, 1, sizeof(magic), file);
-    fwrite(&k_mappingsFileVersion, 1, sizeof(k_mappingsFileVersion), file);
-    fwrite(&controller.second.m_isGameCube, 1, 1, file);
+    SDL_WriteU32LE(file, magic);
+    SDL_WriteU32LE(file, k_mappingsFileVersion);
+    SDL_WriteU8(file, controller.second.m_isGameCube);
 
     // start writing data at next 32-byte aligned offset
-    int32_t dataStart = (ftell(file) + 31) & ~31;
-    fseek(file, dataStart, SEEK_SET);
+    int64_t dataStart = (SDL_TellIO(file) + 31) & ~31;
+    SDL_SeekIO(file, dataStart, SDL_IO_SEEK_SET);
     if (controller.second.m_isGameCube) {
       // GameCube adapters expose 4 input devices with the same vid/pid, we store all 4 in the same file
       uint32_t port = aurora::input::player_index(controller.second.m_index);
@@ -1023,17 +1041,17 @@ void PADSerializeMappings() {
       uint32_t btnSecLen = sizeof(PADButtonMapping) * PAD_BUTTON_COUNT;
       uint32_t axisSecLen = sizeof(PADAxisMapping) * PAD_AXIS_COUNT;
       // skip to offset in file for this particular port
-      fseek(file, dataStart + ((dzSecLen + btnSecLen + axisSecLen) * port), SEEK_SET);
+      SDL_SeekIO(file, dataStart + ((dzSecLen + btnSecLen + axisSecLen) * port), SDL_IO_SEEK_SET);
     }
     __PADWriteDeadZones(file, controller.second);
-    fwrite(controller.second.m_buttonMapping.data(), 1, sizeof(PADButtonMapping) * PAD_BUTTON_COUNT, file);
-    fwrite(controller.second.m_axisMapping.data(), 1, sizeof(PADAxisMapping) * PAD_AXIS_COUNT, file);
+    SDL_WriteIO(file, controller.second.m_buttonMapping.data(), sizeof(PADButtonMapping) * PAD_BUTTON_COUNT);
+    SDL_WriteIO(file, controller.second.m_axisMapping.data(), sizeof(PADAxisMapping) * PAD_AXIS_COUNT);
 
     if (!controller.second.m_isGameCube) {
-      fwrite(&controller.second.m_rumbleIntensityLow, 1, sizeof(u16), file);
-      fwrite(&controller.second.m_rumbleIntensityHigh, 1, sizeof(u16), file);
+      SDL_WriteIO(file, &controller.second.m_rumbleIntensityLow,  sizeof(u16));
+      SDL_WriteIO(file, &controller.second.m_rumbleIntensityHigh,sizeof(u16));
     }
-    fclose(file);
+    SDL_CloseIO(file);
   }
 
   save_keyboard_bindings();
