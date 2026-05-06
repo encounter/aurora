@@ -1302,6 +1302,10 @@ PADBatteryState PADGetBatteryState(u32 port, f32* perc) {
   
   int tmp = 0;
   const auto ret = SDL_GetGamepadPowerInfo(ctrl->m_controller, &tmp);
-  *perc = tmp / 100.f;
+  if (tmp != -1) {
+    *perc = static_cast<float>(tmp) / 100.f;
+  } else {
+    *perc = static_cast<float>(tmp);
+  }
   return static_cast<PADBatteryState>(ret);
 }
