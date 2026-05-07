@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <math.h>
 #include <dolphin/mtx.h>
+#include <dolphin/ppc_math.h>
 
 void C_VECAdd(const Vec* a, const Vec* b, Vec* ab) {
   assert(a && "VECAdd():  NULL VecPtr 'a' ");
@@ -43,6 +44,22 @@ void C_VECNormalize(const Vec* src, Vec* unit) {
   unit->z = src->z * mag;
 }
 
+void PSVECNormalize(const Vec* src, Vec* unit) {
+  f32 sqsum;
+  f32 rsqrt;
+
+  assert(src && "VECNormalize():  NULL VecPtr 'src' ");
+  assert(unit && "VECNormalize():  NULL VecPtr 'unit' ");
+
+  sqsum = (src->z * src->z + src->x * src->x) + src->y * src->y;
+  assert(0.0f != sqsum && "VECNormalize():  zero magnitude vector ");
+
+  rsqrt = ppc_rsqrte(sqsum);
+  unit->x = src->x * rsqrt;
+  unit->y = src->y * rsqrt;
+  unit->z = src->z * rsqrt;
+}
+
 f32 C_VECSquareMag(const Vec* v) {
   f32 sqmag;
 
@@ -52,8 +69,22 @@ f32 C_VECSquareMag(const Vec* v) {
   return sqmag;
 }
 
+f32 PSVECSquareMag(const Vec* v) {
+  assert(v && "VECMag():  NULL VecPtr 'v' ");
+  return (v->z * v->z + v->x * v->x) + v->y * v->y;
+}
+
 f32 C_VECMag(const Vec* v) {
   return sqrtf(C_VECSquareMag(v));
+}
+
+f32 PSVECMag(const Vec* v) {
+  f32 sqmag;
+  sqmag = PSVECSquareMag(v);
+  if (sqmag == 0.0f) {
+    return 0.0f;
+  }
+  return sqmag * ppc_rsqrte(sqmag);
 }
 
 f32 C_VECDotProduct(const Vec* a, const Vec* b) {
@@ -139,6 +170,22 @@ f32 C_VECSquareDistance(const Vec* a, const Vec* b) {
   return (diff.z * diff.z) + ((diff.x * diff.x) + (diff.y * diff.y));
 }
 
+f32 PSVECSquareDistance(const Vec* a, const Vec* b) {
+  f32 dx = a->x - b->x;
+  f32 dy = a->y - b->y;
+  f32 dz = a->z - b->z;
+  return (dx * dx + dy * dy) + dz * dz;
+}
+
 f32 C_VECDistance(const Vec* a, const Vec* b) {
   return sqrtf(C_VECSquareDistance(a, b));
+}
+
+f32 PSVECDistance(const Vec* a, const Vec* b) {
+  f32 sqdist;
+  sqdist = PSVECSquareDistance(a, b);
+  if (sqdist == 0.0f) {
+    return 0.0f;
+  }
+  return sqdist * ppc_rsqrte(sqdist);
 }

@@ -242,6 +242,12 @@ f32 C_VECDistance(const Vec* a, const Vec* b);
 void C_VECReflect(const Vec* src, const Vec* normal, Vec* dst);
 void C_VECHalfAngle(const Vec* a, const Vec* b, Vec* half);
 
+void PSVECNormalize(const Vec* src, Vec* unit);
+f32 PSVECSquareMag(const Vec* v);
+f32 PSVECMag(const Vec* v);
+f32 PSVECSquareDistance(const Vec* a, const Vec* b);
+f32 PSVECDistance(const Vec* a, const Vec* b);
+
 #ifdef GEKKO
 void PSVECAdd(const Vec* a, const Vec* b, Vec* ab);
 void PSVECSubtract(const Vec* a, const Vec* b, Vec* a_b);
@@ -257,13 +263,8 @@ f32 PSVECDistance(const Vec* a, const Vec* b);
 #define PSVECAdd VECAdd
 #define PSVECSubtract VECSubtract
 #define PSVECScale VECScale
-#define PSVECNormalize VECNormalize
-#define PSVECSquareMag VECSquareMag
-#define PSVECMag VECMag
 #define PSVECDotProduct VECDotProduct
 #define PSVECCrossProduct VECCrossProduct
-#define PSVECSquareDistance VECSquareDistance
-#define PSVECDistance VECDistance
 #endif
 
 #if defined(MTX_USE_PS)
