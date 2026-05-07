@@ -8,9 +8,8 @@
 extern "C" {
 #endif
 
-#ifndef GEKKO
+#if !defined(MTX_USE_PS) && !defined(MTX_USE_C) && !defined(GEKKO)
 #define MTX_USE_C
-#undef MTX_USE_PS
 #endif
 
 #if !defined(MTX_USE_PS) && !defined(MTX_USE_C) && defined(GEKKO)
@@ -60,13 +59,13 @@ u32 PSMTXInvXpose(const Mtx src, Mtx invX);
 #endif
 
 #ifdef MTX_USE_PS
-#define MTXIdentity PSMTXIdentity
-#define MTXCopy PSMTXCopy
-#define MTXConcat PSMTXConcat
-#define MTXConcatArray PSMTXConcatArray
-#define MTXTranspose PSMTXTranspose
-#define MTXInverse PSMTXInverse
-#define MTXInvXpose PSMTXInvXpose
+#define MTXIdentity C_MTXIdentity
+#define MTXCopy C_MTXCopy
+#define MTXConcat C_MTXConcat
+#define MTXConcatArray C_MTXConcatArray
+#define MTXTranspose C_MTXTranspose
+#define MTXInverse C_MTXInverse
+#define MTXInvXpose C_MTXInvXpose
 #else
 #define MTXIdentity C_MTXIdentity
 #define MTXCopy C_MTXCopy
@@ -107,13 +106,13 @@ void PSMTXROMultS16VecArray(const ROMtx m, const S16Vec* srcBase, Vec* dstBase, 
 #endif
 
 #ifdef MTX_USE_PS
-#define MTXMultVec PSMTXMultVec
-#define MTXMultVecArray PSMTXMultVecArray
-#define MTXMultVecSR PSMTXMultVecSR
-#define MTXMultVecArraySR PSMTXMultVecArraySR
+#define MTXMultVec C_MTXMultVec
+#define MTXMultVecArray C_MTXMultVecArray
+#define MTXMultVecSR C_MTXMultVecSR
+#define MTXMultVecArraySR C_MTXMultVecArraySR
 #define MTXMultS16VecArray PSMTXMultS16VecArray
 
-#define MTXROMultVecArray PSMTXROMultVecArray
+#define MTXROMultVecArray C_MTXROMultVecArray
 #define MTXROSkin2VecArray PSMTXROSkin2VecArray
 #define MTXROMultS16VecArray PSMTXROMultS16VecArray
 #else // MTX_USE_C
@@ -171,20 +170,20 @@ void PSMTXReorder(const Mtx src, ROMtx dest);
 #endif
 
 #ifdef MTX_USE_PS
-#define MTXQuat PSMTXQuat
-#define MTXReflect PSMTXReflect
-#define MTXTrans PSMTXTrans
-#define MTXTransApply PSMTXTransApply
-#define MTXScale PSMTXScale
-#define MTXScaleApply PSMTXScaleApply
-#define MTXRotRad PSMTXRotRad
-#define MTXRotTrig PSMTXRotTrig
-#define MTXRotAxisRad PSMTXRotAxisRad
+#define MTXQuat C_MTXQuat
+#define MTXReflect C_MTXReflect
+#define MTXTrans C_MTXTrans
+#define MTXTransApply C_MTXTransApply
+#define MTXScale C_MTXScale
+#define MTXScaleApply C_MTXScaleApply
+#define MTXRotRad C_MTXRotRad
+#define MTXRotTrig C_MTXRotTrig
+#define MTXRotAxisRad C_MTXRotAxisRad
 
-#define MTXRotDeg(m, axis, deg) PSMTXRotRad(m, axis, MTXDegToRad(deg))
-#define MTXRotAxisDeg(m, axis, deg) PSMTXRotAxisRad(m, axis, MTXDegToRad(deg))
+#define MTXRotDeg(m, axis, deg) C_MTXRotRad(m, axis, MTXDegToRad(deg))
+#define MTXRotAxisDeg(m, axis, deg) C_MTXRotAxisRad(m, axis, MTXDegToRad(deg))
 
-#define MTXReorder PSMTXReorder
+#define MTXReorder C_MTXReorder
 
 #else // MTX_USE_C
 #define MTXQuat C_MTXQuat
@@ -268,14 +267,14 @@ f32 PSVECDistance(const Vec* a, const Vec* b);
 #endif
 
 #if defined(MTX_USE_PS)
-#define VECAdd PSVECAdd
-#define VECSubtract PSVECSubtract
-#define VECScale PSVECScale
+#define VECAdd C_VECAdd
+#define VECSubtract C_VECSubtract
+#define VECScale C_VECScale
 #define VECNormalize PSVECNormalize
 #define VECSquareMag PSVECSquareMag
 #define VECMag PSVECMag
-#define VECDotProduct PSVECDotProduct
-#define VECCrossProduct PSVECCrossProduct
+#define VECDotProduct C_VECDotProduct
+#define VECCrossProduct C_VECCrossProduct
 #define VECSquareDistance PSVECSquareDistance
 #define VECDistance PSVECDistance
 #else // MTX_USE_C
@@ -337,14 +336,14 @@ void PSQUATInverse(const Quaternion* src, Quaternion* inv);
 #endif
 
 #ifdef MTX_USE_PS
-#define QUATAdd PSQUATAdd
-#define QUATSubtract PSQUATSubtract
-#define QUATMultiply PSQUATMultiply
-#define QUATDivide PSQUATDivide
-#define QUATScale PSQUATScale
-#define QUATDotProduct PSQUATDotProduct
-#define QUATNormalize PSQUATNormalize
-#define QUATInverse PSQUATInverse
+#define QUATAdd C_QUATAdd
+#define QUATSubtract C_QUATSubtract
+#define QUATMultiply C_QUATMultiply
+#define QUATDivide C_QUATDivide
+#define QUATScale C_QUATScale
+#define QUATDotProduct C_QUATDotProduct
+#define QUATNormalize C_QUATNormalize
+#define QUATInverse C_QUATInverse
 #else // MTX_USE_C
 #define QUATAdd C_QUATAdd
 #define QUATSubtract C_QUATSubtract
