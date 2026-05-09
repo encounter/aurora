@@ -115,7 +115,7 @@ typedef struct PADSignedNativeAxis {
   PADAxisSign sign;
 } PADSignedNativeAxis;
 
-struct pad;
+struct SDL_Gamepad;
 
 BOOL PADInit();
 u32 PADRead(PADStatus* status);
