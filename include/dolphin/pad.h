@@ -115,7 +115,7 @@ typedef struct PADSignedNativeAxis {
   PADAxisSign sign;
 } PADSignedNativeAxis;
 
-struct SDL_Gamepad;
+struct pad;
 
 BOOL PADInit();
 u32 PADRead(PADStatus* status);
@@ -227,7 +227,23 @@ void PADBlockInput(bool block);
  *
  * Must be called before PADInit.
  */
-void PADSetDefaultMapping(const PADDefaultMapping* mapping);
+
+typedef enum {
+  PAD_TYPE_UNKNOWN = 0,
+  PAD_TYPE_STANDARD,
+  PAD_TYPE_XBOX360,
+  PAD_TYPE_XBOXONE,
+  PAD_TYPE_PS3,
+  PAD_TYPE_PS4,
+  PAD_TYPE_PS5,
+  PAD_TYPE_SWITCH_PROCON,
+  PAD_TYPE_JOYCON_LEFT,
+  PAD_TYPE_JOYCON_RIGHT,
+  PAD_TYPE_JOYCON_PAIR,
+  PAD_TYPE_GAMECUBE
+} PADControllerType;
+
+void PADSetDefaultMapping(const PADDefaultMapping* mapping, PADControllerType type);
 
 BOOL PADSetColor(u32 port, u8 red, u8 green, u8 blue);
 BOOL PADGetColor(u32 port, u8* red, u8* green, u8* blue);
@@ -262,6 +278,9 @@ typedef enum PADBatteryState {
 } PADBatteryState;
 
 PADBatteryState PADGetBatteryState(u32 port, f32* perc);
+
+PADControllerType PADGetControllerType(u32 port);
+PADControllerType PADGetControllerTypeForIndex(u32 index);
 
 #endif
 
