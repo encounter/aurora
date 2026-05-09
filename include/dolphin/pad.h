@@ -240,7 +240,8 @@ typedef enum {
   PAD_TYPE_JOYCON_LEFT,
   PAD_TYPE_JOYCON_RIGHT,
   PAD_TYPE_JOYCON_PAIR,
-  PAD_TYPE_GAMECUBE
+  PAD_TYPE_GAMECUBE,
+  PAD_TYPE_NSO_GAMECUBE,
 } PADControllerType;
 
 void PADSetDefaultMapping(const PADDefaultMapping* mapping, PADControllerType type);
