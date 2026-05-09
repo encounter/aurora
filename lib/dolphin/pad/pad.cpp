@@ -395,7 +395,6 @@ void __PADSetDefaultMapping(aurora::input::GameController* controller) {
   case SDL_GAMEPAD_TYPE_STANDARD:
     controller->m_buttonMapping = g_defaultButtonsStandard;
     break;
-    // TODO: Separate these?
   case SDL_GAMEPAD_TYPE_PS3:
     controller->m_buttonMapping = g_defaultButtonsPS3;
     break;
