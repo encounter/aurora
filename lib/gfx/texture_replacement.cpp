@@ -486,7 +486,8 @@ void build_index() noexcept {
 
   std::error_code ec;
   for (std::filesystem::recursive_directory_iterator it(s_replacementRoot,
-                                                        std::filesystem::directory_options::skip_permission_denied, ec);
+                                                        std::filesystem::directory_options::skip_permission_denied |
+                                                        std::filesystem::directory_options::follow_directory_symlink, ec);
        it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
     if (ec) {
       break;
