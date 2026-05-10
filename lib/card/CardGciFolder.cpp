@@ -1,6 +1,7 @@
 #include "CardGciFolder.hpp"
 
 #include <filesystem>
+#include "../fs_helper.hpp"
 
 #include "Directory.hpp"
 #include "FileIO.hpp"
@@ -320,7 +321,7 @@ void CardGciFolder::format(ECardSlot deviceId, ECardSize size, EEncoding encodin
   m_encoding = encoding;
 
   if (!std::filesystem::create_directories(m_folderPath)) {
-    Log.error("Failed to create directory: {}", reinterpret_cast<const char*>(m_folderPath.u8string().c_str()));
+    Log.error("Failed to create directory: {}", fs_path_to_string(m_folderPath));
   }
 }
 

@@ -6,10 +6,12 @@
 #include <cstdint>
 #include <utility>
 
+#include "../fs_helper.hpp"
+
 namespace aurora::card {
 
 FileIO::FileIO(const std::filesystem::path& filename, bool truncate) {
-  m_path = filename;
+  m_path = fs_path_to_string(filename);;
   SDL_IOStream* stream = nullptr;
 
   stream = fileOpen(m_path, truncate ? "w+b" : "r+b");
@@ -101,14 +103,15 @@ bool FileIO::fileWrite(const void* buf, size_t length, off_t offset) {
 
 size_t FileIO::fileSize() const {
   SDL_PathInfo info;
-  if (SDL_GetPathInfo(reinterpret_cast<const char*>(m_path.u8string().c_str()), &info)) {
+  const auto tr = fs_path_to_string(m_path);
+  if (SDL_GetPathInfo(m_path.c_str(), &info)) {
     return info.size;
   }
   return 0;
 }
 
 bool FileIO::deleteFile() {
-  if (SDL_RemovePath(reinterpret_cast<const char*>(m_path.u8string().c_str()))) {
+  if (SDL_RemovePath(m_path.c_str())) {
     m_ready = false;
     m_path.clear();
     return true;

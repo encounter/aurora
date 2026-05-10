@@ -9,6 +9,7 @@
 #include "../card/DolphinCardPath.hpp"
 #include "../logging.hpp"
 #include "../card/CardGciFolder.hpp"
+#include "../fs_helper.hpp"
 
 namespace {
 aurora::Module Log("aurora::card");
@@ -112,7 +113,7 @@ void CARDDetectDolphin(const s32 chan) {
       Log.error("Failed to detect Dolphin Card!");
       return;
     }
-    Log.info("Detected Dolphin Card at: {}", reinterpret_cast<const char*>(cardPaths[chan].u8string().c_str()));
+    Log.info("Detected Dolphin Card at: {}", fs_path_to_string(cardPaths[chan]));
   } else {
     cardPaths[0] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotA, GetCardRegion(), CARD_USE_GCI_FOLDER);
     cardPaths[1] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotB, GetCardRegion(), CARD_USE_GCI_FOLDER);
@@ -124,8 +125,8 @@ void CARDDetectDolphin(const s32 chan) {
 
     Log.info(
       "Detected Dolphin Card at: {} and {}",
-      reinterpret_cast<const char*>(cardPaths[0].u8string().c_str()),
-      reinterpret_cast<const char*>(cardPaths[1].u8string().c_str()));
+      fs_path_to_string(cardPaths[0]),
+      fs_path_to_string(cardPaths[1]));
   }
 }
 
@@ -138,7 +139,7 @@ void CARDSetBasePath(const char* path, const s32 chan) {
 
   if (filePath.has_filename() && !std::filesystem::is_directory(filePath)) {
     filePath = filePath.remove_filename();
-    Log.warn("Path supplied a filename, discarding. New Path: {}", reinterpret_cast<const char*>(filePath.u8string().c_str()));
+    Log.warn("Path supplied a filename, discarding. New Path: {}", fs_path_to_string(filePath));
   }
 
   if (chan == 0 || chan == 1) {
@@ -191,9 +192,7 @@ void CARDInit(const char* game, const char* maker) {
     if (std::filesystem::exists(curPath)) {
       CardChannels[i]->open(curPath);
       loadedCard = true;
-      Log.info(
-        "Loaded GC Card Image: {}",
-        reinterpret_cast<const char*>(curPath.u8string().c_str()));
+      Log.info("Loaded GC Card Image: {}", fs_path_to_string(curPath));
     }
   }
 

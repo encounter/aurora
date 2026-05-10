@@ -3,6 +3,7 @@
 #include <string>
 #include <filesystem>
 
+#include "../fs_helper.hpp"
 #include "../internal.hpp"
 #include "../sqlite_utils.hpp"
 
@@ -91,10 +92,9 @@ INSERT INTO aurora_schema VALUES ({});)",
 static bool cache_init_core() {
   Log.debug("SQLite version {}", sqlite3_libversion());
 
-  std::u8string file = (std::filesystem::path{reinterpret_cast<const char8_t*>(g_config.configPath)} / "dawn_cache.db").u8string();
-  const char* filePtr = reinterpret_cast<const char*>(file.c_str());
-  Log.debug("Using dawn cache at {}", filePtr);
-  auto ret = sqlite3_open(filePtr, &db);
+  std::string file = fs_path_to_string(std::filesystem::path{reinterpret_cast<const char8_t*>(g_config.configPath)} / "dawn_cache.db");
+  Log.debug("Using dawn cache at {}", file);
+  auto ret = sqlite3_open(file.c_str(), &db);
   if (ret != SQLITE_OK) {
     Log.error("Failed to open database: {}", sqlite3_errmsg(db));
     return false;

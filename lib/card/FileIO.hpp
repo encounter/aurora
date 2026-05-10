@@ -9,7 +9,7 @@
 namespace aurora::card {
 
 class FileIO {
-  std::filesystem::path m_path;
+  std::string m_path;
   bool m_ready = false;
 
   bool isReady() const { return m_ready && !m_path.empty(); };
@@ -24,7 +24,7 @@ public:
   FileIO(const FileIO& other) = delete;
   FileIO& operator=(const FileIO& other) = delete;
 
-  static SDL_IOStream* fileOpen(const std::filesystem::path& path, const char* mode) {return path.empty() ? nullptr : SDL_IOFromFile(reinterpret_cast<const char*>(path.u8string().c_str()), mode);}
+  static SDL_IOStream* fileOpen(const std::string& path, const char* mode) {return path.empty() ? nullptr : SDL_IOFromFile(path.c_str(), mode);}
   bool fileRead(void* buf, size_t length, off_t offset);
   bool fileWrite(const void* buf, size_t length, off_t offset);
   size_t fileSize() const;
