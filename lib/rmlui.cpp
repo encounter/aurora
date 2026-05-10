@@ -1,5 +1,7 @@
 #include "rmlui.hpp"
 
+#include <algorithm>
+
 #include <RmlUi/Core.h>
 #include <RmlUi_Backend.h>
 #include <RmlUi_Platform_SDL.h>
@@ -28,6 +30,7 @@ struct TrackedTouch {
 
 uint32_t s_pressedMouseButtons = 0;
 std::array<TrackedTouch, MaxTrackedTouches> s_trackedTouches{};
+float s_uiScale = 1.0f;
 webgpu::TextureWithSampler s_renderTarget;
 wgpu::BindGroup s_renderTargetCopyBindGroup;
 
@@ -55,7 +58,7 @@ void sync_context_metrics(Rml::Vector2i dimensions) noexcept {
   if (g_context->GetDimensions() != dimensions) {
     g_context->SetDimensions(dimensions);
   }
-  const float ratio = window::get_window_size().scale;
+  const float ratio = window::get_window_size().scale * s_uiScale;
   if (g_context->GetDensityIndependentPixelRatio() != ratio) {
     g_context->SetDensityIndependentPixelRatio(ratio);
   }
@@ -295,6 +298,12 @@ void initialize(const AuroraWindowSize& size) noexcept {
 Rml::Context* get_context() noexcept { return g_context; }
 
 bool is_initialized() noexcept { return g_context != nullptr; }
+
+void set_ui_scale(float scale) noexcept {
+  s_uiScale = std::clamp(scale, 0.25f, 4.0f);
+}
+
+float get_ui_scale() noexcept { return s_uiScale; }
 
 void set_input_type(InputType type) noexcept {
   auto* systemInterface = static_cast<SystemInterface_Aurora*>(Backend::GetSystemInterface());
