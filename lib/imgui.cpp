@@ -114,6 +114,9 @@ void new_frame(const AuroraWindowSize& size) noexcept {
       }
       g_scale = size.scale;
     }
+    if (!ImGui::GetIO().Fonts->IsBuilt()) {
+      ImGui_ImplWGPU_CreateDeviceObjects();
+    }
     ImGui_ImplWGPU_NewFrame();
   }
   ImGui_ImplSDL3_NewFrame();
