@@ -21,6 +21,8 @@
 #include <optional>
 #include <string_view>
 
+#include "../fs_helper.hpp"
+
 using namespace aurora::gx;
 using aurora::webgpu::g_device;
 
@@ -371,7 +373,7 @@ std::optional<RuntimeTextureKey> parse_replacement_filename(std::string_view fil
 std::optional<ConvertedTexture> load_replacement(const std::filesystem::path& path, bool hasMips) noexcept {
   auto base = dds::load_dds_file(path);
   if (!base.has_value()) {
-    Log.warn("texture_replacement: failed to load texture {}", path.string());
+    Log.warn("texture_replacement: failed to load texture {}", fs_path_to_string(path.string()));
     return std::nullopt;
   }
   if (!hasMips) {
@@ -393,9 +395,9 @@ std::optional<ConvertedTexture> load_replacement(const std::filesystem::path& pa
     if (!ok) {
       if (more.empty()) {
         if (!lvl.has_value()) {
-          Log.warn("texture_replacement: could not load mip {}", mipPath.string());
+          Log.warn("texture_replacement: could not load mip {}", fs_path_to_string(mipPath));
         } else {
-          Log.warn("texture_replacement: expected {}x{} for mip {}, got {}x{}", mipPath.string(), ew, eh, lvl->width, lvl->height);
+          Log.warn("texture_replacement: expected {}x{} for mip {}, got {}x{}", fs_path_to_string(mipPath), ew, eh, lvl->width, lvl->height);
         }
         return std::nullopt;
       }
