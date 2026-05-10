@@ -102,13 +102,13 @@ ECardResult CardGciFolder::createFile(const char* filename, size_t size, FileHan
   gciFileHeader->m_blockCount = neededBlocks;
   gciFileHeader->m_firstBlock = m_bat.allocateBlocks(neededBlocks, maxBlocks);
 
-  m_files.push_back({*gciFileHeader, fileSize, gciFilename, false}); // push non-endian swapped header first
+  m_files.push_back({*gciFileHeader, fileSize, reinterpret_cast<const char8_t*>(gciFilename.c_str()), false}); // push non-endian swapped header first
 
   handleOut = FileHandle(m_files.size() - 1, 0);
 
   // write big endian header for dolphin compat
   gciFileHeader->swapEndian();
-  FileIO file((m_folderPath / gciFilename).string(), true);
+  FileIO file(m_folderPath / gciFilename, true);
   file.fileWrite(fileBuf.data(), fileBuf.size(), 0);
 
   return ECardResult::READY;
@@ -129,7 +129,7 @@ void CardGciFolder::deleteFile(const FileHandle& fh) {
   if (!file)
     return;
 
-  FileIO fileIO((m_folderPath / file->filename).string(), true);
+  FileIO fileIO(m_folderPath / file->filename, true);
   if (fileIO)
     fileIO.deleteFile();
 }
@@ -152,7 +152,7 @@ ECardResult CardGciFolder::renameFile(const char* oldName, const char* newName) 
 ECardResult CardGciFolder::fileWrite(FileHandle& fh, const void* buf, size_t size) {
   auto file = getFile(fh);
   if (file) {
-    FileIO fileIO((m_folderPath / file->filename).string());
+    FileIO fileIO(m_folderPath / file->filename);
     if (fileIO) {
       if (fileIO.fileWrite(buf, size, sizeof(File) + fh.offset))
         return ECardResult::READY;
@@ -167,7 +167,7 @@ ECardResult CardGciFolder::fileWrite(FileHandle& fh, const void* buf, size_t siz
 ECardResult CardGciFolder::fileRead(FileHandle& fh, void* dst, size_t size) {
   auto file = getFile(fh);
   if (file) {
-    FileIO fileIO((m_folderPath / file->filename).string());
+    FileIO fileIO(m_folderPath / file->filename);
     if (fileIO) {
       if (fileIO.fileRead(dst, size, sizeof(File) + fh.offset))
         return ECardResult::READY;
@@ -320,14 +320,14 @@ void CardGciFolder::format(ECardSlot deviceId, ECardSize size, EEncoding encodin
   m_encoding = encoding;
 
   if (!std::filesystem::create_directories(m_folderPath)) {
-    Log.error("Failed to create directory: {}", m_folderPath.string());
+    Log.error("Failed to create directory: {}", reinterpret_cast<const char*>(m_folderPath.u8string().c_str()));
   }
 }
 
 void CardGciFolder::commit() {
   for (auto& gciFile : m_files) {
     if (gciFile.opened) {
-      FileIO file((m_folderPath / gciFile.filename).string());
+      FileIO file(m_folderPath / gciFile.filename);
 
       File tempFile = gciFile.file;
       tempFile.swapEndian();
@@ -336,7 +336,7 @@ void CardGciFolder::commit() {
   }
 }
 
-bool CardGciFolder::open(std::string_view filepath) {
+bool CardGciFolder::open(const std::filesystem::path& filepath) {
   m_folderPath = filepath;
 
   if (!std::filesystem::exists(filepath) || !std::filesystem::is_directory(filepath))
@@ -351,13 +351,13 @@ bool CardGciFolder::open(std::string_view filepath) {
     if (path.extension() != ".gci")
       continue;
 
-    FileIO file(path.string());
+    FileIO file(path);
 
     File fileData;
     file.fileRead((void*)&fileData, sizeof(File), 0);
     fileData.swapEndian();
 
-    m_files.push_back({fileData, file.fileSize(), path.filename().string(), false});
+    m_files.push_back({fileData, file.fileSize(), path.filename().u8string(), false});
   }
 
   return true;
@@ -369,11 +369,13 @@ void CardGciFolder::close() {
   m_bat = BlockAllocationTable();
 }
 
-std::string_view CardGciFolder::cardFilename() const { return ""; }
+static std::filesystem::path g_cardFileNameEmpty = "";
+
+const std::filesystem::path& CardGciFolder::cardFilename() const { return g_cardFileNameEmpty; }
 
 ECardResult CardGciFolder::getError() const { return ECardResult::READY; }
 
-ProbeResults CardGciFolder::probeCardFile(std::string_view filename) {
+ProbeResults CardGciFolder::probeCardFile(const std::filesystem::path& filename) {
   if (!std::filesystem::exists(filename) || !std::filesystem::is_directory(filename))
     return {ECardResult::NOCARD, 0, 0};
   return {ECardResult::READY, static_cast<uint32_t>(ECardSize::Card2043Mb), BlockSize};

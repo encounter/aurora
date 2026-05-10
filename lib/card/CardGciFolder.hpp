@@ -14,7 +14,7 @@ private:
   struct GciFile {
     File file;
     size_t fileSize;
-    std::string filename;
+    std::u8string filename;
     bool opened = false;
   };
 
@@ -67,11 +67,11 @@ public:
   void getEncoding(uint16_t& encoding) const override;
   void format(ECardSlot deviceId, ECardSize size = ECardSize::Card2043Mb, EEncoding encoding = EEncoding::ASCII) override;
   void commit() override;
-  bool open(std::string_view filepath) override;
+  bool open(const std::filesystem::path& filepath) override;
   void close() override;
-  std::string_view cardFilename() const override;
+  const std::filesystem::path& cardFilename() const override;
   ECardResult getError() const override;
-  ProbeResults probeCardFile(std::string_view filename) override;
+  ProbeResults probeCardFile(const std::filesystem::path& filename) override;
 };
 
 }

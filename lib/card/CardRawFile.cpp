@@ -761,7 +761,7 @@ void CardRawFile::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   m_currentBat = 1;
 
   m_fileHandle = {};
-  m_fileHandle = FileIO(m_filename.c_str(), true);
+  m_fileHandle = FileIO(m_filename, true);
 
   if (m_fileHandle) {
     const uint32_t blockCount = (static_cast<uint32_t>(size) * MbitToBlocks) - 5;
@@ -790,11 +790,10 @@ void CardRawFile::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   }
 }
 
-ProbeResults CardRawFile::probeCardFile(std::string_view filename) {
-  std::filesystem::path path(filename);
-  if (!std::filesystem::exists(path))
+ProbeResults CardRawFile::probeCardFile(const std::filesystem::path& filename) {
+  if (!std::filesystem::exists(filename))
     return {ECardResult::NOCARD, 0, 0};
-  return {ECardResult::READY, static_cast<uint32_t>(std::filesystem::file_size(path) / BlockSize) / MbitToBlocks,
+  return {ECardResult::READY, static_cast<uint32_t>(std::filesystem::file_size(filename) / BlockSize) / MbitToBlocks,
           BlockSize};
 }
 
@@ -825,7 +824,7 @@ void CardRawFile::commit() {
   }
 }
 
-bool CardRawFile::open(std::string_view filepath) {
+bool CardRawFile::open(const std::filesystem::path& filepath) {
   m_opened = false;
   m_filename = filepath;
   m_fileHandle = FileIO(m_filename);

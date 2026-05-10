@@ -91,9 +91,10 @@ INSERT INTO aurora_schema VALUES ({});)",
 static bool cache_init_core() {
   Log.debug("SQLite version {}", sqlite3_libversion());
 
-  std::string file = (std::filesystem::path{g_config.configPath} / "dawn_cache.db").string();
-  Log.debug("Using dawn cache at {}", file);
-  auto ret = sqlite3_open(file.c_str(), &db);
+  std::u8string file = (std::filesystem::path{reinterpret_cast<const char8_t*>(g_config.configPath)} / "dawn_cache.db").u8string();
+  const char* filePtr = reinterpret_cast<const char*>(file.c_str());
+  Log.debug("Using dawn cache at {}", filePtr);
+  auto ret = sqlite3_open(filePtr, &db);
   if (ret != SQLITE_OK) {
     Log.error("Failed to open database: {}", sqlite3_errmsg(db));
     return false;
