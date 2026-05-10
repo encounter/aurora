@@ -1136,7 +1136,7 @@ void PADClearKeyBindings(u32 port) {
 }
 
 constexpr uint32_t k_keyboardMagic = SBIG('KBND');
-constexpr int32_t k_keyboardVersion = 2;
+constexpr int32_t k_keyboardVersion = 3;
 
 static void load_keyboard_bindings() {
   std::filesystem::path filePath = std::filesystem::path{aurora::g_config.configPath} / "keyboard_bindings.dat";
@@ -1170,6 +1170,30 @@ static void load_keyboard_bindings() {
     SDL_ReadIO(file, &state.m_mappingsSet, sizeof(bool));
     SDL_ReadIO(file, state.m_buttonMapping.data(), sizeof(PADKeyButtonBinding) * PAD_BUTTON_COUNT);
     SDL_ReadIO(file, state.m_axisMapping.data(), sizeof(PADKeyAxisBinding) * PAD_AXIS_COUNT);
+
+    bool kbButtonCorrupt = false;
+    for (uint32_t i = 0; i < PAD_BUTTON_COUNT; ++i) {
+      if (state.m_buttonMapping[i].padButton != g_defaultKeys[i].padButton) {
+        kbButtonCorrupt = true;
+        break;
+      }
+    }
+    if (kbButtonCorrupt) {
+      aurora::input::Log.warn("keyboard_bindings.dat port={}: corrupt button identifiers, resetting to defaults", port);
+      state.m_buttonMapping = g_defaultKeys;
+    }
+
+    bool kbAxisCorrupt = false;
+    for (uint32_t i = 0; i < PAD_AXIS_COUNT; ++i) {
+      if (state.m_axisMapping[i].padAxis != g_defaultKeyAxis[i].padAxis) {
+        kbAxisCorrupt = true;
+        break;
+      }
+    }
+    if (kbAxisCorrupt) {
+      aurora::input::Log.warn("keyboard_bindings.dat port={}: corrupt axis identifiers, resetting to defaults", port);
+      state.m_axisMapping = g_defaultKeyAxis;
+    }
 
     if (state.m_mappingsSet) {
       const bool anyBound = std::any_of(state.m_buttonMapping.begin(), state.m_buttonMapping.end(),
