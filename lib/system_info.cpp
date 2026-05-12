@@ -7,11 +7,15 @@
 #include <windows.h>
 #include <combaseapi.h>
 #include <Wbemidl.h>
+#include <wrl/client.h>
 
 extern "C" NTSYSAPI NTSTATUS NTAPI RtlGetVersion(PRTL_OSVERSIONINFOEXW lpVersionInformation);
 #endif
 
 using namespace std::string_literals;
+
+template<typename T>
+using ComPtr = Microsoft::WRL::ComPtr<T>;
 
 namespace aurora {
 
@@ -101,15 +105,15 @@ std::string GetCpuModel() {
 
   ComGuard comGuard{};
 
-  IWbemLocator* pLoc = NULL;
+  ComPtr<IWbemLocator> pLoc;
 
-  hres = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER, IID_IWbemLocator, (LPVOID*)&pLoc);
+  hres = CoCreateInstance(CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER, IID_IWbemLocator, &pLoc);
   if (FAILED(hres)) {
     Log.error("CoCreateInstance failed for IWbemLocator");
     return Unknown;
   }
 
-  IWbemServices* pSvc = NULL;
+  ComPtr<IWbemServices> pSvc;
 
   // Connect to the root\cimv2 namespace with
   // the current user and obtain pointer pSvc
@@ -125,11 +129,10 @@ std::string GetCpuModel() {
   );
   if (FAILED(hres)) {
     Log.error("ConnectServer failed");
-    pLoc->Release();
     return Unknown;
   }
 
-  hres = CoSetProxyBlanket(pSvc,                        // Indicates the proxy to set
+  hres = CoSetProxyBlanket(pSvc.Get(),                  // Indicates the proxy to set
                            RPC_C_AUTHN_WINNT,           // RPC_C_AUTHN_xxx
                            RPC_C_AUTHZ_NONE,            // RPC_C_AUTHZ_xxx
                            NULL,                        // Server principal name
@@ -141,27 +144,23 @@ std::string GetCpuModel() {
 
   if (FAILED(hres)) {
     Log.error("CoSetProxyBlanket failed");
-    pSvc->Release();
-    pLoc->Release();
     return Unknown;
   }
 
-  IEnumWbemClassObject* pEnumerator = NULL;
+  ComPtr<IEnumWbemClassObject> pEnumerator;
   hres = pSvc->ExecQuery(bstr_t(L"WQL"), bstr_t(L"select Name from Win32_Processor"),
                          WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, NULL, &pEnumerator);
   if (FAILED(hres)) {
     Log.error("ExecQuery failed");
-    pSvc->Release();
-    pLoc->Release();
     return Unknown;
   }
 
-  IWbemClassObject* pclsObj = NULL;
   ULONG uReturn = 0;
 
   std::string result{};
 
   while (pEnumerator) {
+    ComPtr<IWbemClassObject> pclsObj;
     HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn);
 
     if (0 == uReturn) {
@@ -175,13 +174,7 @@ std::string GetCpuModel() {
     hr = pclsObj->Get(L"Name", 0, &vtProp, nullptr, nullptr);
     result = wideStringToUtf8(vtProp.bstrVal);
     VariantClear(&vtProp);
-
-    pclsObj->Release();
   }
-
-  pSvc->Release();
-  pLoc->Release();
-  pEnumerator->Release();
 
   return result;
 }
