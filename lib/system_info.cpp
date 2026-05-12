@@ -90,6 +90,7 @@ static std::string wideStringToUtf8(std::wstring_view str) {
 
 std::string GetCpuModel() {
   // Good fucking lord Microsoft, what the fuck is this?
+  // https://learn.microsoft.com/en-us/windows/win32/wmisdk/example--getting-wmi-data-from-the-local-computer
 
   HRESULT hres = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   if (FAILED(hres)) {
