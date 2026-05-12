@@ -30,7 +30,7 @@ struct TrackedTouch {
 
 uint32_t s_pressedMouseButtons = 0;
 std::array<TrackedTouch, MaxTrackedTouches> s_trackedTouches{};
-float s_uiScale = 1.0f;
+float s_uiScale = 0.0f;
 webgpu::TextureWithSampler s_renderTarget;
 wgpu::BindGroup s_renderTargetCopyBindGroup;
 
@@ -58,7 +58,7 @@ void sync_context_metrics(Rml::Vector2i dimensions) noexcept {
   if (g_context->GetDimensions() != dimensions) {
     g_context->SetDimensions(dimensions);
   }
-  const float ratio = window::get_window_size().scale * s_uiScale;
+  const float ratio = s_uiScale > 0.0f ? s_uiScale : window::get_window_size().scale;
   if (g_context->GetDensityIndependentPixelRatio() != ratio) {
     g_context->SetDensityIndependentPixelRatio(ratio);
   }
@@ -300,7 +300,7 @@ Rml::Context* get_context() noexcept { return g_context; }
 bool is_initialized() noexcept { return g_context != nullptr; }
 
 void set_ui_scale(float scale) noexcept {
-  s_uiScale = std::clamp(scale, 0.25f, 4.0f);
+  s_uiScale = scale > 0.0f ? std::clamp(scale, 0.25f, 4.0f) : 0.0f;
 }
 
 float get_ui_scale() noexcept { return s_uiScale; }
