@@ -19,6 +19,7 @@
 #include <SDL3/SDL_filesystem.h>
 #include <magic_enum.hpp>
 
+#include "system_info.hpp"
 #include "tracy/Tracy.hpp"
 
 namespace aurora {
@@ -72,6 +73,7 @@ bool g_initialFrame = false;
 AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexcept {
   g_config = config;
   Log.info("Aurora initializing");
+  log_system_information();
   if (g_config.appName == nullptr) {
     g_config.appName = "Aurora";
   } else {
