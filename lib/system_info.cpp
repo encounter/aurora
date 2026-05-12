@@ -16,7 +16,13 @@ using ComPtr = Microsoft::WRL::ComPtr<T>;
 extern "C" NTSYSAPI NTSTATUS NTAPI RtlGetVersion(PRTL_OSVERSIONINFOEXW lpVersionInformation);
 #elif __APPLE__
 #include "sys/sysctl.h"
+#elif linux
+#include <ranges>
+#include <fstream>
+#include <filesystem>
+#include <sys/sysinfo.h>
 #endif
+
 
 using namespace std::string_literals;
 
@@ -289,6 +295,108 @@ std::string GetOSVersion() {
 
 void LogMisc() {
   // Nada.
+}
+#elif linux
+
+// https://stackoverflow.com/questions/216823/how-can-i-trim-a-stdstring
+static void ltrim(std::string &s) {
+  s.erase(s.begin(), std::ranges::find_if(s.begin(), s.end(), [](unsigned char ch) {
+    return !std::isspace(ch);
+  }));
+}
+static void rtrim(std::string &s) {
+    s.erase(std::ranges::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }).base(), s.end());
+}
+inline std::string trim(std::string str) {
+  ltrim(str);
+  rtrim(str);
+  return std::move(str);
+}
+
+std::string GetCpuModel() {
+  std::ifstream cpuInfo("/proc/cpuinfo");
+  if (!cpuInfo)
+  {
+    Log.error("Failed to open /proc/cpuinfo");
+    return Unknown;
+  }
+
+  while (!cpuInfo.bad() && !cpuInfo.eof()) {
+    std::string line;
+    std::getline(cpuInfo, line);
+
+    const auto colon = line.find(':');
+    if (colon == std::string::npos) {
+      continue;
+    }
+
+    auto left = trim(line.substr(0, colon));
+    auto right = trim(line.substr(colon + 1));
+
+    if (left == "model name") {
+      return right;
+    }
+  }
+
+  return Unknown;
+}
+
+uint64_t GetMemoryAmount() {
+  struct sysinfo info{};
+  sysinfo(&info);
+
+  return info.totalram;
+}
+
+std::string GetOSVersion() {
+  auto path = "/etc/os-release";
+  if (!std::filesystem::exists(path)) {
+    path = "/usr/lib/os-release";
+  }
+
+  std::ifstream releaseInfo(path);
+  if (!releaseInfo)
+  {
+    Log.error("Failed to open /etc/os-release or /usr/lib/os-release");
+    return Unknown;
+  }
+
+  std::string name, version;
+
+  while (!releaseInfo.bad() && !releaseInfo.eof()) {
+    std::string line;
+    std::getline(releaseInfo, line);
+
+    const auto split = line.find('=');
+    if (split == std::string::npos) {
+      continue;
+    }
+
+    auto left = trim(line.substr(0, split));
+    auto right = trim(line.substr(split + 1));
+
+    if (right[0] == '"' && right[right.size()-1] == '"') {
+      right = right.substr(1, right.size()-2);
+    }
+
+    if (left == "NAME") {
+      name = right;
+    } else if (left == "VERSION") {
+      version = right;
+    }
+  }
+
+  if (name.empty()) {
+    return Unknown;
+  }
+
+  return fmt::format("{} {}", name, version);
+}
+
+void LogMisc() {
+
 }
 #else
 std::string GetCpuModel() {
