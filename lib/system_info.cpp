@@ -1,6 +1,3 @@
-#include <comutil.h>
-#include <dxgi.h>
-
 #include "internal.hpp"
 
 #if _WIN32
@@ -8,15 +5,17 @@
 #include <windows.h>
 #include <combaseapi.h>
 #include <Wbemidl.h>
+#include <comutil.h>
+#include <dxgi.h>
 #include <wrl/client.h>
+
+template<typename T>
+using ComPtr = Microsoft::WRL::ComPtr<T>;
 
 extern "C" NTSYSAPI NTSTATUS NTAPI RtlGetVersion(PRTL_OSVERSIONINFOEXW lpVersionInformation);
 #endif
 
 using namespace std::string_literals;
-
-template<typename T>
-using ComPtr = Microsoft::WRL::ComPtr<T>;
 
 namespace aurora {
 
@@ -37,9 +36,9 @@ void log_system_information() {
 #if defined(__x86_64__) || defined(_M_X64) || defined(_M_X64)
   Log.info("Architecture: x86_64");
 #elif defined(__aarch64__) || defined(_M_ARM64)
-  Log.Info("Architecture: aarch64");
+  Log.info("Architecture: aarch64");
 #else
-  Log.Info("Architecture: Unknown");
+  Log.info("Architecture: Unknown");
 #endif
 
   Log.info("OS: {}", GetOSVersion());
