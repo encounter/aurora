@@ -3,6 +3,8 @@ add_library(aurora_core STATIC
         lib/input.cpp
         lib/window.cpp
         lib/logging.cpp
+        lib/system_info.cpp
+        lib/system_info.hpp
 )
 add_library(aurora::core ALIAS aurora_core)
 set_target_properties(aurora_core PROPERTIES FOLDER "aurora")
@@ -14,6 +16,13 @@ target_link_libraries(aurora_core PRIVATE absl::btree absl::flat_hash_map sqlite
 if (AURORA_ENABLE_GX AND AURORA_CACHE_USE_ZSTD)
     target_compile_definitions(aurora_core PRIVATE AURORA_CACHE_USE_ZSTD)
     target_link_libraries(aurora_core PRIVATE libzstd_static)
+endif ()
+
+if (CMAKE_SYSTEM_NAME STREQUAL Windows)
+    # stuff for fetching system info.
+    target_link_libraries(aurora_core PRIVATE wbemuuid.lib comsuppw.lib ntdll.lib DXGI.lib)
+elseif (APPLE)
+    target_sources(aurora_core PRIVATE lib/system_info_mac.mm)
 endif ()
 
 if (AURORA_ENABLE_GX)
