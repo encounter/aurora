@@ -154,15 +154,55 @@ void GXInitTexObjTlut(GXTexObj* obj_, u32 tlut) {
   obj->tlut = static_cast<GXTlut>(tlut);
 }
 
-// TODO GXInitTexObjFilter
-// TODO GXInitTexObjMaxLOD
-// TODO GXInitTexObjMinLOD
-// TODO GXInitTexObjLODBias
-// TODO GXInitTexObjBiasClamp
-// TODO GXInitTexObjEdgeLOD
-// TODO GXInitTexObjMaxAniso
-// TODO GXInitTexObjUserData
-// TODO GXGetTexObjUserData
+void GXInitTexObjFilter(GXTexObj* obj_, GXTexFilter minFilt, GXTexFilter magFilt) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  SET_REG_FIELD(0, obj->mode0, 3, 5, GX2HWFiltConv[minFilt]);
+  SET_REG_FIELD(0, obj->mode0, 1, 4, magFilt == GX_LINEAR ? 1 : 0);
+}
+
+void GXInitTexObjMaxLOD(GXTexObj* obj_, float maxLod) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  const auto clampedMax = std::clamp(maxLod, 0.0f, 10.0f);
+  SET_REG_FIELD(0, obj->mode1, 8, 8, static_cast<u8>(16.0f * clampedMax));
+}
+
+void GXInitTexObjMinLOD(GXTexObj* obj_, float minLod) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  const auto clampedMin = std::clamp(minLod, 0.0f, 10.0f);
+  SET_REG_FIELD(0, obj->mode1, 8, 0, static_cast<u8>(16.0f * clampedMin));
+}
+
+void GXInitTexObjLODBias(GXTexObj* obj_, float lodBias) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  const float clampedBias = std::clamp(lodBias, -4.0f, 3.99f);
+  const auto lbias = static_cast<u8>(32.0f * clampedBias);
+  SET_REG_FIELD(0, obj->mode0, 8, 9, lbias);
+}
+
+void GXInitTexObjBiasClamp(GXTexObj* obj_, GXBool biasClamp) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  SET_REG_FIELD(0, obj->mode0, 1, 21, biasClamp);
+}
+
+void GXInitTexObjEdgeLOD(GXTexObj* obj_, GXBool doEdgeLod) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  SET_REG_FIELD(0, obj->mode0, 1, 8, doEdgeLod ? 0 : 1);
+}
+
+void GXInitTexObjMaxAniso(GXTexObj* obj_, GXAnisotropy maxAniso) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  SET_REG_FIELD(0, obj->mode0, 2, 19, maxAniso);
+}
+
+void GXInitTexObjUserData(GXTexObj* obj_, void* userData) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  obj->userData = userData;
+}
+
+void* GXGetTexObjUserData(const GXTexObj* obj_) {
+  const auto* obj = reinterpret_cast<const GXTexObj_*>(obj_);
+  return const_cast<void*>(obj->userData);
+}
 
 void GXLoadTexObj(GXTexObj* obj_, GXTexMapID id) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
