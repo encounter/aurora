@@ -123,7 +123,7 @@ BOOL PADReset(u32 mask);
 BOOL PADRecalibrate(u32 mask);
 void PADClamp(PADStatus* status);
 void PADClampCircle(PADStatus* status);
-void PADControlMotor(s32 chan, u32 cmd);
+void PADControlMotor(u32 chan, u32 cmd);
 void PADSetSpec(u32 spec);
 void PADControlAllMotors(const u32* cmdArr);
 void PADSetAnalogMode(u32 mode);
@@ -180,7 +180,7 @@ typedef struct PADDefaultMapping {
 u32 PADCount();
 /* Returns the controller name for the given index into the controller map */
 const char* PADGetNameForControllerIndex(u32 idx);
-void PADSetPortForIndex(u32 index, s32 port);
+void PADSetPortForIndex(u32 index, u32 port);
 s32 PADGetIndexForPort(u32 port);
 void PADGetVidPid(u32 port, u32* vid, u32* pid);
 void PADClearPort(u32 port);
