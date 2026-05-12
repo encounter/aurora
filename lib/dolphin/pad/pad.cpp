@@ -7,8 +7,11 @@
 #include <array>
 #include <sys/stat.h>
 
+#include <SDL3/SDL_video.h>
+#include "../../window.hpp"
+
 namespace {
-constexpr int32_t k_mappingsFileVersion = 3;
+constexpr int32_t k_mappingsFileVersion = 4;
 
 std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsStandard{{
     {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
@@ -289,6 +292,9 @@ std::array<bool, PAD_CHANMAX> g_suppressLeftTrigger{};
 std::array<bool, PAD_CHANMAX> g_suppressRightTrigger{};
 
 bool is_mouse_scancode(s32 scancode) { return scancode < PAD_KEY_INVALID; }
+bool is_mouse_axis_scancode(s32 scancode) {
+  return scancode <= PAD_KEY_MOUSE_AXIS_X_POS && scancode >= PAD_KEY_MOUSE_AXIS_Y_NEG;
+}
 bool is_mouse_button_pressed(s32 scancode) {
   const int32_t buttonNum = -(scancode + 1);
   if (buttonNum < 1 || buttonNum > 5) {
@@ -590,7 +596,35 @@ static void apply_unblock_suppression(PADStatus& status, u32 port, bool captureH
   }
 }
 
+static void update_relative_mouse_mode() {
+  static bool sRelativeMouseMode = false;
+  bool shouldBeRelative = false;
+  if (!g_blockPAD) {
+    for (uint32_t i = 0; i < PAD_CHANMAX; ++i) {
+      if (g_keyboardBindings[i].m_mappingsSet) {
+        for (const auto& binding : g_keyboardBindings[i].m_axisMapping) {
+          if (is_mouse_axis_scancode(binding.scancode)) {
+            shouldBeRelative = true;
+            break;
+          }
+        }
+      }
+      if (shouldBeRelative)
+        break;
+    }
+  }
+
+  if (shouldBeRelative != sRelativeMouseMode) {
+    SDL_Window* window = aurora::window::get_sdl_window();
+    if (window) {
+      SDL_SetWindowRelativeMouseMode(window, shouldBeRelative);
+      sRelativeMouseMode = shouldBeRelative;
+    }
+  }
+}
+
 uint32_t PADRead(PADStatus* status) {
+  update_relative_mouse_mode();
   if (!g_keyboardBindingsLoaded) {
     g_keyboardBindingsLoaded = true;
     load_keyboard_bindings();
@@ -600,6 +634,11 @@ uint32_t PADRead(PADStatus* status) {
   const bool* kbState = SDL_GetKeyboardState(&numKeys);
   const bool captureHeldInput = g_suppressHeldOnRead && !g_blockPAD;
   g_suppressHeldOnRead = false;
+
+  float mouseDx = 0, mouseDy = 0;
+  if (!g_blockPAD) {
+    SDL_GetRelativeMouseState(&mouseDx, &mouseDy);
+  }
 
   uint32_t rumbleSupport = 0;
   for (uint32_t i = 0; i < PAD_CHANMAX; ++i) {
@@ -629,6 +668,60 @@ uint32_t PADRead(PADStatus* status) {
         bool pressed = false;
         if (binding.scancode > PAD_KEY_INVALID) {
           pressed = binding.scancode < numKeys && kbState[binding.scancode];
+        } else if (is_mouse_axis_scancode(binding.scancode)) {
+          float delta = 0;
+          switch (binding.scancode) {
+          case PAD_KEY_MOUSE_AXIS_X_POS:
+            delta = std::max(0.0f, mouseDx);
+            break;
+          case PAD_KEY_MOUSE_AXIS_X_NEG:
+            delta = std::max(0.0f, -mouseDx);
+            break;
+          case PAD_KEY_MOUSE_AXIS_Y_POS:
+            delta = std::max(0.0f, -mouseDy);
+            break;
+          case PAD_KEY_MOUSE_AXIS_Y_NEG:
+            delta = std::max(0.0f, mouseDy);
+            break;
+          }
+          if (delta > 0) {
+            // Apply a slight curve to the sensitivity: amount = (delta^1.1) * 5.0
+            // This makes slow movements precise and fast movements reach the 127 cap more naturally.
+            int amount = std::clamp(static_cast<int>(std::pow(delta, 1.1f) * 5.0f), 0, 127);
+            switch (binding.padAxis) {
+            case PAD_AXIS_LEFT_X_POS:
+              lx += amount;
+              break;
+            case PAD_AXIS_LEFT_X_NEG:
+              lx -= amount;
+              break;
+            case PAD_AXIS_LEFT_Y_POS:
+              ly += amount;
+              break;
+            case PAD_AXIS_LEFT_Y_NEG:
+              ly -= amount;
+              break;
+            case PAD_AXIS_RIGHT_X_POS:
+              rx += amount;
+              break;
+            case PAD_AXIS_RIGHT_X_NEG:
+              rx -= amount;
+              break;
+            case PAD_AXIS_RIGHT_Y_POS:
+              ry += amount;
+              break;
+            case PAD_AXIS_RIGHT_Y_NEG:
+              ry -= amount;
+              break;
+            case PAD_AXIS_TRIGGER_L:
+              tl += static_cast<int>(delta * 16.0f);
+              break;
+            case PAD_AXIS_TRIGGER_R:
+              tr += static_cast<int>(delta * 16.0f);
+              break;
+            }
+          }
+          continue;
         } else if (is_mouse_scancode(binding.scancode)) {
           pressed = is_mouse_button_pressed(binding.scancode);
         }
@@ -1145,7 +1238,7 @@ void PADClearKeyBindings(u32 port) {
 }
 
 constexpr uint32_t k_keyboardMagic = SBIG('KBND');
-constexpr int32_t k_keyboardVersion = 3;
+constexpr int32_t k_keyboardVersion = 4;
 
 static void load_keyboard_bindings() {
   std::filesystem::path filePath = std::filesystem::path{aurora::g_config.configPath} / "keyboard_bindings.dat";

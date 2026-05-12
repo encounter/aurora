@@ -135,6 +135,10 @@ void PADSetAnalogMode(u32 mode);
 #define PAD_KEY_MOUSE_RIGHT (-4)
 #define PAD_KEY_MOUSE_X1 (-5)
 #define PAD_KEY_MOUSE_X2 (-6)
+#define PAD_KEY_MOUSE_AXIS_X_POS (-7)
+#define PAD_KEY_MOUSE_AXIS_X_NEG (-8)
+#define PAD_KEY_MOUSE_AXIS_Y_POS (-9)
+#define PAD_KEY_MOUSE_AXIS_Y_NEG (-10)
 typedef u16 PADButton;
 typedef u32 PADExtButton;
 typedef u16 PADAxis;
