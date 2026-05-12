@@ -20,7 +20,7 @@ endif ()
 
 if (CMAKE_SYSTEM_NAME STREQUAL Windows)
     # stuff for fetching system info.
-    target_link_libraries(aurora_core PRIVATE wbemuuid.lib comsuppw.lib ntdll.lib)
+    target_link_libraries(aurora_core PRIVATE wbemuuid.lib comsuppw.lib ntdll.lib DXGI.lib)
 endif ()
 
 if (AURORA_ENABLE_GX)

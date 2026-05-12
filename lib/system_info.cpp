@@ -1,4 +1,5 @@
 #include <comutil.h>
+#include <dxgi.h>
 
 #include "internal.hpp"
 
@@ -26,6 +27,7 @@ static Module Log("aurora::system_info");
 static std::string GetOSVersion();
 static std::string GetCpuModel();
 static uint64_t GetMemoryAmount();
+static void LogMisc();
 
 void log_system_information() {
   Log.info("CPU model: {}", GetCpuModel());
@@ -41,7 +43,7 @@ void log_system_information() {
 #endif
 
   Log.info("OS: {}", GetOSVersion());
-
+  LogMisc();
 }
 
 #if _WIN32
@@ -49,7 +51,7 @@ struct ComGuard {
   ~ComGuard() { CoUninitialize(); }
 };
 
-static std::string wideStringToUtf8(const std::wstring& str) {
+static std::string wideStringToUtf8(std::wstring_view str) {
   const auto size = WideCharToMultiByte(
     CP_UTF8,
     0,
@@ -203,6 +205,32 @@ std::string GetOSVersion() {
     info.dwBuildNumber);
 }
 
+static void LogGpus() {
+  ComPtr<IDXGIFactory1> factory;
+  auto result = CreateDXGIFactory1(__uuidof(IDXGIFactory1), &factory);
+  if (FAILED(result)) {
+    Log.error("Unable to create IDXGIFactory1");
+    return;
+  }
+
+  for (UINT i = 0;;i++) {
+    ComPtr<IDXGIAdapter1> adapter;
+    result = factory->EnumAdapters1(i, &adapter);
+    if (result == DXGI_ERROR_NOT_FOUND)
+      break;
+
+    DXGI_ADAPTER_DESC1 desc{};
+    adapter->GetDesc1(&desc);
+
+    std::wstring descName(desc.Description, wcsnlen(desc.Description, 128));
+    Log.info("Detected GPU: {}", wideStringToUtf8(descName));
+  }
+}
+
+void LogMisc() {
+  LogGpus();
+}
+
 #else
 std::string GetCpuModel() {
   return Unknown;
@@ -214,6 +242,10 @@ uint64_t GetMemoryAmount() {
 
 std::string GetOSVersion() {
   return Unknown;
+}
+
+void LogMisc() {
+
 }
 #endif
 
