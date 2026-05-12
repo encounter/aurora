@@ -51,7 +51,7 @@ implementation used is Chromium's [Dawn](https://dawn.googlesource.com/dawn/).
 To build Aurora's included examples:
 
 ```bash
-git clone --recursive https://github.com/encounter/aurora.git
+git clone https://github.com/encounter/aurora.git
 cd aurora
 mkdir build && cd build
 cmake ..
@@ -93,6 +93,7 @@ See [examples/simple.c](examples/simple.c) for a minimal application template.
 - `AURORA_ENABLE_DVD` (default: OFF) - Enable DVD implementation backed by nod
 - `AURORA_ENABLE_CARD` (default: ON) - Enable CARD implementation based on kabufuda
 - `AURORA_ENABLE_RMLUI` (default: OFF) - Enable HTML/CSS based UI library
+- `AURORA_CACHE_USE_ZSTD` (default: ON) - Compress WebGPU cache entries with zstd
 
 ### License
 
