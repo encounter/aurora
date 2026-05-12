@@ -6,6 +6,7 @@
 
 #include <array>
 #include <sys/stat.h>
+#include <ranges>
 
 namespace {
 constexpr int32_t k_mappingsFileVersion = 3;
