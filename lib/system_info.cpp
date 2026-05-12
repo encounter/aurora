@@ -1,3 +1,4 @@
+#include "system_info.hpp"
 #include "internal.hpp"
 
 #if _WIN32
@@ -13,6 +14,8 @@ template<typename T>
 using ComPtr = Microsoft::WRL::ComPtr<T>;
 
 extern "C" NTSYSAPI NTSTATUS NTAPI RtlGetVersion(PRTL_OSVERSIONINFOEXW lpVersionInformation);
+#elif __APPLE__
+#include "sys/sysctl.h"
 #endif
 
 using namespace std::string_literals;
@@ -230,6 +233,63 @@ void LogMisc() {
   LogGpus();
 }
 
+#elif __APPLE__
+
+static std::string sysCtlToString(const char* name) {
+  size_t length;
+  auto err = sysctlbyname(name, nullptr, &length, nullptr, 0);
+  if (err) {
+    Log.error("sysctlbyname failed: %d", err);
+    return Unknown;
+  }
+
+  std::string value;
+  value.resize(length);
+  err = sysctlbyname(name, value.data(), &length, nullptr, 0);
+  if (err) {
+    Log.error("second sysctlbyname failed: %d", err);
+    return Unknown;
+  }
+
+  if (value[length - 1] == '\0')
+    value.pop_back();
+
+  return value;
+}
+
+std::string GetCpuModel() {
+  return sysCtlToString("machdep.cpu.brand_string");
+}
+
+uint64_t GetMemoryAmount() {
+  uint64_t result;
+  size_t size = sizeof(result);
+  const auto err = sysctlbyname("hw.memsize", &result, &size, nullptr, 0);
+  if (err) {
+    Log.error("sysctlbyname failed: %d", err);
+    return 0;
+  }
+
+  return result;
+}
+
+std::string GetOSVersion() {
+#if TARGET_OS_MAC
+  constexpr auto name = "macOS";
+#elif TARGET_OS_IOS
+  constexpr auto name = "iOS";
+#elif TARGET_OS_TV
+  constexpr auto name = "tvOS";
+#elif
+  constexpr auto name = Unknown;
+#endif
+
+  return fmt::format("{} {}", name, system_info::getSystemVersionString());
+}
+
+void LogMisc() {
+  // Nada.
+}
 #else
 std::string GetCpuModel() {
   return Unknown;
