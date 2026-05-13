@@ -383,13 +383,16 @@ struct GXState {
   void clearVtxSizeCache() { lastVtxFmt = GX_MAX_VTXFMT; }
 };
 extern GXState g_gxState;
-extern bool g_enhancedLighting;
-extern bool g_enableSpecular;
-extern bool g_enableRim;
-extern float g_specularIntensity;
-extern float g_rimIntensity;
-extern float g_ambientMultiplier;
-extern float g_diffuseMultiplier;
+struct EnhancedLightingState {
+  bool enabled = true;
+  bool enableSpecular = true;
+  bool enableRim = true;
+  float specularIntensity = 0.2f;
+  float rimIntensity = 0.08f;
+  float ambientMultiplier = 1.0f;
+  float diffuseMultiplier = 1.0f;
+};
+extern EnhancedLightingState g_enhancedLightingState;
 struct ShaderInfo;
 
 void initialize() noexcept;

@@ -412,10 +412,10 @@ gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart, const BindGroupRa
       buf.append<u32>(g_gxState.colorChannelState[i].lightMask.to_ulong());
     }
     if (info.enhancedLighting) {
-      buf.append<f32>(g_specularIntensity);
-      buf.append<f32>(g_rimIntensity);
-      buf.append<f32>(g_ambientMultiplier);
-      buf.append<f32>(g_diffuseMultiplier);
+      buf.append<f32>(g_enhancedLightingState.specularIntensity);
+      buf.append<f32>(g_enhancedLightingState.rimIntensity);
+      buf.append<f32>(g_enhancedLightingState.ambientMultiplier);
+      buf.append<f32>(g_enhancedLightingState.diffuseMultiplier);
     }
   }
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
