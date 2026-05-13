@@ -684,6 +684,9 @@ u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept {
     switch (cnt) {
     case GX_NRM_XYZ:
       return 3;
+    case GX_NRM_NBT:
+    case GX_NRM_NBT3:
+      return 9;
     default:
       break;
     }
