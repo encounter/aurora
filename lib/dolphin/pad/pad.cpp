@@ -310,8 +310,11 @@ uint32_t PADRead(PADStatus* status) {
       rumbleSupport |= PAD_CHAN0_BIT >> i;
     }
 
-    // Update the LED colors when the controller is read (which should happen once per frame in most games)
-    SDL_SetGamepadLED(controller->m_controller, controller->m_ledRed, controller->m_ledGreen, controller->m_ledBlue);
+    // Update the LED colors when they exist and the controller is read (which should happen once per frame in most games)
+    if (controller->m_hasRgbLed && controller->m_isColorDirty) {
+      SDL_SetGamepadLED(controller->m_controller, controller->m_ledRed, controller->m_ledGreen, controller->m_ledBlue);
+      controller->m_isColorDirty = false;
+    }
   }
   return rumbleSupport;
 }
@@ -810,6 +813,7 @@ BOOL PADSetColor(u32 port, u8 red, u8 green, u8 blue) {
   ctrl->m_ledRed = red;
   ctrl->m_ledGreen = green;
   ctrl->m_ledBlue = blue;
+  ctrl->m_isColorDirty = true;
   return true;
 }
 
@@ -886,4 +890,12 @@ BOOL PADSupportsRumbleIntensity(u32 port) {
   }
 
   return !ctrl->m_isGameCube && ctrl->m_hasRumble;
+}
+
+BOOL PADIsGCAdapter(u32 port) {
+  const auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr) {
+    return FALSE;
+  }
+  return ctrl->m_isGameCube;
 }

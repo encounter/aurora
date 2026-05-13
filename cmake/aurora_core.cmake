@@ -21,6 +21,20 @@ if (AURORA_ENABLE_GX)
     target_link_libraries(aurora_core PUBLIC imgui)
 endif ()
 
+if(AURORA_ENABLE_RMLUI)
+    target_compile_definitions(aurora_core PUBLIC AURORA_ENABLE_RMLUI)
+
+    target_sources(aurora_core PRIVATE
+            lib/rmlui.cpp
+            lib/rmlui/RmlUi_Backend_Aurora.cpp
+            lib/rmlui/WebGPURenderInterface.cpp
+            lib/rmlui/SystemInterface_Aurora.cpp
+    )
+    target_link_libraries(aurora_core PUBLIC rmlui)
+
+    target_link_libraries(aurora_core PUBLIC rmlui_backends)
+endif ()
+
 if (AURORA_ENABLE_GX)
     target_compile_definitions(aurora_core PUBLIC AURORA_ENABLE_GX)
     target_sources(aurora_core PRIVATE lib/webgpu/gpu.cpp lib/webgpu/gpu_cache.cpp)

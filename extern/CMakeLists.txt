@@ -160,6 +160,48 @@ if (AURORA_ENABLE_GX)
       message(STATUS "aurora: Using existing zstd")
     endif ()
   endif ()
+
+  if(AURORA_ENABLE_RMLUI AND NOT TARGET RmlUi)
+    if(NOT TARGET Freetype::Freetype)
+      message(STATUS "aurora: Fetching Freetype")
+      FetchContent_Declare(Freetype
+              URL https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.gz
+              URL_HASH SHA256=e61b31ab26358b946e767ed7eb7f4bb2e507da1cfefeb7a8861ace7fd5c899a1
+              DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+              EXCLUDE_FROM_ALL
+      )
+      FetchContent_MakeAvailable(Freetype)
+
+      if(NOT TARGET Freetype::Freetype)
+        add_library(Freetype::Freetype ALIAS freetype)
+      endif()
+    else()
+      message(STATUS "aurora: Using existing Freetype")
+    endif()
+
+    message(STATUS "aurora: Fetching RmlUi")
+    FetchContent_Declare(rmlui
+            URL https://github.com/mikke89/RmlUi/archive/refs/tags/6.2.tar.gz
+            URL_HASH SHA256=814c3ff7b9666280338d8f0dda85979f5daf028d01c85fc8975431d1e2fd8e8b
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+            EXCLUDE_FROM_ALL
+    )
+    FetchContent_MakeAvailable(rmlui)
+
+    add_library(rmlui_backends STATIC
+            ${rmlui_SOURCE_DIR}/Backends/RmlUi_Platform_SDL.cpp
+    )
+    # TODO: maybe dont hardcode this to SDL3?
+    target_compile_definitions(rmlui_backends PUBLIC RMLUI_SDL_VERSION_MAJOR=3)
+
+    target_include_directories(rmlui_backends PUBLIC
+            ${rmlui_SOURCE_DIR}/Backends
+    )
+
+    target_link_libraries(rmlui_backends PRIVATE rmlui ${AURORA_SDL3_TARGET})
+
+  endif ()
+
 endif ()
 
 if (NOT TARGET TracyClient)
