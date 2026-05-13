@@ -668,7 +668,12 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
     return posLoad;
   }
   case GX_VA_NRM:
-    // TODO check for NBT/NBT3
+    // TODO full NBT/NBT3 TBN support; only the normal is consumed
+    if (mapping.cnt > 3) {
+      auto nrmMapping = mapping;
+      nrmMapping.cnt = 3;
+      return fetch_attr(nrmMapping, buf, offs, le);
+    }
     return fetch_attr(mapping, buf, offs, le);
   case GX_VA_CLR0:
   case GX_VA_CLR1:
