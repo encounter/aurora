@@ -384,7 +384,7 @@ struct GXState {
 };
 extern GXState g_gxState;
 struct EnhancedLightingState {
-  bool enabled = true;
+  bool enabled = false;
   bool enableSpecular = true;
   bool enableRim = true;
   float specularIntensity = 0.2f;
