@@ -9,7 +9,7 @@ set_target_properties(aurora_core PROPERTIES FOLDER "aurora")
 
 target_compile_definitions(aurora_core PUBLIC AURORA TARGET_PC)
 target_include_directories(aurora_core PUBLIC include)
-target_link_libraries(aurora_core PUBLIC ${AURORA_SDL3_TARGET} fmt::fmt xxhash)
+target_link_libraries(aurora_core PUBLIC fmt::fmt ${AURORA_SDL3_TARGET} xxhash)
 target_link_libraries(aurora_core PRIVATE absl::btree absl::flat_hash_map sqlite3 TracyClient)
 if (AURORA_ENABLE_GX AND AURORA_CACHE_USE_ZSTD)
     target_compile_definitions(aurora_core PRIVATE AURORA_CACHE_USE_ZSTD)
@@ -29,6 +29,7 @@ if(AURORA_ENABLE_RMLUI)
             lib/rmlui/RmlUi_Backend_Aurora.cpp
             lib/rmlui/WebGPURenderInterface.cpp
             lib/rmlui/SystemInterface_Aurora.cpp
+            lib/rmlui/FileInterface_SDL.cpp
     )
     target_link_libraries(aurora_core PUBLIC rmlui)
 
@@ -36,16 +37,9 @@ if(AURORA_ENABLE_RMLUI)
 endif ()
 
 if (AURORA_ENABLE_GX)
-    target_compile_definitions(aurora_core PUBLIC AURORA_ENABLE_GX)
-    target_sources(aurora_core PRIVATE lib/webgpu/gpu.cpp lib/webgpu/gpu_cache.cpp)
-    if (EMSCRIPTEN)
-        target_link_options(aurora_core PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)
-        target_compile_definitions(aurora_core PRIVATE ENABLE_BACKEND_WEBGPU)
-    else ()
-        target_link_libraries(aurora_core PRIVATE dawn::webgpu_dawn)
-        target_sources(aurora_core PRIVATE lib/dawn/BackendBinding.cpp)
-        target_compile_definitions(aurora_core PRIVATE WEBGPU_DAWN)
-    endif ()
+    target_compile_definitions(aurora_core PUBLIC AURORA_ENABLE_GX WEBGPU_DAWN)
+    target_sources(aurora_core PRIVATE lib/webgpu/gpu.cpp lib/webgpu/gpu_cache.cpp lib/dawn/BackendBinding.cpp)
+    target_link_libraries(aurora_core PRIVATE dawn::webgpu_dawn)
     if (DAWN_ENABLE_VULKAN)
         target_compile_definitions(aurora_core PRIVATE DAWN_ENABLE_BACKEND_VULKAN)
     endif ()

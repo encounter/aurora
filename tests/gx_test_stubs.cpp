@@ -248,6 +248,7 @@ bool try_bind_replacement(GXTexObj_&, GXTexMapID) noexcept { return false; }
 #include "../lib/window.hpp"
 namespace aurora::window {
 AuroraWindowSize get_window_size() { return {640, 480, 640, 480, 640, 480, 1.0f}; }
+void set_frame_buffer_aspect_fit(bool) {}
 } // namespace aurora::window
 
 // --- WebGPU C API stubs (prevent linker errors from wgpu:: destructors) ---

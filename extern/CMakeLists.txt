@@ -3,44 +3,38 @@ include(FetchContent)
 # Don't build tests for third party dependencies
 set(BUILD_TESTING OFF CACHE INTERNAL "Build tests")
 
-if (NOT EMSCRIPTEN)
-  if (AURORA_ENABLE_GX)
-    include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/AuroraDawnProvider.cmake)
-  endif ()
-
-  # Abseil is needed for core libraries. It normally comes via Dawn's vendor build.
-  # Otherwise prefer a system package and only fetch it as a last resort.
-  if (NOT TARGET absl::flat_hash_map OR NOT TARGET absl::btree)
-    find_package(absl CONFIG QUIET GLOBAL)
-  endif ()
-
-  if (TARGET absl::flat_hash_map AND TARGET absl::btree)
-    message(STATUS "aurora: Using system/existing abseil")
-  else ()
-    message(STATUS "aurora: Fetching abseil-cpp (standalone)")
-    if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY OR CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "DLL$")
-      set(ABSL_MSVC_STATIC_RUNTIME OFF CACHE INTERNAL "Link static runtime libraries")
-    else()
-      set(ABSL_MSVC_STATIC_RUNTIME ON CACHE INTERNAL "Link static runtime libraries")
-    endif()
-    set(ABSL_PROPAGATE_CXX_STD ON)
-    FetchContent_Declare(abseil-cpp
-      URL https://github.com/abseil/abseil-cpp/archive/refs/tags/20240722.0.tar.gz
-      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-      EXCLUDE_FROM_ALL
-    )
-    FetchContent_MakeAvailable(abseil-cpp)
-    if (NOT TARGET absl::flat_hash_map OR NOT TARGET absl::btree)
-      message(FATAL_ERROR "Failed to make abseil-cpp available")
-    endif ()
-  endif ()
-
-  include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/AuroraSDL3Provider.cmake)
-else ()
-  set(ABSL_PROPAGATE_CXX_STD ON)
-  add_subdirectory(dawn/third_party/abseil-cpp EXCLUDE_FROM_ALL)
-  set(AURORA_SDL3_TARGET SDL3::SDL3-static CACHE INTERNAL "SDL3 target for emscripten")
+if (AURORA_ENABLE_GX)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/AuroraDawnProvider.cmake)
 endif ()
+
+# Abseil is needed for core libraries. It normally comes via Dawn's vendor build.
+# Otherwise prefer a system package and only fetch it as a last resort.
+if (NOT TARGET absl::flat_hash_map OR NOT TARGET absl::btree)
+  find_package(absl CONFIG QUIET GLOBAL)
+endif ()
+
+if (TARGET absl::flat_hash_map AND TARGET absl::btree)
+  message(STATUS "aurora: Using system/existing abseil")
+else ()
+  message(STATUS "aurora: Fetching abseil-cpp (standalone)")
+  if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY OR CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "DLL$")
+    set(ABSL_MSVC_STATIC_RUNTIME OFF CACHE INTERNAL "Link static runtime libraries")
+  else()
+    set(ABSL_MSVC_STATIC_RUNTIME ON CACHE INTERNAL "Link static runtime libraries")
+  endif()
+  set(ABSL_PROPAGATE_CXX_STD ON)
+  FetchContent_Declare(abseil-cpp
+    URL https://github.com/abseil/abseil-cpp/archive/refs/tags/20240722.0.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    EXCLUDE_FROM_ALL
+  )
+  FetchContent_MakeAvailable(abseil-cpp)
+  if (NOT TARGET absl::flat_hash_map OR NOT TARGET absl::btree)
+    message(FATAL_ERROR "Failed to make abseil-cpp available")
+  endif ()
+endif ()
+
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/AuroraSDL3Provider.cmake)
 
 if (NOT TARGET xxhash)
   message(STATUS "aurora: Fetching xxhash")
@@ -83,6 +77,24 @@ else ()
 endif ()
 
 if (AURORA_ENABLE_GX)
+  find_package(Freetype QUIET)
+  if (NOT TARGET Freetype::Freetype)
+    message(STATUS "aurora: Fetching Freetype")
+    set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(Freetype
+      URL https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.gz
+      URL_HASH SHA256=e61b31ab26358b946e767ed7eb7f4bb2e507da1cfefeb7a8861ace7fd5c899a1
+      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+      EXCLUDE_FROM_ALL
+    )
+    FetchContent_MakeAvailable(Freetype)
+    add_library(Freetype::Freetype ALIAS freetype)
+  else ()
+    message(STATUS "aurora: Using existing Freetype")
+  endif ()
+
   if (NOT TARGET imgui)
     message(STATUS "aurora: Fetching imgui")
     FetchContent_Declare(imgui
@@ -112,17 +124,20 @@ if (AURORA_ENABLE_GX)
     target_link_libraries(imgui_backends PRIVATE imgui ${AURORA_SDL3_TARGET} dawn::webgpu_dawn)
     target_link_libraries(imgui PUBLIC imgui_backends)
 
-    # Optional, replaces stb_freetype if available
-    find_package(Freetype)
-    # Permit disabling for macOS universal builds
-    option(IMGUI_USE_FREETYPE "Enable freetype with imgui" ON)
-    if (FREETYPE_FOUND AND IMGUI_USE_FREETYPE)
+    if (TARGET Freetype::Freetype)
       target_sources(imgui PRIVATE ${imgui_SOURCE_DIR}/misc/freetype/imgui_freetype.cpp)
       target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_FREETYPE)
       target_link_libraries(imgui PRIVATE Freetype::Freetype)
     endif ()
   else ()
     message(STATUS "aurora: Using existing imgui")
+  endif ()
+
+  if (TARGET imgui)
+    target_include_directories(imgui PUBLIC ${PROJECT_SOURCE_DIR}/include)
+    target_compile_definitions(imgui PUBLIC IMGUI_USER_CONFIG="aurora/imgui_config.h")
+    target_sources(imgui PRIVATE ${PROJECT_SOURCE_DIR}/lib/imgui_config.cpp)
+    target_link_libraries(imgui PRIVATE ${AURORA_SDL3_TARGET})
   endif ()
 
   if (NOT TARGET sqlite3)
@@ -147,7 +162,6 @@ if (AURORA_ENABLE_GX)
       set(ZSTD_BUILD_STATIC ON)
       set(ZSTD_BUILD_SHARED OFF)
 
-      include(FetchContent)
       FetchContent_Declare(zstd
         URL https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
         URL_HASH SHA256=eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
@@ -162,27 +176,10 @@ if (AURORA_ENABLE_GX)
   endif ()
 
   if(AURORA_ENABLE_RMLUI AND NOT TARGET RmlUi)
-    if(NOT TARGET Freetype::Freetype)
-      message(STATUS "aurora: Fetching Freetype")
-      FetchContent_Declare(Freetype
-              URL https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.gz
-              URL_HASH SHA256=e61b31ab26358b946e767ed7eb7f4bb2e507da1cfefeb7a8861ace7fd5c899a1
-              DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-              EXCLUDE_FROM_ALL
-      )
-      FetchContent_MakeAvailable(Freetype)
-
-      if(NOT TARGET Freetype::Freetype)
-        add_library(Freetype::Freetype ALIAS freetype)
-      endif()
-    else()
-      message(STATUS "aurora: Using existing Freetype")
-    endif()
-
     message(STATUS "aurora: Fetching RmlUi")
     FetchContent_Declare(rmlui
-            URL https://github.com/mikke89/RmlUi/archive/refs/tags/6.2.tar.gz
-            URL_HASH SHA256=814c3ff7b9666280338d8f0dda85979f5daf028d01c85fc8975431d1e2fd8e8b
+            URL https://github.com/mikke89/RmlUi/archive/f9b8c9e2935d5df2c7dff2c190d3968e99b0c3dc.tar.gz
+            URL_HASH SHA256=42b830abc2509a8c07cf02ba3313505de3a4642725654f489402022d8fefdd79
             DOWNLOAD_EXTRACT_TIMESTAMP TRUE
             EXCLUDE_FROM_ALL
     )
@@ -210,7 +207,6 @@ if (NOT TARGET TracyClient)
   # Default to off, users can enable the cache variable if they want to use it.
   set(TRACY_ENABLE OFF CACHE BOOL "Enable Tracy profiling")
 
-  include(FetchContent)
   FetchContent_Declare(
           tracy
           URL https://github.com/wolfpld/tracy/archive/a64b9a20294d59421a2f57aeca3c6383d8c48169.tar.gz

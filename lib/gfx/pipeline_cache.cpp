@@ -70,8 +70,21 @@ static std::mutex g_pipelineCacheWriterMutex;
 static std::deque<PipelineCacheWrite> g_pipelineCacheWriteQueue;
 static bool g_pipelineCacheWriterStop = false;
 
+#if defined(__cpp_lib_atomic_ref)
 static std::atomic_ref queuedPipelines{g_stats.queuedPipelines};
 static std::atomic_ref createdPipelines{g_stats.createdPipelines};
+#else
+struct AtomicStatRef {
+  uint32_t& ref;
+  void operator++() { __atomic_fetch_add(&ref, 1, __ATOMIC_RELAXED); }
+  void operator--() { __atomic_fetch_sub(&ref, 1, __ATOMIC_RELAXED); }
+  void operator++(int) { __atomic_fetch_add(&ref, 1, __ATOMIC_RELAXED); }
+  void operator--(int) { __atomic_fetch_sub(&ref, 1, __ATOMIC_RELAXED); }
+  void operator=(uint32_t val) { __atomic_store_n(&ref, val, __ATOMIC_RELAXED); }
+};
+static AtomicStatRef queuedPipelines{g_stats.queuedPipelines};
+static AtomicStatRef createdPipelines{g_stats.createdPipelines};
+#endif
 
 template <typename PipelineConfig>
 static PipelineCacheWrite make_pipeline_cache_write(ShaderType type, PipelineRef hash, const PipelineConfig& config,

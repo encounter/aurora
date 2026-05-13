@@ -12,6 +12,7 @@
 #include "texture.hpp"
 #include "../window.hpp"
 
+#include <atomic>
 #include <optional>
 #include <ranges>
 
@@ -105,6 +106,13 @@ wgpu::Buffer g_uniformBuffer;
 wgpu::Buffer g_indexBuffer;
 wgpu::Buffer g_storageBuffer;
 static std::array<wgpu::Buffer, 3> g_stagingBuffers;
+static size_t currentStagingBuffer = 0;
+enum class BufferMapState {
+  Unmapped,
+  Mapping,
+  Mapped,
+};
+static std::atomic s_mappingState{BufferMapState::Unmapped};
 static wgpu::Limits g_cachedLimits;
 static uint32_t g_frameIndex = UINT32_MAX;
 static PipelineRef g_currentPipeline;
@@ -487,6 +495,8 @@ void initialize() {
     createBuffer(g_stagingBuffers[i], wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc, StagingBufferSize,
                  label.c_str());
   }
+  currentStagingBuffer = 0;
+  s_mappingState.store(BufferMapState::Unmapped, std::memory_order_release);
   map_staging_buffer();
 
   {
@@ -601,30 +611,44 @@ void shutdown() {
   g_uniformBindGroupLayout = {};
   g_inOffscreen = false;
   g_frameIndex = UINT32_MAX;
+  currentStagingBuffer = 0;
+  s_mappingState.store(BufferMapState::Unmapped, std::memory_order_release);
 }
 
-static size_t currentStagingBuffer = 0;
-static bool bufferMapped = false;
 void map_staging_buffer() {
-  bufferMapped = false;
+  auto expected = BufferMapState::Unmapped;
+  if (!s_mappingState.compare_exchange_strong(expected, BufferMapState::Mapping, std::memory_order_acq_rel,
+                                              std::memory_order_acquire)) {
+    return;
+  }
+
   g_stagingBuffers[currentStagingBuffer].MapAsync(
       wgpu::MapMode::Write, 0, StagingBufferSize, wgpu::CallbackMode::AllowSpontaneous,
       [](wgpu::MapAsyncStatus status, wgpu::StringView message) {
         if (status == wgpu::MapAsyncStatus::CallbackCancelled || status == wgpu::MapAsyncStatus::Aborted) {
           Log.warn("Buffer mapping {}: {}", magic_enum::enum_name(status), message);
+          s_mappingState.store(BufferMapState::Unmapped, std::memory_order_release);
           return;
         }
         ASSERT(status == wgpu::MapAsyncStatus::Success, "Buffer mapping failed: {} {}", magic_enum::enum_name(status),
                message);
-        bufferMapped = true;
+        s_mappingState.store(BufferMapState::Mapped, std::memory_order_release);
       });
 }
 
-void begin_frame() {
+bool begin_frame() {
   ZoneScoped;
   {
     ZoneScopedN("Wait for buffer map");
-    while (!bufferMapped) {
+    map_staging_buffer();
+    while (true) {
+      const auto mappingState = s_mappingState.load(std::memory_order_acquire);
+      if (mappingState == BufferMapState::Mapped) {
+        break;
+      }
+      if (mappingState == BufferMapState::Unmapped) {
+        return false;
+      }
       g_instance.ProcessEvents();
     }
   }
@@ -660,6 +684,7 @@ void begin_frame() {
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
   begin_pipeline_frame();
+  return true;
 }
 
 void end_frame(const wgpu::CommandEncoder& cmd) {
@@ -677,6 +702,7 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
     return writeSize;
   };
   g_stagingBuffers[currentStagingBuffer].Unmap();
+  s_mappingState.store(BufferMapState::Unmapped, std::memory_order_release);
   g_stats.lastVertSize = writeBuffer(g_verts, g_vertexBuffer, VertexBufferSize, "Vertex");
   g_stats.lastUniformSize = writeBuffer(g_uniforms, g_uniformBuffer, UniformBufferSize, "Uniform");
   g_stats.lastIndexSize = writeBuffer(g_indices, g_indexBuffer, IndexBufferSize, "Index");

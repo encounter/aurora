@@ -40,6 +40,24 @@
 #define PAD_BUTTON_Y 0x0800
 #define PAD_BUTTON_MENU 0x1000
 #define PAD_BUTTON_START 0x1000
+#ifdef TARGET_PC
+#define PAD_BUTTON_BACK 0x0002000
+#define PAD_BUTTON_GUIDE 0x0004000
+#define PAD_BUTTON_MISC1 0x0008000
+#define PAD_BUTTON_MISC2 0x0010000
+#define PAD_BUTTON_MISC3 0x0020000
+#define PAD_BUTTON_MISC4 0x0040000
+#define PAD_BUTTON_MISC5 0x0080000
+#define PAD_BUTTON_MISC6 0x0100000
+#define PAD_BUTTON_RIGHT_PADDLE1 0x0200000
+#define PAD_BUTTON_LEFT_PADDLE1 0x0400000
+#define PAD_BUTTON_RIGHT_PADDLE2 0x0800000
+#define PAD_BUTTON_LEFT_PADDLE2 0x1000000
+#define PAD_BUTTON_RIGHT_STICK 0x2000000
+#define PAD_BUTTON_LEFT_STICK 0x4000000
+#define PAD_BUTTON_TOUCHPAD 0x8000000
+#define PAD_EXT_BUTTON_COUNT 15
+#endif
 
 #define PAD_BUTTON_COUNT 12
 
@@ -82,6 +100,9 @@ typedef struct PADStatus {
   u8 analogA;
   u8 analogB;
   s8 err;
+#ifdef TARGET_PC
+  u32 extButton;
+#endif
 } PADStatus;
 
 typedef enum PADAxisSign {
@@ -108,6 +129,27 @@ void PADControlAllMotors(const u32* cmdArr);
 void PADSetAnalogMode(u32 mode);
 
 #ifdef TARGET_PC
+#define PAD_KEY_INVALID (-1)
+#define PAD_KEY_MOUSE_LEFT (-2)
+#define PAD_KEY_MOUSE_MIDDLE (-3)
+#define PAD_KEY_MOUSE_RIGHT (-4)
+#define PAD_KEY_MOUSE_X1 (-5)
+#define PAD_KEY_MOUSE_X2 (-6)
+typedef u16 PADButton;
+typedef u32 PADExtButton;
+typedef u16 PADAxis;
+
+typedef struct PADKeyButtonBinding {
+  s32 scancode;
+  PADButton padButton;
+} PADKeyButtonBinding;
+
+typedef struct PADKeyAxisBinding {
+  s32 scancode;
+  PADAxis padAxis;
+  s16 influence; // normalized percentage between 0 and 1
+} PADKeyAxisBinding;
+
 /* New API to facilitate controller interactions */
 typedef struct PADDeadZones {
   bool emulateTriggers;
@@ -118,14 +160,10 @@ typedef struct PADDeadZones {
   u16 rightTriggerActivationZone;
 } PADDeadZones;
 
-typedef u16 PADButton;
-
 typedef struct PADButtonMapping {
   u32 nativeButton;
   PADButton padButton;
 } PADButtonMapping;
-
-typedef u16 PADAxis;
 
 typedef struct PADAxisMapping {
   PADSignedNativeAxis nativeAxis;
@@ -154,12 +192,23 @@ void PADSetAxisMapping(u32 port, PADAxisMapping mapping);
 void PADSetAllAxisMappings(u32 port, PADAxisMapping axes[PAD_AXIS_COUNT]);
 PADAxisMapping* PADGetAxisMappings(u32 port, u32* axisCount);
 void PADSerializeMappings();
+
+BOOL PADSetKeyButtonBinding(u32 port, PADKeyButtonBinding binding);
+BOOL PADSetKeyButtonBindings(u32 port, PADKeyButtonBinding bindings[PAD_BUTTON_COUNT]);
+PADKeyButtonBinding* PADGetKeyButtonBindings(u32 port, u32* buttonCount);
+BOOL PADSetKeyAxisBinding(u32 port, PADKeyAxisBinding binding);
+BOOL PADSetKeyAxisBindings(u32 port, PADKeyAxisBinding bindings[PAD_BUTTON_COUNT]);
+PADKeyAxisBinding* PADGetKeyAxisBindings(u32 port, u32* axisCount);
+void PADClearKeyBindings(u32 port);
+void PADSetKeyboardActive(u32 port, BOOL active);
+
 PADDeadZones* PADGetDeadZones(u32 port);
 const char* PADGetButtonName(PADButton);
 const char* PADGetNativeButtonName(u32 button);
 const char* PADGetAxisName(PADAxis);
 const char* PADGetAxisDirectionLabel(PADAxis);
 const char* PADGetNativeAxisName(PADSignedNativeAxis axis);
+
 BOOL PADIsGCAdapter(u32 port);
 
 /**
@@ -178,7 +227,24 @@ void PADBlockInput(bool block);
  *
  * Must be called before PADInit.
  */
-void PADSetDefaultMapping(const PADDefaultMapping* mapping);
+
+typedef enum {
+  PAD_TYPE_UNKNOWN = 0,
+  PAD_TYPE_STANDARD,
+  PAD_TYPE_XBOX360,
+  PAD_TYPE_XBOXONE,
+  PAD_TYPE_PS3,
+  PAD_TYPE_PS4,
+  PAD_TYPE_PS5,
+  PAD_TYPE_SWITCH_PROCON,
+  PAD_TYPE_JOYCON_LEFT,
+  PAD_TYPE_JOYCON_RIGHT,
+  PAD_TYPE_JOYCON_PAIR,
+  PAD_TYPE_GAMECUBE,
+  PAD_TYPE_NSO_GAMECUBE,
+} PADControllerType;
+
+void PADSetDefaultMapping(const PADDefaultMapping* mapping, PADControllerType type);
 
 BOOL PADSetColor(u32 port, u8 red, u8 green, u8 blue);
 BOOL PADGetColor(u32 port, u8* red, u8* green, u8* blue);
@@ -202,6 +268,20 @@ BOOL PADGetSensorData(u32 port, PADSensorType sensor, f32* data, int nValues);
 BOOL PADSetRumbleIntensity(u32 port, u16 low, u16 high);
 BOOL PADGetRumbleIntensity(u32 port, u16* low, u16* high);
 BOOL PADSupportsRumbleIntensity(u32 port);
+
+typedef enum PADBatteryState {
+  PAD_BATTERYSTATE_ERROR = -1,
+  PAD_BATTERYSTATE_UNKNOWN,
+  PAD_BATTERYSTATE_ON_BATTERY,
+  PAD_BATTERYSTATE_NO_BATTERY,
+  PAD_BATTERYSTATE_CHARGING,
+  PAD_BATTERYSTATE_CHARGED,
+} PADBatteryState;
+
+PADBatteryState PADGetBatteryState(u32 port, f32* perc);
+
+PADControllerType PADGetControllerType(u32 port);
+PADControllerType PADGetControllerTypeForIndex(u32 index);
 
 #endif
 

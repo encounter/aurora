@@ -83,6 +83,7 @@ typedef struct {
   bool vsync;
   bool startFullscreen;
   bool allowJoystickBackgroundEvents;
+  bool pauseOnFocusLost;
   bool allowTextureReplacements;
   bool allowTextureDumps;
   int32_t windowPosX;
@@ -124,6 +125,8 @@ bool aurora_begin_frame();
 void aurora_end_frame();
 
 void aurora_set_log_level(AuroraLogLevel level);
+void aurora_set_pause_on_focus_lost(bool value);
+void aurora_set_background_input(bool value);
 
 AuroraBackend aurora_get_backend();
 const AuroraBackend* aurora_get_available_backends(size_t* count);

@@ -6,6 +6,7 @@
 
 #include "../logging.hpp"
 #include "../window.hpp"
+#include "../webgpu/gpu.hpp"
 
 namespace aurora::rmlui {
 namespace {
@@ -40,7 +41,7 @@ bool start_text_input(SDL_Window* window, InputType type) {
 
 } // namespace
 
-SystemInterface_Aurora::SystemInterface_Aurora() { SetWindow(window::get_sdl_window()); }
+SystemInterface_Aurora::SystemInterface_Aurora() : SystemInterface_SDL(window::get_sdl_window()) {}
 
 void SystemInterface_Aurora::SetInputType(InputType type) noexcept { mTextInputType = type; }
 
@@ -51,16 +52,36 @@ void SystemInterface_Aurora::ActivateKeyboard(Rml::Vector2f caret_position, floa
   }
 
   const AuroraWindowSize size = window::get_window_size();
-  if (size.native_fb_width == 0 || size.native_fb_height == 0 || size.width == 0 || size.height == 0) {
+  if (size.native_fb_width == 0 || size.native_fb_height == 0 || size.width == 0 || size.height == 0 ||
+      size.fb_width == 0 || size.fb_height == 0) {
     return;
   }
 
-  const float scaleX = static_cast<float>(size.width) / static_cast<float>(size.native_fb_width);
-  const float scaleY = static_cast<float>(size.height) / static_cast<float>(size.native_fb_height);
-  const float inputLineHeight = std::max(line_height * scaleY, 1.0f);
+  Rml::Vector2i contentSize{static_cast<int>(size.fb_width), static_cast<int>(size.fb_height)};
+  if (const Rml::Context* context = get_context()) {
+    contentSize = context->GetDimensions();
+  }
+  if (contentSize.x <= 0 || contentSize.y <= 0) {
+    return;
+  }
+
+  const auto viewport = webgpu::calculate_present_viewport(size.native_fb_width, size.native_fb_height,
+                                                           static_cast<uint32_t>(contentSize.x),
+                                                           static_cast<uint32_t>(contentSize.y));
+  if (viewport.width <= 0.f || viewport.height <= 0.f) {
+    return;
+  }
+
+  const float nativeToWindowX = static_cast<float>(size.width) / static_cast<float>(size.native_fb_width);
+  const float nativeToWindowY = static_cast<float>(size.height) / static_cast<float>(size.native_fb_height);
+  const float contentToNativeX = viewport.width / static_cast<float>(contentSize.x);
+  const float contentToNativeY = viewport.height / static_cast<float>(contentSize.y);
+  const float inputLineHeight = std::max(line_height * contentToNativeY * nativeToWindowY, 1.0f);
+  const float nativeCaretX = viewport.left + caret_position.x * contentToNativeX;
+  const float nativeCaretY = viewport.top + caret_position.y * contentToNativeY;
   const SDL_Rect rect = {
-      .x = static_cast<int>(std::lround(caret_position.x * scaleX)),
-      .y = static_cast<int>(std::lround((caret_position.y * scaleY) + inputLineHeight)),
+      .x = static_cast<int>(std::lround(nativeCaretX * nativeToWindowX)),
+      .y = static_cast<int>(std::lround(nativeCaretY * nativeToWindowY + inputLineHeight)),
       .w = 1,
       .h = static_cast<int>(std::lround(inputLineHeight)),
   };

@@ -1,7 +1,5 @@
 #include "dolphin/gx/GXAurora.h"
 
-#include <algorithm>
-#include <cmath>
 #include <limits>
 
 #include "__gx.h"
@@ -10,7 +8,6 @@
 
 #include "../../gfx/common.hpp"
 #include "../../gx/fifo.hpp"
-#include "../vi/vi_internal.hpp"
 
 static void GXWriteString(const char* label) {
   auto length = strlen(label);
@@ -36,33 +33,18 @@ void GXInsertDebugMarker(const char* label) {
   GXWriteString(label);
 }
 
-void AuroraSetViewportPolicy(AuroraViewportPolicy policy) { g_gxState.viewportPolicy = policy; }
+void AuroraSetViewportPolicy(AuroraViewportPolicy policy) {
+  g_gxState.viewportPolicy = policy;
+  aurora::window::set_frame_buffer_aspect_fit(policy == AURORA_VIEWPORT_FIT);
+}
 
 void AuroraGetRenderSize(u32* width, u32* height) {
   const auto windowSize = aurora::window::get_window_size();
-  u32 renderWidth = windowSize.fb_width;
-  u32 renderHeight = windowSize.fb_height;
-
-  if (g_gxState.viewportPolicy == AURORA_VIEWPORT_FIT) {
-    const auto efbSize = aurora::vi::configured_fb_size();
-    if (efbSize.x != 0 && efbSize.y != 0 && renderWidth != 0 && renderHeight != 0) {
-      const double targetAspect = static_cast<double>(renderWidth) / static_cast<double>(renderHeight);
-      const double contentAspect = static_cast<double>(efbSize.x) / static_cast<double>(efbSize.y);
-      if (targetAspect > contentAspect) {
-        renderWidth =
-            std::max<u32>(1u, static_cast<u32>(std::lround(static_cast<double>(renderHeight) * contentAspect)));
-      } else {
-        renderHeight =
-            std::max<u32>(1u, static_cast<u32>(std::lround(static_cast<double>(renderWidth) / contentAspect)));
-      }
-    }
-  }
-
   if (width != nullptr) {
-    *width = renderWidth;
+    *width = windowSize.fb_width;
   }
   if (height != nullptr) {
-    *height = renderHeight;
+    *height = windowSize.fb_height;
   }
 }
 

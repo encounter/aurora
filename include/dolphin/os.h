@@ -300,6 +300,9 @@ extern int __OSInIPL;
 #define ASSERTMSGLINEV(line, cond, ...) (void)0
 #endif
 
+#ifdef ASSERT
+#undef ASSERT
+#endif
 #define ASSERT(cond) ASSERTLINE(__LINE__, cond)
 
 #ifdef __cplusplus

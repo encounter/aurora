@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <webgpu/webgpu_cpp.h>
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_render.h>
 
 #include "internal.hpp"
@@ -71,6 +72,31 @@ void process_event(const SDL_Event& event) noexcept {
   ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
+bool wants_capture_event(const SDL_Event& event) noexcept {
+  if (ImGui::GetCurrentContext() == nullptr) {
+    return false;
+  }
+
+  const ImGuiIO& io = ImGui::GetIO();
+  switch (event.type) {
+  case SDL_EVENT_MOUSE_MOTION:
+  case SDL_EVENT_MOUSE_BUTTON_DOWN:
+  case SDL_EVENT_MOUSE_BUTTON_UP:
+  case SDL_EVENT_MOUSE_WHEEL:
+  case SDL_EVENT_FINGER_DOWN:
+  case SDL_EVENT_FINGER_MOTION:
+  case SDL_EVENT_FINGER_UP:
+  case SDL_EVENT_FINGER_CANCELED:
+    return io.WantCaptureMouse;
+  case SDL_EVENT_KEY_DOWN:
+  case SDL_EVENT_KEY_UP:
+  case SDL_EVENT_TEXT_INPUT:
+    return io.WantCaptureKeyboard || io.WantTextInput;
+  default:
+    return false;
+  }
+}
+
 void new_frame(const AuroraWindowSize& size) noexcept {
   ZoneScoped;
   const float framebufferScaleX =
@@ -120,8 +146,7 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
 }
 
 ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) noexcept {
-  if (g_useSdlRenderer) {
-    SDL_Renderer* renderer = window::get_sdl_renderer();
+  if (SDL_Renderer* renderer = window::get_sdl_renderer()) {
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, width, height);
     SDL_UpdateTexture(texture, nullptr, data, width * 4);
     SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR);

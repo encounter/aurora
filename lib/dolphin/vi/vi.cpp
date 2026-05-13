@@ -9,19 +9,27 @@
 namespace aurora::vi {
 std::optional<GXRenderModeObj> g_renderMode;
 
-void configure(const GXRenderModeObj* rm) noexcept {
-  if (rm == nullptr) {
-    g_renderMode.reset();
-    return;
-  }
-  g_renderMode = *rm;
-}
-
-Vec2<uint32_t> configured_fb_size() noexcept {
+Vec2<uint32_t> render_mode_size() noexcept {
   if (!g_renderMode) {
     return {640, 480};
   }
   return {g_renderMode->fbWidth, g_renderMode->efbHeight};
+}
+
+void configure(const GXRenderModeObj* rm) noexcept {
+  const auto oldSize = render_mode_size();
+  if (rm == nullptr) {
+    g_renderMode.reset();
+  } else {
+    g_renderMode = *rm;
+  }
+  if (render_mode_size() != oldSize) {
+    window::request_frame_buffer_resize();
+  }
+}
+
+Vec2<uint32_t> configured_fb_size() noexcept {
+  return render_mode_size();
 }
 } // namespace aurora::vi
 

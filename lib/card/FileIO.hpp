@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <string>
+#include <filesystem>
 
 #include <SDL3/SDL_iostream.h>
 
@@ -15,7 +16,7 @@ class FileIO {
 
 public:
   FileIO() = default;
-  explicit FileIO(std::string_view filename, bool truncate = false);
+  explicit FileIO(const std::filesystem::path& filename, bool truncate = false);
   ~FileIO() = default;
 
   FileIO(FileIO&& other) noexcept;

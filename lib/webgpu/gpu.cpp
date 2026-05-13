@@ -1,7 +1,7 @@
 #include "gpu.hpp"
 
 #include <array>
-#include <cstddef>
+#include <algorithm>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -9,7 +9,6 @@
 #include <aurora/aurora.h>
 #include <aurora/gfx.h>
 #include <magic_enum.hpp>
-#include <webgpu/webgpu.h>
 #include <webgpu/webgpu_cpp.h>
 
 #include "../gfx/common.hpp"
@@ -50,7 +49,9 @@ wgpu::Instance g_instance;
 static wgpu::AdapterInfo g_adapterInfo;
 static wgpu::SurfaceCapabilities g_surfaceCapabilities;
 
-static wgpu::PresentMode best_present_mode(bool vsync) {
+namespace {
+
+wgpu::PresentMode best_present_mode(bool vsync) {
   const auto supports = [](const wgpu::PresentMode candidate) {
     for (size_t i = 0; i < g_surfaceCapabilities.presentModeCount; ++i) {
       if (g_surfaceCapabilities.presentModes[i] == candidate) {
@@ -74,6 +75,31 @@ static wgpu::PresentMode best_present_mode(bool vsync) {
   }
   return wgpu::PresentMode::Fifo;
 }
+
+wgpu::TextureFormat to_linear(wgpu::TextureFormat format) {
+  if (format == wgpu::TextureFormat::RGBA8UnormSrgb) {
+    return wgpu::TextureFormat::RGBA8Unorm;
+  }
+  if (format == wgpu::TextureFormat::BGRA8UnormSrgb) {
+    return wgpu::TextureFormat::BGRA8Unorm;
+  }
+  return format;
+}
+
+wgpu::TextureFormat best_surface_format() {
+  if (g_surfaceCapabilities.formatCount == 0) {
+    return wgpu::TextureFormat::Undefined;
+  }
+  for (size_t i = 0; i < g_surfaceCapabilities.formatCount; ++i) {
+    const auto format = to_linear(g_surfaceCapabilities.formats[i]);
+    if (format == wgpu::TextureFormat::RGBA8Unorm || format == wgpu::TextureFormat::BGRA8Unorm) {
+      return format;
+    }
+  }
+  return g_surfaceCapabilities.formats[0];
+}
+
+} // namespace
 
 TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled) {
   const wgpu::Extent3D size{
@@ -124,6 +150,38 @@ TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool m
       .size = size,
       .format = format,
       .sampler = std::move(sampler),
+  };
+}
+
+const TextureWithSampler& present_source() noexcept {
+  return g_graphicsConfig.msaaSamples > 1 ? g_frameBufferResolved : g_frameBuffer;
+}
+
+Viewport calculate_present_viewport(uint32_t surface_width, uint32_t surface_height, uint32_t content_width,
+                                    uint32_t content_height) noexcept {
+  if (surface_width == 0 || surface_height == 0 || content_width == 0 || content_height == 0) {
+    return {};
+  }
+
+  uint32_t viewport_width = surface_width;
+  uint32_t viewport_height = std::min<uint32_t>(
+      surface_height, std::max<uint32_t>(1u, static_cast<uint32_t>(std::lround(static_cast<double>(viewport_width) *
+                                                                               static_cast<double>(content_height) /
+                                                                               static_cast<double>(content_width)))));
+  if (viewport_height == surface_height) {
+    viewport_width = std::min<uint32_t>(
+        surface_width, std::max<uint32_t>(1u, static_cast<uint32_t>(std::lround(static_cast<double>(viewport_height) *
+                                                                                static_cast<double>(content_width) /
+                                                                                static_cast<double>(content_height)))));
+  }
+
+  return {
+      .left = static_cast<float>((surface_width - viewport_width) / 2),
+      .top = static_cast<float>((surface_height - viewport_height) / 2),
+      .width = static_cast<float>(viewport_width),
+      .height = static_cast<float>(viewport_height),
+      .znear = 0.f,
+      .zfar = 1.f,
   };
 }
 
@@ -277,15 +335,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   g_CopyPipeline = g_device.CreateRenderPipeline(&pipelineDescriptor);
 }
 
-void create_copy_bind_group() {
+wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source) {
   const std::array bindGroupEntries{
       wgpu::BindGroupEntry{
           .binding = 0,
-          .sampler = g_graphicsConfig.msaaSamples > 1 ? g_frameBufferResolved.sampler : g_frameBuffer.sampler,
+          .sampler = source.sampler,
       },
       wgpu::BindGroupEntry{
           .binding = 1,
-          .textureView = g_graphicsConfig.msaaSamples > 1 ? g_frameBufferResolved.view : g_frameBuffer.view,
+          .textureView = source.view,
       },
   };
   const wgpu::BindGroupDescriptor bindGroupDescriptor{
@@ -293,7 +351,7 @@ void create_copy_bind_group() {
       .entryCount = bindGroupEntries.size(),
       .entries = bindGroupEntries.data(),
   };
-  g_CopyBindGroup = g_device.CreateBindGroup(&bindGroupDescriptor);
+  return g_device.CreateBindGroup(&bindGroupDescriptor);
 }
 
 static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
@@ -318,16 +376,6 @@ static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
 }
 
 static bool create_surface() {
-#ifdef EMSCRIPTEN
-  const WGPUSurfaceDescriptorFromCanvasHTMLSelector canvasDescriptor{
-      .chain = {.sType = WGPUSType_SurfaceDescriptorFromCanvasHTMLSelector},
-      .selector = "#canvas",
-  };
-  const wgpu::SurfaceDescriptor surfaceDescriptor{
-      .nextInChain = reinterpret_cast<const wgpu::ChainedStruct*>(&canvasDescriptor.chain),
-      .label = "Surface",
-  };
-#else
   SDL_Window* window = window::get_sdl_window();
   if (window == nullptr) {
     Log.error("Failed to create surface: no window");
@@ -342,7 +390,7 @@ static bool create_surface() {
       .nextInChain = chainedDescriptor.get(),
       .label = "Surface",
   };
-#endif
+  release_surface();
   g_surface = g_instance.CreateSurface(&surfaceDescriptor);
   if (!g_surface) {
     Log.error("Failed to create surface");
@@ -353,10 +401,7 @@ static bool create_surface() {
 
 bool initialize(AuroraBackend auroraBackend) {
   if (!g_instance) {
-#ifdef WEBGPU_DAWN
-    Log.info("Initializing Dawn");
-#endif
-    Log.info("Creating WGPU instance");
+    Log.info("Creating WebGPU instance");
     const std::array requiredInstanceFeatures{
         wgpu::InstanceFeatureName::TimedWaitAny,
     };
@@ -371,25 +416,22 @@ bool initialize(AuroraBackend auroraBackend) {
 #endif
     g_instance = wgpu::CreateInstance(&instanceDescriptor);
     if (!g_instance) {
-      Log.error("Failed to create WGPU instance");
+      Log.error("Failed to create WebGPU instance");
       return false;
     }
   }
   const wgpu::BackendType backend = to_wgpu_backend(auroraBackend);
-#ifdef EMSCRIPTEN
-  if (backend != wgpu::BackendType::WebGPU) {
-    Log.warn("Backend type {} unsupported", magic_enum::enum_name(backend));
-    return false;
-  }
-#endif
   Log.info("Attempting to initialize {}", magic_enum::enum_name(backend));
 #if 0
   // D3D12's debug layer is very slow
   g_dawnInstance->EnableBackendValidation(backend != WGPUBackendType::D3D12);
 #endif
 
-  if (!create_surface()) {
-    return false;
+  {
+    window::SurfaceLock surfaceLock;
+    if (!create_surface()) {
+      return false;
+    }
   }
   {
     const wgpu::RequestAdapterOptions options{
@@ -578,13 +620,8 @@ bool initialize(AuroraBackend auroraBackend) {
     Log.error("Surface has no present modes");
     return false;
   }
-  auto surfaceFormat = g_surfaceCapabilities.formats[0];
+  auto surfaceFormat = best_surface_format();
   auto presentMode = best_present_mode(g_config.vsync);
-  if (surfaceFormat == wgpu::TextureFormat::RGBA8UnormSrgb) {
-    surfaceFormat = wgpu::TextureFormat::RGBA8Unorm;
-  } else if (surfaceFormat == wgpu::TextureFormat::BGRA8UnormSrgb) {
-    surfaceFormat = wgpu::TextureFormat::BGRA8Unorm;
-  }
   Log.info("Using surface format {}, present mode {}", magic_enum::enum_name(surfaceFormat),
            magic_enum::enum_name(presentMode));
   const auto size = window::get_window_size();
@@ -602,7 +639,10 @@ bool initialize(AuroraBackend auroraBackend) {
       .textureAnisotropy = g_config.maxTextureAnisotropy,
   };
   create_copy_pipeline();
-  resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height, true);
+  {
+    window::SurfaceLock surfaceLock;
+    resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height, true);
+  }
   return true;
 }
 
@@ -622,8 +662,19 @@ void shutdown() {
   cache_shutdown();
 }
 
+void release_surface() noexcept {
+  if (g_surface) {
+    g_surface.Unconfigure();
+  }
+  g_surface = {};
+}
+
 bool refresh_surface(bool recreate) {
   if (!g_instance || !g_device) {
+    return false;
+  }
+  if (!window::is_presentable()) {
+    release_surface();
     return false;
   }
   if ((!g_surface || recreate) && !create_surface()) {
@@ -668,12 +719,11 @@ void resize_swapchain(uint32_t width, uint32_t height, uint32_t native_width, ui
   g_frameBuffer = create_render_texture(width, height, true);
   g_frameBufferResolved = create_render_texture(width, height, false);
   g_depthBuffer = create_depth_texture(width, height);
-  create_copy_bind_group();
+  g_CopyBindGroup = create_copy_bind_group(present_source());
 }
 } // namespace aurora::webgpu
 
 void aurora_enable_vsync(const bool enabled) {
   aurora::webgpu::g_graphicsConfig.surfaceConfiguration.presentMode = aurora::webgpu::best_present_mode(enabled);
-  SDL_Event event{.type = aurora::g_sdlCustomEventsStart + 1};
-  SDL_PushEvent(&event);
+  aurora::window::push_custom_event(aurora::window::CustomEvent::RefreshSurface);
 }

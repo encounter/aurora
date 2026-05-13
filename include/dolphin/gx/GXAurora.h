@@ -83,19 +83,19 @@ void GXPopDebugGroup();
 void GXInsertDebugMarker(const char* label);
 
 typedef enum _AuroraViewportPolicy {
-  AURORA_VIEWPORT_FIT = 0,     // Scale logical viewport to fit
-  AURORA_VIEWPORT_STRETCH = 1, // Stretch logical viewport to fit (widescreen enabled)
-  AURORA_VIEWPORT_NATIVE = 2,  // Use native framebuffer resolution
+  AURORA_VIEWPORT_FIT = 0,     // Preserve logical aspect in the content framebuffer
+  AURORA_VIEWPORT_STRETCH = 1, // Match content framebuffer aspect to the native surface
+  AURORA_VIEWPORT_NATIVE = 2,  // Use active framebuffer pixels directly
 } AuroraViewportPolicy;
 
 /**
- * Configures how GXSetViewport/GXSetScissor parameters are applied to the actual render viewport.
+ * Configures content framebuffer sizing and how GXSetViewport/GXSetScissor parameters are applied to rendering.
  * When AURORA_VIEWPORT_NATIVE is used, GXSetTexCopySrc/GXSetTexCopyDst will use native framebuffer resolution.
  */
 void AuroraSetViewportPolicy(AuroraViewportPolicy policy);
 
 /**
- * Retrieves the current render size based on the framebuffer size and viewport policy.
+ * Retrieves the current content framebuffer size.
  */
 void AuroraGetRenderSize(u32* width, u32* height);
 

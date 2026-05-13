@@ -9,11 +9,12 @@
 #include "../card/DolphinCardPath.hpp"
 #include "../logging.hpp"
 #include "../card/CardGciFolder.hpp"
+#include "../fs_helper.hpp"
 
 namespace {
 aurora::Module Log("aurora::card");
 std::array<std::unique_ptr<aurora::card::ICard>, 2> CardChannels = {{}};
-std::array<std::string, 2> cardPaths;
+std::array<std::filesystem::path, 2> cardPaths;
 
 constexpr uint16_t CARD_SECTOR_SIZE = 8192;
 
@@ -48,16 +49,14 @@ aurora::card::FileHandle CreateKabuFileHandleFromDolphin(const CARDFileInfo* fil
   return aurora::card::FileHandle{static_cast<u32>(fileInfo->fileNo), fileInfo->offset};
 }
 
-std::string GetCardFullPath(const std::string& path, const aurora::card::ECardSlot slot) {
+std::filesystem::path GetCardFullPath(const std::filesystem::path& path, const aurora::card::ECardSlot slot) {
   if (path.empty())
     return "";
 
-  std::filesystem::path filePath(path);
-
   if (CARD_USE_GCI_FOLDER) {
-    return (filePath / GetCardRegion() / (slot == aurora::card::ECardSlot::SlotA ? "Card A" : "Card B")).string();
+    return path / GetCardRegion() / (slot == aurora::card::ECardSlot::SlotA ? "Card A" : "Card B");
   } else {
-    return (filePath / fmt::format("MemoryCard{}.{}.raw", slot == aurora::card::ECardSlot::SlotA ? "A" : "B", GetCardRegion())).string();
+    return path / fmt::format("MemoryCard{}.{}.raw", slot == aurora::card::ECardSlot::SlotA ? "A" : "B", GetCardRegion());
   }
 }
 } // namespace
@@ -114,7 +113,7 @@ void CARDDetectDolphin(const s32 chan) {
       Log.error("Failed to detect Dolphin Card!");
       return;
     }
-    Log.info("Detected Dolphin Card at: {}", cardPaths[chan]);
+    Log.info("Detected Dolphin Card at: {}", fs_path_to_string(cardPaths[chan]));
   } else {
     cardPaths[0] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotA, GetCardRegion(), CARD_USE_GCI_FOLDER);
     cardPaths[1] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotB, GetCardRegion(), CARD_USE_GCI_FOLDER);
@@ -124,7 +123,10 @@ void CARDDetectDolphin(const s32 chan) {
       return;
     }
 
-    Log.info("Detected Dolphin Card at: {} and {}", cardPaths[0], cardPaths[1]);
+    Log.info(
+      "Detected Dolphin Card at: {} and {}",
+      fs_path_to_string(cardPaths[0]),
+      fs_path_to_string(cardPaths[1]));
   }
 }
 
@@ -137,14 +139,14 @@ void CARDSetBasePath(const char* path, const s32 chan) {
 
   if (filePath.has_filename() && !std::filesystem::is_directory(filePath)) {
     filePath = filePath.remove_filename();
-    Log.warn("Path supplied a filename, discarding. New Path: {}", filePath.string());
+    Log.warn("Path supplied a filename, discarding. New Path: {}", fs_path_to_string(filePath));
   }
 
   if (chan == 0 || chan == 1) {
-    cardPaths[chan] = GetCardFullPath(filePath.string(), static_cast<aurora::card::ECardSlot>(chan));
+    cardPaths[chan] = GetCardFullPath(filePath, static_cast<aurora::card::ECardSlot>(chan));
   } else {
-    cardPaths[0] = GetCardFullPath(filePath.string(), aurora::card::ECardSlot::SlotA);
-    cardPaths[1] = GetCardFullPath(filePath.string(), aurora::card::ECardSlot::SlotB);
+    cardPaths[0] = GetCardFullPath(filePath, aurora::card::ECardSlot::SlotA);
+    cardPaths[1] = GetCardFullPath(filePath, aurora::card::ECardSlot::SlotB);
   }
 }
 
@@ -171,11 +173,11 @@ void CARDInit(const char* game, const char* maker) {
     CardChannels[i]->InitCard(game, maker);
   }
 
-  std::string cardWorkingDir;
+  std::filesystem::path cardWorkingDir;
   if (aurora::g_config.configPath != nullptr)
-    cardWorkingDir = aurora::g_config.configPath;
+    cardWorkingDir = reinterpret_cast<const char8_t*>(aurora::g_config.configPath);
   else
-    cardWorkingDir = std::filesystem::current_path().string();
+    cardWorkingDir = std::filesystem::current_path();
 
   bool loadedCard = false;
 
@@ -190,7 +192,7 @@ void CARDInit(const char* game, const char* maker) {
     if (std::filesystem::exists(curPath)) {
       CardChannels[i]->open(curPath);
       loadedCard = true;
-      Log.info("Loaded GC Card Image: {}", curPath);
+      Log.info("Loaded GC Card Image: {}", fs_path_to_string(curPath));
     }
   }
 

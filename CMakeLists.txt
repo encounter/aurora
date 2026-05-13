@@ -14,12 +14,12 @@ option(AURORA_ENABLE_RMLUI "Enable HTML/CSS Based UI Library for use in end-user
 option(AURORA_CACHE_USE_ZSTD "Compress WebGPU cache entries with zstd" ON)
 
 # Dependency versions
-set(AURORA_DAWN_VERSION "v20260418.221342" CACHE STRING "Dawn version tag (https://github.com/encounter/dawn-build/releases)")
+set(AURORA_DAWN_VERSION "v20260423.175430" CACHE STRING "Dawn version tag (https://github.com/encounter/dawn-build/releases)")
 set(AURORA_SDL3_VERSION "3.4.4" CACHE STRING "SDL3 version tag (https://github.com/libsdl-org/SDL/releases)")
 set(AURORA_NOD_VERSION "v2.0.0-alpha.8" CACHE STRING "nod version tag (https://github.com/encounter/nod/releases)")
 
 # Platform-specific defaults
-if (CMAKE_CROSSCOMPILING OR EMSCRIPTEN)
+if (CMAKE_CROSSCOMPILING)
   # Cross-compiling: vendor everything, don't use system packages
   set(_default_provider "vendor")
   set(_default_linkage "static")

@@ -257,21 +257,13 @@ gfx::Viewport map_logical_viewport(const gfx::Viewport& logicalViewport) noexcep
     return logicalViewport;
   }
 
-  const bool stretch = g_gxState.viewportPolicy == AURORA_VIEWPORT_STRETCH;
   const float scaleX = static_cast<float>(targetWidth) / static_cast<float>(logicalFbWidth);
   const float scaleY = static_cast<float>(targetHeight) / static_cast<float>(logicalFbHeight);
-  const float scale = std::min(scaleX, scaleY);
-  const float xOffset =
-      stretch ? 0.f : (static_cast<float>(targetWidth) - static_cast<float>(logicalFbWidth) * scale) * 0.5f;
-  const float yOffset =
-      stretch ? 0.f : (static_cast<float>(targetHeight) - static_cast<float>(logicalFbHeight) * scale) * 0.5f;
-  const float mappedScaleX = stretch ? scaleX : scale;
-  const float mappedScaleY = stretch ? scaleY : scale;
   return {
-      .left = xOffset + logicalViewport.left * mappedScaleX,
-      .top = yOffset + logicalViewport.top * mappedScaleY,
-      .width = logicalViewport.width * mappedScaleX,
-      .height = logicalViewport.height * mappedScaleY,
+      .left = logicalViewport.left * scaleX,
+      .top = logicalViewport.top * scaleY,
+      .width = logicalViewport.width * scaleX,
+      .height = logicalViewport.height * scaleY,
       .znear = logicalViewport.znear,
       .zfar = logicalViewport.zfar,
   };
@@ -288,21 +280,13 @@ gfx::ClipRect map_logical_scissor(const gfx::ClipRect& logicalScissor) noexcept 
     return logicalScissor;
   }
 
-  const bool stretch = g_gxState.viewportPolicy == AURORA_VIEWPORT_STRETCH;
   const float scaleX = static_cast<float>(targetWidth) / static_cast<float>(logicalFbWidth);
   const float scaleY = static_cast<float>(targetHeight) / static_cast<float>(logicalFbHeight);
-  const float scale = std::min(scaleX, scaleY);
-  const float xOffset =
-      stretch ? 0.f : (static_cast<float>(targetWidth) - static_cast<float>(logicalFbWidth) * scale) * 0.5f;
-  const float yOffset =
-      stretch ? 0.f : (static_cast<float>(targetHeight) - static_cast<float>(logicalFbHeight) * scale) * 0.5f;
-  const float mappedScaleX = stretch ? scaleX : scale;
-  const float mappedScaleY = stretch ? scaleY : scale;
 
-  const float left = xOffset + static_cast<float>(logicalScissor.x) * mappedScaleX;
-  const float top = yOffset + static_cast<float>(logicalScissor.y) * mappedScaleY;
-  const float right = xOffset + static_cast<float>(logicalScissor.x + logicalScissor.width) * mappedScaleX;
-  const float bottom = yOffset + static_cast<float>(logicalScissor.y + logicalScissor.height) * mappedScaleY;
+  const float left = static_cast<float>(logicalScissor.x) * scaleX;
+  const float top = static_cast<float>(logicalScissor.y) * scaleY;
+  const float right = static_cast<float>(logicalScissor.x + logicalScissor.width) * scaleX;
+  const float bottom = static_cast<float>(logicalScissor.y + logicalScissor.height) * scaleY;
 
   const auto mappedLeft = std::clamp(static_cast<int32_t>(std::floor(left)), 0, static_cast<int32_t>(targetWidth));
   const auto mappedTop = std::clamp(static_cast<int32_t>(std::floor(top)), 0, static_cast<int32_t>(targetHeight));
@@ -936,9 +920,6 @@ void initialize() noexcept {
   }
 }
 
-// TODO this is awkward
-extern std::mutex g_gxCachedShadersMutex;
-extern absl::flat_hash_map<gfx::ShaderRef, std::pair<wgpu::ShaderModule, ShaderInfo>> g_gxCachedShaders;
 void shutdown() noexcept {
   // TODO we should probably store this all in g_state.gx instead
   sSamplerBindGroupLayout = {};
@@ -950,10 +931,6 @@ void shutdown() noexcept {
   }
   for (auto& item : g_gxState.textures) {
     item.ref.reset();
-  }
-  {
-    std::lock_guard lock{g_gxCachedShadersMutex};
-    g_gxCachedShaders.clear();
   }
   s_textureObjectCaches.clear();
   s_tlutObjectCaches.clear();

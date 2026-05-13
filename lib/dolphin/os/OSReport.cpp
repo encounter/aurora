@@ -8,6 +8,7 @@
 
 #include <cstdarg>
 
+#if 0
 static aurora::Module reporter("aurora::os::report");
 
 void OSReport(const char* msg, ...) {
@@ -21,6 +22,7 @@ static std::string FormatToString(const char* msg, va_list list) {
   int ret = vsnprintf(nullptr, 0, msg, list);
   std::string buf(ret, '\0');
   vsnprintf(buf.data(), buf.size(), msg, list);
+  buf.pop_back();
   return buf;
 }
 
@@ -38,4 +40,4 @@ void OSPanic(const char* file, int line, const char* msg, ...) {
 void OSFatal(GXColor fg, GXColor bg, const char* msg) {
   reporter.fatal("{}", msg);
 }
-
+#endif
