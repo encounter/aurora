@@ -295,7 +295,7 @@ bool create_window(AuroraBackend backend) {
 
   Sint32 posX = g_config.windowPosX;
   Sint32 posY = g_config.windowPosY;
-  if (posX < 0 || posY < 0) {
+  if (posX == -1 || posY == -1) {
     posX = SDL_WINDOWPOS_UNDEFINED;
     posY = SDL_WINDOWPOS_UNDEFINED;
   }
