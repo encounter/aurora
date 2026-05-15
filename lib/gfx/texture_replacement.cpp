@@ -284,7 +284,7 @@ std::string format_replacement_filename(const RuntimeTextureKey& key) {
   return fmt::format("tex1_{}x{}_{:016x}_{}.dds", key.width, key.height, key.textureHash, key.format);
 }
 
-std::optional<RuntimeTextureKey> parse_replacement_filename(std::string_view filename) noexcept {
+std::optional<std::pair<RuntimeTextureKey, bool>> parse_replacement_filename(std::string_view filename) noexcept {
   const size_t dot = filename.rfind('.');
   if (dot == std::string_view::npos) {
     return std::nullopt;
@@ -370,7 +370,7 @@ std::optional<RuntimeTextureKey> parse_replacement_filename(std::string_view fil
     }
   }
 
-  return RuntimeTextureKey{
+  RuntimeTextureKey key{
       .textureHash = textureHash,
       .tlutHash = tlutHash,
       .width = dimensions->first,
@@ -378,6 +378,7 @@ std::optional<RuntimeTextureKey> parse_replacement_filename(std::string_view fil
       .hasTlut = hasTlut,
       .format = *format,
   };
+  return {{key, hasMips}};
 }
 
 static std::optional<ConvertedTexture> load_texture_file(const std::filesystem::path& path) {
@@ -570,7 +571,7 @@ void build_index() noexcept {
       continue;
     }
 
-    s_replacementIndex.try_emplace(*parsed, path);
+    s_replacementIndex.try_emplace(parsed->first, path, parsed->second);
   }
 
   Log.info("Indexed {} texture replacements", s_replacementIndex.size());

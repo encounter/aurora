@@ -42,6 +42,8 @@ wgpu::Buffer g_vertexBuffer;
 wgpu::Buffer g_uniformBuffer;
 wgpu::Buffer g_indexBuffer;
 wgpu::Buffer g_storageBuffer;
+uint32_t g_drawCallCount = 0;
+uint32_t g_mergedDrawCallCount = 0;
 } // namespace aurora::gfx
 
 namespace aurora::webgpu {
