@@ -38,6 +38,10 @@ implementation used is Chromium's [Dawn](https://dawn.googlesource.com/dawn/).
 
 ![Screenshot](assets/screenshot.png)
 
+### Building
+
+See [docs/building.md](docs/building.md) for build instructions, CMake integration, and configuration options.
+
 ### License
 
 Aurora is licensed under the [MIT License](LICENSE).

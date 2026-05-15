@@ -388,12 +388,42 @@ static std::optional<ConvertedTexture> load_texture_file(const std::filesystem::
   }
 }
 
+constexpr bool isUnsupportedTextureFormat(const ConvertedTexture& texture) {
+  switch (texture.format) {
+  case wgpu::TextureFormat::BC1RGBAUnorm:
+  case wgpu::TextureFormat::BC1RGBAUnormSrgb:
+  case wgpu::TextureFormat::BC2RGBAUnorm:
+  case wgpu::TextureFormat::BC2RGBAUnormSrgb:
+  case wgpu::TextureFormat::BC3RGBAUnorm:
+  case wgpu::TextureFormat::BC3RGBAUnormSrgb:
+  case wgpu::TextureFormat::BC4RUnorm:
+  case wgpu::TextureFormat::BC4RSnorm:
+  case wgpu::TextureFormat::BC5RGUnorm:
+  case wgpu::TextureFormat::BC5RGSnorm:
+  case wgpu::TextureFormat::BC6HRGBUfloat:
+  case wgpu::TextureFormat::BC6HRGBFloat:
+  case wgpu::TextureFormat::BC7RGBAUnorm:
+  case wgpu::TextureFormat::BC7RGBAUnormSrgb:
+    return !webgpu::g_bcTexturesSupported;
+  default:
+    return false;
+  }
+}
+
 std::optional<ConvertedTexture> load_replacement(const ReplacementIndexEntry& entry) noexcept {
   auto base = load_texture_file(entry.path);
   if (!base.has_value()) {
     Log.warn("texture_replacement: failed to load texture {}", fs_path_to_string(entry.path));
     return std::nullopt;
   }
+  if (isUnsupportedTextureFormat(base.value())) {
+    Log.warn(
+      "texture_replacement: failed to load texture {} due to unsupported format: {}",
+      fs_path_to_string(entry.path),
+      static_cast<uint32_t>(base->format));
+    return std::nullopt;
+  }
+
   if (!entry.hasMips) {
     return base;
   }

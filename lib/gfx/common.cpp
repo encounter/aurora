@@ -123,6 +123,8 @@ wgpu::BindGroup g_uniformBindGroup;
 
 // for imgui debug
 AuroraStats g_stats{};
+uint32_t g_drawCallCount = 0;
+uint32_t g_mergedDrawCallCount = 0;
 
 using CommandList = std::vector<Command>;
 struct RenderPass {
@@ -214,7 +216,7 @@ gx::DrawData* get_last_draw_command() {
 
 static void push_draw_command(ShaderDrawCommand data) {
   push_command(CommandType::Draw, Command::Data{.draw = data});
-  ++g_stats.drawCallCount;
+  ++g_drawCallCount;
 }
 
 Vec2<uint32_t> get_render_target_size() noexcept {
@@ -669,8 +671,8 @@ bool begin_frame() {
     mapBuffer(g_textureUpload, TextureUploadSize);
   }
 
-  g_stats.drawCallCount = 0;
-  g_stats.mergedDrawCallCount = 0;
+  g_drawCallCount = 0;
+  g_mergedDrawCallCount = 0;
   g_suspendedEfbPass.reset();
 
   g_renderPasses.emplace_back();
@@ -703,6 +705,8 @@ void end_frame(const wgpu::CommandEncoder& cmd) {
   };
   g_stagingBuffers[currentStagingBuffer].Unmap();
   s_mappingState.store(BufferMapState::Unmapped, std::memory_order_release);
+  g_stats.drawCallCount = g_drawCallCount;
+  g_stats.mergedDrawCallCount = g_mergedDrawCallCount;
   g_stats.lastVertSize = writeBuffer(g_verts, g_vertexBuffer, VertexBufferSize, "Vertex");
   g_stats.lastUniformSize = writeBuffer(g_uniforms, g_uniformBuffer, UniformBufferSize, "Uniform");
   g_stats.lastIndexSize = writeBuffer(g_indices, g_indexBuffer, IndexBufferSize, "Index");
@@ -744,6 +748,7 @@ static void expire_cached_bind_groups() {
     return;
   }
 
+  ZoneScoped;
   for (auto it = g_cachedBindGroups.begin(); it != g_cachedBindGroups.end();) {
     if (g_frameIndex - it->second.lastUsedFrame > BindGroupCacheRetainFrames) {
       g_cachedBindGroups.erase(it++);

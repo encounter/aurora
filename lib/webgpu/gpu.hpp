@@ -50,6 +50,7 @@ extern TextureWithSampler g_depthBuffer;
 extern wgpu::RenderPipeline g_CopyPipeline;
 extern wgpu::BindGroup g_CopyBindGroup;
 extern wgpu::Instance g_instance;
+extern bool g_bcTexturesSupported;
 
 bool initialize(AuroraBackend backend);
 void shutdown();

@@ -48,6 +48,7 @@ static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
 static wgpu::AdapterInfo g_adapterInfo;
 static wgpu::SurfaceCapabilities g_surfaceCapabilities;
+bool g_bcTexturesSupported;
 
 namespace {
 
@@ -111,6 +112,9 @@ TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool m
   uint32_t sampleCount = 1;
   if (multisampled) {
     sampleCount = g_graphicsConfig.msaaSamples;
+  }
+  if (width == 0 || height == 0) {
+    Log.fatal("Invalid render texture size! {}x{}, multisampled {}, format {}", width, height, static_cast<uint32_t>(format), multisampled);
   }
   const wgpu::TextureDescriptor textureDescriptor{
       .label = "Render texture",
@@ -516,6 +520,7 @@ bool initialize(AuroraBackend auroraBackend) {
     for (size_t i = 0; i < supportedFeatures.featureCount; ++i) {
       const auto feature = supportedFeatures.features[i];
       if (feature == wgpu::FeatureName::TextureCompressionBC) {
+        g_bcTexturesSupported = true;
         requiredFeatures.push_back(feature);
       }
     }

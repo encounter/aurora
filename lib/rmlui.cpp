@@ -5,6 +5,7 @@
 #include <RmlUi/Core.h>
 #include <RmlUi_Backend.h>
 #include <RmlUi_Platform_SDL.h>
+#include <tracy/Tracy.hpp>
 
 #include "window.hpp"
 #include "internal.hpp"
@@ -361,6 +362,7 @@ RenderOutput render(const wgpu::CommandEncoder& encoder, const webgpu::Viewport&
     return {};
   }
 
+  ZoneScoped;
   const Rml::Vector2i dim = dimensions_from_viewport(presentViewport);
   ensure_render_target(dim);
   if (!s_renderTarget.view) {
