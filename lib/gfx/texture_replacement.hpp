@@ -10,5 +10,4 @@ void register_tlut(const GXTlutObj* obj, const void* data, GXTlutFmt format, uin
 void load_tlut(const GXTlutObj* obj, uint32_t idx) noexcept;
 std::optional<TextureHandle> find_replacement(const GXTexObj_& obj) noexcept;
 std::string build_texture_replacement_name(const GXTexObj_& obj) noexcept;
-bool try_bind_replacement(GXTexObj_& obj, GXTexMapID id) noexcept;
 } // namespace aurora::gfx::texture_replacement
