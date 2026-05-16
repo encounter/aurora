@@ -43,6 +43,7 @@ TextureWithSampler g_depthBuffer;
 static wgpu::BindGroupLayout g_CopyBindGroupLayout;
 wgpu::RenderPipeline g_CopyPipeline;
 wgpu::BindGroup g_CopyBindGroup;
+static AuroraSampler g_Resampler = SAMPLER_BILINEAR;
 
 static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
@@ -159,6 +160,22 @@ TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool m
 
 const TextureWithSampler& present_source() noexcept {
   return g_graphicsConfig.msaaSamples > 1 ? g_frameBufferResolved : g_frameBuffer;
+}
+
+void set_resampler(AuroraSampler sampler) noexcept {
+  switch (sampler) {
+  case SAMPLER_AREA:
+  case SAMPLER_BILINEAR:
+    g_Resampler = sampler;
+    return;
+  default:
+    g_Resampler = SAMPLER_BILINEAR;
+    return;
+  }
+}
+
+AuroraSampler get_resampler() noexcept {
+  return g_Resampler;
 }
 
 Viewport calculate_present_viewport(uint32_t surface_width, uint32_t surface_height, uint32_t content_width,

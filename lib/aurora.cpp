@@ -381,3 +381,10 @@ void aurora_set_background_input(bool value) {
   aurora::g_config.allowJoystickBackgroundEvents = value;
   aurora::window::set_background_input(value);
 }
+void aurora_set_resampler(AuroraSampler sampler) {
+#ifdef AURORA_ENABLE_GX
+  aurora::webgpu::set_resampler(sampler);
+#else
+  (void)sampler;
+#endif
+}
