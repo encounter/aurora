@@ -714,6 +714,8 @@ u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept {
   Log.fatal("comp_cnt_count: Unsupported attr/cnt {} {}", attr, cnt);
 }
 
+EnhancedLightingState g_enhancedLightingState;
+
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept {
   ZoneScoped;
 
@@ -777,6 +779,9 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     config.shaderConfig.indStages[i] = g_gxState.indStages[i];
   }
   config.shaderConfig.numIndStages = g_gxState.numIndStages;
+  config.shaderConfig.enhancedLighting = g_enhancedLightingState.enabled ? 1 : 0;
+  config.shaderConfig.enableSpecular = g_enhancedLightingState.enableSpecular ? 1 : 0;
+  config.shaderConfig.enableRim = g_enhancedLightingState.enableRim ? 1 : 0;
   for (u8 i = 0; i < MaxColorChannels; ++i) {
     const auto& cc = g_gxState.colorChannelConfig[i];
     if (cc.lightingEnabled) {

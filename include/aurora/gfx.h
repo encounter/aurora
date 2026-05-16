@@ -32,6 +32,19 @@ const AuroraStats* aurora_get_stats();
 
 void aurora_enable_vsync(bool enabled);
 
+typedef struct {
+  bool enabled;
+  bool enableSpecular;
+  bool enableRim;
+  float specularIntensity;
+  float rimIntensity;
+  float ambientMultiplier;
+  float diffuseMultiplier;
+} AuroraEnhancedLightingState;
+
+void aurora_set_enhanced_lighting_state(AuroraEnhancedLightingState state);
+AuroraEnhancedLightingState aurora_get_enhanced_lighting_state();
+
 #ifdef __cplusplus
 }
 #endif

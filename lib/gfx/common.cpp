@@ -1089,3 +1089,14 @@ void pop_debug_group() {
 }
 
 const AuroraStats* aurora_get_stats() { return &aurora::gfx::g_stats; }
+
+void aurora_set_enhanced_lighting_state(const AuroraEnhancedLightingState state) {
+  aurora::gx::g_enhancedLightingState = {state.enabled,          state.enableSpecular,   state.enableRim,
+                                          state.specularIntensity, state.rimIntensity,     state.ambientMultiplier,
+                                          state.diffuseMultiplier};
+}
+AuroraEnhancedLightingState aurora_get_enhanced_lighting_state() {
+  const auto& s = aurora::gx::g_enhancedLightingState;
+  return {s.enabled, s.enableSpecular, s.enableRim, s.specularIntensity, s.rimIntensity, s.ambientMultiplier,
+          s.diffuseMultiplier};
+}
