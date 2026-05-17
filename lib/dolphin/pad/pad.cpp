@@ -799,6 +799,14 @@ u32 PADRead(PADStatus* status) {
       status[i].triggerLeft = static_cast<int8_t>(tl);
       status[i].triggerRight = static_cast<int8_t>(tr);
 
+      // If the digital button is activated, set the analog value to max.
+      if (status[i].button & PAD_TRIGGER_L) {
+        status[i].triggerLeft = 180;
+      }
+      if (status[i].button & PAD_TRIGGER_R) {
+        status[i].triggerRight = 180;
+      }
+
       if (controller->m_hasRumble) {
         rumbleSupport |= PAD_CHAN0_BIT >> i;
       }
