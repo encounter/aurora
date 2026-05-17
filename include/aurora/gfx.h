@@ -31,6 +31,8 @@ typedef struct {
 const AuroraStats* aurora_get_stats();
 
 void aurora_enable_vsync(bool enabled);
+void aurora_set_texture_replacements_enabled(bool enabled);
+void aurora_reload_texture_replacements();
 
 #ifdef __cplusplus
 }

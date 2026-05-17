@@ -1089,3 +1089,10 @@ void pop_debug_group() {
 }
 
 const AuroraStats* aurora_get_stats() { return &aurora::gfx::g_stats; }
+
+void aurora_set_texture_replacements_enabled(const bool enabled) {
+  aurora::g_config.allowTextureReplacements = enabled;
+  aurora::gfx::texture_replacement::reload();
+}
+
+void aurora_reload_texture_replacements() { aurora::gfx::texture_replacement::reload(); }
