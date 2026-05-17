@@ -295,11 +295,6 @@ bool create_window(AuroraBackend backend) {
 
   Sint32 posX = g_config.windowPosX;
   Sint32 posY = g_config.windowPosY;
-  if (posX < 0 || posY < 0) {
-    posX = SDL_WINDOWPOS_UNDEFINED;
-    posY = SDL_WINDOWPOS_UNDEFINED;
-  }
-
   const auto props = SDL_CreateProperties();
   TRY(SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, g_config.appName), "Failed to set {}: {}",
       SDL_PROP_WINDOW_CREATE_TITLE_STRING, SDL_GetError());
