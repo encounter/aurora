@@ -23,8 +23,6 @@ struct UniformBlock {
   Rml::Matrix4f MVP;
   Rml::Vector4f translation;
   float Gamma;
-  uint32_t SamplerMode;
-  Rml::Vector2f FrameSize;
 };
 
 struct BlurUniformBlock {

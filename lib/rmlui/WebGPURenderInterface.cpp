@@ -158,16 +158,6 @@ Rml::Rectanglei downsample_scissor(Rml::Rectanglei scissor) {
   return scissor;
 }
 
-uint32_t sampler_mode(AuroraSampler sampler) {
-  switch (sampler) {
-  case SAMPLER_AREA:
-    return 1;
-  case SAMPLER_BILINEAR:
-  default:
-    return 0;
-  }
-}
-
 wgpu::ComputeState compile_shader(const std::string_view& wgslSource, const std::string_view& label) {
   const wgpu::ShaderSourceWGSL source{
       wgpu::ShaderSourceWGSL::Init{
@@ -212,8 +202,6 @@ struct Uniforms {
     mvp: mat4x4<f32>,
     translation: vec4<f32>,
     gamma: f32,
-    sampler_mode: u32,
-    frame_size: vec2<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -241,8 +229,6 @@ struct Uniforms {
     mvp: mat4x4<f32>,
     translation: vec4<f32>,
     gamma: f32,
-    sampler_mode: u32,
-    frame_size: vec2<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -271,8 +257,6 @@ struct Uniforms {
     mvp: mat4x4<f32>,
     translation: vec4<f32>,
     gamma: f32,
-    sampler_mode: u32,
-    frame_size: vec2<f32>,
 };
 
 struct GradientUniforms {
@@ -463,90 +447,12 @@ fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 )"sv;
 
 constexpr std::string_view opaqueBlitFragmentSource = R"(
-struct Uniforms {
-    mvp: mat4x4<f32>,
-    translation: vec4<f32>,
-    gamma: f32,
-    sampler_mode: u32,
-    frame_size: vec2<f32>,
-};
-
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-};
-
 @group(0) @binding(1) var s: sampler;
 @group(1) @binding(0) var t: texture_2d<f32>;
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
-
-fn sample_bilinear(uv: vec2<f32>) -> vec4<f32> {
-    return textureSample(t, s, uv);
-}
-
-// BEGIN AREA SAMPLER REGION
-
-fn sample_by_pixel(pixel: vec2<i32>) -> vec4<f32> {
-    let source_dims = textureDimensions(t);
-    let max_coord = vec2<i32>(source_dims) - vec2<i32>(1, 1);
-    let coord = clamp(pixel, vec2<i32>(0, 0), max_coord);
-    return textureLoad(t, coord, 0);
-}
-
-fn sample_area(frag_position: vec4<f32>) -> vec4<f32> {
-    let source_size = vec2<f32>(textureDimensions(t));
-    let target_size = max(uniforms.frame_size, vec2<f32>(1.0, 1.0));
-
-    let source_min = clamp((frag_position.xy - vec2<f32>(0.5, 0.5)) / target_size,
-                           vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0)) * source_size;
-    let source_max = clamp((frag_position.xy + vec2<f32>(0.5, 0.5)) / target_size,
-                           vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0)) * source_size;
-
-    let first_pixel = vec2<i32>(floor(source_min));
-    let last_pixel = vec2<i32>(ceil(source_max));
-    let max_iterations: i32 = 16;
-
-    var avg_color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-    var total_weight = 0.0;
-
-    for (var iy: i32 = 0; iy < max_iterations; iy = iy + 1) {
-        let source_y = first_pixel.y + iy;
-        if (source_y < last_pixel.y) {
-            let y0 = f32(source_y);
-            let weight_y = max(min(source_max.y, y0 + 1.0) - max(source_min.y, y0), 0.0);
-
-            for (var ix: i32 = 0; ix < max_iterations; ix = ix + 1) {
-                let source_x = first_pixel.x + ix;
-                if (source_x < last_pixel.x) {
-                    let x0 = f32(source_x);
-                    let weight_x = max(min(source_max.x, x0 + 1.0) - max(source_min.x, x0), 0.0);
-                    let weight = weight_x * weight_y;
-                    avg_color += weight * sample_by_pixel(vec2<i32>(source_x, source_y));
-                    total_weight += weight;
-                }
-            }
-        }
-    }
-
-    return avg_color / max(total_weight, 0.000001);
-}
-
-// END AREA SAMPLER REGION
-
-fn sample_present(uv: vec2<f32>, frag_position: vec4<f32>) -> vec4<f32> {
-    switch (uniforms.sampler_mode) {
-        case 1u: {
-            return sample_area(frag_position);
-        }
-        default: {
-            return sample_bilinear(uv);
-        }
-    }
-}
 
 @fragment
-fn main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let color = sample_present(in.uv, in.position);
+fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+    let color = textureSample(t, s, uv);
     return vec4<f32>(color.rgb, 1.0);
 }
 )"sv;
@@ -1081,15 +987,6 @@ void WebGPURenderInterface::EnsureFrameRenderingStarted() {
 
   m_frameRenderingStarted = true;
   const wgpu::BindGroup seedBindGroup = CreateImageBindGroup(m_frameSeedView);
-  const uint32_t samplerMode = sampler_mode(webgpu::get_resampler());
-  const UniformBlock seedUniform{
-      .MVP = {},
-      .translation = {},
-      .Gamma = m_gamma,
-      .SamplerMode = samplerMode,
-      .FrameSize = {static_cast<float>(m_frameSize.width), static_cast<float>(m_frameSize.height)},
-  };
-  webgpu::g_queue.WriteBuffer(m_uniformBuffer, 0, &seedUniform, sizeof(seedUniform));
 
   if (m_layers[0].multisampleView) {
     BeginLayerPass(0, wgpu::LoadOp::Clear, "RmlUi base layer seed pass", true);
@@ -2445,8 +2342,6 @@ void WebGPURenderInterface::SetupRenderState(const Rml::Vector2f& translation) {
       .MVP = proj * m_translationMatrix,
       .translation = {translation.x, translation.y, 0.0f, 1.0f},
       .Gamma = m_gamma,
-      .SamplerMode = sampler_mode(webgpu::get_resampler()),
-      .FrameSize = {static_cast<float>(m_frameSize.width), static_cast<float>(m_frameSize.height)},
   };
   webgpu::g_queue.WriteBuffer(m_uniformBuffer, m_uniformCurrentOffset, &ubo, sizeof(UniformBlock));
 

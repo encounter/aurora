@@ -1,8 +1,10 @@
 #include "gpu.hpp"
 
-#include <array>
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdint>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -44,6 +46,10 @@ static wgpu::BindGroupLayout g_CopyBindGroupLayout;
 wgpu::RenderPipeline g_CopyPipeline;
 wgpu::BindGroup g_CopyBindGroup;
 static AuroraSampler g_Resampler = SAMPLER_BILINEAR;
+static wgpu::BindGroupLayout g_ResampleBindGroupLayout;
+static wgpu::RenderPipeline g_ResamplePipeline;
+static wgpu::Buffer g_ResampleUniformBuffer;
+static TextureWithSampler g_resampledFrameBuffer;
 
 static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
@@ -52,6 +58,106 @@ static wgpu::SurfaceCapabilities g_surfaceCapabilities;
 bool g_bcTexturesSupported;
 
 namespace {
+
+struct ResampleUniformBlock {
+  uint32_t samplerMode = 0;
+  float frameWidth = 0.f;
+  float frameHeight = 0.f;
+};
+
+constexpr std::string_view resampleShaderSource = R"(
+struct Uniforms {
+    sampler_mode: u32,
+    frame_width: f32,
+    frame_height: f32,
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var s: sampler;
+@group(0) @binding(2) var t: texture_2d<f32>;
+
+var<private> pos: array<vec2<f32>, 3> = array<vec2<f32>, 3>(
+    vec2(-1.0, 1.0),
+    vec2(-1.0, -3.0),
+    vec2(3.0, 1.0),
+);
+var<private> uvs: array<vec2<f32>, 3> = array<vec2<f32>, 3>(
+    vec2(0.0, 0.0),
+    vec2(0.0, 2.0),
+    vec2(2.0, 0.0),
+);
+
+@vertex
+fn vs_main(@builtin(vertex_index) vtxIdx: u32) -> VertexOutput {
+    var out: VertexOutput;
+    out.position = vec4<f32>(pos[vtxIdx], 0.0, 1.0);
+    out.uv = uvs[vtxIdx];
+    return out;
+}
+
+// BEGIN AREA SAMPLER REGION
+
+fn sample_by_pixel(pixel: vec2<i32>) -> vec4<f32> {
+    let source_dims = textureDimensions(t);
+    let max_coord = vec2<i32>(source_dims) - vec2<i32>(1, 1);
+    let coord = clamp(pixel, vec2<i32>(0, 0), max_coord);
+    return textureLoad(t, coord, 0);
+}
+
+fn sample_area(frag_position: vec4<f32>) -> vec4<f32> {
+    let source_size = vec2<f32>(textureDimensions(t));
+    let target_size = max(vec2<f32>(uniforms.frame_width, uniforms.frame_height), vec2<f32>(1.0, 1.0));
+
+    let source_min = clamp((frag_position.xy - vec2<f32>(0.5, 0.5)) / target_size,
+                           vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0)) * source_size;
+    let source_max = clamp((frag_position.xy + vec2<f32>(0.5, 0.5)) / target_size,
+                           vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0)) * source_size;
+
+    let first_pixel = vec2<i32>(floor(source_min));
+    let last_pixel = vec2<i32>(ceil(source_max));
+    let max_iterations: i32 = 16;
+
+    var avg_color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    var total_weight = 0.0;
+
+    for (var iy: i32 = 0; iy < max_iterations; iy = iy + 1) {
+        let source_y = first_pixel.y + iy;
+        if (source_y < last_pixel.y) {
+            let y0 = f32(source_y);
+            let weight_y = max(min(source_max.y, y0 + 1.0) - max(source_min.y, y0), 0.0);
+
+            for (var ix: i32 = 0; ix < max_iterations; ix = ix + 1) {
+                let source_x = first_pixel.x + ix;
+                if (source_x < last_pixel.x) {
+                    let x0 = f32(source_x);
+                    let weight_x = max(min(source_max.x, x0 + 1.0) - max(source_min.x, x0), 0.0);
+                    let weight = weight_x * weight_y;
+                    avg_color += weight * sample_by_pixel(vec2<i32>(source_x, source_y));
+                    total_weight += weight;
+                }
+            }
+        }
+    }
+
+    return avg_color / max(total_weight, 0.000001);
+}
+
+// END AREA SAMPLER REGION
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    var color = textureSample(t, s, in.uv);
+    if (uniforms.sampler_mode == 1u) {
+        color = sample_area(in.position);
+    }
+    return vec4(color.rgb, 1.0);
+}
+)"sv;
 
 wgpu::PresentMode best_present_mode(bool vsync) {
   const auto supports = [](const wgpu::PresentMode candidate) {
@@ -99,6 +205,20 @@ wgpu::TextureFormat best_surface_format() {
     }
   }
   return g_surfaceCapabilities.formats[0];
+}
+
+uint32_t sampler_mode(AuroraSampler sampler) noexcept {
+  switch (sampler) {
+  case SAMPLER_AREA:
+    return 1;
+  case SAMPLER_BILINEAR:
+  default:
+    return 0;
+  }
+}
+
+uint32_t viewport_extent(float value) noexcept {
+  return std::max(1u, static_cast<uint32_t>(std::lround(std::max(value, 1.f))));
 }
 
 } // namespace
@@ -356,6 +476,90 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   g_CopyPipeline = g_device.CreateRenderPipeline(&pipelineDescriptor);
 }
 
+void create_resample_pipeline() {
+  wgpu::ShaderSourceWGSL sourceDescriptor{};
+  sourceDescriptor.code = resampleShaderSource;
+  const wgpu::ShaderModuleDescriptor moduleDescriptor{
+      .nextInChain = &sourceDescriptor,
+      .label = "Present Resample Module",
+  };
+  auto module = g_device.CreateShaderModule(&moduleDescriptor);
+  const std::array colorTargets{wgpu::ColorTargetState{
+      .format = g_graphicsConfig.surfaceConfiguration.format,
+      .writeMask = wgpu::ColorWriteMask::All,
+  }};
+  const wgpu::FragmentState fragmentState{
+      .module = module,
+      .entryPoint = "fs_main",
+      .targetCount = colorTargets.size(),
+      .targets = colorTargets.data(),
+  };
+  const std::array bindGroupLayoutEntries{
+      wgpu::BindGroupLayoutEntry{
+          .binding = 0,
+          .visibility = wgpu::ShaderStage::Fragment,
+          .buffer =
+              wgpu::BufferBindingLayout{
+                  .type = wgpu::BufferBindingType::Uniform,
+              },
+      },
+      wgpu::BindGroupLayoutEntry{
+          .binding = 1,
+          .visibility = wgpu::ShaderStage::Fragment,
+          .sampler =
+              wgpu::SamplerBindingLayout{
+                  .type = wgpu::SamplerBindingType::Filtering,
+              },
+      },
+      wgpu::BindGroupLayoutEntry{
+          .binding = 2,
+          .visibility = wgpu::ShaderStage::Fragment,
+          .texture =
+              wgpu::TextureBindingLayout{
+                  .sampleType = wgpu::TextureSampleType::Float,
+                  .viewDimension = wgpu::TextureViewDimension::e2D,
+              },
+      },
+  };
+  const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
+      .entryCount = bindGroupLayoutEntries.size(),
+      .entries = bindGroupLayoutEntries.data(),
+  };
+  g_ResampleBindGroupLayout = g_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
+  const wgpu::PipelineLayoutDescriptor layoutDescriptor{
+      .bindGroupLayoutCount = 1,
+      .bindGroupLayouts = &g_ResampleBindGroupLayout,
+  };
+  auto pipelineLayout = g_device.CreatePipelineLayout(&layoutDescriptor);
+  const wgpu::RenderPipelineDescriptor pipelineDescriptor{
+      .label = "Present Resample Pipeline",
+      .layout = pipelineLayout,
+      .vertex =
+          wgpu::VertexState{
+              .module = module,
+              .entryPoint = "vs_main",
+          },
+      .primitive =
+          wgpu::PrimitiveState{
+              .topology = wgpu::PrimitiveTopology::TriangleList,
+          },
+      .multisample =
+          wgpu::MultisampleState{
+              .count = 1,
+              .mask = UINT32_MAX,
+          },
+      .fragment = &fragmentState,
+  };
+  g_ResamplePipeline = g_device.CreateRenderPipeline(&pipelineDescriptor);
+
+  const wgpu::BufferDescriptor uniformBufferDescriptor{
+      .label = "Present Resample Uniform Buffer",
+      .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Uniform,
+      .size = AURORA_ALIGN(sizeof(ResampleUniformBlock), 16),
+  };
+  g_ResampleUniformBuffer = g_device.CreateBuffer(&uniformBufferDescriptor);
+}
+
 wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source) {
   const std::array bindGroupEntries{
       wgpu::BindGroupEntry{
@@ -373,6 +577,66 @@ wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source) {
       .entries = bindGroupEntries.data(),
   };
   return g_device.CreateBindGroup(&bindGroupDescriptor);
+}
+
+const TextureWithSampler& resample_present_source(const wgpu::CommandEncoder& encoder, const Viewport& viewport) {
+  const auto& source = present_source();
+  const uint32_t width = viewport_extent(viewport.width);
+  const uint32_t height = viewport_extent(viewport.height);
+  if (!g_resampledFrameBuffer.view || g_resampledFrameBuffer.size.width != width ||
+      g_resampledFrameBuffer.size.height != height || g_resampledFrameBuffer.format != source.format) {
+    g_resampledFrameBuffer = create_render_texture(width, height, false);
+  }
+
+  const ResampleUniformBlock uniform{
+      .samplerMode = sampler_mode(g_Resampler),
+      .frameWidth = static_cast<float>(width),
+      .frameHeight = static_cast<float>(height),
+  };
+  g_queue.WriteBuffer(g_ResampleUniformBuffer, 0, &uniform, sizeof(uniform));
+
+  const std::array bindGroupEntries{
+      wgpu::BindGroupEntry{
+          .binding = 0,
+          .buffer = g_ResampleUniformBuffer,
+          .size = AURORA_ALIGN(sizeof(ResampleUniformBlock), 16),
+      },
+      wgpu::BindGroupEntry{
+          .binding = 1,
+          .sampler = source.sampler,
+      },
+      wgpu::BindGroupEntry{
+          .binding = 2,
+          .textureView = source.view,
+      },
+  };
+  const wgpu::BindGroupDescriptor bindGroupDescriptor{
+      .layout = g_ResampleBindGroupLayout,
+      .entryCount = bindGroupEntries.size(),
+      .entries = bindGroupEntries.data(),
+  };
+  const auto bindGroup = g_device.CreateBindGroup(&bindGroupDescriptor);
+
+  const std::array attachments{
+      wgpu::RenderPassColorAttachment{
+          .view = g_resampledFrameBuffer.view,
+          .loadOp = wgpu::LoadOp::Clear,
+          .storeOp = wgpu::StoreOp::Store,
+      },
+  };
+  const wgpu::RenderPassDescriptor renderPassDescriptor{
+      .label = "Present resample render pass",
+      .colorAttachmentCount = attachments.size(),
+      .colorAttachments = attachments.data(),
+  };
+  const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
+  pass.SetPipeline(g_ResamplePipeline);
+  pass.SetBindGroup(0, bindGroup, 0, nullptr);
+  pass.SetViewport(0.f, 0.f, static_cast<float>(width), static_cast<float>(height), 0.f, 1.f);
+  pass.Draw(3);
+  pass.End();
+
+  return g_resampledFrameBuffer;
 }
 
 static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
@@ -661,6 +925,7 @@ bool initialize(AuroraBackend auroraBackend) {
       .textureAnisotropy = g_config.maxTextureAnisotropy,
   };
   create_copy_pipeline();
+  create_resample_pipeline();
   {
     window::SurfaceLock surfaceLock;
     resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height, true);
@@ -672,6 +937,10 @@ void shutdown() {
   g_CopyBindGroupLayout = {};
   g_CopyPipeline = {};
   g_CopyBindGroup = {};
+  g_ResampleBindGroupLayout = {};
+  g_ResamplePipeline = {};
+  g_ResampleUniformBuffer = {};
+  g_resampledFrameBuffer = {};
   g_frameBuffer = {};
   g_frameBufferResolved = {};
   g_depthBuffer = {};

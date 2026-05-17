@@ -269,10 +269,11 @@ void end_frame() noexcept {
       auto viewport = webgpu::calculate_present_viewport(webgpu::g_graphicsConfig.surfaceConfiguration.width,
                                                          webgpu::g_graphicsConfig.surfaceConfiguration.height,
                                                          presentSource.size.width, presentSource.size.height);
-      wgpu::BindGroup presentBindGroup = webgpu::g_CopyBindGroup;
+      const auto& resampledSource = webgpu::resample_present_source(encoder, viewport);
+      wgpu::BindGroup presentBindGroup = webgpu::create_copy_bind_group(resampledSource);
     #if AURORA_ENABLE_RMLUI
       if (rmlui::is_initialized()) {
-        const auto rmlOutput = rmlui::render(encoder, viewport);
+        const auto rmlOutput = rmlui::render(encoder, viewport, resampledSource);
         if (rmlOutput.texture != nullptr) {
           presentBindGroup = rmlOutput.copyBindGroup;
         }
