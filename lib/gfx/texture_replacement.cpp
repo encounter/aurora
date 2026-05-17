@@ -421,11 +421,6 @@ std::optional<ConvertedTexture> load_replacement(const ReplacementIndexEntry& en
     return std::nullopt;
   }
 
-  if (base->mips > 1)
-  {
-    return base;
-  }
-
   std::vector<ConvertedTexture> more;
   std::error_code ec;
   for (uint32_t mipLevel = 1;; ++mipLevel) {
