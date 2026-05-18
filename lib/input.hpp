@@ -7,6 +7,7 @@
 #include "SDL3/SDL_keycode.h"
 #include "SDL3/SDL_mouse.h"
 #include "logging.hpp"
+#include "phone_haptics.hpp"
 
 #include <absl/container/flat_hash_map.h>
 

@@ -836,6 +836,20 @@ void PADControlMotor(const u32 chan, const u32 cmd) {
     return;
   }
 
+  // Use phone haptics instead of controller rumble when enabled
+  if (aurora::input::phone_haptics_supported() && aurora::input::phone_haptics_enabled()) {
+    if (cmd == PAD_MOTOR_STOP || cmd == PAD_MOTOR_STOP_HARD) {
+      aurora::input::phone_haptics_stop();
+      return;
+    }
+
+    if (cmd == PAD_MOTOR_RUMBLE) {
+      const auto intensity = aurora::input::get_phone_haptics_intensity();
+      aurora::input::phone_haptics_rumble(intensity, 0);
+      return;
+    }
+  }
+
   if (controller->m_isGameCube) {
     if (cmd == PAD_MOTOR_STOP) {
       aurora::input::controller_rumble(instance, 0, 1, 0);
