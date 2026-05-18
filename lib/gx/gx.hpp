@@ -434,7 +434,7 @@ struct AttrConfig {
   u8 stride = 0;         // Array stride
   u8 frac = 0;
   bool le = true;
-  u8 _p1 = 0;
+  bool nbt3 = false;     // GX_NRM_NBT3
 };
 struct ShaderConfig {
   u8 fogType = GX_FOG_NONE;

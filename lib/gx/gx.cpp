@@ -167,9 +167,8 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
 #else
     const auto nameStr = "GX Static Texture";
 #endif
-    handle =
-        gfx::new_static_texture_2d(obj.width(), obj.height(), obj.mip_count(), obj.format(),
-                                   {static_cast<const uint8_t*>(obj.data), UINT32_MAX}, false, nameStr);
+    handle = gfx::new_static_texture_2d(obj.width(), obj.height(), obj.mip_count(), obj.format(),
+                                        {static_cast<const uint8_t*>(obj.data), UINT32_MAX}, false, nameStr);
   }
   if (!obj.no_cache()) {
     store_cached_texture(obj, handle);
@@ -740,6 +739,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     }
     const auto& attrFmt = vtxFmt.attrs[i];
     const auto cnt = comp_cnt_count(attr, attrFmt.cnt);
+    const bool nbt3 = attr == GX_VA_NRM && attrFmt.cnt == GX_NRM_NBT3;
     mapping = AttrConfig{
         .attrType = static_cast<u8>(type),
         .cnt = cnt,
@@ -748,6 +748,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
         .stride = 0,
         .frac = attrFmt.frac,
         .le = false,
+        .nbt3 = nbt3,
     };
     switch (type) {
     case GX_DIRECT: {
@@ -757,12 +758,12 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     case GX_INDEX8:
       mapping.stride = g_gxState.arrays[i].stride;
       mapping.le = g_gxState.arrays[i].le;
-      vtxOffset += 1;
+      vtxOffset += nbt3 ? 3 : 1;
       break;
     case GX_INDEX16:
       mapping.stride = g_gxState.arrays[i].stride;
       mapping.le = g_gxState.arrays[i].le;
-      vtxOffset += 2;
+      vtxOffset += nbt3 ? 6 : 2;
       break;
     default:
       Log.fatal("populate_pipeline_config: Invalid vertex type {}", type);

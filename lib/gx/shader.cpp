@@ -629,25 +629,35 @@ auto fetch_color_attr(const AttrConfig& mapping, std::string_view buf, std::stri
   }
 }
 
+struct AttrAddress {
+  std::string offs;
+  std::string_view buf;
+  bool le;
+};
+
+auto attr_address(const AttrConfig& mapping, GXAttr attr, std::string_view vidx, u32 vtxStride, u32 dlExtra, u32 within)
+    -> AttrAddress {
+  const u32 dlOffset = mapping.offset + dlExtra;
+  if (mapping.attrType == GX_INDEX8) {
+    return {fmt::format("ubuf.array_start[{}] + raw_fetch_u8_1(&vbuf, ubuf.vtx_start + {} * {}u + {}u) * {}u + {}u",
+                        attr - GX_VA_POS, vidx, vtxStride, dlOffset, mapping.stride, within),
+            "abuf"sv, mapping.le};
+  }
+  if (mapping.attrType == GX_INDEX16) {
+    return {
+        fmt::format("ubuf.array_start[{}] + raw_fetch_u16_1(&vbuf, ubuf.vtx_start + {} * {}u + {}u, false) * {}u + {}u",
+                    attr - GX_VA_POS, vidx, vtxStride, dlOffset, mapping.stride, within),
+        "abuf"sv, mapping.le};
+  }
+  return {fmt::format("ubuf.vtx_start + {} * {}u + {}u", vidx, vtxStride, dlOffset + within), "vbuf"sv, false};
+}
+
 auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -> std::string {
   const auto& mapping = config.attrs[attr];
   if (mapping.attrType == GX_NONE) {
     return vtx_attr(config, attr);
   }
-  auto buf = "vbuf"sv;
-  auto offs = fmt::format("ubuf.vtx_start + {} * {}u + {}u", vidx, config.vtxStride, mapping.offset);
-  auto le = false; // Vertex buffer is always big endian (for now)
-  if (mapping.attrType == GX_INDEX8) {
-    offs = fmt::format("ubuf.array_start[{}] + raw_fetch_u8_1(&{}, {}) * {}u", attr - GX_VA_POS, buf, offs,
-                       mapping.stride);
-    buf = "abuf"sv;
-    le = mapping.le;
-  } else if (mapping.attrType == GX_INDEX16) {
-    offs = fmt::format("ubuf.array_start[{}] + raw_fetch_u16_1(&{}, {}, {}) * {}u", attr - GX_VA_POS, buf, offs, le,
-                       mapping.stride);
-    buf = "abuf"sv;
-    le = mapping.le;
-  }
+  const auto [offs, buf, le] = attr_address(mapping, attr, vidx, config.vtxStride, 0u, 0u);
   switch (attr) {
   case GX_VA_PNMTXIDX:
     return fmt::format("(raw_fetch_u8_1(&{}, {}) / 3u)", buf, offs);
@@ -668,7 +678,7 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
     return posLoad;
   }
   case GX_VA_NRM:
-    // TODO full NBT/NBT3 TBN support; only the normal is consumed
+    // TODO bump mapping
     if (mapping.cnt > 3) {
       auto nrmMapping = mapping;
       nrmMapping.cnt = 3;
@@ -695,6 +705,38 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
   default:
     Log.fatal("attr_load: Unimplemented {}", attr);
   }
+}
+
+enum class NbtSlice : u8 {
+  N,
+  B,
+  T,
+};
+
+auto attr_load_nbt_slice(const ShaderConfig& config, NbtSlice slice, std::string_view vidx) -> std::string {
+  const auto& mapping = config.attrs[GX_VA_NRM];
+  if (mapping.attrType == GX_NONE || mapping.cnt != 9) {
+    Log.fatal("attr_load_nbt_slice: GX_TG_BINRM/TANGENT requires GX_NRM_NBT or GX_NRM_NBT3");
+  }
+  const auto sliceIdx = static_cast<u32>(slice);
+  const auto compsize = comp_type_size(GX_VA_NRM, static_cast<GXCompType>(mapping.compType));
+  u32 dlExtra = 0;
+  if (mapping.nbt3) {
+    if (mapping.attrType == GX_INDEX8) {
+      dlExtra = sliceIdx;
+    } else if (mapping.attrType == GX_INDEX16) {
+      dlExtra = sliceIdx * 2u;
+    }
+  }
+  const u32 within = sliceIdx * 3u * compsize;
+  const auto [offs, buf, le] = attr_address(mapping, GX_VA_NRM, vidx, config.vtxStride, dlExtra, within);
+  auto sliceMapping = mapping;
+  sliceMapping.cnt = 3;
+  return fetch_attr(sliceMapping, buf, offs, le);
+}
+
+static constexpr std::string_view nbt_slice_local(NbtSlice slice) noexcept {
+  return slice == NbtSlice::B ? "in_binrm" : "in_tangent";
 }
 
 auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 i, bool alpha) -> std::string {
@@ -921,6 +963,23 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
       vtxXfrAttrsPre += fmt::format("\n    let {} = {};", vtx_attr(config, attr), attr_load(config, attr, vidxAttr));
     }
   }
+  bool needsBinrm = false;
+  bool needsTangent = false;
+  for (int i = 0; i < info.sampledTexCoords.size(); ++i) {
+    if (!info.sampledTexCoords.test(i)) {
+      continue;
+    }
+    needsBinrm = needsBinrm || config.tcgs[i].src == GX_TG_BINRM;
+    needsTangent = needsTangent || config.tcgs[i].src == GX_TG_TANGENT;
+  }
+  if (needsBinrm) {
+    vtxXfrAttrsPre += fmt::format("\n    let {} = {};", nbt_slice_local(NbtSlice::B),
+                                  attr_load_nbt_slice(config, NbtSlice::B, vidxAttr));
+  }
+  if (needsTangent) {
+    vtxXfrAttrsPre += fmt::format("\n    let {} = {};", nbt_slice_local(NbtSlice::T),
+                                  attr_load_nbt_slice(config, NbtSlice::T, vidxAttr));
+  }
 
   if (config.lineMode == 0) {
     vtxXfrAttrsPre += fmt::format(
@@ -1113,6 +1172,10 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
       vtxXfrAttrs += fmt::format("\n    var tc{} = {};", i, vtx_attr(config, GX_VA_CLR0));
     } else if (tcg.src == GX_TG_COLOR1) {
       vtxXfrAttrs += fmt::format("\n    var tc{} = {};", i, vtx_attr(config, GX_VA_CLR1));
+    } else if (tcg.src == GX_TG_BINRM) {
+      vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, nbt_slice_local(NbtSlice::B));
+    } else if (tcg.src == GX_TG_TANGENT) {
+      vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, nbt_slice_local(NbtSlice::T));
     } else
       UNLIKELY FATAL("unhandled tcg src {}", underlying(tcg.src));
     if (tcg.type == GX_TG_MTX2x4 || tcg.type == GX_TG_MTX3x4) {
@@ -1474,8 +1537,9 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     if (discard.constant == 1) {
       fragmentFn += "\n    // Alpha compare\n    discard;";
     } else if (discard.constant != 0) {
-      fragmentFn += "\n    // Alpha compare"
-                    "\n    let alphaCompare = u32(round(clamp(prev.a, 0.0, 1.0) * 255.0));";
+      fragmentFn +=
+          "\n    // Alpha compare"
+          "\n    let alphaCompare = u32(round(clamp(prev.a, 0.0, 1.0) * 255.0));";
       fragmentFn += fmt::format("\n    if ({}) {{ discard; }}", discard.expr);
     }
   }

@@ -107,13 +107,13 @@ static constexpr u8 CP_VAT_MASK = GX_VAT_MASK;
 
 // Read helpers for big/little endian
 #if _MSC_VER
-template<typename T>
+template <typename T>
 __forceinline // Yes, this was necessary.
-inline T unaligned_load(const T* ptr) {
+    inline T unaligned_load(const T* ptr) {
   return *static_cast<const __unaligned T*>(ptr);
 }
 #else
-template<typename T>
+template <typename T>
 inline T unaligned_load(const T* ptr) {
   T copy;
   memcpy(&copy, ptr, sizeof(T));
@@ -503,7 +503,8 @@ static void handle_bp(u32 value, bool bigEndian) {
     g_gxState.bpRegCache[0xFE] = 0x00FFFFFF;
     const u32 merged = (g_gxState.bpRegCache[regId] & ~ssMask) | (value & ssMask);
     value = (regId << 24) | (merged & 0x00FFFFFF);
-    if (g_gxState.bpRegCache[regId] == value) return;
+    if (g_gxState.bpRegCache[regId] == value)
+      return;
     g_gxState.bpRegCache[regId] = value;
   }
 
@@ -1182,8 +1183,7 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
       vf.attrs[GX_VA_POS].frac = static_cast<u8>(bp_get(value, 5, 4));
       const auto nrm_cnt = bp_get(value, 1, 9);
       const auto nrm_nbt3 = bp_get(value, 1, 31);
-      vf.attrs[GX_VA_NRM].cnt = static_cast<GXCompCnt>(
-          nrm_nbt3 ? GX_NRM_NBT3 : (nrm_cnt ? GX_NRM_NBT : GX_NRM_XYZ));
+      vf.attrs[GX_VA_NRM].cnt = static_cast<GXCompCnt>(nrm_nbt3 ? GX_NRM_NBT3 : (nrm_cnt ? GX_NRM_NBT : GX_NRM_XYZ));
       vf.attrs[GX_VA_NRM].type = static_cast<GXCompType>(bp_get(value, 3, 10));
       if (vf.attrs[GX_VA_NRM].type == GX_U8 || vf.attrs[GX_VA_NRM].type == GX_S8) {
         vf.attrs[GX_VA_NRM].frac = 6;
@@ -1284,8 +1284,10 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
       u32 val = read_u32(xfData + i * 4, bigEndian);
 
       // Skip scalar register writes that haven't changed (viewport/projection handled below)
-      if (reg <= 0x19 && val == g_gxState.xfRegCache[reg]) continue;
-      if (reg <= 0x19) g_gxState.xfRegCache[reg] = val;
+      if (reg <= 0x19 && val == g_gxState.xfRegCache[reg])
+        continue;
+      if (reg <= 0x19)
+        g_gxState.xfRegCache[reg] = val;
 
       switch (reg) {
       case 0x08:
@@ -1520,10 +1522,10 @@ static u32 calculate_last_vtx_size(GXVtxFmt fmt) {
       break;
     }
     case GX_INDEX8:
-      vtxSize += 1;
+      vtxSize += (i == GX_VA_NRM && vtxFmt.attrs[i].cnt == GX_NRM_NBT3) ? 3 : 1;
       break;
     case GX_INDEX16:
-      vtxSize += 2;
+      vtxSize += (i == GX_VA_NRM && vtxFmt.attrs[i].cnt == GX_NRM_NBT3) ? 6 : 2;
       break;
     }
   }
@@ -1550,16 +1552,14 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   pos += 2;
 
   u32 vtxSize;
-  if (g_gxState.lastVtxFmt == fmt) LIKELY {
-    vtxSize = g_gxState.lastVtxSize;
-  } else UNLIKELY {
-    vtxSize = calculate_last_vtx_size(fmt);
-  }
+  if (g_gxState.lastVtxFmt == fmt)
+    LIKELY { vtxSize = g_gxState.lastVtxSize; }
+  else
+    UNLIKELY { vtxSize = calculate_last_vtx_size(fmt); }
 
   u32 totalVtxBytes = vtxCount * vtxSize;
-  if (pos + totalVtxBytes > size) UNLIKELY {
-    handle_draw_overrun(totalVtxBytes, data, pos, size);
-  }
+  if (pos + totalVtxBytes > size)
+    UNLIKELY { handle_draw_overrun(totalVtxBytes, data, pos, size); }
 
   // Push raw vertex data to buffer
   gfx::Range vertRange = gfx::push_verts(data + pos, totalVtxBytes);
