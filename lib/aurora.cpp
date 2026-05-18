@@ -57,9 +57,9 @@ constexpr std::array PreferredBackendOrder{
 // #ifdef DAWN_ENABLE_BACKEND_DESKTOP_GL
 //     BACKEND_OPENGL,
 // #endif
-// #ifdef DAWN_ENABLE_BACKEND_OPENGLES
-//     BACKEND_OPENGLES,
-// #endif
+#ifdef DAWN_ENABLE_BACKEND_OPENGLES
+    BACKEND_OPENGLES,
+#endif
 #ifdef DAWN_ENABLE_BACKEND_NULL
     BACKEND_NULL,
 #endif
