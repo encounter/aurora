@@ -738,21 +738,31 @@ bool report_missing_key(const RuntimeTextureKey& key, const GXTexObj_& obj) noex
   return true;
 }
 
-void initialize() noexcept { build_index(); }
-
-void shutdown() noexcept {
+void clear_replacement_runtime_state() noexcept {
   s_replacementIndex.clear();
   s_replacementCache.clear();
   s_failedKeys.clear();
   s_reportedMisses.clear();
-  s_pendingTluts.clear();
-  for (auto& tlut : s_loadedTluts) {
-    tlut = {};
-  }
   s_replacementLru.clear();
   s_replacementCacheBytes = 0;
   s_replacementRoot.clear();
   s_dumpRoot.clear();
+}
+
+void initialize() noexcept { build_index(); }
+
+void reload() noexcept {
+  clear_replacement_runtime_state();
+  aurora::gx::clear_static_texture_cache();
+  build_index();
+}
+
+void shutdown() noexcept {
+  clear_replacement_runtime_state();
+  s_pendingTluts.clear();
+  for (auto& tlut : s_loadedTluts) {
+    tlut = {};
+  }
 }
 
 void register_tlut(const GXTlutObj* obj, const void* data, GXTlutFmt format, uint16_t entries) noexcept {
