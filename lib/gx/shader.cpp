@@ -1519,6 +1519,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
   if constexpr (EnableNormalVisualization) {
     fragmentFn += "\n    prev = vec4f(in.nrm, prev.a);";
   }
+  const auto loadWordFn = webgpu::uses_adreno_workarounds() ? "load_word_checked"sv : "load_word"sv;
 
   const auto shaderSource = fmt::format(R"""(
 fn bswap32(v: u32, le: bool) -> u32 {{
@@ -1535,6 +1536,10 @@ fn bswap16(v: u32, le: bool) -> u32 {{
   return select(((v & 0xFFu) << 8u) | (v >> 8u), v, le);
 }}
 
+fn load_word(p: ptr<storage, array<u32>>, word_idx: u32) -> u32 {{
+  return p[word_idx];
+}}
+
 fn load_word_checked(p: ptr<storage, array<u32>>, word_idx: u32) -> u32 {{
   if (word_idx < arrayLength(p)) {{
     return p[word_idx];
@@ -1543,7 +1548,7 @@ fn load_word_checked(p: ptr<storage, array<u32>>, word_idx: u32) -> u32 {{
 }}
 
 fn load_u8(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
-  let word = load_word_checked(p, byte_off / 4u);
+  let word = {9}(p, byte_off / 4u);
   let shift = (byte_off & 3u) * 8u;
   return (word >> shift) & 0xFFu;
 }}
@@ -1551,11 +1556,11 @@ fn load_u8(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
 fn load_u32_raw(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
-  let lo = load_word_checked(p, word_idx);
+  let lo = {9}(p, word_idx);
   if (sub == 0u) {{
     return lo;
   }}
-  let hi = load_word_checked(p, word_idx + 1u);
+  let hi = {9}(p, word_idx + 1u);
   let shift = sub * 8u;
   return (lo >> shift) | (hi << (32u - shift));
 }}
@@ -1563,11 +1568,11 @@ fn load_u32_raw(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
 fn load_u16(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
-  let word = load_word_checked(p, word_idx);
+  let word = {9}(p, word_idx);
   if (sub <= 2u) {{
     return bswap16(extractBits(word, sub * 8u, 16u), le);
   }}
-  let next = load_word_checked(p, word_idx + 1u);
+  let next = {9}(p, word_idx + 1u);
   let raw = extractBits(word, 24u, 8u) | (extractBits(next, 0u, 8u) << 8u);
   return bswap16(raw, le);
 }}
@@ -1597,7 +1602,7 @@ fn raw_fetch_u8_1(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
 fn raw_fetch_u8_2(p: ptr<storage, array<u32>>, byte_off: u32) -> vec2u {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
-  let word = load_word_checked(p, word_idx);
+  let word = {9}(p, word_idx);
   if (sub <= 2u) {{
     let shift = sub * 8u;
     return vec2u(
@@ -1605,7 +1610,7 @@ fn raw_fetch_u8_2(p: ptr<storage, array<u32>>, byte_off: u32) -> vec2u {{
       extractBits(word, shift + 8u, 8u),
     );
   }}
-  let next = load_word_checked(p, word_idx + 1u);
+  let next = {9}(p, word_idx + 1u);
   return vec2u(
     extractBits(word, 24u, 8u),
     extractBits(next, 0u, 8u),
@@ -1768,7 +1773,7 @@ fn fetch_s16_4(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) 
 }}
 
 fn load_halfword(p: ptr<storage, array<u32>>, offset_half: u32, le: bool) -> u32 {{
-  let word = load_word_checked(p, offset_half >> 1u);
+  let word = {9}(p, offset_half >> 1u);
   var raw = word & 0xFFFFu;
   if ((offset_half & 1u) != 0u) {{
     raw = word >> 16u;
@@ -1915,7 +1920,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {{{6}{5}
 }}
 )""",
                                         uniBufAttrs, texBindings, vtxOutAttrs, vtxInAttrs, vtxXfrAttrs, fragmentFn,
-                                        fragmentFnPre, vtxXfrAttrsPre, uniformPre);
+                                        fragmentFnPre, vtxXfrAttrsPre, uniformPre, loadWordFn);
   if (EnableDebugPrints) {
     Log.info("Generated shader: {}", shaderSource);
   }
