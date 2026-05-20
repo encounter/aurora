@@ -52,6 +52,7 @@ extern wgpu::BindGroup g_CopyBindGroup;
 extern wgpu::Instance g_instance;
 extern bool g_bcTexturesSupported;
 
+bool uses_adreno_workarounds() noexcept;
 bool initialize(AuroraBackend backend);
 void shutdown();
 void release_surface() noexcept;

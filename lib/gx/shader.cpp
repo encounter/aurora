@@ -572,7 +572,71 @@ constexpr std::array<std::string_view, GX_CA_ZERO + 1> TevAlphaArgNames{
     "APREV"sv, "A0"sv, "A1"sv, "A2"sv, "TEXA"sv, "RASA"sv, "KONST"sv, "ZERO"sv,
 };
 
-auto fetch_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le) -> std::string {
+auto fixed16_comp_prefix(u8 compType) -> std::string_view {
+  switch (compType) {
+  case GX_U16:
+    return "u"sv;
+  case GX_S16:
+    return "s"sv;
+  default:
+    return {};
+  }
+}
+
+template <typename ComponentFn>
+auto emit_adreno_fixed_components(u8 cnt, ComponentFn&& component) -> std::string {
+  switch (cnt) {
+  case 1:
+    return component(0);
+  case 2:
+    return fmt::format("vec2f({}, {})", component(0), component(1));
+  case 3:
+    return fmt::format("vec3f({}, {}, {})", component(0), component(1), component(2));
+  default:
+    return {};
+  }
+}
+
+auto fetch_adreno_fixed_attr(const AttrConfig& mapping, const ShaderConfig& config, GXAttr attr, std::string_view vidx,
+                             std::string_view aidx, bool le) -> std::string {
+  if (!webgpu::uses_adreno_workarounds()) {
+    return {};
+  }
+  const auto prefix = fixed16_comp_prefix(mapping.compType);
+  switch (mapping.compType) {
+  case GX_U16:
+  case GX_S16:
+    // Adreno has miscompiled 16-bit packed storage-buffer vertex pulls when
+    // they are expressed as byte offsets plus sub-word extraction. 
+    // Addressing GX attributes as halfword lanes gives the compiler a simpler 
+    // index*stride+component model.
+    switch (mapping.attrType) {
+    case GX_DIRECT:
+      return emit_adreno_fixed_components(mapping.cnt, [&](u8 comp) {
+        return fmt::format(
+            "fetch_{}16_direct_halfword_component(&vbuf, ubuf.vtx_start, {}, {}u, {}u, {}u, {}u, {})", 
+            prefix, vidx, config.vtxStride / 2u, mapping.offset / 2u, comp, mapping.frac, le);
+      });
+    case GX_INDEX8:
+    case GX_INDEX16:
+      return emit_adreno_fixed_components(mapping.cnt, [&](u8 comp) {
+        return fmt::format(
+            "fetch_{}16_halfword_component(&abuf, ubuf.array_start[{}], {}, {}u, {}u, {}u, {})",
+            prefix, attr - GX_VA_POS, aidx, mapping.stride / 2u, comp, mapping.frac, le);
+      });
+    default:
+      return {};
+    }
+  default:
+    return {};
+  }
+}
+
+auto fetch_attr(const AttrConfig& mapping, const ShaderConfig& config, GXAttr attr, std::string_view vidx,
+                std::string_view aidx, std::string_view buf, std::string_view offs, bool le) -> std::string {
+  if (auto res = fetch_adreno_fixed_attr(mapping, config, attr, vidx, aidx, le); !res.empty()) {
+    return res;
+  }
   switch (mapping.compType) {
   case GX_U8:
     return fmt::format("fetch_u8_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
@@ -617,15 +681,16 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
   }
   auto buf = "vbuf"sv;
   auto offs = fmt::format("ubuf.vtx_start + {} * {}u + {}u", vidx, config.vtxStride, mapping.offset);
+  std::string aidx;
   auto le = false; // Vertex buffer is always big endian (for now)
   if (mapping.attrType == GX_INDEX8) {
-    offs = fmt::format("ubuf.array_start[{}] + raw_fetch_u8_1(&{}, {}) * {}u", attr - GX_VA_POS, buf, offs,
-                       mapping.stride);
+    aidx = fmt::format("raw_fetch_u8_1(&{}, {})", buf, offs);
+    offs = fmt::format("ubuf.array_start[{}] + {} * {}u", attr - GX_VA_POS, aidx, mapping.stride);
     buf = "abuf"sv;
     le = mapping.le;
   } else if (mapping.attrType == GX_INDEX16) {
-    offs = fmt::format("ubuf.array_start[{}] + raw_fetch_u16_1(&{}, {}, {}) * {}u", attr - GX_VA_POS, buf, offs, le,
-                       mapping.stride);
+    aidx = fmt::format("raw_fetch_u16_1(&{}, {}, {})", buf, offs, le);
+    offs = fmt::format("ubuf.array_start[{}] + {} * {}u", attr - GX_VA_POS, aidx, mapping.stride);
     buf = "abuf"sv;
     le = mapping.le;
   }
@@ -642,7 +707,7 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
   case GX_VA_TEX7MTXIDX:
     return fmt::format("raw_fetch_u8_1(&{}, {})", buf, offs);
   case GX_VA_POS: {
-    const auto posLoad = fetch_attr(mapping, buf, offs, le);
+    const auto posLoad = fetch_attr(mapping, config, attr, vidx, aidx, buf, offs, le);
     if (mapping.cnt == 2) {
       return fmt::format("vec3f({}, 0.0)", posLoad);
     }
@@ -650,7 +715,7 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
   }
   case GX_VA_NRM:
     // TODO check for NBT/NBT3
-    return fetch_attr(mapping, buf, offs, le);
+    return fetch_attr(mapping, config, attr, vidx, aidx, buf, offs, le);
   case GX_VA_CLR0:
   case GX_VA_CLR1:
     return fetch_color_attr(mapping, buf, offs, le);
@@ -662,7 +727,7 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
   case GX_VA_TEX5:
   case GX_VA_TEX6:
   case GX_VA_TEX7: {
-    const auto texLoad = fetch_attr(mapping, buf, offs, le);
+    const auto texLoad = fetch_attr(mapping, config, attr, vidx, aidx, buf, offs, le);
     if (mapping.cnt == 1) {
       return fmt::format("vec2f({}, 0.0)", texLoad);
     }
@@ -1470,8 +1535,15 @@ fn bswap16(v: u32, le: bool) -> u32 {{
   return select(((v & 0xFFu) << 8u) | (v >> 8u), v, le);
 }}
 
+fn load_word_checked(p: ptr<storage, array<u32>>, word_idx: u32) -> u32 {{
+  if (word_idx < arrayLength(p)) {{
+    return p[word_idx];
+  }}
+  return 0u;
+}}
+
 fn load_u8(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
-  let word = p[byte_off / 4u];
+  let word = load_word_checked(p, byte_off / 4u);
   let shift = (byte_off & 3u) * 8u;
   return (word >> shift) & 0xFFu;
 }}
@@ -1479,11 +1551,11 @@ fn load_u8(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
 fn load_u32_raw(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
-  let lo = p[word_idx];
+  let lo = load_word_checked(p, word_idx);
   if (sub == 0u) {{
     return lo;
   }}
-  let hi = p[word_idx + 1u];
+  let hi = load_word_checked(p, word_idx + 1u);
   let shift = sub * 8u;
   return (lo >> shift) | (hi << (32u - shift));
 }}
@@ -1491,11 +1563,11 @@ fn load_u32_raw(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
 fn load_u16(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
-  let word = p[word_idx];
+  let word = load_word_checked(p, word_idx);
   if (sub <= 2u) {{
     return bswap16(extractBits(word, sub * 8u, 16u), le);
   }}
-  let next = p[word_idx + 1u];
+  let next = load_word_checked(p, word_idx + 1u);
   let raw = extractBits(word, 24u, 8u) | (extractBits(next, 0u, 8u) << 8u);
   return bswap16(raw, le);
 }}
@@ -1525,7 +1597,7 @@ fn raw_fetch_u8_1(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
 fn raw_fetch_u8_2(p: ptr<storage, array<u32>>, byte_off: u32) -> vec2u {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
-  let word = p[word_idx];
+  let word = load_word_checked(p, word_idx);
   if (sub <= 2u) {{
     let shift = sub * 8u;
     return vec2u(
@@ -1533,7 +1605,7 @@ fn raw_fetch_u8_2(p: ptr<storage, array<u32>>, byte_off: u32) -> vec2u {{
       extractBits(word, shift + 8u, 8u),
     );
   }}
-  let next = p[word_idx + 1u];
+  let next = load_word_checked(p, word_idx + 1u);
   return vec2u(
     extractBits(word, 24u, 8u),
     extractBits(next, 0u, 8u),
@@ -1693,6 +1765,43 @@ fn fetch_u16_4(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) 
 fn fetch_s16_4(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec4f {{
   let v = (bitcast<vec4i>(raw_fetch_u16_4(p, byte_off, le)) << vec4u(16u)) >> vec4u(16u);
   return vec4f(v) / f32(1u << frac);
+}}
+
+fn load_halfword(p: ptr<storage, array<u32>>, offset_half: u32, le: bool) -> u32 {{
+  let word = load_word_checked(p, offset_half >> 1u);
+  var raw = word & 0xFFFFu;
+  if ((offset_half & 1u) != 0u) {{
+    raw = word >> 16u;
+  }}
+  return bswap16(raw, le);
+}}
+
+fn fetch_u16_halfword_component(p: ptr<storage, array<u32>>, array_start: u32, index: u32, stride_half: u32, comp: u32, frac: u32, le: bool) -> f32 {{
+  let half_off = (array_start >> 1u) + index * stride_half + comp;
+  return f32(load_halfword(p, half_off, le)) / f32(1u << frac);
+}}
+
+fn fetch_s16_halfword_component(p: ptr<storage, array<u32>>, array_start: u32, index: u32, stride_half: u32, comp: u32, frac: u32, le: bool) -> f32 {{
+  let half_off = (array_start >> 1u) + index * stride_half + comp;
+  let v = bitcast<i32>(load_halfword(p, half_off, le) << 16u) >> 16;
+  return f32(v) / f32(1u << frac);
+}}
+
+fn fetch_u16_direct_halfword_component(p: ptr<storage, array<u32>>, vtx_start: u32, vidx: u32, stride_half: u32, attr_half: u32, comp: u32, frac: u32, le: bool) -> f32 {{
+  if ((vtx_start & 1u) != 0u) {{
+    return fetch_u16_1(p, vtx_start + vidx * (stride_half * 2u) + (attr_half + comp) * 2u, frac, le);
+  }}
+  let half_off = (vtx_start >> 1u) + vidx * stride_half + attr_half + comp;
+  return f32(load_halfword(p, half_off, le)) / f32(1u << frac);
+}}
+
+fn fetch_s16_direct_halfword_component(p: ptr<storage, array<u32>>, vtx_start: u32, vidx: u32, stride_half: u32, attr_half: u32, comp: u32, frac: u32, le: bool) -> f32 {{
+  if ((vtx_start & 1u) != 0u) {{
+    return fetch_s16_1(p, vtx_start + vidx * (stride_half * 2u) + (attr_half + comp) * 2u, frac, le);
+  }}
+  let half_off = (vtx_start >> 1u) + vidx * stride_half + attr_half + comp;
+  let v = bitcast<i32>(load_halfword(p, half_off, le) << 16u) >> 16;
+  return f32(v) / f32(1u << frac);
 }}
 
 fn fetch_f32_1(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> f32 {{
