@@ -16,9 +16,12 @@
 #include <tracy/Tracy.hpp>
 
 #include <atomic>
+#include <bit>
 #include <cfloat>
+#include <cmath>
 #include <mutex>
 #include <optional>
+#include <utility>
 
 static aurora::Module Log("aurora::gx");
 
@@ -179,9 +182,8 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
 #else
     const auto nameStr = "GX Static Texture";
 #endif
-    handle =
-        gfx::new_static_texture_2d(obj.width(), obj.height(), obj.mip_count(), obj.format(),
-                                   {static_cast<const uint8_t*>(obj.data), UINT32_MAX}, false, nameStr);
+    handle = gfx::new_static_texture_2d(obj.width(), obj.height(), obj.mip_count(), obj.format(),
+                                        {static_cast<const uint8_t*>(obj.data), UINT32_MAX}, false, nameStr);
   }
   if (!obj.no_cache()) {
     store_cached_texture(obj, handle);
@@ -260,6 +262,18 @@ u32 resolved_format_for_handle(const gfx::TextureHandle& handle) {
     return handle->gxFormat;
   }
   return GX_TF_RGBA8_PC;
+}
+
+template <typename T>
+T round_away_from_zero(float value) noexcept {
+  return static_cast<T>(value < 0.0f ? std::floor(value) : std::ceil(value));
+}
+
+std::pair<f32, f32> polygon_offset_for_cull_mode(GXCullMode cullMode) noexcept {
+  if (cullMode == GX_CULL_FRONT) {
+    return {g_gxState.backOffset, g_gxState.backScale};
+  }
+  return {g_gxState.frontOffset, g_gxState.frontScale};
 }
 } // namespace
 
@@ -384,9 +398,7 @@ void clear_copy_texture_cache() noexcept {
   }
 }
 
-void clear_static_texture_cache() noexcept {
-  s_staticTextureCacheClearPending.store(true, std::memory_order_release);
-}
+void clear_static_texture_cache() noexcept { s_staticTextureCacheClearPending.store(true, std::memory_order_release); }
 
 void evict_copy_texture(const void* dest) noexcept {
   g_gxState.copyTextures.erase(dest);
@@ -597,10 +609,15 @@ static inline wgpu::PrimitiveState to_primitive_state(GXCullMode gx_cullMode) {
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
                                     wgpu::ShaderModule shader, const char* label) noexcept {
   ZoneScoped;
+  const float depthBias = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetBits);
+  const float depthBiasSlopeScale = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetScaleBits);
   const wgpu::DepthStencilState depthStencil{
       .format = g_graphicsConfig.depthFormat,
       .depthWriteEnabled = config.depthCompare && config.depthUpdate,
       .depthCompare = config.depthCompare ? to_compare_function(config.depthFunc) : wgpu::CompareFunction::Always,
+      .depthBias = round_away_from_zero<int32_t>(depthBias),
+      .depthBiasSlopeScale = depthBiasSlopeScale,
+      .depthBiasClamp = std::bit_cast<float>(config.polygonOffsetClampBits),
   };
   const auto blendState =
       to_blend_state(config.blendMode, config.blendFacSrc, config.blendFacDst, config.blendOp, config.dstAlpha);
@@ -813,16 +830,21 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
   if (g_gxState.alphaCompare) {
     config.shaderConfig.alphaCompare = g_gxState.alphaCompare;
   }
+  const auto cullMode = config.shaderConfig.lineMode == 0 ? g_gxState.cullMode : GX_CULL_NONE;
+  const auto [polygonOffset, polygonOffsetScale] = polygon_offset_for_cull_mode(cullMode);
   config = {
       .msaaSamples = gfx::get_sample_count(),
       .shaderConfig = config.shaderConfig,
       .depthFunc = g_gxState.depthFunc,
-      .cullMode = config.shaderConfig.lineMode == 0 ? g_gxState.cullMode : GX_CULL_NONE,
+      .cullMode = cullMode,
       .blendMode = g_gxState.blendMode,
       .blendFacSrc = g_gxState.blendFacSrc,
       .blendFacDst = g_gxState.blendFacDst,
       .blendOp = g_gxState.blendOp,
       .dstAlpha = g_gxState.dstAlpha,
+      .polygonOffsetBits = std::bit_cast<uint32_t>(polygonOffset),
+      .polygonOffsetScaleBits = std::bit_cast<uint32_t>(polygonOffsetScale),
+      .polygonOffsetClampBits = std::bit_cast<uint32_t>(g_gxState.clamp),
       .depthCompare = g_gxState.depthCompare,
       .depthUpdate = g_gxState.depthUpdate,
       .alphaUpdate = g_gxState.alphaUpdate,

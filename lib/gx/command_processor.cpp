@@ -1765,6 +1765,19 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     pos += 4;
     slot.set_no_cache(false); // Reset no-cache flag
     g_gxState.stateDirty = true;
+  } else if (subCmd == GX2_SET_POLYGON_OFFSET) {
+    CHECK(pos + 20 <= size, "GX2_SET_POLYGON_OFFSET read overrun");
+    g_gxState.frontOffset = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.frontScale = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.backOffset = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.backScale = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.clamp = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.stateDirty = true;
   } else if (subCmd == GX_LOAD_AURORA_DESTROY_TEXOBJ) {
     CHECK(pos + 4 <= size, "GX_LOAD_AURORA_DESTROY_TEXOBJ read overrun");
     evict_texture_object(read_u32(data + pos, bigEndian));
