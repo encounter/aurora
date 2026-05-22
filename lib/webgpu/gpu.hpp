@@ -50,6 +50,7 @@ extern TextureWithSampler g_depthBuffer;
 extern wgpu::RenderPipeline g_CopyPipeline;
 extern wgpu::BindGroup g_CopyBindGroup;
 extern wgpu::Instance g_instance;
+extern bool g_bcTexturesSupported;
 
 bool initialize(AuroraBackend backend);
 void shutdown();
@@ -60,8 +61,11 @@ void resize_swapchain(uint32_t width, uint32_t height, uint32_t native_width, ui
 TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled);
 const TextureWithSampler& present_source() noexcept;
 wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source);
+void set_resampler(AuroraSampler sampler) noexcept;
+AuroraSampler get_resampler() noexcept;
 Viewport calculate_present_viewport(uint32_t surface_width, uint32_t surface_height, uint32_t content_width,
                                     uint32_t content_height) noexcept;
+const TextureWithSampler& resample_present_source(const wgpu::CommandEncoder& encoder, const Viewport& viewport);
 void draw_clear(const wgpu::RenderPassEncoder& pass, bool clearColor, bool clearAlpha, bool clearDepth,
                 const Vec4<float>& clearColorValue, float clearDepthValue);
 

@@ -6,7 +6,7 @@
 Aurora is a source-level GameCube & Wii compatibility layer intended for use with game decompilation projects.
 
 Originally developed for use in [Metaforce](https://github.com/AxioDL/metaforce), a Metroid Prime reverse engineering project.
-It now powers several completed source ports, including [Dusk](https://github.com/TwilitRealm/dusk).
+It now powers several completed source ports, including [Dusklight](https://github.com/TwilitRealm/dusklight).
 
 ### Features
 
@@ -37,6 +37,10 @@ abstraction layer. WebGPU allows targeting all major platforms simultaneously wi
 implementation used is Chromium's [Dawn](https://dawn.googlesource.com/dawn/).
 
 ![Screenshot](assets/screenshot.png)
+
+### Building
+
+See [docs/building.md](docs/building.md) for build instructions, CMake integration, and configuration options.
 
 ### License
 

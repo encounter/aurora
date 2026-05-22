@@ -369,6 +369,13 @@ void clear_copy_texture_cache() noexcept {
   }
 }
 
+void clear_static_texture_cache() noexcept {
+  s_textureObjectCaches.clear();
+  for (auto& [_, cache] : s_tlutObjectCaches) {
+    cache.staticTextureUsers.clear();
+  }
+}
+
 void evict_copy_texture(const void* dest) noexcept {
   g_gxState.copyTextures.erase(dest);
   for (auto it = g_gxState.copyTextureCache.begin(); it != g_gxState.copyTextureCache.end();) {
@@ -985,11 +992,16 @@ static u16 wgpu_aniso(GXAnisotropy aniso) {
 }
 
 wgpu::SamplerDescriptor aurora::gfx::TextureBind::get_descriptor() const noexcept {
-  const auto [minFilter, mipFilter] = wgpu_filter_mode(texObj.min_filter());
+  auto [minFilter, mipFilter] = wgpu_filter_mode(texObj.min_filter());
   const auto [magFilter, _] = wgpu_filter_mode(texObj.mag_filter());
   float minLod = texObj.min_lod();
   float maxLod = texObj.max_lod();
-  if (mipFilter == wgpu::MipmapFilterMode::Undefined) {
+  if (ref && ref->isReplacement) {
+    minFilter = wgpu::FilterMode::Linear;
+    mipFilter = wgpu::MipmapFilterMode::Linear;
+    minLod = 0.f;
+    maxLod = static_cast<float>(std::max(ref->mipCount, 1u) - 1u);
+  } else if (mipFilter == wgpu::MipmapFilterMode::Undefined) {
     minLod = 0.f;
     maxLod = 0.f;
   }

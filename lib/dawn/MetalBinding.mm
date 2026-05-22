@@ -1,19 +1,6 @@
 #include "BackendBinding.hpp"
 
 #import <Foundation/Foundation.h>
-
-// Shim for macOS 15+ Metal classes to allow running on macOS 14
-#ifndef __MAC_15_0
-@interface MTLLogStateDescriptor : NSObject
-@end
-@implementation MTLLogStateDescriptor
-@end
-@interface MTLLogState : NSObject
-@end
-@implementation MTLLogState
-@end
-#endif
-
 #include <SDL3/SDL_metal.h>
 
 namespace aurora::webgpu::utils {

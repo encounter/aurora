@@ -5,6 +5,7 @@
 #include <RmlUi/Core.h>
 #include <RmlUi_Backend.h>
 #include <RmlUi_Platform_SDL.h>
+#include <tracy/Tracy.hpp>
 
 #include "window.hpp"
 #include "internal.hpp"
@@ -356,11 +357,13 @@ void handle_event(SDL_Event& event) noexcept {
   RmlSDL::InputEventHandler(g_context, window::get_sdl_window(), event);
 }
 
-RenderOutput render(const wgpu::CommandEncoder& encoder, const webgpu::Viewport& presentViewport) noexcept {
+RenderOutput render(const wgpu::CommandEncoder& encoder, const webgpu::Viewport& presentViewport,
+                    const webgpu::TextureWithSampler& presentSource) noexcept {
   if (g_context == nullptr) {
     return {};
   }
 
+  ZoneScoped;
   const Rml::Vector2i dim = dimensions_from_viewport(presentViewport);
   ensure_render_target(dim);
   if (!s_renderTarget.view) {
@@ -372,7 +375,7 @@ RenderOutput render(const wgpu::CommandEncoder& encoder, const webgpu::Viewport&
 
   auto* renderInterface = get_render_interface();
   renderInterface->SetWindowSize(g_context->GetDimensions());
-  renderInterface->BeginFrame(encoder, s_renderTarget, webgpu::present_source());
+  renderInterface->BeginFrame(encoder, s_renderTarget, presentSource);
 
   Backend::BeginFrame();
   g_context->Render();

@@ -62,7 +62,6 @@ struct CachedReplacement {
 
 struct ReplacementIndexEntry {
   std::filesystem::path path;
-  bool hasMips;
 };
 
 absl::flat_hash_map<RuntimeTextureKey, ReplacementIndexEntry> s_replacementIndex;
@@ -323,9 +322,7 @@ std::optional<RuntimeTextureKey> parse_replacement_filename(std::string_view fil
   }
 
   size_t index = 2;
-  bool hasMips = false;
   if (parts[index] == "m") {
-    hasMips = true;
     ++index;
   }
 
@@ -388,14 +385,40 @@ static std::optional<ConvertedTexture> load_texture_file(const std::filesystem::
   }
 }
 
+constexpr bool isUnsupportedTextureFormat(const ConvertedTexture& texture) {
+  switch (texture.format) {
+  case wgpu::TextureFormat::BC1RGBAUnorm:
+  case wgpu::TextureFormat::BC1RGBAUnormSrgb:
+  case wgpu::TextureFormat::BC2RGBAUnorm:
+  case wgpu::TextureFormat::BC2RGBAUnormSrgb:
+  case wgpu::TextureFormat::BC3RGBAUnorm:
+  case wgpu::TextureFormat::BC3RGBAUnormSrgb:
+  case wgpu::TextureFormat::BC4RUnorm:
+  case wgpu::TextureFormat::BC4RSnorm:
+  case wgpu::TextureFormat::BC5RGUnorm:
+  case wgpu::TextureFormat::BC5RGSnorm:
+  case wgpu::TextureFormat::BC6HRGBUfloat:
+  case wgpu::TextureFormat::BC6HRGBFloat:
+  case wgpu::TextureFormat::BC7RGBAUnorm:
+  case wgpu::TextureFormat::BC7RGBAUnormSrgb:
+    return !webgpu::g_bcTexturesSupported;
+  default:
+    return false;
+  }
+}
+
 std::optional<ConvertedTexture> load_replacement(const ReplacementIndexEntry& entry) noexcept {
   auto base = load_texture_file(entry.path);
   if (!base.has_value()) {
     Log.warn("texture_replacement: failed to load texture {}", fs_path_to_string(entry.path));
     return std::nullopt;
   }
-  if (!entry.hasMips) {
-    return base;
+  if (isUnsupportedTextureFormat(base.value())) {
+    Log.warn(
+      "texture_replacement: failed to load texture {} due to unsupported format: {}",
+      fs_path_to_string(entry.path),
+      static_cast<uint32_t>(base->format));
+    return std::nullopt;
   }
 
   std::vector<ConvertedTexture> more;
@@ -424,7 +447,7 @@ std::optional<ConvertedTexture> load_replacement(const ReplacementIndexEntry& en
   }
 
   if (more.empty()) {
-    return std::nullopt;
+    return base;
   }
 
   const uint32_t mips = 1u + static_cast<uint32_t>(more.size());
@@ -611,6 +634,7 @@ gfx::TextureHandle load_replacement_texture(const RuntimeTextureKey& key, const 
   auto textureView = texture.CreateView(&textureViewDescriptor);
   auto handle = std::make_shared<gfx::TextureRef>(std::move(texture), std::move(textureView), wgpu::TextureView{}, size,
                                                   replacement->format, replacement->mips, gfx::InvalidTextureFormat);
+  handle->isReplacement = true;
   gfx::write_texture(*handle, replacement->data);
   return handle;
 }
@@ -623,15 +647,6 @@ void cache_replacement(const RuntimeTextureKey& key, const gfx::TextureHandle& h
       key, CachedReplacement{.handle = handle, .bytes = replacementBytes, .lruIt = s_replacementLru.begin()});
   s_replacementCacheBytes += replacementBytes;
   evict_replacement_cache_if_needed();
-}
-
-void bind_replacement(GXTexObj_& obj, GXTexMapID id, const gfx::TextureHandle& handle) noexcept {
-  GXTexObj_ out = obj;
-  out.mWidth = handle->size.width;
-  out.mHeight = handle->size.height;
-  out.mFormat = GX_TF_RGBA8_PC;
-  g_gxState.textures[id] = gfx::TextureBind(out, handle);
-  g_gxState.stateDirty = true;
 }
 
 bool dump_editable_texture_dds(const RuntimeTextureKey& key, const GXTexObj_& obj) noexcept {
@@ -673,21 +688,31 @@ bool report_missing_key(const RuntimeTextureKey& key, const GXTexObj_& obj) noex
   return true;
 }
 
-void initialize() noexcept { build_index(); }
-
-void shutdown() noexcept {
+void clear_replacement_runtime_state() noexcept {
   s_replacementIndex.clear();
   s_replacementCache.clear();
   s_failedKeys.clear();
   s_reportedMisses.clear();
-  s_pendingTluts.clear();
-  for (auto& tlut : s_loadedTluts) {
-    tlut = {};
-  }
   s_replacementLru.clear();
   s_replacementCacheBytes = 0;
   s_replacementRoot.clear();
   s_dumpRoot.clear();
+}
+
+void initialize() noexcept { build_index(); }
+
+void reload() noexcept {
+  clear_replacement_runtime_state();
+  aurora::gx::clear_static_texture_cache();
+  build_index();
+}
+
+void shutdown() noexcept {
+  clear_replacement_runtime_state();
+  s_pendingTluts.clear();
+  for (auto& tlut : s_loadedTluts) {
+    tlut = {};
+  }
 }
 
 void register_tlut(const GXTlutObj* obj, const void* data, GXTlutFmt format, uint16_t entries) noexcept {
@@ -726,19 +751,6 @@ void load_tlut(const GXTlutObj* obj, uint32_t idx) noexcept {
       .valid = pending.valid,
       .data = pending.data.clone(),
   };
-}
-
-bool try_bind_replacement(GXTexObj_& obj, GXTexMapID id) noexcept {
-  if (!g_config.allowTextureReplacements) {
-    return false;
-  }
-
-  const auto handle = find_replacement(obj);
-  if (!handle.has_value()) {
-    return false;
-  }
-  bind_replacement(obj, id, *handle);
-  return true;
 }
 
 std::optional<TextureHandle> find_replacement(const GXTexObj_& obj) noexcept {
