@@ -380,6 +380,12 @@ struct GXState {
   }();
   std::array<u32, 0x1A> xfRegCache;
 
+  f32 frontOffset = 0.0f;
+  f32 frontScale = 0.0f;
+  f32 backOffset = 0.0f;
+  f32 backScale = 0.0f;
+  f32 clamp = 0.0f;
+
   void clearVtxSizeCache() { lastVtxFmt = GX_MAX_VTXFMT; }
 };
 extern GXState g_gxState;

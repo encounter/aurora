@@ -66,6 +66,15 @@ void GXSetScissorRender(u32 left, u32 top, u32 wd, u32 ht) {
   GX_WRITE_U32(ht);
 }
 
+void GX2SetPolygonOffset(f32 mFrontOffset, f32 mFrontScale, f32 mBackOffset, f32 mBackScale, f32 mClamp) {
+  GX_WRITE_AURORA(GX2_SET_POLYGON_OFFSET);
+  GX_WRITE_F32(mFrontOffset);
+  GX_WRITE_F32(mFrontScale);
+  GX_WRITE_F32(mBackOffset);
+  GX_WRITE_F32(mBackScale);
+  GX_WRITE_F32(mClamp);
+}
+
 void GXCreateFrameBuffer(u32 width, u32 height) {
   aurora::gx::fifo::drain();
   aurora::gfx::begin_offscreen(width, height);

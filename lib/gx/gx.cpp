@@ -589,7 +589,13 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu:
       .format = g_graphicsConfig.depthFormat,
       .depthWriteEnabled = config.depthCompare && config.depthUpdate,
       .depthCompare = config.depthCompare ? to_compare_function(config.depthFunc) : wgpu::CompareFunction::Always,
+      .depthBias = static_cast<int32_t>(g_gxState.frontOffset),
+      .depthBiasSlopeScale = g_gxState.frontScale,
+      .depthBiasClamp = g_gxState.clamp,
   };
+  if(g_gxState.frontOffset != 0.0f) {
+    Log.info("Nonzero depth offset");
+  }
   const auto blendState =
       to_blend_state(config.blendMode, config.blendFacSrc, config.blendFacDst, config.blendOp, config.dstAlpha);
   const std::array colorTargets{wgpu::ColorTargetState{
