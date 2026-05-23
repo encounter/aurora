@@ -590,8 +590,8 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu:
       .format = g_graphicsConfig.depthFormat,
       .depthWriteEnabled = config.depthCompare && config.depthUpdate,
       .depthCompare = config.depthCompare ? to_compare_function(config.depthFunc) : wgpu::CompareFunction::Always,
-      .depthBias = static_cast<int32_t>(std::bit_cast<float>(config.polygonOffsetFrontOffsetBits)),
-      .depthBiasSlopeScale = std::bit_cast<float>(config.polygonOffsetFrontScaleBits),
+      .depthBias = static_cast<int32_t>((gx::UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetFrontOffsetBits)),
+      .depthBiasSlopeScale = (gx::UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetFrontScaleBits),
       .depthBiasClamp = std::bit_cast<float>(config.polygonOffsetClampBits),
   };
   if (config.polygonOffsetFrontOffsetBits != 0u) {
