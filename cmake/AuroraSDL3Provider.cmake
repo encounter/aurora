@@ -109,7 +109,11 @@ elseif (_aurora_sdl3_provider STREQUAL "package")
   endforeach ()
 
   set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
-  find_package(SDL3 REQUIRED CONFIG PATHS ${_sdl3_search_paths} NO_DEFAULT_PATH)
+  find_package(SDL3 REQUIRED CONFIG
+    PATHS ${_sdl3_search_paths}
+    NO_DEFAULT_PATH
+    NO_CMAKE_FIND_ROOT_PATH
+  )
   set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL OFF)
   _aurora_sdl3_select_target()
 

@@ -193,7 +193,11 @@ elseif (_aurora_dawn_provider STREQUAL "package")
   )
     if (EXISTS "${_cmake_path}/DawnConfig.cmake")
       set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
-      find_package(Dawn REQUIRED CONFIG PATHS "${_cmake_path}" NO_DEFAULT_PATH)
+      find_package(Dawn REQUIRED CONFIG
+        PATHS "${_cmake_path}"
+        NO_DEFAULT_PATH
+        NO_CMAKE_FIND_ROOT_PATH
+      )
       set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL OFF)
       set(_dawn_cmake_found TRUE)
       break()

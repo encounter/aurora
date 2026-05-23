@@ -137,6 +137,7 @@ elseif (_aurora_nod_provider STREQUAL "package")
   find_package(nod REQUIRED CONFIG
     PATHS "${nod_prebuilt_SOURCE_DIR}"
     NO_DEFAULT_PATH
+    NO_CMAKE_FIND_ROOT_PATH
   )
   set(BUILD_SHARED_LIBS "${_aurora_nod_saved_bsl}")
   unset(_aurora_nod_saved_bsl)
