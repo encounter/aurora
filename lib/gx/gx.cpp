@@ -15,6 +15,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <tracy/Tracy.hpp>
 
+#include <bit>
 #include <cfloat>
 #include <mutex>
 #include <optional>
@@ -589,11 +590,11 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu:
       .format = g_graphicsConfig.depthFormat,
       .depthWriteEnabled = config.depthCompare && config.depthUpdate,
       .depthCompare = config.depthCompare ? to_compare_function(config.depthFunc) : wgpu::CompareFunction::Always,
-      .depthBias = static_cast<int32_t>(g_gxState.frontOffset),
-      .depthBiasSlopeScale = g_gxState.frontScale,
-      .depthBiasClamp = g_gxState.clamp,
+      .depthBias = static_cast<int32_t>(std::bit_cast<float>(config.polygonOffsetFrontOffsetBits)),
+      .depthBiasSlopeScale = std::bit_cast<float>(config.polygonOffsetFrontScaleBits),
+      .depthBiasClamp = std::bit_cast<float>(config.polygonOffsetClampBits),
   };
-  if(g_gxState.frontOffset != 0.0f) {
+  if (config.polygonOffsetFrontOffsetBits != 0u) {
     Log.info("Nonzero depth offset");
   }
   const auto blendState =
@@ -817,6 +818,12 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
       .blendFacDst = g_gxState.blendFacDst,
       .blendOp = g_gxState.blendOp,
       .dstAlpha = g_gxState.dstAlpha,
+      // MAT4 polygon-offsets 
+      .polygonOffsetFrontOffsetBits = std::bit_cast<uint32_t>(g_gxState.frontOffset),
+      .polygonOffsetFrontScaleBits  = std::bit_cast<uint32_t>(g_gxState.frontScale),
+      .polygonOffsetBackOffsetBits  = std::bit_cast<uint32_t>(g_gxState.backOffset),
+      .polygonOffsetBackScaleBits   = std::bit_cast<uint32_t>(g_gxState.backScale),
+      .polygonOffsetClampBits       = std::bit_cast<uint32_t>(g_gxState.clamp),
       .depthCompare = g_gxState.depthCompare,
       .depthUpdate = g_gxState.depthUpdate,
       .alphaUpdate = g_gxState.alphaUpdate,

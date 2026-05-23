@@ -16,7 +16,7 @@ struct DrawData {
   uint32_t dstAlpha;
 };
 
-constexpr uint32_t GXPipelineConfigVersion = 11;
+constexpr uint32_t GXPipelineConfigVersion = 12;
 struct PipelineConfig {
   uint32_t version = GXPipelineConfigVersion;
   uint32_t msaaSamples = 1;
@@ -27,6 +27,12 @@ struct PipelineConfig {
   GXBlendFactor blendFacSrc, blendFacDst;
   GXLogicOp blendOp;
   uint32_t dstAlpha;
+  // MAT4 polygon-offsets 
+  uint32_t polygonOffsetFrontOffsetBits = 0u;
+  uint32_t polygonOffsetFrontScaleBits = 0u;
+  uint32_t polygonOffsetBackOffsetBits = 0u;
+  uint32_t polygonOffsetBackScaleBits = 0u;
+  uint32_t polygonOffsetClampBits = 0u;
   bool depthCompare, depthUpdate, alphaUpdate, colorUpdate;
 };
 static_assert(std::has_unique_object_representations_v<PipelineConfig>);
