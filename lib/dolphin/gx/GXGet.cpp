@@ -283,7 +283,7 @@ void GXGetLightAttnK(GXLightObj* light_, float* k0, float* k1, float* k2) {
 void GXGetLightPos(GXLightObj* light_, float* x, float* y, float* z) {
   auto* light = reinterpret_cast<const GXLightObj_*>(light_);
   *x = light->px;
-  *z = light->py;
+  *y = light->py;
   *z = light->pz;
 }
 
