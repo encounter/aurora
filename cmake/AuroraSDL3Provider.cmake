@@ -1,4 +1,5 @@
 include_guard(GLOBAL)
+include("${CMAKE_CURRENT_LIST_DIR}/AuroraTargetPlatform.cmake")
 
 # Resolve SDL3 dependency based on AURORA_SDL3_PROVIDER and AURORA_SDL3_LINKAGE.
 #
@@ -68,8 +69,12 @@ elseif (_aurora_sdl3_provider STREQUAL "package")
   if (NOT AURORA_SDL3_PACKAGE_URL)
     if (WIN32)
       # We have custom builds of SDL3 for Win32 x86/AMD64 with libusb support included
-      if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86)$")
-        string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _sdl3_arch)
+      aurora_get_target_arch(_target_arch)
+      set(_sdl3_arch "")
+      if (_target_arch MATCHES "^(AMD64|x86)$")
+        string(TOLOWER "${_target_arch}" _sdl3_arch)
+      endif ()
+      if (_sdl3_arch)
         set(AURORA_SDL3_PACKAGE_URL
           "https://github.com/encounter/sdl3-build/releases/download/v${AURORA_SDL3_VERSION}/SDL3-windows-${_sdl3_arch}.tar.gz")
       else ()

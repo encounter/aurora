@@ -1,4 +1,5 @@
 include_guard(GLOBAL)
+include("${CMAKE_CURRENT_LIST_DIR}/AuroraTargetPlatform.cmake")
 
 # Resolve Dawn/WebGPU dependency based on AURORA_DAWN_PROVIDER and AURORA_DAWN_LINKAGE.
 #
@@ -46,24 +47,19 @@ function(_aurora_dawn_set_platform_backends)
   endif ()
 endfunction()
 
+aurora_get_target_arch(_dawn_target_arch)
+string(TOLOWER "${CMAKE_SYSTEM_NAME}" _dawn_system)
+string(TOLOWER "${_dawn_target_arch}" _dawn_arch)
+set(_has_dawn_package FALSE)
+if ("${_dawn_system}-${_dawn_arch}" MATCHES "^(windows-(amd64|arm64)|linux-(x86_64|aarch64)|darwin-(arm64|x86_64)|ios-arm64|android-aarch64)$")
+  set(_has_dawn_package TRUE)
+endif ()
+
 # ── Auto: resolve provider based on platform availability ──
 set(_aurora_dawn_provider "${AURORA_DAWN_PROVIDER}")
 if (_aurora_dawn_provider STREQUAL "auto")
-  # Prebuilt Dawn packages available for: windows-{amd64,arm64}, linux-{x86_64,aarch64}, darwin-{arm64,x86_64}, ios-arm64, android-arm64
-  set(_has_package FALSE)
-  if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|ARM64)$")
-    set(_has_package TRUE)
-  elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|aarch64)$")
-    set(_has_package TRUE)
-  elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|x86_64)$")
-    set(_has_package TRUE)
-  elseif (CMAKE_SYSTEM_NAME STREQUAL "iOS" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-    set(_has_package TRUE)
-  elseif (CMAKE_SYSTEM_NAME STREQUAL "Android" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-    set(_has_package TRUE)
-  endif ()
-
-  if (_has_package)
+  # Prebuilt Dawn packages available for: windows-{amd64,arm64}, linux-{x86_64,aarch64}, darwin-{arm64,x86_64}, ios-arm64, android-aarch64
+  if (_has_dawn_package)
     set(_aurora_dawn_provider "package")
   else ()
     set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
@@ -150,8 +146,12 @@ elseif (_aurora_dawn_provider STREQUAL "system")
 elseif (_aurora_dawn_provider STREQUAL "package")
   # ── Package: download prebuilt Dawn install tree ──
   if (NOT AURORA_DAWN_PACKAGE_URL)
-    string(TOLOWER "${CMAKE_SYSTEM_NAME}" _dawn_system)
-    string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _dawn_arch)
+    if (NOT _has_dawn_package)
+      message(FATAL_ERROR
+        "AURORA_DAWN_PROVIDER=package requires AURORA_DAWN_PACKAGE_URL on this platform.\n"
+        "No prebuilt Dawn package is available for ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}"
+        " with CMAKE_OSX_ARCHITECTURES='${CMAKE_OSX_ARCHITECTURES}'.")
+    endif ()
     set(AURORA_DAWN_PACKAGE_URL
       "https://github.com/encounter/dawn-build/releases/download/${AURORA_DAWN_VERSION}/dawn-${_dawn_system}-${_dawn_arch}.tar.gz")
   endif ()
