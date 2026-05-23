@@ -40,8 +40,8 @@ function(_aurora_dawn_set_platform_backends)
     set(DAWN_ENABLE_D3D11 OFF CACHE INTERNAL "")
     set(DAWN_ENABLE_VULKAN ON CACHE INTERNAL "")
     set(DAWN_ENABLE_METAL OFF CACHE INTERNAL "")
-    set(DAWN_ENABLE_DESKTOP_GL OFF CACHE INTERNAL "")
-    set(DAWN_ENABLE_OPENGLES OFF CACHE INTERNAL "")
+    set(DAWN_ENABLE_DESKTOP_GL ON CACHE INTERNAL "")
+    set(DAWN_ENABLE_OPENGLES ON CACHE INTERNAL "")
     set(DAWN_ENABLE_NULL ON CACHE INTERNAL "")
   endif ()
 endfunction()
@@ -105,7 +105,7 @@ if (_aurora_dawn_provider STREQUAL "vendor")
 
     include(FetchContent)
     FetchContent_Declare(dawn
-      URL "https://github.com/google/dawn/archive/refs/tags/${AURORA_DAWN_VERSION}.tar.gz"
+      URL "https://github.com/google/dawn/archive/refs/${AURORA_DAWN_REF}.tar.gz"
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE
       EXCLUDE_FROM_ALL
     )

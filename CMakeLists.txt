@@ -14,22 +14,17 @@ option(AURORA_ENABLE_RMLUI "Enable HTML/CSS Based UI Library for use in end-user
 option(AURORA_CACHE_USE_ZSTD "Compress WebGPU cache entries with zstd" ON)
 
 # Dependency versions
-set(AURORA_DAWN_VERSION "v20260423.175430" CACHE STRING "Dawn version tag (https://github.com/encounter/dawn-build/releases)")
+set(AURORA_DAWN_VERSION "v20260523.201736" CACHE STRING "Dawn prebuilt version tag (https://github.com/encounter/dawn-build/releases)")
+set(AURORA_DAWN_REF "9aa45f938d4b36626722bbfdc2f18447179337e6" CACHE STRING "Dawn commit ref (https://github.com/google/dawn)")
 set(AURORA_SDL3_VERSION "3.4.4" CACHE STRING "SDL3 version tag (https://github.com/libsdl-org/SDL/releases)")
 set(AURORA_NOD_VERSION "v2.0.0-alpha.8" CACHE STRING "nod version tag (https://github.com/encounter/nod/releases)")
 
 # Platform-specific defaults
-if (CMAKE_CROSSCOMPILING)
-  # Cross-compiling: vendor everything, don't use system packages
-  set(_default_provider "vendor")
-  set(_default_linkage "static")
+set(_default_provider "auto")
+if (WIN32)
+  set(_default_linkage "shared")
 else ()
-  set(_default_provider "auto")
-  if (WIN32)
-    set(_default_linkage "shared")
-  else ()
-    set(_default_linkage "static")
-  endif ()
+  set(_default_linkage "static")
 endif ()
 
 # Dawn/WebGPU (if AURORA_ENABLE_GX)
