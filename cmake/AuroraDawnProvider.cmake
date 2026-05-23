@@ -49,13 +49,17 @@ endfunction()
 # ── Auto: resolve provider based on platform availability ──
 set(_aurora_dawn_provider "${AURORA_DAWN_PROVIDER}")
 if (_aurora_dawn_provider STREQUAL "auto")
-  # Prebuilt Dawn packages available for: windows-{amd64,arm64}, linux-{x86_64,aarch64}, darwin-{arm64,x86_64}
+  # Prebuilt Dawn packages available for: windows-{amd64,arm64}, linux-{x86_64,aarch64}, darwin-{arm64,x86_64}, ios-arm64, android-arm64
   set(_has_package FALSE)
-  if (WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|ARM64)$")
+  if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|ARM64)$")
     set(_has_package TRUE)
   elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|aarch64)$")
     set(_has_package TRUE)
-  elseif (APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|x86_64)$")
+  elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|x86_64)$")
+    set(_has_package TRUE)
+  elseif (CMAKE_SYSTEM_NAME STREQUAL "iOS" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    set(_has_package TRUE)
+  elseif (CMAKE_SYSTEM_NAME STREQUAL "Android" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
     set(_has_package TRUE)
   endif ()
 
@@ -105,7 +109,7 @@ if (_aurora_dawn_provider STREQUAL "vendor")
 
     include(FetchContent)
     FetchContent_Declare(dawn
-      URL "https://github.com/google/dawn/archive/refs/${AURORA_DAWN_REF}.tar.gz"
+      URL "https://github.com/google/dawn/archive/${AURORA_DAWN_REF}.tar.gz"
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE
       EXCLUDE_FROM_ALL
     )
