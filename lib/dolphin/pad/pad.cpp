@@ -1559,6 +1559,16 @@ BOOL PADGetSensorData(const u32 port, const PADSensorType sensor, f32* data, con
   return SDL_GetGamepadSensorData(ctrl->m_controller, static_cast<SDL_SensorType>(sensor), data, nValues);
 }
 
+BOOL PADHasLED(const u32 port) {
+  const auto* ctrl = aurora::input::get_controller_for_player(port);
+
+  if (ctrl == nullptr) {
+    return FALSE;
+  }
+
+  return ctrl->m_hasRgbLed;
+}
+
 BOOL PADSetRumbleIntensity(const u32 port, const u16 low, const u16 high) {
   auto* ctrl = aurora::input::get_controller_for_player(port);
   if (ctrl == nullptr || ctrl->m_isGameCube || !ctrl->m_hasRumble) {
