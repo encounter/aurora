@@ -11,6 +11,7 @@
 #include <deque>
 #include <filesystem>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 #include <absl/container/flat_hash_map.h>
@@ -22,10 +23,13 @@ namespace aurora::gfx {
 static Module Log("aurora::gfx::pipeline_cache");
 
 constexpr int PipelineCacheSchema = 1;
+constexpr uint32_t PipelineCacheRetainFrames = 7200;
+constexpr uint32_t PipelineCacheSweepPeriod = 300;
 
 struct CachedPipeline {
   wgpu::RenderPipeline pipeline;
   uint32_t firstFrameUsed = UINT32_MAX;
+  uint32_t lastUsedFrame = 0;
 };
 
 struct PendingPipeline {
@@ -69,6 +73,11 @@ static std::condition_variable g_pipelineCacheWriterCv;
 static std::mutex g_pipelineCacheWriterMutex;
 static std::deque<PipelineCacheWrite> g_pipelineCacheWriteQueue;
 static bool g_pipelineCacheWriterStop = false;
+
+static uint32_t pipeline_last_used_frame() noexcept {
+  const uint32_t frame = current_frame();
+  return frame == UINT32_MAX ? 0 : frame;
+}
 
 #if defined(__cpp_lib_atomic_ref)
 static std::atomic_ref queuedPipelines{g_stats.queuedPipelines};
@@ -169,6 +178,7 @@ static PipelineRef find_pipeline_impl(ShaderType type, const PipelineConfig& con
         g_pipelines.try_emplace(hash, CachedPipeline{
                                           .pipeline = cb(),
                                           .firstFrameUsed = firstFrameUsed,
+                                          .lastUsedFrame = pipeline_last_used_frame(),
                                       });
         if (persist) {
           cacheWrite = make_pipeline_cache_write(type, hash, config, firstFrameUsed);
@@ -479,6 +489,7 @@ static void pipeline_worker() {
       g_pipelines.try_emplace(pending.hash, CachedPipeline{
                                                 .pipeline = std::move(result),
                                                 .firstFrameUsed = pending.firstFrameUsed,
+                                                .lastUsedFrame = pipeline_last_used_frame(),
                                             });
       g_pendingPipelines.erase(pending.hash);
       hasMore = !g_priorityPipelines.empty() || !g_backgroundPipelines.empty();
@@ -643,12 +654,33 @@ void end_pipeline_frame() {
   }
 }
 
+void expire_cached_pipelines() {
+  const uint32_t frame = current_frame();
+  if (frame == UINT32_MAX || frame % PipelineCacheSweepPeriod != 0) {
+    return;
+  }
+
+  ZoneScoped;
+  std::lock_guard guard{g_pipelineMutex};
+  if (g_pipelines.empty()) {
+    return;
+  }
+  for (auto it = g_pipelines.begin(); it != g_pipelines.end();) {
+    if (it->second.lastUsedFrame <= frame && frame - it->second.lastUsedFrame > PipelineCacheRetainFrames) {
+      g_pipelines.erase(it++);
+    } else {
+      ++it;
+    }
+  }
+}
+
 bool get_pipeline(PipelineRef ref, wgpu::RenderPipeline& pipeline) {
   std::lock_guard guard{g_pipelineMutex};
   const auto it = g_pipelines.find(ref);
   if (it == g_pipelines.end()) {
     return false;
   }
+  it->second.lastUsedFrame = pipeline_last_used_frame();
   pipeline = it->second.pipeline;
   return true;
 }

@@ -867,7 +867,10 @@ void render(wgpu::CommandEncoder& cmd) {
 #endif
 }
 
-void after_submit() noexcept { depth_peek::after_submit(); }
+void after_submit() noexcept {
+  depth_peek::after_submit();
+  expire_cached_pipelines();
+}
 
 void render_pass(const wgpu::RenderPassEncoder& pass, u32 idx) {
   g_currentPipeline = UINTPTR_MAX;
