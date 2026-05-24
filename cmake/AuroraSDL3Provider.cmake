@@ -140,7 +140,7 @@ elseif (_aurora_sdl3_provider STREQUAL "vendor")
 
     include(FetchContent)
     FetchContent_Declare(SDL
-      URL "https://github.com/libsdl-org/SDL/releases/download/release-${AURORA_SDL3_VERSION}/SDL3-${AURORA_SDL3_VERSION}.tar.gz"
+      URL "https://github.com/libsdl-org/SDL/archive/${AURORA_SDL3_REF}.tar.gz"
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE
       EXCLUDE_FROM_ALL
     )
