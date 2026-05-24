@@ -572,49 +572,16 @@ constexpr std::array<std::string_view, GX_CA_ZERO + 1> TevAlphaArgNames{
     "APREV"sv, "A0"sv, "A1"sv, "A2"sv, "TEXA"sv, "RASA"sv, "KONST"sv, "ZERO"sv,
 };
 
-template <typename ComponentFn>
-auto emit_components(u8 cnt, ComponentFn&& component) -> std::string {
-  switch (cnt) {
-  case 1:
-    return component(0);
-  case 2:
-    return fmt::format("vec2f({}, {})", component(0), component(1));
-  case 3:
-    return fmt::format("vec3f({}, {}, {})", component(0), component(1), component(2));
-  default:
-    return {};
-  }
-}
-
-auto fetch_fixed16_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le, bool isSigned)
-    -> std::string {
-  if (mapping.cnt == 0 || mapping.cnt > 3) {
-    return {};
-  }
-  const auto fetchFn = isSigned ? "fetch_s16_1"sv : "fetch_u16_1"sv;
-  return emit_components(mapping.cnt, [&](u8 comp) {
-    return fmt::format("{}(&{}, {} + {}u, {}u, {})", fetchFn, buf, offs, comp * 2u, mapping.frac, le);
-  });
-}
-
 auto fetch_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le) -> std::string {
   switch (mapping.compType) {
   case GX_U8:
     return fmt::format("fetch_u8_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
   case GX_S8:
     return fmt::format("fetch_s8_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
-  case GX_U16: {
-    if (auto res = fetch_fixed16_attr(mapping, buf, offs, le, false); !res.empty()) {
-      return res;
-    }
+  case GX_U16:
     return fmt::format("fetch_u16_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
-  }
-  case GX_S16: {
-    if (auto res = fetch_fixed16_attr(mapping, buf, offs, le, true); !res.empty()) {
-      return res;
-    }
+  case GX_S16:
     return fmt::format("fetch_s16_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
-  }
   case GX_F32:
     return fmt::format("fetch_f32_{}(&{}, {}, {})", mapping.cnt, buf, offs, le);
   case GX_RGBA8:
@@ -1710,23 +1677,33 @@ fn fetch_s16_1(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) 
 }}
 
 fn fetch_u16_2(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec2f {{
-  let v = raw_fetch_u16_2(p, byte_off, le);
-  return vec2f(v) / f32(1u << frac);
+  return vec2f(
+    fetch_u16_1(p, byte_off + 0u, frac, le),
+    fetch_u16_1(p, byte_off + 2u, frac, le),
+  );
 }}
 
 fn fetch_s16_2(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec2f {{
-  let v = (bitcast<vec2i>(raw_fetch_u16_2(p, byte_off, le)) << vec2u(16u)) >> vec2u(16u);
-  return vec2f(v) / f32(1u << frac);
+  return vec2f(
+    fetch_s16_1(p, byte_off + 0u, frac, le),
+    fetch_s16_1(p, byte_off + 2u, frac, le),
+  );
 }}
 
 fn fetch_u16_3(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec3f {{
-  let v = raw_fetch_u16_3(p, byte_off, le);
-  return vec3f(v) / f32(1u << frac);
+  return vec3f(
+    fetch_u16_1(p, byte_off + 0u, frac, le),
+    fetch_u16_1(p, byte_off + 2u, frac, le),
+    fetch_u16_1(p, byte_off + 4u, frac, le),
+  );
 }}
 
 fn fetch_s16_3(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec3f {{
-  let v = (bitcast<vec3i>(raw_fetch_u16_3(p, byte_off, le)) << vec3u(16u)) >> vec3u(16u);
-  return vec3f(v) / f32(1u << frac);
+  return vec3f(
+    fetch_s16_1(p, byte_off + 0u, frac, le),
+    fetch_s16_1(p, byte_off + 2u, frac, le),
+    fetch_s16_1(p, byte_off + 4u, frac, le),
+  );
 }}
 
 fn fetch_u16_4(p: ptr<storage, array<u32>>, byte_off: u32, frac: u32, le: bool) -> vec4f {{
