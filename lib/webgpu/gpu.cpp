@@ -56,7 +56,6 @@ wgpu::Instance g_instance;
 static wgpu::AdapterInfo g_adapterInfo;
 static wgpu::SurfaceCapabilities g_surfaceCapabilities;
 bool g_bcTexturesSupported;
-static bool g_useAdrenoWorkarounds = false;
 
 namespace {
 
@@ -160,32 +159,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 )"sv;
 
-std::string_view string_view(wgpu::StringView value) {
-  if (value.IsUndefined() || value.data == nullptr) {
-    return {};
-  }
-  return {value.data, value.length};
-}
-
-bool contains_ascii_case_insensitive(std::string_view haystack, std::string_view needle) {
-  if (needle.empty() || haystack.size() < needle.size()) {
-    return false;
-  }
-  return std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(), [](char lhs, char rhs) {
-           return std::tolower(static_cast<unsigned char>(lhs)) == std::tolower(static_cast<unsigned char>(rhs));
-         }) != haystack.end();
-}
-
-bool is_adreno_adapter(const wgpu::AdapterInfo& info) {
-  const auto vendor = string_view(info.vendor);
-  const auto architecture = string_view(info.architecture);
-  const auto device = string_view(info.device);
-
-  return contains_ascii_case_insensitive(vendor, "qualcomm") ||
-         contains_ascii_case_insensitive(architecture, "adreno") ||
-         contains_ascii_case_insensitive(device, "adreno");
-}
-
 wgpu::PresentMode best_present_mode(bool vsync) {
   const auto supports = [](const wgpu::PresentMode candidate) {
     for (size_t i = 0; i < g_surfaceCapabilities.presentModeCount; ++i) {
@@ -249,8 +222,6 @@ uint32_t viewport_extent(float value) noexcept {
 }
 
 } // namespace
-
-bool uses_adreno_workarounds() noexcept { return g_useAdrenoWorkarounds; }
 
 TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled) {
   const wgpu::Extent3D size{
@@ -774,7 +745,6 @@ bool initialize(AuroraBackend auroraBackend) {
   }
   g_adapter.GetInfo(&g_adapterInfo);
   g_backendType = g_adapterInfo.backendType;
-  g_useAdrenoWorkarounds = is_adreno_adapter(g_adapterInfo);
   const auto backendName = magic_enum::enum_name(g_backendType);
   auto adapterName = g_adapterInfo.device;
   if (adapterName.IsUndefined()) {
