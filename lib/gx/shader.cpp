@@ -591,15 +591,15 @@ auto fetch_fixed16_attr(const AttrConfig& mapping, GXAttr attr, std::string_view
   if (mapping.cnt == 0 || mapping.cnt > 3) {
     return {};
   }
+  const auto fn = isSigned ? "fetch_s16_1"sv : "fetch_u16_1"sv;
   switch (mapping.attrType) {
   case GX_DIRECT:
     if ((vtxStride & 1u) != 0u || (mapping.offset & 1u) != 0u) {
       return {};
     }
     return emit_components(mapping.cnt, [&](u8 comp) {
-      return fmt::format(
-          "decode_u16(raw_fetch_u16_1(&vbuf, ubuf.vtx_start + {} * {}u + {}u, {}), {}u, {})", vidx, vtxStride,
-          mapping.offset + comp * 2u, le, mapping.frac, isSigned);
+      return fmt::format("{}(&vbuf, ubuf.vtx_start + {} * {}u + {}u, {}u, {})", fn, vidx, vtxStride,
+                         mapping.offset + comp * 2u, mapping.frac, le);
     });
   case GX_INDEX8:
   case GX_INDEX16:
@@ -607,9 +607,8 @@ auto fetch_fixed16_attr(const AttrConfig& mapping, GXAttr attr, std::string_view
       return {};
     }
     return emit_components(mapping.cnt, [&](u8 comp) {
-      return fmt::format(
-          "decode_u16(raw_fetch_u16_1(&abuf, ((ubuf.array_start[{}] >> 1u) + {} * {}u + {}u) * 2u, {}), {}u, {})",
-          attr - GX_VA_POS, aidx, mapping.stride / 2u, comp, le, mapping.frac, isSigned);
+      return fmt::format("{}(&abuf, ((ubuf.array_start[{}] >> 1u) + {} * {}u + {}u) * 2u, {}u, {})", fn,
+                         attr - GX_VA_POS, aidx, mapping.stride / 2u, comp, mapping.frac, le);
     });
   default:
     return {};
@@ -1563,12 +1562,6 @@ fn load_u16(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
   let next = load_word(p, word_idx + 1u);
   let raw = extractBits(word, 24u, 8u) | (extractBits(next, 0u, 8u) << 8u);
   return bswap16(raw, le);
-}}
-
-fn decode_u16(raw: u32, frac: u32, signed: bool) -> f32 {{
-  let signed_value = bitcast<i32>(raw << 16u) >> 16;
-  let value = select(f32(raw), f32(signed_value), signed);
-  return value / f32(1u << frac);
 }}
 
 fn load_u24(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
