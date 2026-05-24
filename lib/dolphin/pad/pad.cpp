@@ -404,6 +404,7 @@ void __PADSetDefaultMapping(aurora::input::GameController* controller) /*  NOLIN
   switch (SDL_GetGamepadType(controller->m_controller)) {
   case SDL_GAMEPAD_TYPE_XBOX360:
     controller->m_buttonMapping = g_defaultButtonsXBox360;
+    break;
   case SDL_GAMEPAD_TYPE_XBOXONE:
     controller->m_buttonMapping = g_defaultButtonsXBoxOne;
     break;
