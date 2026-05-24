@@ -1551,12 +1551,6 @@ fn load_u32_raw(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
   return (lo >> shift) | (hi << (32u - shift));
 }}
 
-fn load_u16_halfword(p: ptr<storage, array<u32>>, half_off: u32, le: bool) -> u32 {{
-  let word = load_word(p, half_off >> 1u);
-  let raw = select(word & 0xFFFFu, word >> 16u, (half_off & 1u) != 0u);
-  return bswap16(raw, le);
-}}
-
 fn load_u16(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
@@ -1569,21 +1563,21 @@ fn load_u16(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
   return bswap16(raw, le);
 }}
 
-fn fetch_16(raw: u32, frac: u32, signed: bool) -> f32 {{
-  if (signed) {{
-    let v = bitcast<i32>(raw << 16u) >> 16;
-    return f32(v) / f32(1u << frac);
-  }}
-  return f32(raw) / f32(1u << frac);
-}}
-
 fn fetch_16_halfword(p: ptr<storage, array<u32>>, half_off: u32, frac: u32, le: bool, signed: bool) -> f32 {{
-  return fetch_16(load_u16_halfword(p, half_off, le), frac, signed);
+  let byte_off = half_off * 2u;
+  if (signed) {{
+    return fetch_s16_1(p, byte_off, frac, le);
+  }}
+  return fetch_u16_1(p, byte_off, frac, le);
 }}
 
 fn fetch_16_direct_halfword(p: ptr<storage, array<u32>>, vtx_start: u32, vidx: u32, stride_half: u32, attr_half: u32, comp: u32, frac: u32, le: bool, signed: bool) -> f32 {{
+  let byte_off = vtx_start + vidx * (stride_half * 2u) + (attr_half + comp) * 2u;
   if ((vtx_start & 1u) != 0u) {{
-    return fetch_16(load_u16(p, vtx_start + vidx * (stride_half * 2u) + (attr_half + comp) * 2u, le), frac, signed);
+    if (signed) {{
+      return fetch_s16_1(p, byte_off, frac, le);
+    }}
+    return fetch_u16_1(p, byte_off, frac, le);
   }}
   return fetch_16_halfword(p, (vtx_start >> 1u) + vidx * stride_half + attr_half + comp, frac, le, signed);
 }}
