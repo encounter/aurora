@@ -92,6 +92,7 @@ typedef struct {
   bool pauseOnFocusLost;
   bool allowTextureReplacements;
   bool allowTextureDumps;
+  bool preloadPipelineCache;
   int32_t windowPosX;
   int32_t windowPosY;
   uint32_t windowWidth;

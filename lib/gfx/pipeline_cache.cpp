@@ -11,6 +11,7 @@
 #include <deque>
 #include <filesystem>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 #include <absl/container/flat_hash_map.h>
@@ -601,7 +602,11 @@ void initialize_pipeline_cache() {
     g_pipelineThread = std::thread(pipeline_worker);
   }
 
-  load_pipeline_cache();
+  if (g_config.preloadPipelineCache) {
+    load_pipeline_cache();
+  } else {
+    prune_old_pipeline_cache_versions();
+  }
   if (!g_pipelineCacheBroken) {
     start_pipeline_cache_writer();
   }
