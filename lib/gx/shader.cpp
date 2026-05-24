@@ -597,8 +597,9 @@ auto fetch_fixed16_attr(const AttrConfig& mapping, GXAttr attr, std::string_view
       return {};
     }
     return emit_components(mapping.cnt, [&](u8 comp) {
-      return fmt::format("fetch_16_direct_at_half_offset(&vbuf, ubuf.vtx_start, {}, {}u, {}u, {}u, {}u, {}, {})",
-                         vidx, vtxStride / 2u, mapping.offset / 2u, comp, mapping.frac, le, isSigned);
+      return fmt::format(
+          "decode_u16(raw_fetch_u16_1(&vbuf, ubuf.vtx_start + {} * {}u + {}u, {}), {}u, {})", vidx, vtxStride,
+          mapping.offset + comp * 2u, le, mapping.frac, isSigned);
     });
   case GX_INDEX8:
   case GX_INDEX16:
@@ -606,8 +607,9 @@ auto fetch_fixed16_attr(const AttrConfig& mapping, GXAttr attr, std::string_view
       return {};
     }
     return emit_components(mapping.cnt, [&](u8 comp) {
-      return fmt::format("fetch_16_at_half_offset(&abuf, (ubuf.array_start[{}] >> 1u) + {} * {}u + {}u, {}u, {}, {})",
-                         attr - GX_VA_POS, aidx, mapping.stride / 2u, comp, mapping.frac, le, isSigned);
+      return fmt::format(
+          "decode_u16(raw_fetch_u16_1(&abuf, ((ubuf.array_start[{}] >> 1u) + {} * {}u + {}u) * 2u, {}), {}u, {})",
+          attr - GX_VA_POS, aidx, mapping.stride / 2u, comp, le, mapping.frac, isSigned);
     });
   default:
     return {};
@@ -1567,18 +1569,6 @@ fn decode_u16(raw: u32, frac: u32, signed: bool) -> f32 {{
   let signed_value = bitcast<i32>(raw << 16u) >> 16;
   let value = select(f32(raw), f32(signed_value), signed);
   return value / f32(1u << frac);
-}}
-
-fn fetch_16_at_half_offset(p: ptr<storage, array<u32>>, half_off: u32, frac: u32, le: bool, signed: bool) -> f32 {{
-  return decode_u16(raw_fetch_u16_1(p, half_off * 2u, le), frac, signed);
-}}
-
-fn fetch_16_direct_at_half_offset(p: ptr<storage, array<u32>>, vtx_start: u32, vidx: u32, stride_half: u32, attr_half: u32, comp: u32, frac: u32, le: bool, signed: bool) -> f32 {{
-  let byte_off = vtx_start + vidx * (stride_half * 2u) + (attr_half + comp) * 2u;
-  if ((vtx_start & 1u) != 0u) {{
-    return decode_u16(raw_fetch_u16_1(p, byte_off, le), frac, signed);
-  }}
-  return fetch_16_at_half_offset(p, (vtx_start >> 1u) + vidx * stride_half + attr_half + comp, frac, le, signed);
 }}
 
 fn load_u24(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
