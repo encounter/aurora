@@ -586,50 +586,31 @@ auto emit_components(u8 cnt, ComponentFn&& component) -> std::string {
   }
 }
 
-auto fetch_fixed16_attr(const AttrConfig& mapping, GXAttr attr, std::string_view vidx, std::string_view aidx,
-                        uint32_t vtxStride, bool le, bool isSigned) -> std::string {
+auto fetch_fixed16_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le, bool isSigned)
+    -> std::string {
   if (mapping.cnt == 0 || mapping.cnt > 3) {
     return {};
   }
-  const auto fn = isSigned ? "fetch_s16_1"sv : "fetch_u16_1"sv;
-  switch (mapping.attrType) {
-  case GX_DIRECT:
-    if ((vtxStride & 1u) != 0u || (mapping.offset & 1u) != 0u) {
-      return {};
-    }
-    return emit_components(mapping.cnt, [&](u8 comp) {
-      return fmt::format("{}(&vbuf, ubuf.vtx_start + {} * {}u + {}u, {}u, {})", fn, vidx, vtxStride,
-                         mapping.offset + comp * 2u, mapping.frac, le);
-    });
-  case GX_INDEX8:
-  case GX_INDEX16:
-    if (aidx.empty() || (mapping.stride & 1u) != 0u) {
-      return {};
-    }
-    return emit_components(mapping.cnt, [&](u8 comp) {
-      return fmt::format("{}(&abuf, ((ubuf.array_start[{}] >> 1u) + {} * {}u + {}u) * 2u, {}u, {})", fn,
-                         attr - GX_VA_POS, aidx, mapping.stride / 2u, comp, mapping.frac, le);
-    });
-  default:
-    return {};
-  }
+  const auto fetchFn = isSigned ? "fetch_s16_1"sv : "fetch_u16_1"sv;
+  return emit_components(mapping.cnt, [&](u8 comp) {
+    return fmt::format("{}(&{}, {} + {}u, {}u, {})", fetchFn, buf, offs, comp * 2u, mapping.frac, le);
+  });
 }
 
-auto fetch_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le,
-                GXAttr attr, std::string_view vidx, std::string_view aidx, uint32_t vtxStride) -> std::string {
+auto fetch_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le) -> std::string {
   switch (mapping.compType) {
   case GX_U8:
     return fmt::format("fetch_u8_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
   case GX_S8:
     return fmt::format("fetch_s8_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
   case GX_U16: {
-    if (auto res = fetch_fixed16_attr(mapping, attr, vidx, aidx, vtxStride, le, false); !res.empty()) {
+    if (auto res = fetch_fixed16_attr(mapping, buf, offs, le, false); !res.empty()) {
       return res;
     }
     return fmt::format("fetch_u16_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
   }
   case GX_S16: {
-    if (auto res = fetch_fixed16_attr(mapping, attr, vidx, aidx, vtxStride, le, true); !res.empty()) {
+    if (auto res = fetch_fixed16_attr(mapping, buf, offs, le, true); !res.empty()) {
       return res;
     }
     return fmt::format("fetch_s16_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
@@ -669,16 +650,15 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
   }
   auto buf = "vbuf"sv;
   auto offs = fmt::format("ubuf.vtx_start + {} * {}u + {}u", vidx, config.vtxStride, mapping.offset);
-  std::string aidx;
   auto le = false; // Vertex buffer is always big endian (for now)
   if (mapping.attrType == GX_INDEX8) {
-    aidx = fmt::format("raw_fetch_u8_1(&{}, {})", buf, offs);
-    offs = fmt::format("ubuf.array_start[{}] + {} * {}u", attr - GX_VA_POS, aidx, mapping.stride);
+    offs = fmt::format("ubuf.array_start[{}] + raw_fetch_u8_1(&{}, {}) * {}u", attr - GX_VA_POS, buf, offs,
+                       mapping.stride);
     buf = "abuf"sv;
     le = mapping.le;
   } else if (mapping.attrType == GX_INDEX16) {
-    aidx = fmt::format("raw_fetch_u16_1(&{}, {}, {})", buf, offs, le);
-    offs = fmt::format("ubuf.array_start[{}] + {} * {}u", attr - GX_VA_POS, aidx, mapping.stride);
+    offs = fmt::format("ubuf.array_start[{}] + raw_fetch_u16_1(&{}, {}, {}) * {}u", attr - GX_VA_POS, buf, offs, le,
+                       mapping.stride);
     buf = "abuf"sv;
     le = mapping.le;
   }
@@ -695,7 +675,7 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
   case GX_VA_TEX7MTXIDX:
     return fmt::format("raw_fetch_u8_1(&{}, {})", buf, offs);
   case GX_VA_POS: {
-    const auto posLoad = fetch_attr(mapping, buf, offs, le, attr, vidx, aidx, config.vtxStride);
+    const auto posLoad = fetch_attr(mapping, buf, offs, le);
     if (mapping.cnt == 2) {
       return fmt::format("vec3f({}, 0.0)", posLoad);
     }
@@ -703,7 +683,7 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
   }
   case GX_VA_NRM:
     // TODO check for NBT/NBT3
-    return fetch_attr(mapping, buf, offs, le, attr, vidx, aidx, config.vtxStride);
+    return fetch_attr(mapping, buf, offs, le);
   case GX_VA_CLR0:
   case GX_VA_CLR1:
     return fetch_color_attr(mapping, buf, offs, le);
@@ -715,7 +695,7 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
   case GX_VA_TEX5:
   case GX_VA_TEX6:
   case GX_VA_TEX7: {
-    const auto texLoad = fetch_attr(mapping, buf, offs, le, attr, vidx, aidx, config.vtxStride);
+    const auto texLoad = fetch_attr(mapping, buf, offs, le);
     if (mapping.cnt == 1) {
       return fmt::format("vec2f({}, 0.0)", texLoad);
     }
