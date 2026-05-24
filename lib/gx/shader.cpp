@@ -572,29 +572,23 @@ constexpr std::array<std::string_view, GX_CA_ZERO + 1> TevAlphaArgNames{
     "APREV"sv, "A0"sv, "A1"sv, "A2"sv, "TEXA"sv, "RASA"sv, "KONST"sv, "ZERO"sv,
 };
 
-template <typename ComponentFn>
-auto emit_components(u8 cnt, ComponentFn&& component) -> std::string {
-  switch (cnt) {
-  case 1:
-    return component(0);
-  case 2:
-    return fmt::format("vec2f({}, {})", component(0), component(1));
-  case 3:
-    return fmt::format("vec3f({}, {}, {})", component(0), component(1), component(2));
-  default:
-    return {};
+auto fetch_fixed16_attr(std::string_view fetchFn, const AttrConfig& mapping, std::string_view buf, 
+                        std::string_view offs, bool le) -> std::string {
+  // Some Adreno drivers appear sensitive to generated shaders that route 2- and
+  // 3-component fixed-16 vertex attributes through reusable vector fetch helpers.
+  // Emitting scalar component fetches at the call site avoids observed artifacts.
+  if (mapping.cnt == 2) {
+    const auto comp0 = fmt::format("{}_1(&{}, {} + 0u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    const auto comp1 = fmt::format("{}_1(&{}, {} + 2u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    return fmt::format("vec2f({}, {})", comp0, comp1);
   }
-}
-
-auto fetch_fixed16_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le, bool isSigned)
-    -> std::string {
-  if (mapping.cnt < 2 || mapping.cnt > 3) {
-    return {};
+  if (mapping.cnt == 3) {
+    const auto comp0 = fmt::format("{}_1(&{}, {} + 0u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    const auto comp1 = fmt::format("{}_1(&{}, {} + 2u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    const auto comp2 = fmt::format("{}_1(&{}, {} + 4u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    return fmt::format("vec3f({}, {}, {})", comp0, comp1, comp2);
   }
-  const auto fetchFn = isSigned ? "fetch_s16_1"sv : "fetch_u16_1"sv;
-  return emit_components(mapping.cnt, [&](u8 comp) {
-    return fmt::format("{}(&{}, {} + {}u, {}u, {})", fetchFn, buf, offs, comp * 2u, mapping.frac, le);
-  });
+  return fmt::format("{}_{}(&{}, {}, {}u, {})", fetchFn, mapping.cnt, buf, offs, mapping.frac, le);
 }
 
 auto fetch_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le) -> std::string {
@@ -603,18 +597,10 @@ auto fetch_attr(const AttrConfig& mapping, std::string_view buf, std::string_vie
     return fmt::format("fetch_u8_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
   case GX_S8:
     return fmt::format("fetch_s8_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
-  case GX_U16: {
-    if (auto res = fetch_fixed16_attr(mapping, buf, offs, le, false); !res.empty()) {
-      return res;
-    }
-    return fmt::format("fetch_u16_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
-  }
-  case GX_S16: {
-    if (auto res = fetch_fixed16_attr(mapping, buf, offs, le, true); !res.empty()) {
-      return res;
-    }
-    return fmt::format("fetch_s16_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
-  }
+  case GX_U16:
+    return fetch_fixed16_attr("fetch_u16"sv, mapping, buf, offs, le);
+  case GX_S16:
+    return fetch_fixed16_attr("fetch_s16"sv, mapping, buf, offs, le);
   case GX_F32:
     return fmt::format("fetch_f32_{}(&{}, {}, {})", mapping.cnt, buf, offs, le);
   case GX_RGBA8:
@@ -1505,9 +1491,9 @@ fn bswap16(v: u32, le: bool) -> u32 {{
 
 fn load_word(p: ptr<storage, array<u32>>, word_idx: u32) -> u32 {{
   // This guard is not expected to handle routine out-of-bounds accesses.
-  // It keeps some Adreno drivers/optimizers away from over-aggressive storage
-  // buffer optimizations that can cause visual artifacts, including vertex
-  // explosions in Dusklight.
+  // It appears to discourage some Adreno drivers/optimizers from storage buffer
+  // optimizations that can cause visual artifacts, including vertex explosions
+  // in Dusklight.
   if (word_idx < arrayLength(p)) {{
     return p[word_idx];
   }}
