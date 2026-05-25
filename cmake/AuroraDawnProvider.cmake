@@ -47,6 +47,35 @@ function(_aurora_dawn_set_platform_backends)
   endif ()
 endfunction()
 
+# Prebuilt Dawn Android package has non-portable paths in it
+# Will fix upstream but this works for now
+function(_aurora_dawn_fix_android_link_interface)
+  if (NOT ANDROID OR NOT TARGET dawn::webgpu_dawn)
+    return()
+  endif ()
+
+  get_target_property(_dawn_link_libs dawn::webgpu_dawn INTERFACE_LINK_LIBRARIES)
+  if (NOT _dawn_link_libs)
+    return()
+  endif ()
+
+  set(_dawn_fixed_link_libs "")
+  set(_dawn_replaced_log FALSE)
+  foreach (_dawn_link_lib IN LISTS _dawn_link_libs)
+    if (_dawn_link_lib MATCHES "^/.*/sysroot/usr/lib/[^/]+/[0-9]+/liblog\\.so$")
+      list(APPEND _dawn_fixed_link_libs "$<LINK_ONLY:log>")
+      set(_dawn_replaced_log TRUE)
+    else ()
+      list(APPEND _dawn_fixed_link_libs "${_dawn_link_lib}")
+    endif ()
+  endforeach ()
+
+  if (_dawn_replaced_log)
+    set_target_properties(dawn::webgpu_dawn PROPERTIES
+      INTERFACE_LINK_LIBRARIES "${_dawn_fixed_link_libs}")
+  endif ()
+endfunction()
+
 aurora_get_target_arch(_dawn_target_arch)
 string(TOLOWER "${CMAKE_SYSTEM_NAME}" _dawn_system)
 string(TOLOWER "${_dawn_target_arch}" _dawn_arch)
@@ -134,6 +163,7 @@ elseif (_aurora_dawn_provider STREQUAL "system")
   if (NOT TARGET dawn::webgpu_dawn)
     message(FATAL_ERROR "find_package(Dawn) succeeded but dawn::webgpu_dawn target not found")
   endif ()
+  _aurora_dawn_fix_android_link_interface()
   _aurora_dawn_set_platform_backends()
 
   get_target_property(_dawn_type dawn::webgpu_dawn TYPE)
@@ -211,6 +241,7 @@ elseif (_aurora_dawn_provider STREQUAL "package")
       "The package must be a Dawn install tree built with DAWN_ENABLE_INSTALL=ON.")
   endif ()
 
+  _aurora_dawn_fix_android_link_interface()
   _aurora_dawn_set_platform_backends()
 
   get_target_property(_dawn_pkg_type dawn::webgpu_dawn TYPE)
