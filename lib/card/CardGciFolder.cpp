@@ -47,7 +47,17 @@ CardGciFolder::CardGciFolder(CardGciFolder&& other) {
   CardGciFolder::setCurrentMaker(other.m_maker);
 }
 
-CardGciFolder& CardGciFolder::operator=(CardGciFolder&& other) { return *this; }
+CardGciFolder& CardGciFolder::operator=(CardGciFolder&& other) {
+  m_files = std::move(other.m_files);
+  m_bat = std::move(other.m_bat);
+  m_folderPath = other.m_folderPath;
+  m_encoding = other.m_encoding;
+
+  CardGciFolder::setCurrentGame(other.m_game);
+  CardGciFolder::setCurrentMaker(other.m_maker);
+
+  return *this;
+}
 
 void CardGciFolder::InitCard(const char* game, const char* maker) {
   setCurrentGame(game);

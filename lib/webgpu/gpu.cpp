@@ -684,7 +684,7 @@ static bool create_surface() {
   return true;
 }
 
-bool initialize(AuroraBackend auroraBackend) {
+bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
   if (!g_instance) {
     Log.info("Creating WebGPU instance");
     const std::array requiredInstanceFeatures{
@@ -744,16 +744,22 @@ bool initialize(AuroraBackend auroraBackend) {
     }
   }
   g_adapter.GetInfo(&g_adapterInfo);
-  g_backendType = g_adapterInfo.backendType;
-  const auto backendName = magic_enum::enum_name(g_backendType);
   auto adapterName = g_adapterInfo.device;
   if (adapterName.IsUndefined()) {
     adapterName = wgpu::StringView("Unknown");
+  }
+  if (!allowCpu && g_adapterInfo.adapterType == wgpu::AdapterType::CPU) {
+    Log.warn("Ignoring CPU adapter: {}", adapterName);
+    g_adapterInfo = {};
+    g_adapter = {};
+    return false;
   }
   auto description = g_adapterInfo.description;
   if (description.IsUndefined()) {
     description = wgpu::StringView("Unknown");
   }
+  g_backendType = g_adapterInfo.backendType;
+  const auto backendName = magic_enum::enum_name(g_backendType);
   Log.info("Graphics adapter information\n  API: {}\n  Device: {} ({})\n  Driver: {}", backendName, adapterName,
            magic_enum::enum_name(g_adapterInfo.adapterType), description);
 
@@ -835,7 +841,7 @@ bool initialize(AuroraBackend auroraBackend) {
       "enable_immediate_error_handling",
         /* clang-format on */
     };
-    const wgpu::DawnTogglesDescriptor togglesDescriptor({
+    wgpu::DawnTogglesDescriptor togglesDescriptor({
         .nextInChain = &cacheDescriptor,
         .enabledToggleCount = enableToggles.size(),
         .enabledToggles = enableToggles.data(),
