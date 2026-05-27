@@ -265,6 +265,8 @@ BOOL PADHasSensor(u32 port, PADSensorType sensor);
 
 BOOL PADGetSensorData(u32 port, PADSensorType sensor, f32* data, int nValues);
 
+BOOL PADHasLED(u32 port);
+
 BOOL PADSetRumbleIntensity(u32 port, u16 low, u16 high);
 BOOL PADGetRumbleIntensity(u32 port, u16* low, u16* high);
 BOOL PADSupportsRumbleIntensity(u32 port);

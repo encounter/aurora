@@ -572,6 +572,25 @@ constexpr std::array<std::string_view, GX_CA_ZERO + 1> TevAlphaArgNames{
     "APREV"sv, "A0"sv, "A1"sv, "A2"sv, "TEXA"sv, "RASA"sv, "KONST"sv, "ZERO"sv,
 };
 
+auto fetch_fixed16_attr(std::string_view fetchFn, const AttrConfig& mapping, std::string_view buf, 
+                        std::string_view offs, bool le) -> std::string {
+  // Some Adreno drivers appear sensitive to generated shaders that route 2- and
+  // 3-component fixed-16 vertex attributes through reusable vector fetch helpers.
+  // Emitting scalar component fetches at the call site avoids observed artifacts.
+  if (mapping.cnt == 2) {
+    const auto comp0 = fmt::format("{}_1(&{}, {} + 0u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    const auto comp1 = fmt::format("{}_1(&{}, {} + 2u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    return fmt::format("vec2f({}, {})", comp0, comp1);
+  }
+  if (mapping.cnt == 3) {
+    const auto comp0 = fmt::format("{}_1(&{}, {} + 0u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    const auto comp1 = fmt::format("{}_1(&{}, {} + 2u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    const auto comp2 = fmt::format("{}_1(&{}, {} + 4u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    return fmt::format("vec3f({}, {}, {})", comp0, comp1, comp2);
+  }
+  return fmt::format("{}_{}(&{}, {}, {}u, {})", fetchFn, mapping.cnt, buf, offs, mapping.frac, le);
+}
+
 auto fetch_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le) -> std::string {
   switch (mapping.compType) {
   case GX_U8:
@@ -579,9 +598,9 @@ auto fetch_attr(const AttrConfig& mapping, std::string_view buf, std::string_vie
   case GX_S8:
     return fmt::format("fetch_s8_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
   case GX_U16:
-    return fmt::format("fetch_u16_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
+    return fetch_fixed16_attr("fetch_u16"sv, mapping, buf, offs, le);
   case GX_S16:
-    return fmt::format("fetch_s16_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
+    return fetch_fixed16_attr("fetch_s16"sv, mapping, buf, offs, le);
   case GX_F32:
     return fmt::format("fetch_f32_{}(&{}, {}, {})", mapping.cnt, buf, offs, le);
   case GX_RGBA8:
@@ -1470,8 +1489,19 @@ fn bswap16(v: u32, le: bool) -> u32 {{
   return select(((v & 0xFFu) << 8u) | (v >> 8u), v, le);
 }}
 
+fn load_word(p: ptr<storage, array<u32>>, word_idx: u32) -> u32 {{
+  // This guard is not expected to handle routine out-of-bounds accesses.
+  // It appears to discourage some Adreno drivers/optimizers from storage buffer
+  // optimizations that can cause visual artifacts, including vertex explosions
+  // in Dusklight.
+  if (word_idx < arrayLength(p)) {{
+    return p[word_idx];
+  }}
+  return 0u;
+}}
+
 fn load_u8(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
-  let word = p[byte_off / 4u];
+  let word = load_word(p, byte_off / 4u);
   let shift = (byte_off & 3u) * 8u;
   return (word >> shift) & 0xFFu;
 }}
@@ -1479,11 +1509,11 @@ fn load_u8(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
 fn load_u32_raw(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
-  let lo = p[word_idx];
+  let lo = load_word(p, word_idx);
   if (sub == 0u) {{
     return lo;
   }}
-  let hi = p[word_idx + 1u];
+  let hi = load_word(p, word_idx + 1u);
   let shift = sub * 8u;
   return (lo >> shift) | (hi << (32u - shift));
 }}
@@ -1491,11 +1521,11 @@ fn load_u32_raw(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
 fn load_u16(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
-  let word = p[word_idx];
+  let word = load_word(p, word_idx);
   if (sub <= 2u) {{
     return bswap16(extractBits(word, sub * 8u, 16u), le);
   }}
-  let next = p[word_idx + 1u];
+  let next = load_word(p, word_idx + 1u);
   let raw = extractBits(word, 24u, 8u) | (extractBits(next, 0u, 8u) << 8u);
   return bswap16(raw, le);
 }}
@@ -1525,7 +1555,7 @@ fn raw_fetch_u8_1(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
 fn raw_fetch_u8_2(p: ptr<storage, array<u32>>, byte_off: u32) -> vec2u {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
-  let word = p[word_idx];
+  let word = load_word(p, word_idx);
   if (sub <= 2u) {{
     let shift = sub * 8u;
     return vec2u(
@@ -1533,7 +1563,7 @@ fn raw_fetch_u8_2(p: ptr<storage, array<u32>>, byte_off: u32) -> vec2u {{
       extractBits(word, shift + 8u, 8u),
     );
   }}
-  let next = p[word_idx + 1u];
+  let next = load_word(p, word_idx + 1u);
   return vec2u(
     extractBits(word, 24u, 8u),
     extractBits(next, 0u, 8u),

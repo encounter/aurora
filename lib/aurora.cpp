@@ -106,7 +106,7 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
   AuroraBackend selectedBackend = config.desiredBackend;
   bool windowCreated = false;
   if (selectedBackend != BACKEND_AUTO && window::create_window(selectedBackend)) {
-    if (webgpu::initialize(selectedBackend)) {
+    if (webgpu::initialize(selectedBackend, config.allowCpuAdapter)) {
       windowCreated = true;
     } else {
       window::destroy_window();
@@ -119,7 +119,7 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
       if (!window::create_window(selectedBackend)) {
         continue;
       }
-      if (webgpu::initialize(selectedBackend)) {
+      if (webgpu::initialize(selectedBackend, config.allowCpuAdapter)) {
         windowCreated = true;
         break;
       } else {
