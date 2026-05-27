@@ -21,14 +21,18 @@ namespace {
 
 aurora::Module Log("aurora::dvd");
 
+using PhysicalEntryNum = s32;
+using VirtualEntryNum = s32;
+constexpr s32 k_invalidFstEntry = -1;
+
 struct FSTEntry {
   std::string name;
   bool isDir = false;
-  u32 parent = 0;
+  PhysicalEntryNum parent = 0;
   u32 nextOrLength = 0;
   void* overlayData = nullptr;
   // Original entry num on the base game disc, BEFORE being re-organized by overlays.
-  u32 origEntryNum = 0;
+  VirtualEntryNum origEntryNum = 0;
 };
 
 struct IterateNode {
@@ -39,8 +43,8 @@ struct IterateNode {
   void* overlayData;
   std::vector<std::shared_ptr<IterateNode>> children;
 
-  IterateNode(std::string name, bool isDir, u32 size, void* overlayData)
-  : name(std::move(name)), isDir(isDir), size(size), originalEntryNum(0), overlayData(overlayData) {}
+  IterateNode(std::string name, bool isDir, u32 size, u32 originalEntryNum, void* overlayData)
+  : name(std::move(name)), isDir(isDir), size(size), originalEntryNum(originalEntryNum), overlayData(overlayData) {}
 
   IterateNode(std::string name, bool isDir, u32 size, u32 originalEntryNum)
   : name(std::move(name)), isDir(isDir), size(size), originalEntryNum(originalEntryNum), overlayData(nullptr) {}
@@ -78,7 +82,12 @@ public:
 CommandDataNod* s_disc;
 NodHandle* s_partition = nullptr;
 std::vector<FSTEntry> s_fstEntries;
-s32 s_currentDir = 0;
+// Map from "virtual" FST entryNums (matching base disc, game-assigned for new overlay files)
+// To the "physical" FST entryNums (that we use for navigating the tree).
+// Unfilled spots are given the k_invalidFstEntry value.
+std::vector<PhysicalEntryNum> s_fstEntryMap;
+s32 s_baseEntryCount;
+PhysicalEntryNum s_currentDir = 0;
 std::string s_currentPath = "/";
 BOOL s_autoInvalidation = FALSE;
 BOOL s_autoFatalMessaging = FALSE;
@@ -109,6 +118,7 @@ struct OverlayFileEntry {
   std::string fileName;
   void* userData;
   u32 size;
+  s32 entryNum;
 };
 
 std::vector<OverlayFileEntry> s_overlayFiles;
@@ -129,7 +139,13 @@ void clearState() {
   s_initialized = false;
 }
 
-bool isValidEntryIndex(s32 entry) { return entry >= 0 && static_cast<size_t>(entry) < s_fstEntries.size(); }
+bool isValidVirtualEntry(VirtualEntryNum entry) {
+  return entry >= 0 && static_cast<size_t>(entry) < s_fstEntryMap.size() && s_fstEntryMap[entry] != k_invalidFstEntry;
+}
+
+bool isValidPhysicalEntry(PhysicalEntryNum entry) {
+  return entry >= 0 && static_cast<size_t>(entry) < s_fstEntries.size();
+}
 
 bool isAligned(const void* addr, uintptr_t align) {
   return (reinterpret_cast<uintptr_t>(addr) & (align - 1)) == 0;
@@ -212,6 +228,14 @@ IterateNode* findNode(const IterateNode& node, const std::string_view name) {
 }
 
 void mergeOverlayFileIntoContext(const IterateContext& context, const OverlayFileEntry& overlayFile) {
+  if (overlayFile.entryNum < s_baseEntryCount) {
+    Log.error(
+      "Overlay file {} has entryNum {} which is already used by the base disc!",
+      overlayFile.fileName,
+      overlayFile.entryNum);
+    return;
+  }
+
   IterateNode* node = context.root.get();
   std::string_view filePath = overlayFile.fileName;
 
@@ -235,7 +259,7 @@ void mergeOverlayFileIntoContext(const IterateContext& context, const OverlayFil
 
       node = existingNode;
     } else {
-      const auto newNode = std::make_shared<IterateNode>(std::string(segment), true, 0, nullptr);
+      const auto newNode = std::make_shared<IterateNode>(std::string(segment), true, 0, k_invalidFstEntry);
       node->children.push_back(newNode);
       node = newNode.get();
     }
@@ -243,7 +267,7 @@ void mergeOverlayFileIntoContext(const IterateContext& context, const OverlayFil
 
   // Remainder of fileName is the actual file name, and node is the directory we're in.
 
-  auto newNode = IterateNode(std::string(filePath), false, overlayFile.size, overlayFile.userData);
+  auto newNode = IterateNode(std::string(filePath), false, overlayFile.size, overlayFile.entryNum, overlayFile.userData);
   const auto existingNode = findNode(*node, filePath);
   if (existingNode) {
     if (existingNode->isDir) {
@@ -251,10 +275,15 @@ void mergeOverlayFileIntoContext(const IterateContext& context, const OverlayFil
       return;
     }
 
+    newNode.originalEntryNum = existingNode->originalEntryNum;
+
     // Replace existing disc entry.
     *existingNode = std::move(newNode);
   } else {
     // Add new entry.
+    Log.debug("Adding new entry num: {} -> {}", overlayFile.entryNum, overlayFile.fileName);
+    newNode.originalEntryNum = overlayFile.entryNum;
+
     node->children.emplace_back(std::make_shared<IterateNode>(std::move(newNode)));
   }
 }
@@ -266,8 +295,23 @@ void mergeOverlayFilesIntoContext(const IterateContext& context) {
 }
 
 void makeFstRecursive(IterateNode& node, u32 parent) {
+  if (node.originalEntryNum != k_invalidFstEntry) {
+    if (s_fstEntryMap.size() <= node.originalEntryNum) {
+      s_fstEntryMap.resize(node.originalEntryNum + 1, k_invalidFstEntry);
+    }
+
+    auto& map = s_fstEntryMap[node.originalEntryNum];
+    if (map != k_invalidFstEntry) {
+      Log.error("File {} with virtual entry num {} already exists in map!", node.name, node.originalEntryNum);
+      return;
+    }
+
+    map = static_cast<PhysicalEntryNum>(s_fstEntries.size());
+  }
+
   if (!node.isDir) {
     assert(node.children.empty());
+    assert(node.originalEntryNum != k_invalidFstEntry);
 
     s_fstEntries.emplace_back(node.name, false, parent, node.size, node.overlayData, node.originalEntryNum);
     return;
@@ -289,6 +333,16 @@ void makeFstFromContext(const IterateContext& context) {
   makeFstRecursive(*context.root, 0);
 }
 
+s32 calcEntryCount(const IterateNode& node) {
+  s32 counter = 1;
+
+  for (const auto& child : node.children) {
+    counter += calcEntryCount(*child);
+  }
+
+  return counter;
+}
+
 bool rebuildFST() {
   using namespace std::string_literals;
 
@@ -296,12 +350,16 @@ bool rebuildFST() {
     return false;
   }
 
+  // TODO: Ensure current dir still valid after rebuild.
+
   s_fstEntries.clear();
+  s_fstEntryMap.clear();
   IterateContext ctx;
   ctx.root = std::make_shared<IterateNode>(""s, true, 0, static_cast<u32>(0));
   ctx.dirStack.emplace_back(ctx.root, std::numeric_limits<u32>::max());
 
   nod_partition_iterate_fst(s_partition, fstCallback, &ctx);
+  s_baseEntryCount = calcEntryCount(*ctx.root);
   mergeOverlayFilesIntoContext(ctx);
   makeFstFromContext(ctx);
 
@@ -332,8 +390,8 @@ bool nameEqualsIgnoreCase(const std::string& lhs, const char* rhs, size_t rhsLen
   return nameEqualsIgnoreCase(lhs, std::string_view(rhs, rhsLen));
 }
 
-s32 findInDir(s32 dirEntry, const char* name, size_t nameLen) {
-  if (!isValidEntryIndex(dirEntry) || !s_fstEntries[dirEntry].isDir) {
+PhysicalEntryNum findInDir(PhysicalEntryNum dirEntry, const char* name, size_t nameLen) {
+  if (!isValidPhysicalEntry(dirEntry) || !s_fstEntries[dirEntry].isDir) {
     return -1;
   }
 
@@ -341,7 +399,7 @@ s32 findInDir(s32 dirEntry, const char* name, size_t nameLen) {
   u32 i = static_cast<u32>(dirEntry) + 1;
   while (i < childEnd && i < s_fstEntries.size()) {
     if (nameEqualsIgnoreCase(s_fstEntries[i].name, name, nameLen)) {
-      return static_cast<s32>(i);
+      return static_cast<PhysicalEntryNum>(i);
     }
 
     if (s_fstEntries[i].isDir) {
@@ -354,16 +412,16 @@ s32 findInDir(s32 dirEntry, const char* name, size_t nameLen) {
   return -1;
 }
 
-std::string buildDirPath(s32 entryNum) {
-  if (entryNum <= 0 || !isValidEntryIndex(entryNum)) {
+std::string buildDirPath(PhysicalEntryNum entryNum) {
+  if (entryNum <= 0 || !isValidPhysicalEntry(entryNum)) {
     return "/";
   }
 
   std::vector<std::string> parts;
-  s32 cur = entryNum;
-  while (cur > 0 && isValidEntryIndex(cur)) {
+  PhysicalEntryNum cur = entryNum;
+  while (cur > 0 && isValidPhysicalEntry(cur)) {
     parts.push_back(s_fstEntries[cur].name);
-    s32 parent = static_cast<s32>(s_fstEntries[cur].parent);
+    auto parent = s_fstEntries[cur].parent;
     if (parent == cur) {
       break;
     }
@@ -571,7 +629,16 @@ static bool validateOverlayFile(const AuroraOverlayFile& file) {
     return false;
   }
 
+  if (file.entryNum < 0) {
+    Log.error("Overlay file entry is below zero: {}", name);
+    return false;
+  }
+
   return true;
+}
+
+s32 aurora_dvd_base_entry_count() {
+  return s_baseEntryCount;
 }
 
 void aurora_dvd_overlay_files(const AuroraOverlayFile* files, size_t nFiles) {
@@ -588,7 +655,7 @@ void aurora_dvd_overlay_files(const AuroraOverlayFile* files, size_t nFiles) {
       continue;
     }
 
-    s_overlayFiles.emplace_back(file.fileName, file.userData, static_cast<u32>(file.size));
+    s_overlayFiles.emplace_back(file.fileName, file.userData, static_cast<u32>(file.size), file.entryNum);
   }
 
   rebuildFST();
@@ -886,12 +953,12 @@ int DVDSetAutoFatalMessaging(BOOL enable) {
   return prev;
 }
 
-s32 DVDConvertPathToEntrynum(const char* pathPtr) {
+VirtualEntryNum DVDConvertPathToEntrynum(const char* pathPtr) {
   if (!s_initialized || pathPtr == nullptr || s_fstEntries.empty()) {
     return -1;
   }
 
-  s32 current = 0;
+  PhysicalEntryNum current = 0;
   const char* p = pathPtr;
   if (*p == '/') {
     ++p;
@@ -907,7 +974,7 @@ s32 DVDConvertPathToEntrynum(const char* pathPtr) {
       break;
     }
 
-    if (!isValidEntryIndex(current) || !s_fstEntries[current].isDir) {
+    if (!isValidPhysicalEntry(current) || !s_fstEntries[current].isDir) {
       return -1;
     }
 
@@ -922,7 +989,7 @@ s32 DVDConvertPathToEntrynum(const char* pathPtr) {
     } else if (compLen == 2 && p[0] == '.' && p[1] == '.') {
       current = static_cast<s32>(s_fstEntries[current].parent);
     } else {
-      const s32 found = findInDir(current, p, compLen);
+      const PhysicalEntryNum found = findInDir(current, p, compLen);
       if (found < 0) {
         return -1;
       }
@@ -931,15 +998,19 @@ s32 DVDConvertPathToEntrynum(const char* pathPtr) {
     p = compEnd;
   }
 
-  return current;
+  assert(isValidPhysicalEntry(current));
+  return s_fstEntries[current].origEntryNum;
 }
 
-BOOL DVDFastOpen(s32 entrynum, DVDFileInfo* fileInfo) {
-  if (!s_initialized || fileInfo == nullptr || !isValidEntryIndex(entrynum) || s_partition == nullptr) {
+BOOL DVDFastOpen(VirtualEntryNum entrynum, DVDFileInfo* fileInfo) {
+  if (!s_initialized || fileInfo == nullptr || !isValidVirtualEntry(entrynum) || s_partition == nullptr) {
     return FALSE;
   }
 
-  const auto& entry = s_fstEntries[entrynum];
+  const auto physical = s_fstEntryMap[entrynum];
+  assert(physical >= 0);
+
+  const auto& entry = s_fstEntries[physical];
   if (entry.isDir) {
     return FALSE;
   }
@@ -970,7 +1041,7 @@ BOOL DVDFastOpen(s32 entrynum, DVDFileInfo* fileInfo) {
 }
 
 BOOL DVDOpen(const char* fileName, DVDFileInfo* fileInfo) {
-  s32 entrynum = DVDConvertPathToEntrynum(fileName);
+  VirtualEntryNum entrynum = DVDConvertPathToEntrynum(fileName);
   if (entrynum < 0) {
     return FALSE;
   }
@@ -1001,12 +1072,18 @@ BOOL DVDGetCurrentDir(char* path, u32 maxlen) {
 }
 
 BOOL DVDChangeDir(const char* dirName) {
-  s32 entry = DVDConvertPathToEntrynum(dirName);
-  if (!isValidEntryIndex(entry) || !s_fstEntries[entry].isDir) {
+  VirtualEntryNum entry = DVDConvertPathToEntrynum(dirName);
+  if (!isValidVirtualEntry(entry)) {
     return FALSE;
   }
-  s_currentDir = entry;
-  s_currentPath = buildDirPath(entry);
+
+  const auto physical = s_fstEntryMap[entry];
+  if (!s_fstEntries[physical].isDir) {
+    return FALSE;
+  }
+
+  s_currentDir = physical;
+  s_currentPath = buildDirPath(physical);
   return TRUE;
 }
 
@@ -1069,18 +1146,24 @@ s32 DVDGetFileInfoStatus(const DVDFileInfo* fileInfo) {
   return fileInfo->cb.state;
 }
 
-BOOL DVDFastOpenDir(s32 entrynum, DVDDir* dir) {
-  if (!isValidEntryIndex(entrynum) || dir == nullptr || !s_fstEntries[entrynum].isDir) {
+BOOL DVDFastOpenDir(VirtualEntryNum entrynum, DVDDir* dir) {
+  if (!isValidVirtualEntry(entrynum) || dir == nullptr) {
     return FALSE;
   }
-  dir->entryNum = static_cast<u32>(entrynum);
-  dir->location = static_cast<u32>(entrynum) + 1;
-  dir->next = s_fstEntries[entrynum].nextOrLength;
+
+  const auto physical = s_fstEntryMap[entrynum];
+  if (!s_fstEntries[physical].isDir) {
+    return FALSE;
+  }
+
+  dir->entryNum = static_cast<u32>(physical);
+  dir->location = static_cast<u32>(physical) + 1;
+  dir->next = s_fstEntries[physical].nextOrLength;
   return TRUE;
 }
 
 int DVDOpenDir(const char* dirName, DVDDir* dir) {
-  s32 entrynum = DVDConvertPathToEntrynum(dirName);
+  VirtualEntryNum entrynum = DVDConvertPathToEntrynum(dirName);
   if (entrynum < 0) {
     return FALSE;
   }

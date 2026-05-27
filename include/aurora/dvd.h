@@ -55,6 +55,8 @@ typedef struct AuroraOverlayFile {
    * While this is of type size_t, file sizes larger than u32 are not currently supported.
    */
   size_t size;
+
+  s32 entryNum;
 } AuroraOverlayFile;
 
 /**
@@ -109,6 +111,8 @@ void aurora_dvd_overlay_callbacks(const AuroraOverlayCallbacks* callbacks);
  * @param nFiles Amount of files in the array.
  */
 void aurora_dvd_overlay_files(const AuroraOverlayFile* files, size_t nFiles);
+
+s32 aurora_dvd_base_entry_count();
 
 #ifdef __cplusplus
 }
