@@ -325,14 +325,39 @@ static bool device_gyro_available_for_port(const u32 port) {
   return port == PAD_CHAN0 && aurora::device::gyro_available();
 }
 
+static bool device_accel_available_for_port(const u32 port) {
+  return port == PAD_CHAN0 && aurora::device::accel_available();
+}
+
+static bool device_sensor_available_for_port(const u32 port, const PADSensorType sensor) {
+  switch (sensor) {
+  case PAD_SENSOR_ACCEL:
+    return device_accel_available_for_port(port);
+  case PAD_SENSOR_GYRO:
+    return device_gyro_available_for_port(port);
+  default:
+    return false;
+  }
+}
+
+static bool get_device_sensor_data(const PADSensorType sensor, f32* data, const int nValues) {
+  switch (sensor) {
+  case PAD_SENSOR_ACCEL:
+    return aurora::device::accel(data, nValues);
+  case PAD_SENSOR_GYRO:
+    return aurora::device::gyro(data, nValues);
+  default:
+    return false;
+  }
+}
+
 static bool controller_has_sensor(const aurora::input::GameController* controller, const PADSensorType sensor) {
   return controller != nullptr && SDL_GamepadHasSensor(controller->m_controller, static_cast<SDL_SensorType>(sensor));
 }
 
 static bool should_use_device_sensor(const u32 port, const aurora::input::GameController* controller,
                                      const PADSensorType sensor) {
-  return sensor == PAD_SENSOR_GYRO && !controller_has_sensor(controller, sensor) &&
-         device_gyro_available_for_port(port);
+  return device_sensor_available_for_port(port, sensor) && !controller_has_sensor(controller, sensor);
 }
 
 // ReSharper disable once CppDFAConstantFunctionResult
@@ -1657,7 +1682,7 @@ BOOL PADGetSensorData(const u32 port, const PADSensorType sensor, f32* data, con
   }
 
   if (should_use_device_sensor(port, ctrl, sensor)) {
-    return aurora::device::gyro(data, nValues) ? TRUE : FALSE;
+    return get_device_sensor_data(sensor, data, nValues) ? TRUE : FALSE;
   }
 
   return FALSE;
