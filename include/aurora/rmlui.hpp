@@ -11,6 +11,11 @@ enum class InputType {
   Number,
 };
 
+inline constexpr const char* TouchStartEvent = "touchstart";
+inline constexpr const char* TouchMoveEvent = "touchmove";
+inline constexpr const char* TouchEndEvent = "touchend";
+inline constexpr const char* TouchCancelEvent = "touchcancel";
+
 Rml::Context* get_context() noexcept;
 bool is_initialized() noexcept;
 void set_input_type(InputType type) noexcept;
