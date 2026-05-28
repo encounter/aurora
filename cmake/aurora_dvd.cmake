@@ -1,6 +1,6 @@
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/AuroraNodProvider.cmake)
 
-add_library(aurora_dvd STATIC lib/dolphin/dvd/dvd.cpp)
+add_library(aurora_dvd STATIC lib/dolphin/dvd/dvd.cpp lib/dolphin/dvd/dvd.hpp lib/dolphin/dvd/fst.cpp)
 add_library(aurora::dvd ALIAS aurora_dvd)
 set_target_properties(aurora_dvd PROPERTIES FOLDER "aurora")
 
