@@ -1,6 +1,7 @@
 #include "WebGPURenderInterface.hpp"
 
 #include "FileInterface_SDL.h"
+#include "RuntimeTextureProvider.hpp"
 
 #include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/DecorationTypes.h>
@@ -15,6 +16,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "../logging.hpp"
 #include "../webgpu/gpu.hpp"
@@ -625,6 +627,32 @@ void WebGPURenderInterface::ReleaseGeometry(Rml::CompiledGeometryHandle geometry
 }
 
 Rml::TextureHandle WebGPURenderInterface::LoadTexture(Rml::Vector2i& dimensions, const Rml::String& source) {
+  if (const auto runtimeTexture = load_runtime_texture(source)) {
+    const size_t size = static_cast<size_t>(runtimeTexture->width) * static_cast<size_t>(runtimeTexture->height) * 4;
+    if (runtimeTexture->width == 0 || runtimeTexture->height == 0 || runtimeTexture->rgba8.size() < size) {
+      Log.error("Runtime texture provider returned invalid texture! Path: {}", source);
+      return 0;
+    }
+
+    const auto* texels = reinterpret_cast<const Rml::byte*>(runtimeTexture->rgba8.data());
+    std::vector<Rml::byte> premultiplied;
+    if (!runtimeTexture->premultipliedAlpha) {
+      premultiplied.assign(texels, texels + size);
+      for (size_t offset = 0; offset < premultiplied.size(); offset += 4) {
+        const uint8_t alpha = premultiplied[offset + 3];
+        for (size_t channel = 0; channel < 3; ++channel) {
+          premultiplied[offset + channel] = static_cast<uint8_t>(
+              (static_cast<uint32_t>(premultiplied[offset + channel]) * static_cast<uint32_t>(alpha)) / 255);
+        }
+      }
+      texels = premultiplied.data();
+    }
+
+    dimensions.x = static_cast<int>(runtimeTexture->width);
+    dimensions.y = static_cast<int>(runtimeTexture->height);
+    return GenerateTexture({texels, size}, dimensions);
+  }
+
   // load texels from image source
   const auto image = get_image(source);
   if (image.size == 0) {
