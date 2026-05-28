@@ -17,7 +17,7 @@ target_link_libraries(aurora_core PUBLIC fmt::fmt ${AURORA_SDL3_TARGET} xxhash)
 target_link_libraries(aurora_core PRIVATE absl::btree absl::flat_hash_map sqlite3 TracyClient)
 if (AURORA_ENABLE_GX AND AURORA_CACHE_USE_ZSTD)
     target_compile_definitions(aurora_core PRIVATE AURORA_CACHE_USE_ZSTD)
-    target_link_libraries(aurora_core PRIVATE libzstd_static)
+    target_link_libraries(aurora_core PRIVATE zstd::libzstd)
 endif ()
 
 if (CMAKE_SYSTEM_NAME STREQUAL Windows)
