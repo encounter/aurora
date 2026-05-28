@@ -83,6 +83,7 @@ typedef struct {
   const char* appName;
   const char* userPath;
   const char* cachePath;
+  const char* resourcesPath;
   AuroraBackend desiredBackend;
   uint32_t msaa;
   uint16_t maxTextureAnisotropy;
