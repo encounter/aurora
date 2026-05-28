@@ -1,4 +1,5 @@
 #include "input.hpp"
+#include "device.hpp"
 #include "internal.hpp"
 
 #include "magic_enum.hpp"
@@ -22,8 +23,10 @@ absl::flat_hash_map<Uint32, GameController> g_GameControllers;
 
 namespace {
 constexpr uint32_t kPortPreferencesMagic = SBIG('CPRT');
-constexpr uint32_t kPortPreferencesVersion = 2;
+constexpr uint32_t kPortPreferencesVersion = 3;
 constexpr uint32_t kMaxPersistedStringLength = 256;
+constexpr uint16_t kDefaultDeviceRumbleIntensityLow = 0x8000;
+constexpr uint16_t kDefaultDeviceRumbleIntensityHigh = 0x8000;
 
 enum class PortPreferenceState : uint8_t {
   Unset = 0,
@@ -41,7 +44,13 @@ struct PortPreference {
   ControllerIdentity identity;
 };
 
+struct DevicePreference {
+  uint16_t rumbleIntensityLow = kDefaultDeviceRumbleIntensityLow;
+  uint16_t rumbleIntensityHigh = kDefaultDeviceRumbleIntensityHigh;
+};
+
 std::array<PortPreference, PAD_MAX_CONTROLLERS> g_portPreferences;
+DevicePreference g_devicePreference;
 bool g_portPreferencesLoaded = false;
 
 std::string port_preferences_path() {
@@ -158,7 +167,7 @@ bool read_port_preferences_file(std::array<PortPreference, PAD_MAX_CONTROLLERS>&
   uint32_t magic = 0;
   uint32_t version = 0;
   bool ok = read_value(file, magic) && read_value(file, version) && magic == kPortPreferencesMagic &&
-            version == kPortPreferencesVersion;
+            (version == 2 || version == kPortPreferencesVersion);
 
   for (auto& preference : preferences) {
     uint8_t state = 0;
@@ -169,6 +178,10 @@ bool read_port_preferences_file(std::array<PortPreference, PAD_MAX_CONTROLLERS>&
       preference.state = static_cast<PortPreferenceState>(state);
       preference.identity = std::move(identity);
     }
+  }
+  if (ok && version >= 3) {
+    ok = read_value(file, g_devicePreference.rumbleIntensityLow) &&
+         read_value(file, g_devicePreference.rumbleIntensityHigh);
   }
 
   SDL_CloseIO(file);
@@ -212,6 +225,8 @@ void save_port_preferences() {
     const auto state = static_cast<uint8_t>(preference.state);
     ok = ok && write_value(file, state) && write_identity(file, preference.identity);
   }
+  ok = ok && write_value(file, g_devicePreference.rumbleIntensityLow) &&
+       write_value(file, g_devicePreference.rumbleIntensityHigh);
 
   if (!SDL_FlushIO(file)) {
     ok = false;
@@ -437,6 +452,19 @@ void controller_rumble(uint32_t instance, uint16_t low_freq_intensity, uint16_t 
   }
 }
 
+void get_device_rumble_intensity(uint16_t* low_freq_intensity, uint16_t* high_freq_intensity) noexcept {
+  ensure_port_preferences_loaded();
+  *low_freq_intensity = g_devicePreference.rumbleIntensityLow;
+  *high_freq_intensity = g_devicePreference.rumbleIntensityHigh;
+}
+
+void set_device_rumble_intensity(const uint16_t low_freq_intensity, const uint16_t high_freq_intensity) noexcept {
+  ensure_port_preferences_loaded();
+  g_devicePreference.rumbleIntensityLow = low_freq_intensity;
+  g_devicePreference.rumbleIntensityHigh = high_freq_intensity;
+  save_port_preferences();
+}
+
 uint32_t controller_count() noexcept { return g_GameControllers.size(); }
 
 void persist_controller_for_player(uint32_t player, const GameController* controller) noexcept {
@@ -458,8 +486,8 @@ void persist_controller_for_player(uint32_t player, const GameController* contro
 void initialize() noexcept {
   /* Make sure we initialize everything input related now, this will automatically add all of the connected controllers
    * as expected */
-  ASSERT(SDL_Init(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD), "Failed to initialize SDL subsystems: {}",
-         SDL_GetError());
+  ASSERT(SDL_Init(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_SENSOR),
+         "Failed to initialize SDL subsystems: {}", SDL_GetError());
 }
 
 struct MouseScrollStatus {
@@ -488,5 +516,6 @@ void shutdown() noexcept {
     }
     controller_rumble(controller.first, 0, 0, 0);
   }
+  device::shutdown();
 }
 } // namespace aurora::input

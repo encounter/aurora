@@ -1,5 +1,7 @@
 add_library(aurora_core STATIC
         lib/aurora.cpp
+        lib/device.cpp
+        lib/device.hpp
         lib/input.cpp
         lib/window.cpp
         lib/logging.cpp
@@ -23,6 +25,13 @@ if (CMAKE_SYSTEM_NAME STREQUAL Windows)
     target_link_libraries(aurora_core PRIVATE wbemuuid.lib comsuppw.lib ntdll.lib DXGI.lib)
 elseif (APPLE)
     target_sources(aurora_core PRIVATE lib/system_info_mac.mm)
+endif ()
+
+if (IOS)
+    find_library(COREHAPTICS_FRAMEWORK CoreHaptics REQUIRED)
+    target_sources(aurora_core PRIVATE lib/device_ios.mm)
+    set_source_files_properties(lib/device_ios.mm PROPERTIES COMPILE_FLAGS -fobjc-arc)
+    target_link_libraries(aurora_core PUBLIC ${COREHAPTICS_FRAMEWORK})
 endif ()
 
 if (AURORA_ENABLE_GX)
