@@ -103,7 +103,6 @@ void mergeOverlayFileIntoContext(const IterateContext& context, const OverlayFil
       return;
     }
 
-    Log.debug("Adding new entry num: {} -> {}", overlayFile.entryNum, overlayFile.fileName);
     newNode.originalEntryNum = overlayFile.entryNum;
 
     node->children.emplace_back(std::make_shared<IterateNode>(std::move(newNode)));
