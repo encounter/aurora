@@ -135,14 +135,14 @@ void makeFstRecursive(IterateNode& node, u32 parent) {
     assert(node.children.empty());
     assert(node.originalEntryNum != k_invalidFstEntry);
 
-    s_fstEntries.emplace_back(node.name, false, parent, node.size, node.overlayData, node.originalEntryNum);
+    s_fstEntries.emplace_back(node.name, false, parent, node.size, node.overlayData, node.isOverlay, node.originalEntryNum);
     return;
   }
 
   std::ranges::sort(node.children, [](const auto& a, const auto& b) { return a->name < b->name; });
 
   const auto ourIndex = s_fstEntries.size();
-  s_fstEntries.emplace_back(node.name, true, parent, 0, node.overlayData, node.originalEntryNum);
+  s_fstEntries.emplace_back(node.name, true, parent, 0, node.overlayData, node.isOverlay, node.originalEntryNum);
 
   for (const auto& child : node.children) {
     makeFstRecursive(*child, ourIndex);

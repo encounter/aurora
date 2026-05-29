@@ -737,7 +737,7 @@ BOOL DVDFastOpen(VirtualEntryNum entrynum, DVDFileInfo* fileInfo) {
   fileInfo->startAddr = 0;
   fileInfo->length = entry.nextOrLength;
 
-  if (entry.overlayData) {
+  if (entry.isOverlay) {
     const auto handle = s_overlayCallbacks.open(entry.overlayData);
     if (!handle) {
       return FALSE;

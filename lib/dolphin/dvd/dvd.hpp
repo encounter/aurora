@@ -25,7 +25,7 @@ struct FSTEntry {
   PhysicalEntryNum parent = 0;
   u32 nextOrLength = 0;
   void* overlayData = nullptr;
-  // Original entry num on the base game disc, BEFORE being re-organized by overlays.
+  bool isOverlay = false;
   VirtualEntryNum origEntryNum = 0;
 };
 
@@ -35,13 +35,14 @@ struct IterateNode {
   u32 originalEntryNum;
   u32 size;
   void* overlayData;
+  bool isOverlay;
   std::vector<std::shared_ptr<IterateNode>> children;
 
   IterateNode(std::string name, bool isDir, u32 size, u32 originalEntryNum, void* overlayData)
-  : name(std::move(name)), isDir(isDir), size(size), originalEntryNum(originalEntryNum), overlayData(overlayData) {}
+  : name(std::move(name)), isDir(isDir), size(size), originalEntryNum(originalEntryNum), overlayData(overlayData), isOverlay(true) {}
 
   IterateNode(std::string name, bool isDir, u32 size, u32 originalEntryNum)
-  : name(std::move(name)), isDir(isDir), size(size), originalEntryNum(originalEntryNum), overlayData(nullptr) {}
+  : name(std::move(name)), isDir(isDir), size(size), originalEntryNum(originalEntryNum), overlayData(nullptr), isOverlay(false) {}
 };
 
 struct IterateContext {
