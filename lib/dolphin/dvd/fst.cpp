@@ -50,14 +50,6 @@ IterateNode* findNode(const IterateNode& node, const std::string_view name) {
 }
 
 void mergeOverlayFileIntoContext(const IterateContext& context, const OverlayFileEntry& overlayFile) {
-  if (overlayFile.entryNum < s_baseEntryCount) {
-    Log.error(
-      "Overlay file {} has entryNum {} which is already used by the base disc!",
-      overlayFile.fileName,
-      overlayFile.entryNum);
-    return;
-  }
-
   IterateNode* node = context.root.get();
   std::string_view filePath = overlayFile.fileName;
 
@@ -103,6 +95,14 @@ void mergeOverlayFileIntoContext(const IterateContext& context, const OverlayFil
     *existingNode = std::move(newNode);
   } else {
     // Add new entry.
+    if (overlayFile.entryNum < s_baseEntryCount) {
+      Log.error(
+        "Overlay file {} has entryNum {} which is already used by the base disc!",
+        overlayFile.fileName,
+        overlayFile.entryNum);
+      return;
+    }
+
     Log.debug("Adding new entry num: {} -> {}", overlayFile.entryNum, overlayFile.fileName);
     newNode.originalEntryNum = overlayFile.entryNum;
 
