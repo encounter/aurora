@@ -197,6 +197,8 @@ bool rebuildFST() {
     return false;
   }
 
+  std::lock_guard lock(s_fstLock);
+
   // TODO: Ensure current dir still valid after rebuild.
 
   s_fstEntries.clear();

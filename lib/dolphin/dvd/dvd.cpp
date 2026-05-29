@@ -38,6 +38,7 @@ namespace aurora::dvd::impl {
   bool s_initialized = false;
   bool s_overlayCallbacksSet = false;
   AuroraOverlayCallbacks s_overlayCallbacks;
+  std::mutex s_fstLock;
 }
 
 namespace {
@@ -672,6 +673,8 @@ int DVDSetAutoFatalMessaging(BOOL enable) {
 }
 
 VirtualEntryNum DVDConvertPathToEntrynum(const char* pathPtr) {
+  std::lock_guard lock(s_fstLock);
+
   if (!s_initialized || pathPtr == nullptr || s_fstEntries.empty()) {
     return -1;
   }
@@ -721,6 +724,8 @@ VirtualEntryNum DVDConvertPathToEntrynum(const char* pathPtr) {
 }
 
 BOOL DVDFastOpen(VirtualEntryNum entrynum, DVDFileInfo* fileInfo) {
+  std::lock_guard lock(s_fstLock);
+
   if (!s_initialized || fileInfo == nullptr || !isValidVirtualEntry(entrynum) || s_partition == nullptr) {
     return FALSE;
   }
@@ -791,6 +796,9 @@ BOOL DVDGetCurrentDir(char* path, u32 maxlen) {
 
 BOOL DVDChangeDir(const char* dirName) {
   VirtualEntryNum entry = DVDConvertPathToEntrynum(dirName);
+
+  std::lock_guard lock(s_fstLock);
+
   if (!isValidVirtualEntry(entry)) {
     return FALSE;
   }
@@ -865,6 +873,8 @@ s32 DVDGetFileInfoStatus(const DVDFileInfo* fileInfo) {
 }
 
 BOOL DVDFastOpenDir(VirtualEntryNum entrynum, DVDDir* dir) {
+  std::lock_guard lock(s_fstLock);
+
   if (!isValidVirtualEntry(entrynum) || dir == nullptr) {
     return FALSE;
   }
@@ -892,6 +902,9 @@ int DVDReadDir(DVDDir* dir, DVDDirEntry* dirent) {
   if (dir == nullptr || dirent == nullptr) {
     return FALSE;
   }
+
+  std::lock_guard lock(s_fstLock);
+
   if (dir->location >= dir->next || dir->location >= s_fstEntries.size()) {
     return FALSE;
   }
