@@ -571,8 +571,10 @@ ConvertedTexture convert_texture_palette(u32 textureFormat, uint32_t width, uint
 
   const auto* indexData = reinterpret_cast<const u16*>(indices.data.data());
   size_t offset = 0;
+  uint32_t mipWidth = width;
+  uint32_t mipHeight = height;
   for (u32 mip = 0; mip < mips; ++mip) {
-    const size_t pixelCount = static_cast<size_t>(width) * height;
+    const size_t pixelCount = static_cast<size_t>(mipWidth) * mipHeight;
     for (size_t i = 0; i < pixelCount; ++i) {
       const u32 index = indexData[offset + i];
       if (index >= tlutEntries) {
@@ -591,8 +593,8 @@ ConvertedTexture convert_texture_palette(u32 textureFormat, uint32_t width, uint
       }
     }
     offset += pixelCount;
-    width = std::max(width >> 1, 1u);
-    height = std::max(height >> 1, 1u);
+    mipWidth = std::max(mipWidth >> 1, 1u);
+    mipHeight = std::max(mipHeight >> 1, 1u);
   }
 
   bool hasArbitraryMips = arb_mip_check(width, height, mips, pixels);
