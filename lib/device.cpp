@@ -14,6 +14,7 @@ void shutdown_rumble() noexcept;
 
 namespace {
 SDL_Sensor* g_gyro = nullptr;
+SDL_Sensor* g_accel = nullptr;
 #if defined(SDL_PLATFORM_ANDROID)
 SDL_Haptic* g_haptic = nullptr;
 
@@ -142,6 +143,31 @@ void rotate_sensor_to_display(float* data, const int n_values) noexcept {
     break;
   }
 }
+
+bool read_sensor_data(const SDL_SensorType type, SDL_Sensor*& cached_sensor, float* data, const int n_values) noexcept {
+  if (data == nullptr || n_values <= 0) {
+    return false;
+  }
+
+  SDL_Sensor* sensor = open_sensor(type, cached_sensor);
+  if (sensor == nullptr) {
+    return false;
+  }
+
+  SDL_UpdateSensors();
+  if (!SDL_GetSensorData(sensor, data, n_values)) {
+    return false;
+  }
+  rotate_sensor_to_display(data, n_values);
+  return true;
+}
+
+void close_sensor(SDL_Sensor*& sensor) noexcept {
+  if (sensor != nullptr) {
+    SDL_CloseSensor(sensor);
+    sensor = nullptr;
+  }
+}
 } // namespace
 
 #if defined(SDL_PLATFORM_ANDROID)
@@ -175,8 +201,7 @@ void shutdown_rumble() noexcept {
 #elif !defined(SDL_PLATFORM_IOS)
 bool rumble_available() noexcept { return false; }
 
-void rumble(const uint16_t lowFreq, const uint16_t highFreq,
-            const uint16_t durationMs) noexcept {
+void rumble(const uint16_t lowFreq, const uint16_t highFreq, const uint16_t durationMs) noexcept {
   static_cast<void>(lowFreq);
   static_cast<void>(highFreq);
   static_cast<void>(durationMs);
@@ -190,28 +215,18 @@ void shutdown_rumble() noexcept {}
 bool gyro_available() noexcept { return open_sensor(SDL_SENSOR_GYRO, g_gyro) != nullptr; }
 
 bool gyro(float* data, const int n_values) noexcept {
-  if (data == nullptr || n_values <= 0) {
-    return false;
-  }
+  return read_sensor_data(SDL_SENSOR_GYRO, g_gyro, data, n_values);
+}
 
-  SDL_Sensor* sensor = open_sensor(SDL_SENSOR_GYRO, g_gyro);
-  if (sensor == nullptr) {
-    return false;
-  }
+bool accel_available() noexcept { return open_sensor(SDL_SENSOR_ACCEL, g_accel) != nullptr; }
 
-  SDL_UpdateSensors();
-  if (!SDL_GetSensorData(sensor, data, n_values)) {
-    return false;
-  }
-  rotate_sensor_to_display(data, n_values);
-  return true;
+bool accel(float* data, const int n_values) noexcept {
+  return read_sensor_data(SDL_SENSOR_ACCEL, g_accel, data, n_values);
 }
 
 void shutdown() noexcept {
   detail::shutdown_rumble();
-  if (g_gyro != nullptr) {
-    SDL_CloseSensor(g_gyro);
-    g_gyro = nullptr;
-  }
+  close_sensor(g_gyro);
+  close_sensor(g_accel);
 }
 } // namespace aurora::device
