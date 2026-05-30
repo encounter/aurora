@@ -8,8 +8,8 @@ extern "C" {
 #endif
 
 void GXSetTevDirect(GXTevStageID tev_stage);
-void GXSetTevIndTile(GXTevStageID tevStage, GXIndTexStageID indStage, u16 tileSizeS, u16 tileSizeT, u16 tileSizeS_exp,
-                     u16 tileSizeT_exp, GXIndTexFormat fmt, GXIndTexMtxID matrixSel, GXIndTexBiasSel biasSel,
+void GXSetTevIndTile(GXTevStageID tevStage, GXIndTexStageID indStage, u16 tileSizeS, u16 tileSizeT, u16 tileSpacingS,
+                     u16 tileSpacingT, GXIndTexFormat fmt, GXIndTexMtxID matrixSel, GXIndTexBiasSel biasSel,
                      GXIndTexAlphaSel alphaSel);
 void GXSetNumIndStages(u8 nIndStages);
 #ifdef TARGET_PC
