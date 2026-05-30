@@ -15,6 +15,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <tracy/Tracy.hpp>
 
+#include <atomic>
 #include <bit>
 #include <cfloat>
 #include <mutex>
@@ -79,6 +80,14 @@ struct TlutObjectCache {
 
 absl::flat_hash_map<u32, CachedTextureEntry> s_textureObjectCaches;
 absl::flat_hash_map<u32, TlutObjectCache> s_tlutObjectCaches;
+std::atomic_bool s_staticTextureCacheClearPending = false;
+
+void do_clear_static_texture_cache() noexcept {
+  s_textureObjectCaches.clear();
+  for (auto& [_, cache] : s_tlutObjectCaches) {
+    cache.staticTextureUsers.clear();
+  }
+}
 
 DynamicPaletteKey make_dynamic_palette_key(const GXTexObj_& obj, const GXState::CopyTextureRef& source) {
   return {
@@ -148,6 +157,9 @@ gfx::TextureHandle get_tlut_texture(const GXTlutObj_& tlut) {
 
 gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
   ZoneScoped;
+  if (s_staticTextureCacheClearPending.exchange(false, std::memory_order_acq_rel)) {
+    do_clear_static_texture_cache();
+  }
 
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
@@ -180,6 +192,9 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
 
 gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GXTlutObj_& tlut) {
   ZoneScoped;
+  if (s_staticTextureCacheClearPending.exchange(false, std::memory_order_acq_rel)) {
+    do_clear_static_texture_cache();
+  }
 
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
@@ -371,10 +386,7 @@ void clear_copy_texture_cache() noexcept {
 }
 
 void clear_static_texture_cache() noexcept {
-  s_textureObjectCaches.clear();
-  for (auto& [_, cache] : s_tlutObjectCaches) {
-    cache.staticTextureUsers.clear();
-  }
+  s_staticTextureCacheClearPending.store(true, std::memory_order_release);
 }
 
 void evict_copy_texture(const void* dest) noexcept {

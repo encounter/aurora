@@ -90,7 +90,6 @@ typedef struct {
   bool startFullscreen;
   bool allowJoystickBackgroundEvents;
   bool pauseOnFocusLost;
-  bool allowTextureReplacements;
   bool allowTextureDumps;
   bool allowCpuAdapter;
   int32_t windowPosX;
