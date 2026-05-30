@@ -280,6 +280,11 @@ bool rebuildFST() {
     }
   }
 
+  if (currentDirEntryNum != k_invalidFstEntry) {
+    Log.warn("Current DVD directory {} with entryNum {} was lost during FST rebuild; resetting to root",
+             currentPath, currentDirEntryNum);
+  }
+
   s_currentDir = 0;
   s_currentPath = "/";
   return true;
