@@ -197,8 +197,12 @@ uint32_t texture_base_level_size(const GXTexObj_& obj) noexcept {
   switch (obj.format()) {
   case GX_TF_R8_PC:
     return obj.width() * obj.height();
+  case GX_TF_RG8_PC:
+    return obj.width() * obj.height() * 2;
   case GX_TF_RGBA8_PC:
     return obj.width() * obj.height() * 4;
+  case GX_TF_BC1_PC:
+    return ((obj.width() + 3) / 4) * ((obj.height() + 3) / 4) * 8;
   default:
     return GXGetTexBufferSize(obj.width(), obj.height(), obj.format(), false, 0);
   }

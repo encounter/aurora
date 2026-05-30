@@ -56,6 +56,7 @@ wgpu::Instance g_instance;
 static wgpu::AdapterInfo g_adapterInfo;
 static wgpu::SurfaceCapabilities g_surfaceCapabilities;
 bool g_bcTexturesSupported;
+bool g_textureComponentSwizzleSupported;
 
 namespace {
 
@@ -802,12 +803,19 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         requiredLimits.maxDynamicStorageBuffersPerPipelineLayout, requiredLimits.maxStorageBuffersPerShaderStage,
         requiredLimits.minUniformBufferOffsetAlignment, requiredLimits.minStorageBufferOffsetAlignment);
     std::vector<wgpu::FeatureName> requiredFeatures;
+    g_bcTexturesSupported = false;
+    g_textureComponentSwizzleSupported = false;
     wgpu::SupportedFeatures supportedFeatures;
     g_adapter.GetFeatures(&supportedFeatures);
     for (size_t i = 0; i < supportedFeatures.featureCount; ++i) {
       const auto feature = supportedFeatures.features[i];
-      if (feature == wgpu::FeatureName::TextureCompressionBC) {
-        g_bcTexturesSupported = true;
+      if (feature == wgpu::FeatureName::TextureCompressionBC ||
+          feature == wgpu::FeatureName::TextureComponentSwizzle) {
+        if (feature == wgpu::FeatureName::TextureCompressionBC) {
+          g_bcTexturesSupported = true;
+        } else if (feature == wgpu::FeatureName::TextureComponentSwizzle) {
+          g_textureComponentSwizzleSupported = true;
+        }
         requiredFeatures.push_back(feature);
       }
     }

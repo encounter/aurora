@@ -31,6 +31,29 @@ wgpu::Extent3D physical_size(wgpu::Extent3D size, TextureFormatInfo info) {
   const uint32_t height = ((size.height + info.blockHeight - 1) / info.blockHeight) * info.blockHeight;
   return {.width = width, .height = height, .depthOrArrayLayers = size.depthOrArrayLayers};
 }
+
+bool setup_swizzle(wgpu::TextureComponentSwizzleDescriptor& swizzle, u32 format) noexcept {
+  if (!webgpu::g_textureComponentSwizzleSupported) {
+    return false;
+  }
+
+  switch (format) {
+  case GX_TF_R8_PC:
+    swizzle.swizzle.r = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.g = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.b = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.a = wgpu::ComponentSwizzle::R;
+    return true;
+  case GX_TF_RG8_PC:
+    swizzle.swizzle.r = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.g = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.b = wgpu::ComponentSwizzle::R;
+    swizzle.swizzle.a = wgpu::ComponentSwizzle::G;
+    return true;
+  default:
+    return false;
+  }
+}
 } // namespace
 
 TextureFormatInfo format_info(wgpu::TextureFormat format) noexcept {
@@ -158,6 +181,10 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
       .dimension = wgpu::TextureViewDimension::e2D,
       .mipLevelCount = mips,
   };
+  wgpu::TextureComponentSwizzleDescriptor swizzle;
+  if (setup_swizzle(swizzle, gxFormat)) {
+    textureViewDescriptor.nextInChain = &swizzle;
+  }
   auto textureView = texture.CreateView(&textureViewDescriptor);
   return std::make_shared<TextureRef>(std::move(texture), std::move(textureView), wgpu::TextureView{}, size, wgpuFormat,
                                       mips, gxFormat);
