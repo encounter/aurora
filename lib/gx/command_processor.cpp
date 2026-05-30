@@ -1,7 +1,6 @@
 #include "command_processor.hpp"
 
 #include "../gfx/common.hpp"
-#include "../gfx/texture_replacement.hpp"
 #include "dolphin/gx/GXAurora.h"
 #include "gx.hpp"
 #include "gx_fmt.hpp"
