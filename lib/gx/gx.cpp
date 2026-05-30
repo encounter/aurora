@@ -993,17 +993,27 @@ static u16 wgpu_aniso(GXAnisotropy aniso) {
 
 wgpu::SamplerDescriptor aurora::gfx::TextureBind::get_descriptor() const noexcept {
   auto [minFilter, mipFilter] = wgpu_filter_mode(texObj.min_filter());
-  const auto [magFilter, _] = wgpu_filter_mode(texObj.mag_filter());
+  auto [magFilter, _] = wgpu_filter_mode(texObj.mag_filter());
+  const bool mipsEnabled = mipFilter != wgpu::MipmapFilterMode::Undefined;
   float minLod = texObj.min_lod();
   float maxLod = texObj.max_lod();
+  u16 maxAnisotropy = wgpu_aniso(texObj.max_aniso());
   if (ref && ref->isReplacement) {
-    minFilter = wgpu::FilterMode::Linear;
-    mipFilter = wgpu::MipmapFilterMode::Linear;
     minLod = 0.f;
-    maxLod = static_cast<float>(std::max(ref->mipCount, 1u) - 1u);
+    maxLod = 1000.f;
+    if (!mipsEnabled) {
+      mipFilter = wgpu::MipmapFilterMode::Nearest;
+    }
   } else if (mipFilter == wgpu::MipmapFilterMode::Undefined) {
     minLod = 0.f;
     maxLod = 0.f;
+  }
+  if ((ref && ref->hasArbitraryMips) || !mipsEnabled) {
+    maxAnisotropy = 1;
+  } else if (maxAnisotropy > 1) {
+    magFilter = wgpu::FilterMode::Linear;
+    minFilter = wgpu::FilterMode::Linear;
+    mipFilter = wgpu::MipmapFilterMode::Linear;
   }
   return {
       .label = "Generated Filtering Sampler",
@@ -1015,6 +1025,6 @@ wgpu::SamplerDescriptor aurora::gfx::TextureBind::get_descriptor() const noexcep
       .mipmapFilter = mipFilter,
       .lodMinClamp = minLod,
       .lodMaxClamp = maxLod,
-      .maxAnisotropy = wgpu_aniso(texObj.max_aniso()),
+      .maxAnisotropy = maxAnisotropy,
   };
 } // namespace aurora::gx
