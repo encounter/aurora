@@ -1,6 +1,8 @@
 #include "dvd.hpp"
 
 #include <algorithm>
+#include <limits>
+#include <unordered_map>
 
 using namespace aurora::dvd::impl;
 
@@ -10,10 +12,66 @@ struct OverlayFileEntry {
   std::string fileName;
   void* userData;
   u32 size;
-  s32 entryNum;
+  s32 entryNum = k_invalidFstEntry;
+  size_t sourceIndex = 0;
 };
 
 std::vector<OverlayFileEntry> s_overlayFiles;
+std::unordered_map<std::string, s32> s_overlayEntryNums;
+s32 s_nextOverlayEntryNum = 0;
+s32 s_overlayEntryNumBase = 0;
+
+std::string normalizeOverlayPath(std::string_view path) {
+  std::string normalized;
+  normalized.reserve(path.size());
+  bool lastWasSlash = false;
+  for (char ch : path) {
+    if (ch == '\\') {
+      ch = '/';
+    }
+    if (ch == '/') {
+      if (lastWasSlash) {
+        continue;
+      }
+      lastWasSlash = true;
+      normalized.push_back('/');
+      continue;
+    }
+    lastWasSlash = false;
+    if (ch >= 'A' && ch <= 'Z') {
+      ch = static_cast<char>(ch - 'A' + 'a');
+    }
+    normalized.push_back(ch);
+  }
+  if (normalized.size() > 1 && normalized.back() == '/') {
+    normalized.pop_back();
+  }
+  return normalized;
+}
+
+void syncOverlayEntryAllocator() {
+  if (s_overlayEntryNumBase == s_baseEntryCount) {
+    return;
+  }
+
+  s_overlayEntryNums.clear();
+  s_overlayEntryNumBase = s_baseEntryCount;
+  s_nextOverlayEntryNum = s_baseEntryCount;
+}
+
+s32 allocateOverlayEntryNum(std::string_view path) {
+  syncOverlayEntryAllocator();
+
+  std::string normalized = normalizeOverlayPath(path);
+  auto it = s_overlayEntryNums.find(normalized);
+  if (it != s_overlayEntryNums.end()) {
+    return it->second;
+  }
+
+  const s32 entryNum = s_nextOverlayEntryNum++;
+  s_overlayEntryNums.emplace(std::move(normalized), entryNum);
+  return entryNum;
+}
 
 
 u32 fstCallback(u32 index, NodNodeKind kind, const char* name, u32 size, void* userData) {
@@ -49,9 +107,10 @@ IterateNode* findNode(const IterateNode& node, const std::string_view name) {
   return nullptr;
 }
 
-void mergeOverlayFileIntoContext(const IterateContext& context, const OverlayFileEntry& overlayFile) {
+void mergeOverlayFileIntoContext(const IterateContext& context, OverlayFileEntry& overlayFile) {
   IterateNode* node = context.root.get();
   std::string_view filePath = overlayFile.fileName;
+  std::string currentPath;
 
   assert(filePath.starts_with('/'));
   filePath = filePath.substr(1);
@@ -63,6 +122,8 @@ void mergeOverlayFileIntoContext(const IterateContext& context, const OverlayFil
 
     const auto segment = filePath.substr(0, nextDelim);
     filePath = filePath.substr(nextDelim + 1);
+    currentPath += '/';
+    currentPath.append(segment);
 
     const auto existingNode = findNode(*node, segment);
     if (existingNode) {
@@ -73,7 +134,8 @@ void mergeOverlayFileIntoContext(const IterateContext& context, const OverlayFil
 
       node = existingNode;
     } else {
-      const auto newNode = std::make_shared<IterateNode>(std::string(segment), true, 0, k_invalidFstEntry);
+      const s32 entryNum = allocateOverlayEntryNum(currentPath);
+      const auto newNode = std::make_shared<IterateNode>(std::string(segment), true, 0, entryNum);
       node->children.push_back(newNode);
       node = newNode.get();
     }
@@ -81,7 +143,11 @@ void mergeOverlayFileIntoContext(const IterateContext& context, const OverlayFil
 
   // Remainder of fileName is the actual file name, and node is the directory we're in.
 
-  auto newNode = IterateNode(std::string(filePath), false, overlayFile.size, overlayFile.entryNum, overlayFile.userData);
+  std::string fullFilePath = currentPath;
+  fullFilePath += '/';
+  fullFilePath.append(filePath);
+
+  auto newNode = IterateNode(std::string(filePath), false, overlayFile.size, k_invalidFstEntry, overlayFile.userData);
   const auto existingNode = findNode(*node, filePath);
   if (existingNode) {
     if (existingNode->isDir) {
@@ -90,44 +156,38 @@ void mergeOverlayFileIntoContext(const IterateContext& context, const OverlayFil
     }
 
     newNode.originalEntryNum = existingNode->originalEntryNum;
+    overlayFile.entryNum = newNode.originalEntryNum;
 
     // Replace existing disc entry.
     *existingNode = std::move(newNode);
   } else {
     // Add new entry.
-    if (overlayFile.entryNum < s_baseEntryCount) {
-      Log.error(
-        "Overlay file {} has entryNum {} which is already used by the base disc!",
-        overlayFile.fileName,
-        overlayFile.entryNum);
-      return;
-    }
-
-    newNode.originalEntryNum = overlayFile.entryNum;
+    newNode.originalEntryNum = allocateOverlayEntryNum(fullFilePath);
+    overlayFile.entryNum = newNode.originalEntryNum;
 
     node->children.emplace_back(std::make_shared<IterateNode>(std::move(newNode)));
   }
 }
 
 void mergeOverlayFilesIntoContext(const IterateContext& context) {
-  for (const auto& overlayFile : s_overlayFiles) {
+  for (auto& overlayFile : s_overlayFiles) {
     mergeOverlayFileIntoContext(context, overlayFile);
   }
 }
 
-void makeFstRecursive(IterateNode& node, u32 parent) {
+void makeFstRecursive(IterateNode& node, FstIndex parent) {
   if (node.originalEntryNum != k_invalidFstEntry) {
-    if (s_fstEntryMap.size() <= node.originalEntryNum) {
-      s_fstEntryMap.resize(node.originalEntryNum + 1, k_invalidFstEntry);
+    if (s_entryNumToFstIndex.size() <= node.originalEntryNum) {
+      s_entryNumToFstIndex.resize(node.originalEntryNum + 1, k_invalidFstEntry);
     }
 
-    auto& map = s_fstEntryMap[node.originalEntryNum];
+    auto& map = s_entryNumToFstIndex[node.originalEntryNum];
     if (map != k_invalidFstEntry) {
-      Log.error("File {} with virtual entry num {} already exists in map!", node.name, node.originalEntryNum);
+      Log.error("File {} with entry num {} already exists in map!", node.name, node.originalEntryNum);
       return;
     }
 
-    map = static_cast<PhysicalEntryNum>(s_fstEntries.size());
+    map = static_cast<FstIndex>(s_fstEntries.size());
   }
 
   if (!node.isDir) {
@@ -140,14 +200,14 @@ void makeFstRecursive(IterateNode& node, u32 parent) {
 
   std::ranges::sort(node.children, [](const auto& a, const auto& b) { return a->name < b->name; });
 
-  const auto ourIndex = s_fstEntries.size();
+  const FstIndex ourIndex = static_cast<FstIndex>(s_fstEntries.size());
   s_fstEntries.emplace_back(node.name, true, parent, 0, node.overlayData, node.isOverlay, node.originalEntryNum);
 
   for (const auto& child : node.children) {
     makeFstRecursive(*child, ourIndex);
   }
 
-  s_fstEntries[ourIndex].nextOrLength = s_fstEntries.size();
+  s_fstEntries[ourIndex].nextOrLength = static_cast<u32>(s_fstEntries.size());
 }
 
 void makeFstFromContext(const IterateContext& context) {
@@ -177,11 +237,6 @@ bool validateOverlayFile(const AuroraOverlayFile& file) {
     return false;
   }
 
-  if (file.entryNum < 0) {
-    Log.error("Overlay file entry is below zero: {}", name);
-    return false;
-  }
-
   return true;
 }
 
@@ -198,19 +253,35 @@ bool rebuildFST() {
 
   std::lock_guard lock(s_fstLock);
 
-  // TODO: Ensure current dir still valid after rebuild.
+  s32 currentDirEntryNum = k_invalidFstEntry;
+  const std::string currentPath = s_currentPath;
+  if (s_currentDir >= 0 && static_cast<size_t>(s_currentDir) < s_fstEntries.size() && s_fstEntries[s_currentDir].isDir) {
+    currentDirEntryNum = s_fstEntries[s_currentDir].origEntryNum;
+  }
 
   s_fstEntries.clear();
-  s_fstEntryMap.clear();
+  s_entryNumToFstIndex.clear();
   IterateContext ctx;
-  ctx.root = std::make_shared<IterateNode>(""s, true, 0, static_cast<u32>(0));
+  ctx.root = std::make_shared<IterateNode>(""s, true, 0, 0);
   ctx.dirStack.emplace_back(ctx.root, std::numeric_limits<u32>::max());
 
   nod_partition_iterate_fst(s_partition, fstCallback, &ctx);
   s_baseEntryCount = calcEntryCount(*ctx.root);
+  syncOverlayEntryAllocator();
   mergeOverlayFilesIntoContext(ctx);
   makeFstFromContext(ctx);
 
+  if (currentDirEntryNum >= 0 && static_cast<size_t>(currentDirEntryNum) < s_entryNumToFstIndex.size()) {
+    const FstIndex currentDir = s_entryNumToFstIndex[currentDirEntryNum];
+    if (currentDir >= 0 && static_cast<size_t>(currentDir) < s_fstEntries.size() && s_fstEntries[currentDir].isDir) {
+      s_currentDir = currentDir;
+      s_currentPath = currentPath;
+      return true;
+    }
+  }
+
+  s_currentDir = 0;
+  s_currentPath = "/";
   return true;
 }
 
@@ -240,12 +311,15 @@ s32 aurora_dvd_base_entry_count() {
   return s_baseEntryCount;
 }
 
-void aurora_dvd_overlay_files(const AuroraOverlayFile* files, size_t nFiles) {
+void aurora_dvd_overlay_files(const AuroraOverlayFile* files, size_t nFiles, s32* outEntryNums) {
   if (!s_overlayCallbacksSet) {
     Log.fatal("aurora_dvd_overlay_callbacks not called before aurora_dvd_overlay_files!");
   }
 
   s_overlayFiles.clear();
+  if (outEntryNums != nullptr) {
+    std::fill_n(outEntryNums, nFiles, k_invalidFstEntry);
+  }
 
   for (size_t i = 0; i < nFiles; i++) {
     const auto& file = files[i];
@@ -254,10 +328,18 @@ void aurora_dvd_overlay_files(const AuroraOverlayFile* files, size_t nFiles) {
       continue;
     }
 
-    s_overlayFiles.emplace_back(file.fileName, file.userData, static_cast<u32>(file.size), file.entryNum);
+    s_overlayFiles.emplace_back(file.fileName, file.userData, static_cast<u32>(file.size), k_invalidFstEntry, i);
   }
 
   rebuildFST();
+
+  if (outEntryNums != nullptr) {
+    for (const auto& file : s_overlayFiles) {
+      if (file.entryNum != k_invalidFstEntry) {
+        outEntryNums[file.sourceIndex] = file.entryNum;
+      }
+    }
+  }
 }
 
 void aurora_dvd_overlay_callbacks(const AuroraOverlayCallbacks* callbacks) {

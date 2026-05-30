@@ -27,8 +27,8 @@ void aurora_dvd_close(void);
  * The way this works is pretty simple: you provide some callbacks and a list of files.
  * When an overlaid file gets read, your callbacks get called instead of pulling from the underlying DVD.
  *
- * Original disc EntryNums are not touched by the overlay system, new files are added "at the end."
- * The EntryNums for newly-added files are assigned by the game.
+ * Original disc EntryNums are not touched by the overlay system. New files and directories
+ * are assigned stable EntryNums by Aurora.
  */
 
 /**
@@ -57,13 +57,6 @@ typedef struct AuroraOverlayFile {
    */
   size_t size;
 
-  /**
-   * \brief The observeable EntryNum of this file.
-   *
-   * This value is ignored when replacing files already present on the original disc.
-   * Newly added files *must* specify a value that's above aurora_dvd_base_entry_count().
-   */
-  s32 entryNum;
 } AuroraOverlayFile;
 
 /**
@@ -115,8 +108,9 @@ void aurora_dvd_overlay_callbacks(const AuroraOverlayCallbacks* callbacks);
  *
  * @param files Array of AuroraOverlayFiles, one for every file being overlaid.
  * @param nFiles Amount of files in the array.
+ * @param outEntryNums Optional output array receiving one EntryNum per input file. Unaccepted files receive -1.
  */
-void aurora_dvd_overlay_files(const AuroraOverlayFile* files, size_t nFiles);
+void aurora_dvd_overlay_files(const AuroraOverlayFile* files, size_t nFiles, s32* outEntryNums);
 
 /**
  * \brief Gets the amount of FST entries present on the loaded game disc.

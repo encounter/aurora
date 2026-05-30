@@ -24,12 +24,12 @@ using namespace aurora::dvd::impl;
 namespace aurora::dvd::impl {
   NodHandle* s_partition = nullptr;
   std::vector<FSTEntry> s_fstEntries;
-  // Map from "virtual" FST entryNums (matching base disc, game-assigned for new overlay files)
-  // To the "physical" FST entryNums (that we use for navigating the tree).
+  // Map from public FST entryNums (matching base disc, Aurora-assigned for new overlay entries)
+  // To the current FST indexes (that we use for navigating the tree).
   // Unfilled spots are given the k_invalidFstEntry value.
-  std::vector<PhysicalEntryNum> s_fstEntryMap;
-  s32 s_baseEntryCount;
-  PhysicalEntryNum s_currentDir = 0;
+  std::vector<FstIndex> s_entryNumToFstIndex;
+  s32 s_baseEntryCount = 0;
+  FstIndex s_currentDir = 0;
   std::string s_currentPath = "/";
   BOOL s_autoInvalidation = FALSE;
   BOOL s_autoFatalMessaging = FALSE;
@@ -96,17 +96,20 @@ void clearState() {
     s_disc = nullptr;
   }
   s_fstEntries.clear();
+  s_entryNumToFstIndex.clear();
+  s_baseEntryCount = 0;
   s_currentDir = 0;
   s_currentPath = "/";
   s_diskID = {};
   s_initialized = false;
 }
 
-bool isValidVirtualEntry(VirtualEntryNum entry) {
-  return entry >= 0 && static_cast<size_t>(entry) < s_fstEntryMap.size() && s_fstEntryMap[entry] != k_invalidFstEntry;
+bool isValidEntryNum(s32 entry) {
+  return entry >= 0 && static_cast<size_t>(entry) < s_entryNumToFstIndex.size() &&
+         s_entryNumToFstIndex[entry] != k_invalidFstEntry;
 }
 
-bool isValidPhysicalEntry(PhysicalEntryNum entry) {
+bool isValidFstIndex(FstIndex entry) {
   return entry >= 0 && static_cast<size_t>(entry) < s_fstEntries.size();
 }
 
@@ -159,8 +162,8 @@ bool nameEqualsIgnoreCase(const std::string& lhs, const char* rhs, size_t rhsLen
   return aurora::dvd::impl::nameEqualsIgnoreCase(lhs, std::string_view(rhs, rhsLen));
 }
 
-PhysicalEntryNum findInDir(PhysicalEntryNum dirEntry, const char* name, size_t nameLen) {
-  if (!isValidPhysicalEntry(dirEntry) || !s_fstEntries[dirEntry].isDir) {
+FstIndex findInDir(FstIndex dirEntry, const char* name, size_t nameLen) {
+  if (!isValidFstIndex(dirEntry) || !s_fstEntries[dirEntry].isDir) {
     return -1;
   }
 
@@ -168,7 +171,7 @@ PhysicalEntryNum findInDir(PhysicalEntryNum dirEntry, const char* name, size_t n
   u32 i = static_cast<u32>(dirEntry) + 1;
   while (i < childEnd && i < s_fstEntries.size()) {
     if (nameEqualsIgnoreCase(s_fstEntries[i].name, name, nameLen)) {
-      return static_cast<PhysicalEntryNum>(i);
+      return static_cast<FstIndex>(i);
     }
 
     if (s_fstEntries[i].isDir) {
@@ -181,14 +184,14 @@ PhysicalEntryNum findInDir(PhysicalEntryNum dirEntry, const char* name, size_t n
   return -1;
 }
 
-std::string buildDirPath(PhysicalEntryNum entryNum) {
-  if (entryNum <= 0 || !isValidPhysicalEntry(entryNum)) {
+std::string buildDirPath(FstIndex entryNum) {
+  if (entryNum <= 0 || !isValidFstIndex(entryNum)) {
     return "/";
   }
 
   std::vector<std::string> parts;
-  PhysicalEntryNum cur = entryNum;
-  while (cur > 0 && isValidPhysicalEntry(cur)) {
+  FstIndex cur = entryNum;
+  while (cur > 0 && isValidFstIndex(cur)) {
     parts.push_back(s_fstEntries[cur].name);
     auto parent = s_fstEntries[cur].parent;
     if (parent == cur) {
@@ -672,14 +675,14 @@ int DVDSetAutoFatalMessaging(BOOL enable) {
   return prev;
 }
 
-VirtualEntryNum DVDConvertPathToEntrynum(const char* pathPtr) {
+s32 DVDConvertPathToEntrynum(const char* pathPtr) {
   std::lock_guard lock(s_fstLock);
 
   if (!s_initialized || pathPtr == nullptr || s_fstEntries.empty()) {
     return -1;
   }
 
-  PhysicalEntryNum current = 0;
+  FstIndex current = 0;
   const char* p = pathPtr;
   if (*p == '/') {
     ++p;
@@ -695,7 +698,7 @@ VirtualEntryNum DVDConvertPathToEntrynum(const char* pathPtr) {
       break;
     }
 
-    if (!isValidPhysicalEntry(current) || !s_fstEntries[current].isDir) {
+    if (!isValidFstIndex(current) || !s_fstEntries[current].isDir) {
       return -1;
     }
 
@@ -710,7 +713,7 @@ VirtualEntryNum DVDConvertPathToEntrynum(const char* pathPtr) {
     } else if (compLen == 2 && p[0] == '.' && p[1] == '.') {
       current = static_cast<s32>(s_fstEntries[current].parent);
     } else {
-      const PhysicalEntryNum found = findInDir(current, p, compLen);
+      const FstIndex found = findInDir(current, p, compLen);
       if (found < 0) {
         return -1;
       }
@@ -719,21 +722,21 @@ VirtualEntryNum DVDConvertPathToEntrynum(const char* pathPtr) {
     p = compEnd;
   }
 
-  assert(isValidPhysicalEntry(current));
+  assert(isValidFstIndex(current));
   return s_fstEntries[current].origEntryNum;
 }
 
-BOOL DVDFastOpen(VirtualEntryNum entrynum, DVDFileInfo* fileInfo) {
+BOOL DVDFastOpen(s32 entrynum, DVDFileInfo* fileInfo) {
   std::lock_guard lock(s_fstLock);
 
-  if (!s_initialized || fileInfo == nullptr || !isValidVirtualEntry(entrynum) || s_partition == nullptr) {
+  if (!s_initialized || fileInfo == nullptr || !isValidEntryNum(entrynum) || s_partition == nullptr) {
     return FALSE;
   }
 
-  const auto physical = s_fstEntryMap[entrynum];
-  assert(physical >= 0);
+  const auto fstIndex = s_entryNumToFstIndex[entrynum];
+  assert(fstIndex >= 0);
 
-  const auto& entry = s_fstEntries[physical];
+  const auto& entry = s_fstEntries[fstIndex];
   if (entry.isDir) {
     return FALSE;
   }
@@ -764,7 +767,7 @@ BOOL DVDFastOpen(VirtualEntryNum entrynum, DVDFileInfo* fileInfo) {
 }
 
 BOOL DVDOpen(const char* fileName, DVDFileInfo* fileInfo) {
-  VirtualEntryNum entrynum = DVDConvertPathToEntrynum(fileName);
+  s32 entrynum = DVDConvertPathToEntrynum(fileName);
   if (entrynum < 0) {
     return FALSE;
   }
@@ -795,21 +798,21 @@ BOOL DVDGetCurrentDir(char* path, u32 maxlen) {
 }
 
 BOOL DVDChangeDir(const char* dirName) {
-  VirtualEntryNum entry = DVDConvertPathToEntrynum(dirName);
+  s32 entry = DVDConvertPathToEntrynum(dirName);
 
   std::lock_guard lock(s_fstLock);
 
-  if (!isValidVirtualEntry(entry)) {
+  if (!isValidEntryNum(entry)) {
     return FALSE;
   }
 
-  const auto physical = s_fstEntryMap[entry];
-  if (!s_fstEntries[physical].isDir) {
+  const auto fstIndex = s_entryNumToFstIndex[entry];
+  if (!s_fstEntries[fstIndex].isDir) {
     return FALSE;
   }
 
-  s_currentDir = physical;
-  s_currentPath = buildDirPath(physical);
+  s_currentDir = fstIndex;
+  s_currentPath = buildDirPath(fstIndex);
   return TRUE;
 }
 
@@ -872,26 +875,26 @@ s32 DVDGetFileInfoStatus(const DVDFileInfo* fileInfo) {
   return fileInfo->cb.state;
 }
 
-BOOL DVDFastOpenDir(VirtualEntryNum entrynum, DVDDir* dir) {
+BOOL DVDFastOpenDir(s32 entrynum, DVDDir* dir) {
   std::lock_guard lock(s_fstLock);
 
-  if (!isValidVirtualEntry(entrynum) || dir == nullptr) {
+  if (!isValidEntryNum(entrynum) || dir == nullptr) {
     return FALSE;
   }
 
-  const auto physical = s_fstEntryMap[entrynum];
-  if (!s_fstEntries[physical].isDir) {
+  const auto fstIndex = s_entryNumToFstIndex[entrynum];
+  if (!s_fstEntries[fstIndex].isDir) {
     return FALSE;
   }
 
-  dir->entryNum = static_cast<u32>(physical);
-  dir->location = static_cast<u32>(physical) + 1;
-  dir->next = s_fstEntries[physical].nextOrLength;
+  dir->entryNum = static_cast<u32>(entrynum);
+  dir->location = static_cast<u32>(fstIndex) + 1;
+  dir->next = s_fstEntries[fstIndex].nextOrLength;
   return TRUE;
 }
 
 int DVDOpenDir(const char* dirName, DVDDir* dir) {
-  VirtualEntryNum entrynum = DVDConvertPathToEntrynum(dirName);
+  s32 entrynum = DVDConvertPathToEntrynum(dirName);
   if (entrynum < 0) {
     return FALSE;
   }
@@ -911,7 +914,7 @@ int DVDReadDir(DVDDir* dir, DVDDirEntry* dirent) {
 
   const u32 index = dir->location;
   FSTEntry& entry = s_fstEntries[index];
-  dirent->entryNum = index;
+  dirent->entryNum = static_cast<u32>(entry.origEntryNum);
   dirent->isDir = entry.isDir ? TRUE : FALSE;
   dirent->name = entry.name.empty() ? nullptr : entry.name.data();
 
@@ -933,7 +936,15 @@ void DVDRewindDir(DVDDir* dir) {
   if (dir == nullptr) {
     return;
   }
-  dir->location = dir->entryNum + 1;
+
+  std::lock_guard lock(s_fstLock);
+  const s32 entryNum = static_cast<s32>(dir->entryNum);
+  if (!isValidEntryNum(entryNum)) {
+    return;
+  }
+
+  const auto fstIndex = s_entryNumToFstIndex[entryNum];
+  dir->location = static_cast<u32>(fstIndex) + 1;
 }
 
 void* DVDGetFSTLocation(void) {
