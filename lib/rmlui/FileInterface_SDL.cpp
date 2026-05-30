@@ -2,6 +2,8 @@
 
 #include "../logging.hpp"
 
+#include <aurora/aurora.h>
+
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_iostream.h>
 
@@ -33,7 +35,7 @@ std::string resolve_path(const Rml::String& source) {
   if (path.empty() || is_absolute_path(path)) {
     return path;
   }
-  const char* basePath = SDL_GetBasePath();
+  const char* basePath = g_config.resourcesPath;
   if (basePath == nullptr || basePath[0] == '\0') {
     return path;
   }

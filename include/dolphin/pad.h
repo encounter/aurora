@@ -222,6 +222,10 @@ PADSignedNativeAxis PADGetNativeAxisPulled(u32 port);
 void PADRestoreDefaultMapping(u32 port);
 void PADBlockInput(bool block);
 
+void PADSetVirtualStatus(u32 port, const PADStatus* status);
+void PADClearVirtualStatus(u32 port);
+void PADClearAllVirtualStatus();
+
 /**
  * Set the default controller mapping used.
  *
@@ -270,6 +274,9 @@ BOOL PADHasLED(u32 port);
 BOOL PADSetRumbleIntensity(u32 port, u16 low, u16 high);
 BOOL PADGetRumbleIntensity(u32 port, u16* low, u16* high);
 BOOL PADSupportsRumbleIntensity(u32 port);
+BOOL PADCanForceDeviceRumble(u32 port);
+BOOL PADGetForceDeviceRumble(u32 port);
+BOOL PADSetForceDeviceRumble(u32 port, BOOL force);
 
 typedef enum PADBatteryState {
   PAD_BATTERYSTATE_ERROR = -1,

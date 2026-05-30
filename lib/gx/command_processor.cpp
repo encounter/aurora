@@ -1,7 +1,6 @@
 #include "command_processor.hpp"
 
 #include "../gfx/common.hpp"
-#include "../gfx/texture_replacement.hpp"
 #include "dolphin/gx/GXAurora.h"
 #include "gx.hpp"
 #include "gx_fmt.hpp"
@@ -1765,6 +1764,19 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     slot.tlutDataVersion = read_u32(data + pos, bigEndian);
     pos += 4;
     slot.set_no_cache(false); // Reset no-cache flag
+    g_gxState.stateDirty = true;
+  } else if (subCmd == GX2_SET_POLYGON_OFFSET) {
+    CHECK(pos + 20 <= size, "GX2_SET_POLYGON_OFFSET read overrun");
+    g_gxState.frontOffset = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.frontScale = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.backOffset = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.backScale = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.clamp = read_f32(data + pos, bigEndian);
+    pos += 4;
     g_gxState.stateDirty = true;
   } else if (subCmd == GX_LOAD_AURORA_DESTROY_TEXOBJ) {
     CHECK(pos + 4 <= size, "GX_LOAD_AURORA_DESTROY_TEXOBJ read overrun");

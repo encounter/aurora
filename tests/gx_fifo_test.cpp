@@ -1304,6 +1304,24 @@ TEST_F(GXFifoTest, LoadTexObjPcFormat_PreservesFullFormatMetadata) {
   EXPECT_EQ(slot.raw_format(), static_cast<u32>(GX_TF_RGBA8));
 }
 
+TEST_F(GXFifoTest, TexImage0BpWrite_ClearsExtendedTextureMetadata) {
+  auto& slot = gxState().loadedTextures[GX_TEXMAP0];
+  slot.mWidth = 1024;
+  slot.mHeight = 1024;
+  slot.mFormat = GX_TF_BC1_PC;
+
+  const u32 image0 = (0x88u << 24) | (7u << 0) | (15u << 10) | (static_cast<u32>(GX_TF_RGBA8) << 20);
+  aurora::gx::fifo::write_u8(0x61);
+  aurora::gx::fifo::write_u32(image0);
+  auto bytes = capture_fifo();
+
+  decode_fifo(bytes);
+
+  EXPECT_EQ(slot.width(), 8u);
+  EXPECT_EQ(slot.height(), 16u);
+  EXPECT_EQ(slot.format(), GX_TF_RGBA8);
+}
+
 TEST_F(GXFifoTest, TexObjRawDimensions_WrapAtTenBitBoundary) {
   auto& slot = gxState().loadedTextures[GX_TEXMAP0];
   slot.image0 = (0x3FFu << 0) | (0x3FFu << 10);

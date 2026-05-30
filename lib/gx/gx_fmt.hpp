@@ -931,8 +931,12 @@ inline std::string format_as(const GXTexFmt& fmt) {
     return "GX_CTF_Z16L";
   case GX_TF_R8_PC:
     return "GX_TF_R8_PC";
+  case GX_TF_RG8_PC:
+    return "GX_TF_RG8_PC";
   case GX_TF_RGBA8_PC:
     return "GX_TF_RGBA8_PC";
+  case GX_TF_BC1_PC:
+    return "GX_TF_BC1_PC";
   default:
     return fmt::format("GXTexFmt({})", underlying(fmt));
   }

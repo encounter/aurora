@@ -61,6 +61,8 @@ extern "C" {
 
 #define GX_LOAD_AURORA_DESTROY_COPY_TEX 0x0034
 
+#define GX2_SET_POLYGON_OFFSET 0x1000
+
 
 /*
  * Debug marker stuff
@@ -110,6 +112,8 @@ void GXSetViewportRender(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz)
  * Overrides the automatically scaled values set by the logical GXSetScissor.
  */
 void GXSetScissorRender(u32 left, u32 top, u32 wd, u32 ht);
+
+void GX2SetPolygonOffset(f32 mFrontOffset, f32 mFrontScale, f32 mBackOffset, f32 mBackScale, f32 mClamp);
 
 /**
  * Create an offscreen framebuffer and switch rendering to it.
