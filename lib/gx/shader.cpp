@@ -678,7 +678,7 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
     return posLoad;
   }
   case GX_VA_NRM:
-    // TODO bump mapping
+    // NBT: normal only here; binormal/tangent loaded via attr_load_nbt_slice
     if (mapping.cnt > 3) {
       auto nrmMapping = mapping;
       nrmMapping.cnt = 3;
@@ -737,6 +737,10 @@ auto attr_load_nbt_slice(const ShaderConfig& config, NbtSlice slice, std::string
 
 static constexpr std::string_view nbt_slice_local(NbtSlice slice) noexcept {
   return slice == NbtSlice::B ? "in_binrm" : "in_tangent";
+}
+
+static constexpr bool is_emboss_texgen(GXTexGenType type) noexcept {
+  return type >= GX_TG_BUMP0 && type <= GX_TG_BUMP7;
 }
 
 auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 i, bool alpha) -> std::string {
@@ -830,7 +834,7 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
                      alpha ? "a"sv : ""sv);
 }
 
-wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
+std::string build_shader_source(const ShaderConfig& config) noexcept {
   ZoneScoped;
   const auto hash = xxh3_hash(config);
   const auto info = build_shader_info(config);
@@ -969,8 +973,9 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     if (!info.sampledTexCoords.test(i)) {
       continue;
     }
-    needsBinrm = needsBinrm || config.tcgs[i].src == GX_TG_BINRM;
-    needsTangent = needsTangent || config.tcgs[i].src == GX_TG_TANGENT;
+    const bool emboss = is_emboss_texgen(config.tcgs[i].type);
+    needsBinrm = needsBinrm || config.tcgs[i].src == GX_TG_BINRM || emboss;
+    needsTangent = needsTangent || config.tcgs[i].src == GX_TG_TANGENT || emboss;
   }
   if (needsBinrm) {
     vtxXfrAttrsPre += fmt::format("\n    let {} = {};", nbt_slice_local(NbtSlice::B),
@@ -1160,6 +1165,19 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
       vtxOutAttrs += fmt::format("\n    @location({}) tex{}_uvw: vec3f,", vtxOutIdx++, i);
     } else {
       vtxOutAttrs += fmt::format("\n    @location({}) tex{}_uv: vec2f,", vtxOutIdx++, i);
+    }
+    if (is_emboss_texgen(tcg.type)) {
+      // Emboss bump: offset the source texcoord by the light projected onto tangent/binormal
+      const u32 lightIdx = tcg.type - GX_TG_BUMP0;
+      vtxXfrAttrs += fmt::format(
+          "\n    let bump_ldir{0} = normalize(ubuf.lights[{1}].pos - mv_pos);"
+          "\n    let bump_tan{0} = vec4f(in_tangent, 0.0) * ubuf.nrm_mtx[in_pnmtxidx];"
+          "\n    let bump_bin{0} = vec4f(in_binrm, 0.0) * ubuf.nrm_mtx[in_pnmtxidx];"
+          "\n    out.tex{0}_uv = tc{2}_proj.xy + vec2f(dot(bump_ldir{0}, bump_tan{0}), dot(bump_ldir{0}, "
+          "bump_bin{0}));",
+          i, lightIdx, tcg.embossSrc);
+      fragmentFnPre += fmt::format("\n    var tex{0}_uv = in.tex{0}_uv.xy;", i);
+      continue;
     }
     if (tcg.src >= GX_TG_TEX0 && tcg.src <= GX_TG_TEX7) {
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0, 1.0);", i,
@@ -1914,6 +1932,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {{{6}{5}
     Log.info("Generated shader: {}", shaderSource);
   }
 
+  return shaderSource;
+}
+
+wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
+  ZoneScoped;
+  const auto shaderSource = build_shader_source(config);
+  const auto hash = xxh3_hash(config);
   wgpu::ShaderSourceWGSL wgslDescriptor{};
   wgslDescriptor.code = shaderSource.c_str();
   const auto label = fmt::format("GX Shader {:x}", hash);

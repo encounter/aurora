@@ -1456,11 +1456,13 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
             if (tgType == 0) {
               tcg.type = proj ? GX_TG_MTX3x4 : GX_TG_MTX2x4;
             } else if (tgType == 1) {
-              // Bump mapping
+              // Bump mapping: type encodes emboss light
               tcg.type = static_cast<GXTexGenType>(bp_get(val, 3, 15) + 2);
             } else if (tgType == 2 || tgType == 3) {
               tcg.type = GX_TG_SRTG;
             }
+            // Emboss source texcoord (bits 12-14); 0 for non-bump types
+            tcg.embossSrc = bp_get(val, 3, 12);
 
             // Decode source from row
             static const GXTexGenSrc rowToSrc[] = {GX_TG_POS,  GX_TG_NRM,  GX_TG_COLOR0, GX_TG_BINRM, GX_TG_TANGENT,
