@@ -214,7 +214,13 @@ if (AURORA_ENABLE_GX)
   endif ()
 
   aurora_find_package_global(SQLite3)
-  if (NOT TARGET SQLite3::SQLite3)
+  if (TARGET SQLite3::SQLite3)
+    message(STATUS "aurora: Using existing sqlite3")
+    add_library(sqlite3 ALIAS SQLite3::SQLite3)
+  elseif (TARGET SQLite::SQLite3) # CMake < 4.3
+    message(STATUS "aurora: Using existing sqlite3")
+    add_library(sqlite3 ALIAS SQLite::SQLite3)
+  else ()
     message(STATUS "aurora: Fetching sqlite3")
     FetchContent_Declare(sqlite3
       URL https://sqlite.org/2026/sqlite-amalgamation-3510300.zip
@@ -226,8 +232,6 @@ if (AURORA_ENABLE_GX)
 
     add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
     target_include_directories(sqlite3 PUBLIC ${sqlite3_SOURCE_DIR})
-  else ()
-    message(STATUS "aurora: Using existing sqlite3")
   endif ()
 
   if (AURORA_CACHE_USE_ZSTD)
