@@ -115,17 +115,16 @@ if (AURORA_ENABLE_GX)
     set(ZLIB_BUILD_SHARED ${_USE_SHARED} CACHE BOOL "Enable building zlib shared library" FORCE)
     set(ZLIB_BUILD_TESTING OFF CACHE BOOL "Enable Zlib Examples as tests" FORCE)
     set(ZLIB_INSTALL OFF CACHE BOOL "Enable installation of zlib" FORCE)
+    set(ZLIB_COMPAT ON CACHE BOOL "Use the compat version of zlib instead of the newer zlib-ng" FORCE)
     FetchContent_Declare(
       ZLIB
-      URL https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz
-      URL_HASH SHA256=bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
+      URL https://github.com/zlib-ng/zlib-ng/archive/refs/tags/2.3.3.tar.gz
+      URL_HASH SHA256=f9c65aa9c852eb8255b636fd9f07ce1c406f061ec19a2e7d508b318ca0c907d1
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE
       EXCLUDE_FROM_ALL
     )
     FetchContent_MakeAvailable(ZLIB)
-    if (NOT TARGET ZLIB::ZLIB)
-      message(FATAL_ERROR "Failed to make zlib available")
-    endif ()
+    add_library(ZLIB::ZLIB ALIAS zlib-ng)
     # libpng calls find_package(ZLIB) even when zlib was already provided by FetchContent.
     file(WRITE "${CMAKE_FIND_PACKAGE_REDIRECTS_DIR}/ZLIBConfig.cmake"
       "set(ZLIB_FOUND TRUE)\n"
