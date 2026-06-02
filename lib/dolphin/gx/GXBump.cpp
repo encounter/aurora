@@ -173,35 +173,26 @@ void GXSetTevIndBumpST(GXTevStageID tevStage, GXIndTexStageID indStage, GXIndTex
                    GX_ITW_OFF, GX_TRUE, GX_FALSE, GX_ITBA_OFF);
 }
 
-void GXSetTevIndTile(GXTevStageID tevStage, GXIndTexStageID indStage, u16 tileSizeS, u16 tileSizeT, u16 tileSizeS_exp,
-                     u16 tileSizeT_exp, GXIndTexFormat fmt, GXIndTexMtxID matrixSel, GXIndTexBiasSel biasSel,
+void GXSetTevIndTile(GXTevStageID tevStage, GXIndTexStageID indStage, u16 tileSizeS, u16 tileSizeT, u16 tileSpacingS,
+                     u16 tileSpacingT, GXIndTexFormat fmt, GXIndTexMtxID matrixSel, GXIndTexBiasSel biasSel,
                      GXIndTexAlphaSel alphaSel) {
-  // Convert tile size exponents to wrap modes
-  auto sizeToWrap = [](u16 sizeExp) -> GXIndTexWrap {
-    switch (sizeExp) {
-    case 8: return GX_ITW_256;
-    case 7: return GX_ITW_128;
-    case 6: return GX_ITW_64;
-    case 5: return GX_ITW_32;
-    case 4: return GX_ITW_16;
+  auto sizeToWrap = [](u16 size) -> GXIndTexWrap {
+    switch (size) {
+    case 256: return GX_ITW_256;
+    case 128: return GX_ITW_128;
+    case 64: return GX_ITW_64;
+    case 32: return GX_ITW_32;
+    case 16: return GX_ITW_16;
     default: return GX_ITW_0;
     }
   };
-  GXIndTexWrap wrapS = sizeToWrap(tileSizeS_exp);
-  GXIndTexWrap wrapT = sizeToWrap(tileSizeT_exp);
+  GXIndTexWrap wrapS = sizeToWrap(tileSizeS);
+  GXIndTexWrap wrapT = sizeToWrap(tileSizeT);
 
-  // Set up the indirect matrix for tiling
   f32 mtx[2][3] = {};
-  s8 scaleExp = 0;
-  if (biasSel == GX_ITB_S || biasSel == GX_ITB_ST || biasSel == GX_ITB_SU || biasSel == GX_ITB_STU) {
-    mtx[0][0] = static_cast<f32>(tileSizeS);
-    scaleExp = tileSizeS_exp;
-  }
-  if (biasSel == GX_ITB_T || biasSel == GX_ITB_ST || biasSel == GX_ITB_TU || biasSel == GX_ITB_STU) {
-    mtx[1][1] = static_cast<f32>(tileSizeT);
-    scaleExp = tileSizeT_exp;
-  }
-  GXSetIndTexMtx(matrixSel, mtx, scaleExp);
-  GXSetTevIndirect(tevStage, indStage, fmt, biasSel, matrixSel, wrapS, wrapT, GX_FALSE, GX_FALSE, alphaSel);
+  mtx[0][0] = static_cast<f32>(tileSpacingS) / 1024.0f;
+  mtx[1][1] = static_cast<f32>(tileSpacingT) / 1024.0f;
+  GXSetIndTexMtx(matrixSel, mtx, 10);
+  GXSetTevIndirect(tevStage, indStage, fmt, biasSel, matrixSel, wrapS, wrapT, GX_FALSE, GX_TRUE, alphaSel);
 }
 }

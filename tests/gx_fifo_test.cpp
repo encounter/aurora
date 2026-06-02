@@ -2851,6 +2851,29 @@ TEST_F(GXFifoTest, IndTexMtx0_Isolation) {
   EXPECT_EQ(g_gxState.indTexMtxs[1].scaleExp, -2);
 }
 
+TEST_F(GXFifoTest, TevIndTile_UsesTileSizeAndSpacing) {
+  GXSetTevIndTile(GX_TEVSTAGE0, GX_INDTEXSTAGE0, 16, 32, 16, 8, GX_ITF_4, GX_ITM_0, GX_ITB_NONE, GX_ITBA_OFF);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& stage = g_gxState.tevStages[0];
+  EXPECT_EQ(stage.indTexStage, GX_INDTEXSTAGE0);
+  EXPECT_EQ(stage.indTexFormat, GX_ITF_4);
+  EXPECT_EQ(stage.indTexMtxId, GX_ITM_0);
+  EXPECT_EQ(stage.indTexWrapS, GX_ITW_16);
+  EXPECT_EQ(stage.indTexWrapT, GX_ITW_32);
+  EXPECT_TRUE(stage.indTexUseOrigLOD);
+  EXPECT_FALSE(stage.indTexAddPrev);
+
+  const auto& mtx = g_gxState.indTexMtxs[0];
+  const float tol = 1.0f / 1024.0f;
+  EXPECT_NEAR(mtx.mtx.m0.x, 16.0f / 1024.0f, tol);
+  EXPECT_NEAR(mtx.mtx.m1.y, 8.0f / 1024.0f, tol);
+  EXPECT_EQ(mtx.scaleExp, 10);
+}
+
 // ============================================================================
 // SU Texture Coordinate Scale (BP 0x30-0x3F)
 // ============================================================================
