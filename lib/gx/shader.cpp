@@ -1428,9 +1428,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     }
     fragmentFn += "\n    prev = vec4f(mix(prev.rgb, ubuf.fog.color.rgb, clamp(fogZ, 0.0, 1.0)), prev.a);";
   }
-  if (info.usedIndStages.any()) {
-    uniBufAttrs += fmt::format("\n    texcoord_scale: array<vec4f, {}>,", MaxTexCoord);
-  }
+  uniBufAttrs += fmt::format("\n    texcoord_scale: array<vec4f, {}>,", MaxTexCoord);
   if (info.usedIndTexMtxs.any()) {
     uniBufAttrs += "\n    ind_mtx: array<mat2x4f, 3>,";
   }
