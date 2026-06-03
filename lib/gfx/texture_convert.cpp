@@ -6,7 +6,8 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <cmath>
+
+#include <tracy/Tracy.hpp>
 
 namespace aurora::gfx {
 static Module Log("aurora::gfx");
@@ -645,7 +646,7 @@ ConvertedTexture convert_tlut(u32 format, uint32_t width, ArrayRef<uint8_t> data
     break;
   }
   return {
-      .format = wgpu::TextureFormat::R16Sint,
+      .format = wgpu::TextureFormat::RGBA8Unorm,
       .width = width,
       .height = 1,
       .mips = 1,
@@ -693,15 +694,8 @@ ConvertedTexture convert_texture_palette(u32 textureFormat, uint32_t width, uint
         pixels.append(transparent, sizeof(transparent));
         continue;
       }
-      if (tlutFormat == GX_TL_IA8) {
-        const size_t src = static_cast<size_t>(index) * 2;
-        const u8 intensity = palette.data.data()[src];
-        const uint8_t rgba[4] = {intensity, intensity, intensity, palette.data.data()[src + 1]};
-        pixels.append(rgba, sizeof(rgba));
-      } else {
-        const size_t src = static_cast<size_t>(index) * 4;
-        pixels.append(palette.data.data() + src, 4);
-      }
+      const size_t src = static_cast<size_t>(index) * 4;
+      pixels.append(palette.data.data() + src, 4);
     }
     offset += pixelCount;
     mipWidth = std::max(mipWidth >> 1, 1u);
