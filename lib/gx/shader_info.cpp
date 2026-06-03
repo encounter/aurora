@@ -306,9 +306,7 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
     info.usesFog = true;
     info.uniformSize += sizeof(Fog);
   }
-  if (info.usedIndStages.any()) {
-    info.uniformSize += MaxTexCoord * sizeof(Vec4<float>);
-  }
+  info.uniformSize += MaxTexCoord * sizeof(Vec4<float>);
   if (info.usedIndTexMtxs.any()) {
     info.uniformSize += MaxIndTexMtxs * sizeof(Mat2x4<float>);
   }
