@@ -9,7 +9,7 @@ extern "C" {
 #include "stdint.h"
 #endif
 
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !defined(AURORA_GFX_DEBUG_GROUPS)
 #define AURORA_GFX_DEBUG_GROUPS
 #endif
 
