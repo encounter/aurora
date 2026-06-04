@@ -720,6 +720,9 @@ u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept {
     switch (cnt) {
     case GX_NRM_XYZ:
       return 3;
+    case GX_NRM_NBT:
+    case GX_NRM_NBT3:
+      return 9;
     default:
       break;
     }
@@ -766,6 +769,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     }
     const auto& attrFmt = vtxFmt.attrs[i];
     const auto cnt = comp_cnt_count(attr, attrFmt.cnt);
+    const bool nbt3 = attr == GX_VA_NRM && attrFmt.cnt == GX_NRM_NBT3;
     mapping = AttrConfig{
         .attrType = static_cast<u8>(type),
         .cnt = cnt,
@@ -774,6 +778,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
         .stride = 0,
         .frac = attrFmt.frac,
         .le = false,
+        .nbt3 = nbt3,
     };
     switch (type) {
     case GX_DIRECT: {
@@ -783,12 +788,12 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     case GX_INDEX8:
       mapping.stride = g_gxState.arrays[i].stride;
       mapping.le = g_gxState.arrays[i].le;
-      vtxOffset += 1;
+      vtxOffset += nbt3 ? 3 : 1;
       break;
     case GX_INDEX16:
       mapping.stride = g_gxState.arrays[i].stride;
       mapping.le = g_gxState.arrays[i].le;
-      vtxOffset += 2;
+      vtxOffset += nbt3 ? 6 : 2;
       break;
     default:
       Log.fatal("populate_pipeline_config: Invalid vertex type {}", type);

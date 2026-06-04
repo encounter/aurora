@@ -158,7 +158,7 @@ struct TcgConfig {
   GXTexMtx mtx = GX_IDENTITY;
   GXPTTexMtx postMtx = GX_PTIDENTITY;
   bool normalize = false;
-  u8 _p1 = 0;
+  u8 embossSrc = 0; // Emboss source texcoord (GX_TG_BUMP*)
   u8 _p2 = 0;
   u8 _p3 = 0;
 
@@ -441,7 +441,7 @@ struct AttrConfig {
   u8 stride = 0;         // Array stride
   u8 frac = 0;
   bool le = true;
-  u8 _p1 = 0;
+  bool nbt3 = false;     // GX_NRM_NBT3
 };
 struct ShaderConfig {
   u8 fogType = GX_FOG_NONE;
@@ -492,6 +492,7 @@ struct BindGroupRanges {
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept;
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
                                     wgpu::ShaderModule shader, const char* label) noexcept;
+std::string build_shader_source(const ShaderConfig& config) noexcept;
 wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept;
 GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept;
 

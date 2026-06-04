@@ -257,6 +257,18 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
     }
   }
 
+  // Emboss bump needs its source texcoord generated and a light enabled
+  for (int i = 0; i < info.sampledTexCoords.size(); ++i) {
+    if (!info.sampledTexCoords.test(i)) {
+      continue;
+    }
+    const auto& tcg = config.tcgs[i];
+    if (tcg.type >= GX_TG_BUMP0 && tcg.type <= GX_TG_BUMP7) {
+      info.sampledTexCoords.set(tcg.embossSrc);
+      info.lightingEnabled = true;
+    }
+  }
+
   info.uniformSize += info.loadsTevReg.count() * sizeof(Vec4<float>);
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
     if (info.sampledColorChannels.test(i)) {
