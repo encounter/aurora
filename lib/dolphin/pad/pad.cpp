@@ -1,6 +1,7 @@
 #include "../../input.hpp"
 #include "../../device.hpp"
 #include "../../internal.hpp"
+#include "../../fs_helper.hpp"
 #include <dolphin/pad.h>
 #include <dolphin/si.h>
 #include <SDL3/SDL_mouse.h>
@@ -1283,7 +1284,8 @@ constexpr int32_t k_keyboardVersion = 3;
 
 static void load_keyboard_bindings() {
   const auto filePath = std::filesystem::path{aurora::g_config.userPath} / "keyboard_bindings.dat";
-  SDL_IOStream* file = SDL_IOFromFile(filePath.string().c_str(), "rb");
+  const auto pathString = fs_path_to_string(filePath);
+  SDL_IOStream* file = SDL_IOFromFile(pathString.c_str(), "rb");
   if (file == nullptr) {
     return;
   }
@@ -1353,9 +1355,10 @@ static void load_keyboard_bindings() {
 
 static void save_keyboard_bindings() {
   const auto filePath = std::filesystem::path{aurora::g_config.userPath} / "keyboard_bindings.dat";
-  SDL_IOStream* file = SDL_IOFromFile(filePath.string().c_str(), "wb");
+  const auto pathString = fs_path_to_string(filePath);
+  SDL_IOStream* file = SDL_IOFromFile(pathString.c_str(), "wb");
   if (file == nullptr) {
-    aurora::input::Log.warn("save_keyboard_bindings: failed to open {} for writing", filePath.string());
+    aurora::input::Log.warn("save_keyboard_bindings: failed to open {} for writing", pathString);
     return;
   }
 
@@ -1386,7 +1389,7 @@ void PADSerializeMappings() {
     const auto filePath =
         basePath / fmt::format("{}_{:04X}_{:04X}.controller", aurora::input::controller_name(controller.m_index),
                                controller.m_vid, controller.m_pid);
-    std::string filePathStr = filePath.string();
+    std::string filePathStr = fs_path_to_string(filePath);
 
     // don't truncate the file if it already exists
     const char* openMode = std::filesystem::exists(filePath) ? "r+b" : "wb";
@@ -1405,7 +1408,7 @@ void PADSerializeMappings() {
     // start writing data at next 32-byte aligned offset
     const int64_t dataStart = SDL_TellIO(file) + 31 & ~31;
     if (dataStart == -1) {
-      aurora::input::Log.warn("Unable to seek in controller bindings! Path: \"{}\"", filePath.string());
+      aurora::input::Log.warn("Unable to seek in controller bindings! Path: \"{}\"", filePathStr);
       return;
     }
     SDL_SeekIO(file, dataStart, SDL_IO_SEEK_SET);
