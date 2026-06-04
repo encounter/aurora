@@ -14,10 +14,10 @@ option(AURORA_ENABLE_RMLUI "Enable HTML/CSS Based UI Library for use in end-user
 option(AURORA_CACHE_USE_ZSTD "Compress WebGPU cache entries with zstd" ON)
 
 # Dependency versions
-set(AURORA_DAWN_VERSION "v20260523.201736" CACHE STRING "Dawn prebuilt version tag (https://github.com/encounter/dawn-build/releases)")
-set(AURORA_DAWN_REF "9aa45f938d4b36626722bbfdc2f18447179337e6" CACHE STRING "Dawn commit ref (https://github.com/google/dawn)")
+set(AURORA_DAWN_VERSION "v20260603.191052" CACHE STRING "Dawn prebuilt version tag (https://github.com/encounter/dawn-build/releases)")
+set(AURORA_DAWN_REF "13abc3bc8ea2d3c2050f9e77a12d012108ceee24" CACHE STRING "Dawn commit ref (https://github.com/google/dawn)")
 set(AURORA_SDL3_VERSION "3.4.10" CACHE STRING "SDL3 prebuilt version tag (https://github.com/libsdl-org/SDL/releases)")
-set(AURORA_SDL3_REF "8e37db5e797b6167f3a00d697d816a684bd259c7" CACHE STRING "SDL3 commit ref (https://github.com/libsdl-org/SDL)")
+set(AURORA_SDL3_REF "refs/tags/release-3.4.10" CACHE STRING "SDL3 commit ref (https://github.com/libsdl-org/SDL)")
 set(AURORA_NOD_VERSION "v2.0.0-alpha.10" CACHE STRING "nod version tag (https://github.com/encounter/nod/releases)")
 
 # Platform-specific defaults
