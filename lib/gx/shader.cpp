@@ -1191,18 +1191,19 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
       continue;
     }
     const auto& indStage = config.indStages[i];
-    std::string scaleExpr;
-    if (indStage.scaleS == GX_ITS_1 && indStage.scaleT == GX_ITS_1) {
-      scaleExpr = fmt::format("tex{0}_uv", underlying(indStage.texCoordId));
-    } else {
-      scaleExpr = fmt::format("tex{0}_uv * vec2f({1}, {2})", underlying(indStage.texCoordId),
-                              ind_scale(indStage.scaleS), ind_scale(indStage.scaleT));
-    }
+    const u32 texCoordId = underlying(indStage.texCoordId);
+    const u32 texMapId = underlying(indStage.texMapId);
+    // GX applies the SU texture-coordinate scale before the indirect stage scale.
+    // The shader carries normalized UVs, so convert that texel-space result back
+    // into normalized coordinates for the indirect texture sample.
+    const auto scaleExpr =
+        fmt::format("tex{0}_uv * ubuf.texcoord_scale[{0}].xy * vec2f({1}, {2}) / ubuf.tex{3}_size_bias.xy",
+                    texCoordId, ind_scale(indStage.scaleS), ind_scale(indStage.scaleT), texMapId);
     fragmentFnPre += fmt::format(
         "\n    // Indirect stage {0}"
         "\n    var t_IndTexCoord{0} = 255.0 * textureSampleBias(tex{1}, tex{1}_samp, {2}, "
         "ubuf.tex{1}_size_bias.z).abg;",
-        i, underlying(indStage.texMapId), scaleExpr);
+        i, texMapId, scaleExpr);
   }
   if (info.usedIndStages.any()) {
     fragmentFnPre += "\n    var t_TexCoord = vec2f(0.0);";
@@ -1283,23 +1284,21 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
               ") * ind{0}_c1.z",
               i);
         } else if (stage.indTexMtxId >= GX_ITM_S0 && stage.indTexMtxId <= GX_ITM_S2 && hasBaseCoord) {
-          // Dynamic S: result = uv * texDim * ind_coord.x * scale / 256
+          // Dynamic S: result = scaled texcoord * ind_coord.x * scale / 256
           u32 mtxIdx = stage.indTexMtxId - GX_ITM_S0;
           u32 regTexCoord = underlying(stage.texCoordId);
-          u32 regTexMap = underlying(stage.texMapId);
           indirectOffsetTexel = fmt::format(
-              "tex{1}_uv * ubuf.tex{2}_size_bias.xy * ind{0}_coord.x"
-              " * ubuf.ind_mtx[{3}][1][2] / 256.0",
-              i, regTexCoord, regTexMap, mtxIdx);
+              "tex{1}_uv * ubuf.texcoord_scale[{1}].xy * ind{0}_coord.x"
+              " * ubuf.ind_mtx[{2}][1][2] / 256.0",
+              i, regTexCoord, mtxIdx);
         } else if (stage.indTexMtxId >= GX_ITM_T0 && stage.indTexMtxId <= GX_ITM_T2 && hasBaseCoord) {
-          // Dynamic T: result = uv * texDim * ind_coord.y * scale / 256
+          // Dynamic T: result = scaled texcoord * ind_coord.y * scale / 256
           u32 mtxIdx = stage.indTexMtxId - GX_ITM_T0;
           u32 regTexCoord = underlying(stage.texCoordId);
-          u32 regTexMap = underlying(stage.texMapId);
           indirectOffsetTexel = fmt::format(
-              "tex{1}_uv * ubuf.tex{2}_size_bias.xy * ind{0}_coord.y"
-              " * ubuf.ind_mtx[{3}][1][2] / 256.0",
-              i, regTexCoord, regTexMap, mtxIdx);
+              "tex{1}_uv * ubuf.texcoord_scale[{1}].xy * ind{0}_coord.y"
+              " * ubuf.ind_mtx[{2}][1][2] / 256.0",
+              i, regTexCoord, mtxIdx);
         }
       }
 
@@ -1330,12 +1329,11 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
       std::string baseCoordExpr;
       if (hasBaseCoord) {
         u32 texCoordId = underlying(stage.texCoordId);
-        u32 texMapId = underlying(stage.texMapId);
         if (useSimpleCoords) {
           baseCoordExpr = fmt::format("tex{}_uv", texCoordId);
         } else {
           fragmentFnPre +=
-              fmt::format("\n    var ind{0}_texel = tex{1}_uv * ubuf.tex{2}_size_bias.xy;", i, texCoordId, texMapId);
+              fmt::format("\n    var ind{0}_texel = tex{1}_uv * ubuf.texcoord_scale[{1}].xy;", i, texCoordId);
           baseCoordExpr = fmt::format("ind{}_texel", i);
         }
       }
@@ -1430,6 +1428,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     }
     fragmentFn += "\n    prev = vec4f(mix(prev.rgb, ubuf.fog.color.rgb, clamp(fogZ, 0.0, 1.0)), prev.a);";
   }
+  uniBufAttrs += fmt::format("\n    texcoord_scale: array<vec4f, {}>,", MaxTexCoord);
   if (info.usedIndTexMtxs.any()) {
     uniBufAttrs += "\n    ind_mtx: array<mat2x4f, 3>,";
   }

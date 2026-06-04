@@ -303,6 +303,8 @@ if (NOT TARGET TracyClient)
 
   # Default to off, users can enable the cache variable if they want to use it.
   set(TRACY_ENABLE OFF CACHE BOOL "Enable Tracy profiling")
+  set(TRACY_ON_DEMAND ON CACHE BOOL "On-demand profiling")
+  set(TRACY_STATIC ON CACHE BOOL "Whether to build Tracy as a static library" FORCE)
 
   FetchContent_Declare(
           tracy
