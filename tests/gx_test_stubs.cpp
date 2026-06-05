@@ -121,8 +121,8 @@ u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept { return 0; }
 
 // --- Buffer push stubs ---
 namespace aurora::gfx {
-Range push_verts(const uint8_t* data, size_t length) { return {}; }
-Range push_indices(const uint8_t* data, size_t length) { return {}; }
+Range push_verts(const uint8_t* data, size_t length, size_t alignment) { return {}; }
+Range push_indices(const uint8_t* data, size_t length, size_t alignment) { return {}; }
 Range push_uniform(const uint8_t* data, size_t length) { return {}; }
 Range push_storage(const uint8_t* data, size_t length) { return {}; }
 
