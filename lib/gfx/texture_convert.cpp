@@ -315,6 +315,17 @@ struct TextureDecoderC8 {
   static void decode_texel(Target* target, const Source* in, const uint32_t x) { target[x] = in[x]; }
 };
 
+struct TextureDecoderC14X2 {
+  using Source = uint16_t;
+  using Target = uint16_t;
+
+  static constexpr uint32_t Frac = 1;
+  static constexpr uint32_t BlockWidth = 4;
+  static constexpr uint32_t BlockHeight = 4;
+
+  static void decode_texel(Target* target, const Source* in, const uint32_t x) { target[x] = bswap(in[x]) & 0x3fff; }
+};
+
 struct TextureDecoderRGB565 {
   using Source = uint16_t;
   using Target = RGBA8;
@@ -603,7 +614,8 @@ ConvertedTexture convert_texture(u32 format, uint32_t width, uint32_t height, ui
     converted = DecodeTiled<TextureDecoderC8>(width, height, mips, data);
     break;
   case GX_TF_C14X2:
-    FATAL("convert_texture: C14X2 unimplemented");
+    converted = DecodeTiled<TextureDecoderC14X2>(width, height, mips, data);
+    break;
   case GX_TF_RGB565:
     converted = DecodeTiled<TextureDecoderRGB565>(width, height, mips, data);
     break;
