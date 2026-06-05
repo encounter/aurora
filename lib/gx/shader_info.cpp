@@ -371,7 +371,10 @@ static u32 line_texcoord_mask() noexcept {
 gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart, const BindGroupRanges& ranges) noexcept {
   ZoneScoped;
 
-  auto [buf, range] = gfx::map_uniform(info.uniformSize);
+  static ByteBuffer buf;
+  buf.clear();
+  buf.reserve_extra(info.uniformSize);
+
   buf.append(vtxStart);
   buf.append(g_gxState.currentPnMtx);
   buf.append<f32>(g_gxState.renderViewport.width);
@@ -479,6 +482,6 @@ gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart, const BindGroupRa
     buf.append(texture_size_bias(tex));
   }
   g_gxState.stateDirty = false;
-  return range;
+  return gfx::push_uniform(buf.data(), buf.size());
 }
 } // namespace aurora::gx

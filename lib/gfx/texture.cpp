@@ -133,13 +133,8 @@ TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mi
         .mipLevel = mip,
     };
     if constexpr (UseTextureBuffer) {
-      const auto range = push_texture_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks);
-      const wgpu::TexelCopyBufferLayout dataLayout{
-          .offset = range.offset,
-          .bytesPerRow = bytesPerRow,
-          .rowsPerImage = heightBlocks,
-      };
-      g_textureUploads.emplace_back(dataLayout, std::move(dstView), physicalSize);
+      queue_texture_upload_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks, std::move(dstView),
+                                physicalSize);
     } else {
       const wgpu::TexelCopyBufferLayout dataLayout{
           .bytesPerRow = bytesPerRow,
@@ -288,13 +283,8 @@ void write_texture(TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
         .mipLevel = mip,
     };
     if constexpr (UseTextureBuffer) {
-      const auto range = push_texture_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks);
-      const wgpu::TexelCopyBufferLayout dataLayout{
-          .offset = range.offset,
-          .bytesPerRow = bytesPerRow,
-          .rowsPerImage = heightBlocks,
-      };
-      g_textureUploads.emplace_back(dataLayout, std::move(dstView), physicalSize);
+      queue_texture_upload_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks, std::move(dstView),
+                                physicalSize);
     } else {
       const wgpu::TexelCopyBufferLayout dataLayout{
           .bytesPerRow = bytesPerRow,

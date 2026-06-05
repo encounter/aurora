@@ -176,16 +176,11 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
   };
 }
 
-#ifdef AURORA_ENABLE_GX
-wgpu::TextureView g_currentView;
-#endif
-
 void shutdown() noexcept {
 #ifdef AURORA_ENABLE_RMLUI
   rmlui::shutdown();
 #endif
 #ifdef AURORA_ENABLE_GX
-  g_currentView = {};
   imgui::shutdown();
   gfx::shutdown();
   webgpu::shutdown();
@@ -221,36 +216,10 @@ bool begin_frame() noexcept {
         return false;
       }
     }
-    wgpu::SurfaceTexture surfaceTexture;
-    g_surface.GetCurrentTexture(&surfaceTexture);
-    switch (surfaceTexture.status) {
-    case wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal:
-      g_currentView = surfaceTexture.texture.CreateView();
-      break;
-    case wgpu::SurfaceGetCurrentTextureStatus::Timeout:
-      Log.warn("Surface texture acquisition timed out");
-      return false;
-    case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal:
-    case wgpu::SurfaceGetCurrentTextureStatus::Outdated:
-      Log.info("Surface texture is {}, reconfiguring swapchain", magic_enum::enum_name(surfaceTexture.status));
-      webgpu::refresh_surface(false);
-      return false;
-    case wgpu::SurfaceGetCurrentTextureStatus::Lost:
-      Log.warn("Surface texture is {}, releasing surface", magic_enum::enum_name(surfaceTexture.status));
-      webgpu::release_surface();
-    case wgpu::SurfaceGetCurrentTextureStatus::Error:
-      Log.warn("Surface texture is {}, dropping surface", magic_enum::enum_name(surfaceTexture.status));
-      g_surface = {};
-      return false;
-    default:
-      Log.error("Failed to get surface texture: {}", magic_enum::enum_name(surfaceTexture.status));
-      return false;
-    }
   }
 
   imgui::new_frame(window::get_window_size());
   if (!gfx::begin_frame()) {
-    g_currentView = {};
     return false;
   }
 #endif
@@ -261,33 +230,51 @@ void end_frame() noexcept {
   ZoneScoped;
 #ifdef AURORA_ENABLE_GX
   gx::fifo::drain();
-  const auto encoderDescriptor = wgpu::CommandEncoderDescriptor{
-      .label = "Redraw encoder",
-  };
-  auto encoder = g_device.CreateCommandEncoder(&encoderDescriptor);
-  gfx::end_frame(encoder);
-  gfx::render(encoder);
-  {
+  gfx::finish();
+  auto imguiDrawData = imgui::freeze();
+
+  const auto& presentSource = webgpu::present_source();
+  const auto viewport = webgpu::calculate_present_viewport(webgpu::g_graphicsConfig.surfaceConfiguration.width,
+                                                           webgpu::g_graphicsConfig.surfaceConfiguration.height,
+                                                           presentSource.size.width, presentSource.size.height);
+
+  wgpu::BindGroup rmlBindGroup;
+#if AURORA_ENABLE_RMLUI
+  if (rmlui::is_initialized()) {
+    rmlBindGroup = rmlui::record_frame(viewport);
+  }
+#endif
+
+  gfx::end_frame([rmlBindGroup = std::move(rmlBindGroup), viewport,
+                  imguiDrawData = std::move(imguiDrawData)](wgpu::CommandEncoder& encoder) {
     window::SurfaceLock surfaceLock;
-    if (window::is_presentable() && g_surface && g_currentView) {
-      const auto& presentSource = webgpu::present_source();
-      auto viewport = webgpu::calculate_present_viewport(webgpu::g_graphicsConfig.surfaceConfiguration.width,
-                                                         webgpu::g_graphicsConfig.surfaceConfiguration.height,
-                                                         presentSource.size.width, presentSource.size.height);
-      const auto& resampledSource = webgpu::resample_present_source(encoder, viewport);
-      wgpu::BindGroup presentBindGroup = webgpu::create_copy_bind_group(resampledSource);
-    #if AURORA_ENABLE_RMLUI
-      if (rmlui::is_initialized()) {
-        const auto rmlOutput = rmlui::render(encoder, viewport, resampledSource);
-        if (rmlOutput.texture != nullptr) {
-          presentBindGroup = rmlOutput.copyBindGroup;
-        }
+    wgpu::Texture currentTexture;
+    wgpu::TextureView currentView;
+    auto surfaceStatus = wgpu::SurfaceGetCurrentTextureStatus::Error;
+    if (window::is_presentable() && g_surface) {
+      ZoneScopedN("Acquire texture");
+      wgpu::SurfaceTexture surfaceTexture;
+      g_surface.GetCurrentTexture(&surfaceTexture);
+      surfaceStatus = surfaceTexture.status;
+      if (surfaceStatus == wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal) {
+        currentTexture = std::move(surfaceTexture.texture);
+        currentView = currentTexture.CreateView();
       }
-    #endif
+    }
+
+    const bool canPresent = currentTexture && currentView;
+    if (canPresent) {
+      wgpu::BindGroup presentBindGroup;
+      if (rmlBindGroup) {
+        presentBindGroup = rmlBindGroup;
+      } else {
+        const auto& resampledSource = webgpu::resample_present_source(encoder, viewport);
+        presentBindGroup = webgpu::create_copy_bind_group(resampledSource);
+      }
       {
         const std::array attachments{
             wgpu::RenderPassColorAttachment{
-                .view = g_currentView,
+                .view = currentView,
                 .loadOp = wgpu::LoadOp::Clear,
                 .storeOp = wgpu::StoreOp::Store,
             },
@@ -309,7 +296,7 @@ void end_frame() noexcept {
       {
         const std::array attachments{
             wgpu::RenderPassColorAttachment{
-                .view = g_currentView,
+                .view = currentView,
                 .loadOp = wgpu::LoadOp::Load,
                 .storeOp = wgpu::StoreOp::Store,
             },
@@ -322,44 +309,70 @@ void end_frame() noexcept {
         const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
         pass.SetViewport(0.f, 0.f, static_cast<float>(webgpu::g_graphicsConfig.surfaceConfiguration.width),
                          static_cast<float>(webgpu::g_graphicsConfig.surfaceConfiguration.height), 0.f, 1.f);
-        imgui::render(pass);
+        imgui::render(pass, imguiDrawData);
         pass.End();
       }
     } else {
       Log.info("Skipping present; window not presentable");
-      webgpu::release_surface();
     }
     const wgpu::CommandBufferDescriptor cmdBufDescriptor{.label = "Redraw command buffer"};
     const auto buffer = encoder.Finish(&cmdBufDescriptor);
-    g_queue.Submit(1, &buffer);
-    gfx::after_submit();
-    if (window::is_presentable() && g_surface) {
+    {
+      ZoneScopedN("Queue Submit");
+      g_queue.Submit(1, &buffer);
+    }
+    if (canPresent && g_surface) {
+      ZoneScopedN("Present");
       auto presentStatus = g_surface.Present();
       if (presentStatus != wgpu::Status::Success) {
         Log.warn("Surface present failed: {}", static_cast<int>(presentStatus));
         webgpu::release_surface();
       }
     } else if (g_surface) {
-      webgpu::release_surface();
+      switch (surfaceStatus) {
+      case wgpu::SurfaceGetCurrentTextureStatus::Timeout:
+        Log.warn("Surface texture acquisition timed out");
+        break;
+      case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal:
+      case wgpu::SurfaceGetCurrentTextureStatus::Outdated:
+        Log.info("Surface texture is {}, reconfiguring swapchain", magic_enum::enum_name(surfaceStatus));
+        webgpu::refresh_surface(false);
+        break;
+      case wgpu::SurfaceGetCurrentTextureStatus::Lost:
+        Log.warn("Surface texture is {}, releasing surface", magic_enum::enum_name(surfaceStatus));
+        webgpu::release_surface();
+        break;
+      case wgpu::SurfaceGetCurrentTextureStatus::Error:
+        Log.warn("Surface texture is {}, dropping surface", magic_enum::enum_name(surfaceStatus));
+        g_surface = {};
+        break;
+      default:
+        if (!window::is_presentable()) {
+          webgpu::release_surface();
+        } else {
+          Log.error("Failed to get surface texture: {}", magic_enum::enum_name(surfaceStatus));
+        }
+        break;
+      }
     }
-    g_currentView = {};
-  }
+    gfx::after_submit();
 
-  TracyPlotConfig("aurora: lastVertSize", tracy::PlotFormatType::Memory, false, true, 0);
-  TracyPlotConfig("aurora: lastUniformSize", tracy::PlotFormatType::Memory, false, true, 0);
-  TracyPlotConfig("aurora: lastIndexSize", tracy::PlotFormatType::Memory, false, true, 0);
-  TracyPlotConfig("aurora: lastStorageSize", tracy::PlotFormatType::Memory, false, true, 0);
-  TracyPlotConfig("aurora: lastTextureUploadSize", tracy::PlotFormatType::Memory, false, true, 0);
+    TracyPlotConfig("aurora: lastVertSize", tracy::PlotFormatType::Memory, false, true, 0);
+    TracyPlotConfig("aurora: lastUniformSize", tracy::PlotFormatType::Memory, false, true, 0);
+    TracyPlotConfig("aurora: lastIndexSize", tracy::PlotFormatType::Memory, false, true, 0);
+    TracyPlotConfig("aurora: lastStorageSize", tracy::PlotFormatType::Memory, false, true, 0);
+    TracyPlotConfig("aurora: lastTextureUploadSize", tracy::PlotFormatType::Memory, false, true, 0);
 
-  TracyPlot("aurora: queuedPipelines", static_cast<int64_t>(gfx::g_stats.queuedPipelines));
-  TracyPlot("aurora: createdPipelines", static_cast<int64_t>(gfx::g_stats.createdPipelines));
-  TracyPlot("aurora: drawCallCount", static_cast<int64_t>(gfx::g_stats.drawCallCount));
-  TracyPlot("aurora: mergedDrawCallCount", static_cast<int64_t>(gfx::g_stats.mergedDrawCallCount));
-  TracyPlot("aurora: lastVertSize", static_cast<int64_t>(gfx::g_stats.lastVertSize));
-  TracyPlot("aurora: lastUniformSize", static_cast<int64_t>(gfx::g_stats.lastUniformSize));
-  TracyPlot("aurora: lastIndexSize", static_cast<int64_t>(gfx::g_stats.lastIndexSize));
-  TracyPlot("aurora: lastStorageSize", static_cast<int64_t>(gfx::g_stats.lastStorageSize));
-  TracyPlot("aurora: lastTextureUploadSize", static_cast<int64_t>(gfx::g_stats.lastTextureUploadSize));
+    TracyPlot("aurora: queuedPipelines", static_cast<int64_t>(gfx::g_stats.queuedPipelines));
+    TracyPlot("aurora: createdPipelines", static_cast<int64_t>(gfx::g_stats.createdPipelines));
+    TracyPlot("aurora: drawCallCount", static_cast<int64_t>(gfx::g_stats.drawCallCount));
+    TracyPlot("aurora: mergedDrawCallCount", static_cast<int64_t>(gfx::g_stats.mergedDrawCallCount));
+    TracyPlot("aurora: lastVertSize", static_cast<int64_t>(gfx::g_stats.lastVertSize));
+    TracyPlot("aurora: lastUniformSize", static_cast<int64_t>(gfx::g_stats.lastUniformSize));
+    TracyPlot("aurora: lastIndexSize", static_cast<int64_t>(gfx::g_stats.lastIndexSize));
+    TracyPlot("aurora: lastStorageSize", static_cast<int64_t>(gfx::g_stats.lastStorageSize));
+    TracyPlot("aurora: lastTextureUploadSize", static_cast<int64_t>(gfx::g_stats.lastTextureUploadSize));
+  });
 
 #endif
 }

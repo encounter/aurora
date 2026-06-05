@@ -10,11 +10,17 @@ struct TextureUpload {
   wgpu::TexelCopyBufferLayout layout;
   wgpu::TexelCopyTextureInfo tex;
   wgpu::Extent3D size;
+  wgpu::Buffer buffer;
 
   TextureUpload(wgpu::TexelCopyBufferLayout layout, wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size) noexcept
   : layout(layout), tex(std::move(tex)), size(size) {}
+  TextureUpload(wgpu::TexelCopyBufferLayout layout, wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size,
+                wgpu::Buffer buffer) noexcept
+  : layout(layout), tex(std::move(tex)), size(size), buffer(std::move(buffer)) {}
 };
-extern std::vector<TextureUpload> g_textureUploads;
+void queue_texture_upload(TextureUpload upload);
+void queue_texture_upload_data(const uint8_t* data, size_t length, uint32_t bytesPerRow, uint32_t rowsPerImage,
+                               wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size);
 
 struct TextureFormatInfo {
   uint8_t blockWidth;

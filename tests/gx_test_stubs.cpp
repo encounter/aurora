@@ -60,11 +60,6 @@ Vec2<uint32_t> configured_fb_size() noexcept { return {640, 480}; }
 void configure(const GXRenderModeObj*) noexcept {}
 } // namespace aurora::vi
 
-// --- Texture uploads ---
-namespace aurora::gfx {
-std::vector<TextureUpload> g_textureUploads;
-} // namespace aurora::gfx
-
 // --- get_texture ---
 namespace aurora::gx {
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[id]; }
@@ -179,7 +174,10 @@ TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, 
   return {};
 }
 TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept { return {}; }
-void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {}
+void write_texture(TextureRef& ref, ArrayRef<uint8_t> data) noexcept {}
+void queue_texture_upload(TextureUpload upload) {}
+void queue_texture_upload_data(const uint8_t* data, size_t length, uint32_t bytesPerRow, uint32_t rowsPerImage,
+                               wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size) {}
 void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
                   Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat) {}
 void queue_palette_conv(tex_palette_conv::ConvRequest req) {}

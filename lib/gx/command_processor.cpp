@@ -1562,32 +1562,47 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   if (pos + totalVtxBytes > size)
     UNLIKELY { handle_draw_overrun(totalVtxBytes, data, pos, size); }
 
-  // Push raw vertex data to buffer
-  gfx::Range vertRange = gfx::push_verts(data + pos, totalVtxBytes);
+  auto* lastDraw = !g_gxState.stateDirty ? gfx::get_last_draw_command<DrawData>() : nullptr;
+  const bool canMerge = lastDraw != nullptr && prim != GX_LINES && prim != GX_LINESTRIP && prim != GX_POINTS &&
+                        lastDraw->instanceCount == 1;
+
+  // Push raw vertex data to buffer. Merged draws must remain byte-contiguous with the previous range.
+  gfx::Range vertRange = gfx::push_verts(data + pos, totalVtxBytes, canMerge ? 0 : 4);
   pos += totalVtxBytes;
 
   // Try to merge with previous draw call
-  if (!g_gxState.stateDirty) LIKELY {
-    auto* lastDraw = gfx::get_last_draw_command<DrawData>();
+  if (canMerge) {
     // Only if the previous draw call was a single instance draw (no lines/points handling)
-    if (lastDraw != nullptr && prim != GX_LINES && prim != GX_LINESTRIP && prim != GX_POINTS &&
-        lastDraw->instanceCount == 1) LIKELY {
-      u32 numIndices = prepare_idx_buffer(handle_draw_idx_buf, prim, lastDraw->vtxCount, vtxCount);
-      gfx::Range idxRange = gfx::push_indices(handle_draw_idx_buf.data(), handle_draw_idx_buf.size());
+    u32 numIndices = 0;
+    gfx::Range idxRange;
+    const bool hadIndexRange = lastDraw->idxRange.size != 0;
+    if (lastDraw->indexCount == 0 && prim != GX_TRIANGLES) {
+      // Generate triangle index buffer for previous draw
+      lastDraw->indexCount = prepare_idx_buffer(handle_draw_idx_buf, GX_TRIANGLES, 0, lastDraw->vtxCount);
+    }
+    if (lastDraw->indexCount != 0) {
+      numIndices += prepare_idx_buffer(handle_draw_idx_buf, prim, lastDraw->vtxCount, vtxCount);
+      idxRange = gfx::push_indices(handle_draw_idx_buf.data(), handle_draw_idx_buf.size(), hadIndexRange ? 0 : 4);
       handle_draw_idx_buf.clear();
-      CHECK(lastDraw->vertRange.offset + lastDraw->vertRange.size == vertRange.offset,
-            "Non-consecutive vertex ranges ({} < {})", lastDraw->vertRange.offset + lastDraw->vertRange.size,
-            vertRange.offset);
+    }
+    CHECK(lastDraw->vertRange.offset + lastDraw->vertRange.size == vertRange.offset,
+          "Non-consecutive vertex ranges ({} < {})", lastDraw->vertRange.offset + lastDraw->vertRange.size,
+          vertRange.offset);
+    if (hadIndexRange) {
       CHECK(lastDraw->idxRange.offset + lastDraw->idxRange.size == idxRange.offset,
             "Non-consecutive index ranges ({} < {})", lastDraw->idxRange.offset + lastDraw->idxRange.size,
             idxRange.offset);
-      lastDraw->vertRange.size += vertRange.size;
-      lastDraw->idxRange.size += idxRange.size;
-      lastDraw->vtxCount += vtxCount;
-      lastDraw->indexCount += numIndices;
-      ++gfx::g_mergedDrawCallCount;
-      return;
     }
+    lastDraw->vertRange.size += vertRange.size;
+    if (lastDraw->idxRange.size == 0) {
+      lastDraw->idxRange = idxRange;
+    } else {
+      lastDraw->idxRange.size += idxRange.size;
+    }
+    lastDraw->vtxCount += vtxCount;
+    lastDraw->indexCount += numIndices;
+    ++gfx::g_mergedDrawCallCount;
+    return;
   }
 
   handle_draw_unmerged(prim, fmt, vtxCount, vertRange);
@@ -1600,11 +1615,11 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
   u32 numIndices = 0;
   gfx::Range idxRange;
 
-  {
-    ByteBuffer idxBuf;
-    auto& realBuf = vtxCount < 1000 ? handle_draw_unmerged_idxBuf : idxBuf;
+  if (prim != GX_TRIANGLES) {
+    ZoneScopedN("build idx buffer");
+    auto& realBuf = handle_draw_unmerged_idxBuf;
     numIndices = prepare_idx_buffer(realBuf, prim, 0, vtxCount);
-    idxRange = gfx::push_indices(realBuf.data(), realBuf.size());
+    idxRange = gfx::push_indices(realBuf.data(), realBuf.size(), 4);
     realBuf.clear();
   }
 

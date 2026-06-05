@@ -3,6 +3,9 @@
 #include "clear.hpp"
 #include "../fs_helper.hpp"
 #include "../gx/pipeline.hpp"
+#ifdef AURORA_ENABLE_RMLUI
+#include "../rmlui/pipeline.hpp"
+#endif
 #include "../sqlite_utils.hpp"
 #include "../webgpu/gpu.hpp"
 
@@ -140,12 +143,18 @@ static PendingPipeline* touch_pending_pipeline(PipelineRef hash, bool prioritize
   return &g_priorityPipelines.back();
 }
 
+static PipelineRef g_lastPipelineRef = std::numeric_limits<PipelineRef>::max();
+
 template <typename PipelineConfig>
 static PipelineRef find_pipeline_impl(ShaderType type, const PipelineConfig& config, NewPipelineCallback&& cb,
                                       bool persist, std::optional<uint32_t> firstFrameUsedOverride) {
   ZoneScoped;
 
   const PipelineRef hash = xxh3_hash(config, static_cast<HashType>(type));
+  if (hash == g_lastPipelineRef) {
+    return g_lastPipelineRef;
+  }
+  g_lastPipelineRef = hash;
   const uint32_t firstFrameUsed = firstFrameUsedOverride.value_or(current_frame());
   bool notifyWorker = false;
   std::optional<PipelineCacheWrite> cacheWrite;
@@ -352,7 +361,18 @@ static void prune_old_pipeline_cache_versions() {
   if (ret != SQLITE_OK) {
     Log.error("Failed to prune GX pipeline cache rows: {}", sqlite3_errmsg(g_pipelineCacheDb));
     pipeline_cache_abort();
+    return;
   }
+
+#ifdef AURORA_ENABLE_RMLUI
+  const auto rmlDelete = fmt::format("DELETE FROM pipeline_cache WHERE type = {} AND config_version < {}",
+                                     underlying(ShaderType::Rml), rmlui::RmlPipelineConfigVersion);
+  ret = sqlite::exec(g_pipelineCacheDb, rmlDelete.c_str());
+  if (ret != SQLITE_OK) {
+    Log.error("Failed to prune RmlUi pipeline cache rows: {}", sqlite3_errmsg(g_pipelineCacheDb));
+    pipeline_cache_abort();
+  }
+#endif
 }
 
 static bool write_pipeline_cache_record(const PipelineCacheWrite& write) {
@@ -552,6 +572,13 @@ static void load_pipeline_cache() {
     return;
   }
   load_pipeline_cache_entries<gx::PipelineConfig>(ShaderType::GX, gx::GXPipelineConfigVersion, gx::create_pipeline);
+#ifdef AURORA_ENABLE_RMLUI
+  if (g_pipelineCacheBroken) {
+    return;
+  }
+  load_pipeline_cache_entries<rmlui::PipelineConfig>(ShaderType::Rml, rmlui::RmlPipelineConfigVersion,
+                                                     rmlui::create_pipeline);
+#endif
 }
 
 static void start_pipeline_cache_writer() {
@@ -587,6 +614,13 @@ template <>
 PipelineRef find_pipeline(ShaderType type, const gx::PipelineConfig& config, NewPipelineCallback&& cb) {
   return find_pipeline_impl(type, config, std::move(cb), true, std::nullopt);
 }
+
+#ifdef AURORA_ENABLE_RMLUI
+template <>
+PipelineRef find_pipeline(ShaderType type, const rmlui::PipelineConfig& config, NewPipelineCallback&& cb) {
+  return find_pipeline_impl(type, config, std::move(cb), true, std::nullopt);
+}
+#endif
 
 void initialize_pipeline_cache() {
   g_pipelineCacheBroken = false;

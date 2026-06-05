@@ -1,6 +1,7 @@
 #include "rmlui.hpp"
 
 #include <algorithm>
+#include <thread>
 
 #include <RmlUi/Core.h>
 #include <RmlUi_Backend.h>
@@ -174,8 +175,8 @@ Rml::TouchList touch_list(SDL_FingerID id, Rml::Vector2f position) {
   return {Rml::Touch{static_cast<Rml::TouchId>(id), position}};
 }
 
-void dispatch_touch_event(
-    TrackedTouch& touch, const char* type, Rml::Vector2f position, bool inside, Rml::Vector2f delta = {}) noexcept {
+void dispatch_touch_event(TrackedTouch& touch, const char* type, Rml::Vector2f position, bool inside,
+                          Rml::Vector2f delta = {}) noexcept {
   if (touch.target == nullptr) {
     return;
   }
@@ -350,9 +351,7 @@ Rml::Context* get_context() noexcept { return g_context; }
 
 bool is_initialized() noexcept { return g_context != nullptr; }
 
-void set_ui_scale(float scale) noexcept {
-  s_uiScale = scale > 0.0f ? std::clamp(scale, 0.25f, 4.0f) : 0.0f;
-}
+void set_ui_scale(float scale) noexcept { s_uiScale = scale > 0.0f ? std::clamp(scale, 0.25f, 4.0f) : 0.0f; }
 
 float get_ui_scale() noexcept { return s_uiScale; }
 
@@ -409,8 +408,7 @@ void handle_event(SDL_Event& event) noexcept {
   RmlSDL::InputEventHandler(g_context, window::get_sdl_window(), event);
 }
 
-RenderOutput render(const wgpu::CommandEncoder& encoder, const webgpu::Viewport& presentViewport,
-                    const webgpu::TextureWithSampler& presentSource) noexcept {
+wgpu::BindGroup record_frame(const webgpu::Viewport& presentViewport) noexcept {
   if (g_context == nullptr) {
     return {};
   }
@@ -427,7 +425,7 @@ RenderOutput render(const wgpu::CommandEncoder& encoder, const webgpu::Viewport&
 
   auto* renderInterface = get_render_interface();
   renderInterface->SetWindowSize(g_context->GetDimensions());
-  renderInterface->BeginFrame(encoder, s_renderTarget, presentSource);
+  renderInterface->BeginFrame(s_renderTarget, webgpu::present_source());
 
   Backend::BeginFrame();
   g_context->Render();
@@ -437,11 +435,7 @@ RenderOutput render(const wgpu::CommandEncoder& encoder, const webgpu::Viewport&
     // We didn't render anything
     return {};
   }
-
-  return {
-      .texture = &s_renderTarget,
-      .copyBindGroup = s_renderTargetCopyBindGroup,
-  };
+  return s_renderTargetCopyBindGroup;
 }
 
 void shutdown() noexcept {

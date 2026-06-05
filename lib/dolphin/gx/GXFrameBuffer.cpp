@@ -148,6 +148,8 @@ void GXSetDispCopyGamma(GXGamma gamma) {}
 void GXCopyDisp(void* dest, GXBool clear) {}
 
 void GXCopyTex(void* dest, GXBool clear) {
+  aurora::gx::fifo::drain();
+
   const auto rect = aurora::gx::map_logical_scissor(g_gxState.texCopySrc);
   const auto [dstWidth, dstHeight] = scale_copy_dst(g_gxState.texCopyDstWidth, g_gxState.texCopyDstHeight);
   const auto texCopyFmt = g_gxState.texCopyFmt;

@@ -2,7 +2,10 @@
 
 #include <cstddef>
 #include <cmath>
+#include <cstring>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <webgpu/webgpu_cpp.h>
@@ -10,6 +13,7 @@
 #include <SDL3/SDL_render.h>
 
 #include "internal.hpp"
+#include "gfx/render_worker.hpp"
 #include "webgpu/gpu.hpp"
 #include "window.hpp"
 
@@ -27,6 +31,11 @@ static bool g_useSdlRenderer = false;
 
 static std::vector<SDL_Texture*> g_sdlTextures;
 static std::vector<wgpu::Texture> g_wgpuTextures;
+
+struct DrawData::Impl {
+  ImDrawData drawData;
+  std::vector<std::unique_ptr<ImDrawList>> drawLists;
+};
 
 void create_context() noexcept {
   IMGUI_CHECKVERSION();
@@ -151,12 +160,33 @@ void new_frame(const AuroraWindowSize& size) noexcept {
   ImGui::NewFrame();
 }
 
-void render(const wgpu::RenderPassEncoder& pass) noexcept {
+DrawData freeze() noexcept {
   ZoneScoped;
   ImGui::Render();
 
   auto* data = ImGui::GetDrawData();
   data->FramebufferScale = ImGui::GetIO().DisplayFramebufferScale;
+  auto frozen = std::make_shared<DrawData::Impl>();
+  frozen->drawData = *data;
+  frozen->drawLists.reserve(data->CmdListsCount);
+  frozen->drawData.CmdLists.resize(data->CmdListsCount);
+  for (int i = 0; i < data->CmdListsCount; ++i) {
+    frozen->drawLists.emplace_back(data->CmdLists[i]->CloneOutput());
+    frozen->drawData.CmdLists[i] = frozen->drawLists.back().get();
+  }
+  return DrawData{std::move(frozen)};
+}
+
+void render(const wgpu::RenderPassEncoder& pass, const DrawData& drawData) noexcept {
+  ZoneScoped;
+
+  if (!drawData.m_impl) {
+    return;
+  }
+  auto* data = &drawData.m_impl->drawData;
+  if (data->CmdListsCount == 0) {
+    return;
+  }
   if (g_useSdlRenderer) {
     SDL_Renderer* renderer = window::get_sdl_renderer();
     SDL_RenderClear(renderer);
@@ -167,6 +197,47 @@ void render(const wgpu::RenderPassEncoder& pass) noexcept {
     ImGui_ImplWGPU_RenderDrawData(data, pass.Get());
     pass.PopDebugGroup();
   }
+}
+
+static wgpu::Buffer create_texture_upload_buffer(uint32_t width, uint32_t height, const uint8_t* data,
+                                                 uint32_t copyBytesPerRow) {
+  const uint32_t rowBytes = width * 4;
+  const uint64_t uploadSize = static_cast<uint64_t>(copyBytesPerRow) * height;
+  const wgpu::BufferDescriptor desc{
+      .label = "imgui texture upload buffer",
+      .usage = wgpu::BufferUsage::CopySrc,
+      .size = uploadSize,
+      .mappedAtCreation = true,
+  };
+  auto buffer = webgpu::g_device.CreateBuffer(&desc);
+  auto* dst = static_cast<uint8_t*>(buffer.GetMappedRange(0, uploadSize));
+  for (uint32_t row = 0; row < height; ++row) {
+    std::memcpy(dst, data, rowBytes);
+    dst += copyBytesPerRow;
+    data += rowBytes;
+  }
+  buffer.Unmap();
+  return buffer;
+}
+
+static void enqueue_texture_upload(wgpu::Buffer buffer, wgpu::TexelCopyTextureInfo dst,
+                                   wgpu::TexelCopyBufferLayout layout, wgpu::Extent3D size) {
+  gfx::render_worker::enqueue_work([buffer = std::move(buffer), dst = std::move(dst), layout, size] {
+    const wgpu::CommandEncoderDescriptor encoderDesc{
+        .label = "imgui texture upload encoder",
+    };
+    auto encoder = webgpu::g_device.CreateCommandEncoder(&encoderDesc);
+    const wgpu::TexelCopyBufferInfo src{
+        .layout = layout,
+        .buffer = buffer,
+    };
+    encoder.CopyBufferToTexture(&src, &dst, &size);
+    const wgpu::CommandBufferDescriptor commandBufferDesc{
+        .label = "imgui texture upload command buffer",
+    };
+    auto commandBuffer = encoder.Finish(&commandBufferDesc);
+    webgpu::g_queue.Submit(1, &commandBuffer);
+  });
 }
 
 ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) noexcept {
@@ -204,11 +275,12 @@ ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) no
     const wgpu::TexelCopyTextureInfo dstView{
         .texture = texture,
     };
+    const uint32_t copyBytesPerRow = AURORA_ALIGN(width * 4, 256);
     const wgpu::TexelCopyBufferLayout dataLayout{
-        .bytesPerRow = 4 * width,
+        .bytesPerRow = copyBytesPerRow,
         .rowsPerImage = height,
     };
-    webgpu::g_queue.WriteTexture(&dstView, data, width * height * 4, &dataLayout, &size);
+    enqueue_texture_upload(create_texture_upload_buffer(width, height, data, copyBytesPerRow), dstView, dataLayout, size);
   }
   g_wgpuTextures.push_back(texture);
   return reinterpret_cast<ImTextureID>(textureView.MoveToCHandle());

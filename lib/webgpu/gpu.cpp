@@ -14,6 +14,7 @@
 #include <webgpu/webgpu_cpp.h>
 
 #include "../gfx/common.hpp"
+#include "../gfx/render_worker.hpp"
 #include "../internal.hpp"
 #include "../window.hpp"
 
@@ -594,6 +595,7 @@ const TextureWithSampler& resample_present_source(const wgpu::CommandEncoder& en
       .frameWidth = static_cast<float>(width),
       .frameHeight = static_cast<float>(height),
   };
+  ASSERT(gfx::render_worker::is_worker_thread(), "Present resample queue write must run on the render worker");
   g_queue.WriteBuffer(g_ResampleUniformBuffer, 0, &uniform, sizeof(uniform));
 
   const std::array bindGroupEntries{
@@ -948,6 +950,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
 }
 
 void shutdown() {
+  gfx::gpu_synchronize();
   g_CopyBindGroupLayout = {};
   g_CopyPipeline = {};
   g_CopyBindGroup = {};
@@ -968,6 +971,7 @@ void shutdown() {
 }
 
 void release_surface() noexcept {
+  gfx::gpu_synchronize();
   if (g_surface) {
     g_surface.Unconfigure();
   }
@@ -975,6 +979,7 @@ void release_surface() noexcept {
 }
 
 bool refresh_surface(bool recreate) {
+  gfx::gpu_synchronize();
   if (!g_instance || !g_device) {
     return false;
   }
@@ -1003,6 +1008,7 @@ bool refresh_surface(bool recreate) {
 }
 
 void resize_swapchain(uint32_t width, uint32_t height, uint32_t native_width, uint32_t native_height, bool force) {
+  gfx::gpu_synchronize();
   if (!g_surface || !g_device || width == 0 || height == 0 || native_height == 0 || native_width == 0) {
     return;
   }

@@ -198,7 +198,7 @@ void shutdown_rumble() noexcept {
   }
 }
 } // namespace detail
-#elif !defined(SDL_PLATFORM_IOS)
+#elif !defined(SDL_PLATFORM_IOS) || defined(SDL_PLATFORM_TVOS)
 bool rumble_available() noexcept { return false; }
 
 void rumble(const uint16_t lowFreq, const uint16_t highFreq, const uint16_t durationMs) noexcept {

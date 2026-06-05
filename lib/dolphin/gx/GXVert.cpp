@@ -48,9 +48,10 @@ void GXEnd() {
     }
     sInBegin = false;
   }
-  if (!aurora::gx::fifo::in_display_list()) {
-    aurora::gx::fifo::drain();
-  }
+  // TEMP: debugging aid
+  // if (!aurora::gx::fifo::in_display_list()) {
+  //   aurora::gx::fifo::drain();
+  // }
 }
 
 void GXPosition3f32(f32 x, f32 y, f32 z) {

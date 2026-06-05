@@ -29,6 +29,10 @@ void render(const DrawData& data, const wgpu::RenderPassEncoder& pass) {
     const wgpu::Color color{0.f, 0.f, 0.f, data.dstAlpha / 255.f};
     pass.SetBlendConstant(&color);
   }
-  pass.DrawIndexed(data.indexCount, data.instanceCount);
+  if (data.indexCount == 0) {
+    pass.Draw(data.vtxCount, data.instanceCount);
+  } else {
+    pass.DrawIndexed(data.indexCount, data.instanceCount);
+  }
 }
 } // namespace aurora::gx
