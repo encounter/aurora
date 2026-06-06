@@ -534,8 +534,8 @@ ECardResult CardRawFile::getStatus(uint32_t fileNo, CardStat& statOut) const {
   std::strncpy(statOut.x0_fileName, file->m_filename, 32);
   statOut.x20_length = file->m_blockCount * BlockSize;
   statOut.x24_time = file->m_modifiedTime;
-  memmove(statOut.x28_gameName.data(), file->m_game, 4);
-  memmove(statOut.x2c_company.data(), file->m_maker, 4);
+  memmove(statOut.x28_gameName.data(), file->m_game, statOut.x28_gameName.size());
+  memmove(statOut.x2c_company.data(), file->m_maker, statOut.x2c_company.size());
 
   statOut.x2e_bannerFormat = file->m_bannerFlags;
   statOut.x30_iconAddr = file->m_iconAddress;
