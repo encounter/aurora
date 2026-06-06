@@ -56,8 +56,9 @@ static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
 static wgpu::AdapterInfo g_adapterInfo;
 static wgpu::SurfaceCapabilities g_surfaceCapabilities;
-bool g_bcTexturesSupported;
-bool g_textureComponentSwizzleSupported;
+bool g_bcTexturesSupported = false;
+bool g_astcTexturesSupported = false;
+bool g_textureComponentSwizzleSupported = false;
 
 namespace {
 
@@ -237,7 +238,8 @@ TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool m
     sampleCount = g_graphicsConfig.msaaSamples;
   }
   if (width == 0 || height == 0) {
-    Log.fatal("Invalid render texture size! {}x{}, multisampled {}, format {}", width, height, static_cast<uint32_t>(format), multisampled);
+    Log.fatal("Invalid render texture size! {}x{}, multisampled {}, format {}", width, height,
+              static_cast<uint32_t>(format), multisampled);
   }
   const wgpu::TextureDescriptor textureDescriptor{
       .label = "Render texture",
@@ -296,9 +298,7 @@ void set_resampler(AuroraSampler sampler) noexcept {
   }
 }
 
-AuroraSampler get_resampler() noexcept {
-  return g_Resampler;
-}
+AuroraSampler get_resampler() noexcept { return g_Resampler; }
 
 Viewport calculate_present_viewport(uint32_t surface_width, uint32_t surface_height, uint32_t content_width,
                                     uint32_t content_height) noexcept {
@@ -806,15 +806,18 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         requiredLimits.minUniformBufferOffsetAlignment, requiredLimits.minStorageBufferOffsetAlignment);
     std::vector<wgpu::FeatureName> requiredFeatures;
     g_bcTexturesSupported = false;
+    g_astcTexturesSupported = false;
     g_textureComponentSwizzleSupported = false;
     wgpu::SupportedFeatures supportedFeatures;
     g_adapter.GetFeatures(&supportedFeatures);
     for (size_t i = 0; i < supportedFeatures.featureCount; ++i) {
       const auto feature = supportedFeatures.features[i];
-      if (feature == wgpu::FeatureName::TextureCompressionBC ||
+      if (feature == wgpu::FeatureName::TextureCompressionBC || feature == wgpu::FeatureName::TextureCompressionASTC ||
           feature == wgpu::FeatureName::TextureComponentSwizzle) {
         if (feature == wgpu::FeatureName::TextureCompressionBC) {
           g_bcTexturesSupported = true;
+        } else if (feature == wgpu::FeatureName::TextureCompressionASTC) {
+          g_astcTexturesSupported = true;
         } else if (feature == wgpu::FeatureName::TextureComponentSwizzle) {
           g_textureComponentSwizzleSupported = true;
         }
