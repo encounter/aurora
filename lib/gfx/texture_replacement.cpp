@@ -401,6 +401,23 @@ std::optional<aurora::gfx::ConvertedTexture> load_texture_file(const std::filesy
   return aurora::gfx::dds::load_dds_file(path);
 }
 
+bool remove_mipmaps(aurora::gfx::ConvertedTexture& texture) noexcept {
+  if (texture.mips <= 1) {
+    return true;
+  }
+
+  const uint64_t size = aurora::gfx::calc_texture_size(texture.format, texture.width, texture.height, 1);
+  if (size == 0 || size > texture.data.size()) {
+    return false;
+  }
+
+  aurora::ByteBuffer data{static_cast<size_t>(size)};
+  std::memcpy(data.data(), texture.data.data(), static_cast<size_t>(size));
+  texture.mips = 1;
+  texture.data = std::move(data);
+  return true;
+}
+
 constexpr bool is_unsupported_texture_format(wgpu::TextureFormat format) {
   switch (format) {
   case wgpu::TextureFormat::BC1RGBAUnorm:
@@ -464,6 +481,10 @@ std::optional<aurora::gfx::ConvertedTexture> load_file_replacement(const Replace
     return std::nullopt;
   }
 
+  if (base->mips > 1) {
+    return base;
+  }
+
   std::vector<aurora::gfx::ConvertedTexture> more;
   std::error_code ec;
   for (uint32_t mipLevel = 1;; ++mipLevel) {
@@ -485,6 +506,11 @@ std::optional<aurora::gfx::ConvertedTexture> load_file_replacement(const Replace
                  lvl->width, lvl->height);
       }
 
+      break;
+    }
+    // If a sidecar mip file contains mipmaps, keep only the top level mip.
+    if (!remove_mipmaps(*lvl)) {
+      Log.warn("texture_replacement: could not slice first mip {}", fs_path_to_string(mipPath));
       break;
     }
     more.push_back(std::move(*lvl));
