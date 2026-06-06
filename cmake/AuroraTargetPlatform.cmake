@@ -16,3 +16,4 @@ function(aurora_get_target_arch out_var)
 
   set(${out_var} "${_arch}" PARENT_SCOPE)
 endfunction()
+

@@ -22,54 +22,66 @@
 using namespace aurora::dvd::impl;
 
 namespace aurora::dvd::impl {
-NodHandle* s_partition = nullptr;
-std::vector<FSTEntry> s_fstEntries;
-// Map from public FST entryNums (matching base disc, Aurora-assigned for new overlay entries)
-// To the current FST indexes (that we use for navigating the tree).
-// Unfilled spots are given the k_invalidFstEntry value.
-std::vector<FstIndex> s_entryNumToFstIndex;
-s32 s_baseEntryCount = 0;
-FstIndex s_currentDir = 0;
-std::string s_currentPath = "/";
-BOOL s_autoInvalidation = FALSE;
-BOOL s_autoFatalMessaging = FALSE;
-DVDDiskID s_diskID = {};
-DVDLowCallback s_resetCoverCallback = nullptr;
-bool s_initialized = false;
-bool s_overlayCallbacksSet = false;
-AuroraOverlayCallbacks s_overlayCallbacks;
-std::mutex s_fstLock;
-} // namespace aurora::dvd::impl
+  NodHandle* s_partition = nullptr;
+  std::vector<FSTEntry> s_fstEntries;
+  // Map from public FST entryNums (matching base disc, Aurora-assigned for new overlay entries)
+  // To the current FST indexes (that we use for navigating the tree).
+  // Unfilled spots are given the k_invalidFstEntry value.
+  std::vector<FstIndex> s_entryNumToFstIndex;
+  s32 s_baseEntryCount = 0;
+  FstIndex s_currentDir = 0;
+  std::string s_currentPath = "/";
+  BOOL s_autoInvalidation = FALSE;
+  BOOL s_autoFatalMessaging = FALSE;
+  DVDDiskID s_diskID = {};
+  DVDLowCallback s_resetCoverCallback = nullptr;
+  bool s_initialized = false;
+  bool s_overlayCallbacksSet = false;
+  AuroraOverlayCallbacks s_overlayCallbacks;
+  std::mutex s_fstLock;
+}
 
 namespace {
 
 class CommandDataBase {
 public:
   virtual ~CommandDataBase() = default;
-  virtual int64_t read(uint8_t* buf, size_t len) = 0;
+  virtual int64_t read(uint8_t *buf, size_t len) = 0;
   virtual int64_t seek(int64_t offset, int32_t whence) = 0;
 };
 
 class CommandDataNod final : public CommandDataBase {
 public:
   NodHandle* handle;
-  explicit CommandDataNod(NodHandle* nod_handle) : handle(nod_handle) {}
-  ~CommandDataNod() override { nod_free(handle); }
+  explicit CommandDataNod(NodHandle* nod_handle) : handle(nod_handle) { }
+  ~CommandDataNod() override {
+    nod_free(handle);
+  }
 
-  int64_t read(uint8_t* buf, size_t len) override { return nod_read(handle, buf, len); }
+  int64_t read(uint8_t* buf, size_t len) override {
+    return nod_read(handle, buf, len);
+  }
 
-  int64_t seek(int64_t offset, int32_t whence) override { return nod_seek(handle, offset, whence); }
+  int64_t seek(int64_t offset, int32_t whence) override {
+    return nod_seek(handle, offset, whence);
+  }
 };
 
 class CommandDataOverlay final : public CommandDataBase {
 public:
   void* handle;
-  explicit CommandDataOverlay(void* handle) : handle(handle) {}
-  ~CommandDataOverlay() override { s_overlayCallbacks.close(handle); }
+  explicit CommandDataOverlay(void* handle) : handle(handle) { }
+  ~CommandDataOverlay() override {
+    s_overlayCallbacks.close(handle);
+  }
 
-  int64_t read(uint8_t* buf, size_t len) override { return s_overlayCallbacks.read(handle, buf, len); }
+  int64_t read(uint8_t* buf, size_t len) override {
+    return s_overlayCallbacks.read(handle, buf, len);
+  }
 
-  int64_t seek(int64_t offset, int32_t whence) override { return s_overlayCallbacks.seek(handle, offset, whence); }
+  int64_t seek(int64_t offset, int32_t whence) override {
+    return s_overlayCallbacks.seek(handle, offset, whence);
+  }
 };
 
 CommandDataNod* s_disc;
@@ -97,13 +109,18 @@ bool isValidEntryNum(s32 entry) {
          s_entryNumToFstIndex[entry] != k_invalidFstEntry;
 }
 
-bool isValidFstIndex(FstIndex entry) { return entry >= 0 && static_cast<size_t>(entry) < s_fstEntries.size(); }
+bool isValidFstIndex(FstIndex entry) {
+  return entry >= 0 && static_cast<size_t>(entry) < s_fstEntries.size();
+}
 
-bool isAligned(const void* addr, uintptr_t align) { return (reinterpret_cast<uintptr_t>(addr) & (align - 1)) == 0; }
+bool isAligned(const void* addr, uintptr_t align) {
+  return (reinterpret_cast<uintptr_t>(addr) & (align - 1)) == 0;
+}
 
 int64_t sdlStreamReadAt(void* userData, uint64_t offset, void* out, size_t len) {
   auto* io = static_cast<SDL_IOStream*>(userData);
-  if (io == nullptr || out == nullptr || offset > static_cast<uint64_t>(std::numeric_limits<Sint64>::max())) {
+  if (io == nullptr || out == nullptr ||
+      offset > static_cast<uint64_t>(std::numeric_limits<Sint64>::max())) {
     return -1;
   }
 
@@ -805,9 +822,8 @@ BOOL DVDReadAsyncPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset,
 
   ASSERTMSGLINE(0x2D5, (0 <= offset) && (offset <= static_cast<s32>(fileInfo->length)),
                 "DVDReadAsync(): specified area is out of the file  ");
-  ASSERTMSGLINE(
-      0x2DB, (0 <= offset + length) && (offset + length < static_cast<s32>(fileInfo->length) + DVD_MIN_TRANSFER_SIZE),
-      "DVDReadAsync(): specified area is out of the file  ");
+  ASSERTMSGLINE(0x2DB, (0 <= offset + length) && (offset + length < static_cast<s32>(fileInfo->length) + DVD_MIN_TRANSFER_SIZE),
+                "DVDReadAsync(): specified area is out of the file  ");
 
   fileInfo->callback = callback;
   DVDReadAbsAsyncPrio(&fileInfo->cb, addr, length, offset, cbForReadAsync, prio);

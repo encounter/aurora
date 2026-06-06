@@ -84,9 +84,13 @@ static std::deque<PipelineCacheWrite> g_pipelineCacheWriteQueue;
 static bool g_pipelineCacheWriterStop = false;
 static int g_sdlVfsRegisterResult = SQLITE_ERROR;
 
-static SdlVfsSqliteFile* sdl_vfs_file(sqlite3_file* file) { return reinterpret_cast<SdlVfsSqliteFile*>(file); }
+static SdlVfsSqliteFile* sdl_vfs_file(sqlite3_file* file) {
+  return reinterpret_cast<SdlVfsSqliteFile*>(file);
+}
 
-static sqlite3_vfs* default_vfs(sqlite3_vfs* vfs) { return static_cast<sqlite3_vfs*>(vfs->pAppData); }
+static sqlite3_vfs* default_vfs(sqlite3_vfs* vfs) {
+  return static_cast<sqlite3_vfs*>(vfs->pAppData);
+}
 
 static int sdl_vfs_close(sqlite3_file* file) {
   auto* vfsFile = sdl_vfs_file(file);
@@ -488,7 +492,8 @@ static sqlite3* open_pipeline_cache_seed_db(const std::string& path) {
   }
 
   sqlite3* seedDb = nullptr;
-  const auto ret = sqlite3_open_v2(path.c_str(), &seedDb, SQLITE_OPEN_READONLY | SQLITE_OPEN_PRIVATECACHE, SdlVfsName);
+  const auto ret =
+      sqlite3_open_v2(path.c_str(), &seedDb, SQLITE_OPEN_READONLY | SQLITE_OPEN_PRIVATECACHE, SdlVfsName);
   if (ret != SQLITE_OK) {
     if (seedDb != nullptr) {
       sqlite3_close(seedDb);
@@ -499,8 +504,9 @@ static sqlite3* open_pipeline_cache_seed_db(const std::string& path) {
 
   bool schemaMatch = false;
   const auto schemaQuery = fmt::format("SELECT 1 FROM aurora_schema WHERE value = {}", PipelineCacheSchema);
-  const auto schemaRet =
-      sqlite::exec(seedDb, schemaQuery.c_str(), [&schemaMatch](int, char**, char**) { schemaMatch = true; });
+  const auto schemaRet = sqlite::exec(seedDb, schemaQuery.c_str(), [&schemaMatch](int, char**, char**) {
+    schemaMatch = true;
+  });
   if (schemaRet != SQLITE_OK) {
     Log.warn("Failed to read bundled pipeline cache schema from '{}': {}", path, sqlite3_errmsg(seedDb));
     sqlite3_close(seedDb);

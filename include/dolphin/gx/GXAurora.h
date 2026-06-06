@@ -63,6 +63,7 @@ extern "C" {
 
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
+
 /*
  * Debug marker stuff
  */

@@ -133,8 +133,8 @@ void GXSetTevIndWarp(GXTevStageID tevStage, GXIndTexStageID indStage, GXBool sig
 }
 
 void GXSetTevIndRepeat(GXTevStageID tevStage) {
-  GXSetTevIndirect(tevStage, GX_INDTEXSTAGE0, GX_ITF_8, GX_ITB_NONE, GX_ITM_OFF, GX_ITW_0, GX_ITW_0, GX_TRUE, GX_FALSE,
-                   GX_ITBA_OFF);
+  GXSetTevIndirect(tevStage, GX_INDTEXSTAGE0, GX_ITF_8, GX_ITB_NONE, GX_ITM_OFF, GX_ITW_0, GX_ITW_0, GX_TRUE,
+                   GX_FALSE, GX_ITBA_OFF);
 }
 
 void GXSetTevIndBumpXYZ(GXTevStageID tevStage, GXIndTexStageID indStage, GXIndTexMtxID matrixSel) {
@@ -163,7 +163,8 @@ void GXSetTevIndBumpST(GXTevStageID tevStage, GXIndTexStageID indStage, GXIndTex
     break;
   }
   // Stage 0: STU bias, S-dynamic matrix, wrap=0/0
-  GXSetTevIndirect(tevStage, indStage, GX_ITF_8, GX_ITB_STU, sMtx, GX_ITW_0, GX_ITW_0, GX_FALSE, GX_FALSE, GX_ITBA_OFF);
+  GXSetTevIndirect(tevStage, indStage, GX_ITF_8, GX_ITB_STU, sMtx, GX_ITW_0, GX_ITW_0, GX_FALSE, GX_FALSE,
+                   GX_ITBA_OFF);
   // Stage 1: STU bias, T-dynamic matrix, wrap=0/0, add prev
   GXSetTevIndirect(static_cast<GXTevStageID>(tevStage + 1), indStage, GX_ITF_8, GX_ITB_STU, tMtx, GX_ITW_0, GX_ITW_0,
                    GX_TRUE, GX_FALSE, GX_ITBA_OFF);
@@ -177,18 +178,12 @@ void GXSetTevIndTile(GXTevStageID tevStage, GXIndTexStageID indStage, u16 tileSi
                      GXIndTexAlphaSel alphaSel) {
   auto sizeToWrap = [](u16 size) -> GXIndTexWrap {
     switch (size) {
-    case 256:
-      return GX_ITW_256;
-    case 128:
-      return GX_ITW_128;
-    case 64:
-      return GX_ITW_64;
-    case 32:
-      return GX_ITW_32;
-    case 16:
-      return GX_ITW_16;
-    default:
-      return GX_ITW_0;
+    case 256: return GX_ITW_256;
+    case 128: return GX_ITW_128;
+    case 64: return GX_ITW_64;
+    case 32: return GX_ITW_32;
+    case 16: return GX_ITW_16;
+    default: return GX_ITW_0;
     }
   };
   GXIndTexWrap wrapS = sizeToWrap(tileSizeS);

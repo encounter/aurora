@@ -572,7 +572,7 @@ constexpr std::array<std::string_view, GX_CA_ZERO + 1> TevAlphaArgNames{
     "APREV"sv, "A0"sv, "A1"sv, "A2"sv, "TEXA"sv, "RASA"sv, "KONST"sv, "ZERO"sv,
 };
 
-auto fetch_fixed16_attr(std::string_view fetchFn, const AttrConfig& mapping, std::string_view buf,
+auto fetch_fixed16_attr(std::string_view fetchFn, const AttrConfig& mapping, std::string_view buf, 
                         std::string_view offs, bool le) -> std::string {
   // Some Adreno drivers appear sensitive to generated shaders that route 2- and
   // 3-component fixed-16 vertex attributes through reusable vector fetch helpers.
@@ -1283,8 +1283,8 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     // The shader carries normalized UVs, so convert that texel-space result back
     // into normalized coordinates for the indirect texture sample.
     const auto scaleExpr =
-        fmt::format("tex{0}_uv * ubuf.texcoord_scale[{0}].xy * vec2f({1}, {2}) / ubuf.tex{3}_size_bias.xy", texCoordId,
-                    ind_scale(indStage.scaleS), ind_scale(indStage.scaleT), texMapId);
+        fmt::format("tex{0}_uv * ubuf.texcoord_scale[{0}].xy * vec2f({1}, {2}) / ubuf.tex{3}_size_bias.xy",
+                    texCoordId, ind_scale(indStage.scaleS), ind_scale(indStage.scaleT), texMapId);
     fragmentFnPre += fmt::format(
         "\n    // Indirect stage {0}"
         "\n    var t_IndTexCoord{0} = 255.0 * textureSampleBias(tex{1}, tex{1}_samp, {2}, "

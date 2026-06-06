@@ -121,8 +121,7 @@ ECardResult CardGciFolder::createFile(const char* filename, size_t size, FileHan
   }
 
   gciFileHeader->swapEndian();
-  m_files.push_back({*gciFileHeader, fileSize, reinterpret_cast<const char8_t*>(gciFilename.c_str()),
-                     false}); // push non-endian swapped header first
+  m_files.push_back({*gciFileHeader, fileSize, reinterpret_cast<const char8_t*>(gciFilename.c_str()), false}); // push non-endian swapped header first
   handleOut = FileHandle(m_files.size() - 1, 0);
 
   return ECardResult::READY;
@@ -361,7 +360,8 @@ bool CardGciFolder::open(const std::filesystem::path& filepath) {
     return false;
   }
 
-  std::filesystem::directory_iterator it(filepath, std::filesystem::directory_options::skip_permission_denied, ec);
+  std::filesystem::directory_iterator it(
+      filepath, std::filesystem::directory_options::skip_permission_denied, ec);
   if (ec) {
     Log.warn("Failed to enumerate GCI folder '{}': {}", fs_path_to_string(filepath), ec.message());
     return false;

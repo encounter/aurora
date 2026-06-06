@@ -73,6 +73,7 @@ s32 allocateOverlayEntryNum(std::string_view path) {
   return entryNum;
 }
 
+
 u32 fstCallback(u32 index, NodNodeKind kind, const char* name, u32 size, void* userData) {
   auto* ctx = static_cast<IterateContext*>(userData);
 
@@ -80,7 +81,11 @@ u32 fstCallback(u32 index, NodNodeKind kind, const char* name, u32 size, void* u
     ctx->dirStack.pop_back();
   }
 
-  const auto newEntry = std::make_shared<IterateNode>(name, (kind == NOD_NODE_KIND_DIRECTORY), size, index);
+  const auto newEntry = std::make_shared<IterateNode>(
+    name,
+    (kind == NOD_NODE_KIND_DIRECTORY),
+    size,
+    index);
 
   const auto& curDir = ctx->dirStack.back().first;
   curDir->children.push_back(newEntry);
@@ -189,8 +194,7 @@ void makeFstRecursive(IterateNode& node, FstIndex parent) {
     assert(node.children.empty());
     assert(node.originalEntryNum != k_invalidFstEntry);
 
-    s_fstEntries.emplace_back(node.name, false, parent, node.size, node.overlayData, node.isOverlay,
-                              node.originalEntryNum);
+    s_fstEntries.emplace_back(node.name, false, parent, node.size, node.overlayData, node.isOverlay, node.originalEntryNum);
     return;
   }
 
@@ -206,7 +210,9 @@ void makeFstRecursive(IterateNode& node, FstIndex parent) {
   s_fstEntries[ourIndex].nextOrLength = static_cast<u32>(s_fstEntries.size());
 }
 
-void makeFstFromContext(const IterateContext& context) { makeFstRecursive(*context.root, 0); }
+void makeFstFromContext(const IterateContext& context) {
+  makeFstRecursive(*context.root, 0);
+}
 
 s32 calcEntryCount(const IterateNode& node) {
   s32 counter = 1;
@@ -234,7 +240,7 @@ bool validateOverlayFile(const AuroraOverlayFile& file) {
   return true;
 }
 
-} // namespace
+}
 
 namespace aurora::dvd::impl {
 
@@ -249,8 +255,7 @@ bool rebuildFST() {
 
   s32 currentDirEntryNum = k_invalidFstEntry;
   const std::string currentPath = s_currentPath;
-  if (s_currentDir >= 0 && static_cast<size_t>(s_currentDir) < s_fstEntries.size() &&
-      s_fstEntries[s_currentDir].isDir) {
+  if (s_currentDir >= 0 && static_cast<size_t>(s_currentDir) < s_fstEntries.size() && s_fstEntries[s_currentDir].isDir) {
     currentDirEntryNum = s_fstEntries[s_currentDir].origEntryNum;
   }
 
@@ -276,8 +281,8 @@ bool rebuildFST() {
   }
 
   if (currentDirEntryNum != k_invalidFstEntry) {
-    Log.warn("Current DVD directory {} with entryNum {} was lost during FST rebuild; resetting to root", currentPath,
-             currentDirEntryNum);
+    Log.warn("Current DVD directory {} with entryNum {} was lost during FST rebuild; resetting to root",
+             currentPath, currentDirEntryNum);
   }
 
   s_currentDir = 0;
@@ -305,9 +310,11 @@ bool nameEqualsIgnoreCase(const std::string_view lhs, const std::string_view rhs
   return true;
 }
 
-} // namespace aurora::dvd::impl
+}
 
-s32 aurora_dvd_base_entry_count() { return s_baseEntryCount; }
+s32 aurora_dvd_base_entry_count() {
+  return s_baseEntryCount;
+}
 
 void aurora_dvd_overlay_files(const AuroraOverlayFile* files, size_t nFiles, s32* outEntryNums) {
   if (!s_overlayCallbacksSet) {

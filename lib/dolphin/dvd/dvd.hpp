@@ -39,20 +39,10 @@ struct IterateNode {
   std::vector<std::shared_ptr<IterateNode>> children;
 
   IterateNode(std::string name, bool isDir, u32 size, s32 originalEntryNum, void* overlayData)
-  : name(std::move(name))
-  , isDir(isDir)
-  , size(size)
-  , originalEntryNum(originalEntryNum)
-  , overlayData(overlayData)
-  , isOverlay(true) {}
+  : name(std::move(name)), isDir(isDir), size(size), originalEntryNum(originalEntryNum), overlayData(overlayData), isOverlay(true) {}
 
   IterateNode(std::string name, bool isDir, u32 size, s32 originalEntryNum)
-  : name(std::move(name))
-  , isDir(isDir)
-  , size(size)
-  , originalEntryNum(originalEntryNum)
-  , overlayData(nullptr)
-  , isOverlay(false) {}
+  : name(std::move(name)), isDir(isDir), size(size), originalEntryNum(originalEntryNum), overlayData(nullptr), isOverlay(false) {}
 };
 
 struct IterateContext {
@@ -81,4 +71,4 @@ extern std::mutex s_fstLock;
 bool rebuildFST();
 bool nameEqualsIgnoreCase(std::string_view lhs, std::string_view rhs);
 
-} // namespace aurora::dvd::impl
+}

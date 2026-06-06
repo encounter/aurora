@@ -463,7 +463,8 @@ gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart, const BindGroupRa
     buf.append(fog);
   }
   for (const auto& scale : g_gxState.texCoordScales) {
-    buf.append(Vec4{static_cast<f32>(scale.scaleS) + 1.0f, static_cast<f32>(scale.scaleT) + 1.0f, 0.0f, 0.0f});
+    buf.append(
+        Vec4{static_cast<f32>(scale.scaleS) + 1.0f, static_cast<f32>(scale.scaleT) + 1.0f, 0.0f, 0.0f});
   }
   if (info.usedIndTexMtxs.any()) {
     for (int i = 0; i < MaxIndTexMtxs; ++i) {

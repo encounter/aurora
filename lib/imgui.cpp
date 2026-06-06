@@ -280,8 +280,7 @@ ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) no
         .bytesPerRow = copyBytesPerRow,
         .rowsPerImage = height,
     };
-    enqueue_texture_upload(create_texture_upload_buffer(width, height, data, copyBytesPerRow), dstView, dataLayout,
-                           size);
+    enqueue_texture_upload(create_texture_upload_buffer(width, height, data, copyBytesPerRow), dstView, dataLayout, size);
   }
   g_wgpuTextures.push_back(texture);
   return reinterpret_cast<ImTextureID>(textureView.MoveToCHandle());

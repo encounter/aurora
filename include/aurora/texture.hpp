@@ -52,7 +52,7 @@ struct ReplacementGroup {
 };
 
 ReplacementRegistration register_replacement(ReplacementKey key, RawTextureReplacement replacement,
-                                             ReplacementOptions options = {});
+                                              ReplacementOptions options = {});
 void unregister_replacement(const ReplacementRegistration& registration);
 void unregister_replacements(std::span<const ReplacementRegistration> registrations);
 void unregister_replacements(const ReplacementGroup& group);

@@ -122,7 +122,9 @@ public:
     m_owned = true;
   }
 
-  void clear() { m_length = 0; }
+  void clear() {
+    m_length = 0;
+  }
 
   void reserve_extra(size_t size) { resize(m_length + size, true); }
 
@@ -170,11 +172,11 @@ private:
 
 namespace aurora::gfx {
 inline constexpr bool UseTextureBuffer = true;
-inline constexpr uint64_t UniformBufferSize = 25165824; // 24mb
-inline constexpr uint64_t VertexBufferSize = 3145728;   // 3mb
-inline constexpr uint64_t IndexBufferSize = 1048576;    // 1mb
-inline constexpr uint64_t StorageBufferSize = 8388608;  // 8mb
-inline constexpr uint64_t TextureUploadSize = 25165824; // 24mb
+inline constexpr uint64_t UniformBufferSize = 25165824;  // 24mb
+inline constexpr uint64_t VertexBufferSize = 3145728;    // 3mb
+inline constexpr uint64_t IndexBufferSize = 1048576;     // 1mb
+inline constexpr uint64_t StorageBufferSize = 8388608;   // 8mb
+inline constexpr uint64_t TextureUploadSize = 25165824;  // 24mb
 
 extern AuroraStats g_stats;
 extern uint32_t g_drawCallCount;

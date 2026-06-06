@@ -429,10 +429,11 @@ void after_submit() noexcept {
   }
 
   for (const auto& pending : pendingMaps) {
-    pending.readbackBuffer.MapAsync(wgpu::MapMode::Read, 0, pending.byteSize, wgpu::CallbackMode::AllowSpontaneous,
-                                    [slotIdx = pending.slotIdx](wgpu::MapAsyncStatus status, wgpu::StringView message) {
-                                      complete_slot(slotIdx, status, message);
-                                    });
+    pending.readbackBuffer.MapAsync(
+        wgpu::MapMode::Read, 0, pending.byteSize, wgpu::CallbackMode::AllowSpontaneous,
+        [slotIdx = pending.slotIdx](wgpu::MapAsyncStatus status, wgpu::StringView message) {
+          complete_slot(slotIdx, status, message);
+        });
   }
 }
 

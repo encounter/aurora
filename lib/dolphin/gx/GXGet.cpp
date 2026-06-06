@@ -214,7 +214,7 @@ void GXGetPointSize(u8* pointSize, GXTexOffset* texOffsets) {
   *texOffsets = static_cast<GXTexOffset>(GET_REG_FIELD(__gx->lpSize, 3, 19));
 }
 
-void GXGetViewportv(f32* vp) {
+void GXGetViewportv(f32 *vp) {
   CHECK(vp != nullptr, "null viewport output");
 
   vp[0] = __gx->vpLeft;
@@ -303,13 +303,9 @@ void* GXGetTexObjData(GXTexObj* tex_obj) {
   return const_cast<void*>(reinterpret_cast<const GXTexObj_*>(tex_obj)->data);
 }
 
-u16 GXGetTexObjWidth(GXTexObj* tex_obj) {
-  return static_cast<u16>(reinterpret_cast<const GXTexObj_*>(tex_obj)->width());
-}
+u16 GXGetTexObjWidth(GXTexObj* tex_obj) { return static_cast<u16>(reinterpret_cast<const GXTexObj_*>(tex_obj)->width()); }
 
-u16 GXGetTexObjHeight(GXTexObj* tex_obj) {
-  return static_cast<u16>(reinterpret_cast<const GXTexObj_*>(tex_obj)->height());
-}
+u16 GXGetTexObjHeight(GXTexObj* tex_obj) { return static_cast<u16>(reinterpret_cast<const GXTexObj_*>(tex_obj)->height()); }
 
 GXTexFmt GXGetTexObjFmt(GXTexObj* tex_obj) {
   return static_cast<GXTexFmt>(reinterpret_cast<const GXTexObj_*>(tex_obj)->format());

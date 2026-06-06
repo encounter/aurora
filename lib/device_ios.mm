@@ -6,10 +6,11 @@
 #include <algorithm>
 #include <atomic>
 
-@interface AuroraDeviceHaptics : NSObject {
+@interface AuroraDeviceHaptics : NSObject
+{
   std::atomic<uint64_t> _generation;
 }
-@property(nonatomic, strong) CHHapticEngine *engine;
+@property(nonatomic, strong) CHHapticEngine* engine;
 @property(nonatomic, strong) id<CHHapticAdvancedPatternPlayer> player;
 @property(nonatomic) BOOL active;
 - (BOOL)available;
@@ -36,16 +37,16 @@
     return NO;
   }
 
-  NSError *error = nil;
+  NSError* error = nil;
   if (self.engine == nil) {
     self.engine = [[CHHapticEngine alloc] initAndReturnError:&error];
     if (error != nil || self.engine == nil) {
       return NO;
     }
 
-    __weak AuroraDeviceHaptics *weakSelf = self;
+    __weak AuroraDeviceHaptics* weakSelf = self;
     self.engine.stoppedHandler = ^(CHHapticEngineStoppedReason) {
-      AuroraDeviceHaptics *strongSelf = weakSelf;
+      AuroraDeviceHaptics* strongSelf = weakSelf;
       if (strongSelf == nil) {
         return;
       }
@@ -54,7 +55,7 @@
       strongSelf.active = NO;
     };
     self.engine.resetHandler = ^{
-      AuroraDeviceHaptics *strongSelf = weakSelf;
+      AuroraDeviceHaptics* strongSelf = weakSelf;
       if (strongSelf == nil) {
         return;
       }
@@ -71,13 +72,13 @@
   }
 
   if (self.player == nil) {
-    CHHapticEventParameter *intensity =
+    CHHapticEventParameter* intensity =
         [[CHHapticEventParameter alloc] initWithParameterID:CHHapticEventParameterIDHapticIntensity value:1.0f];
-    CHHapticEvent *event = [[CHHapticEvent alloc] initWithEventType:CHHapticEventTypeHapticContinuous
-                                                         parameters:@[ intensity ]
-                                                       relativeTime:0
-                                                           duration:1.0];
-    CHHapticPattern *pattern = [[CHHapticPattern alloc] initWithEvents:@[ event ] parameters:@[] error:&error];
+    CHHapticEvent* event = [[CHHapticEvent alloc] initWithEventType:CHHapticEventTypeHapticContinuous
+                                                          parameters:@[ intensity ]
+                                                        relativeTime:0
+                                                            duration:1.0];
+    CHHapticPattern* pattern = [[CHHapticPattern alloc] initWithEvents:@[ event ] parameters:@[] error:&error];
     if (error != nil || pattern == nil) {
       return NO;
     }
@@ -115,11 +116,11 @@
   }
 
   const float sharpness = std::clamp(highValue * 0.75f + lowValue * 0.25f, 0.0f, 1.0f);
-  CHHapticDynamicParameter *intensityParam =
+  CHHapticDynamicParameter* intensityParam =
       [[CHHapticDynamicParameter alloc] initWithParameterID:CHHapticDynamicParameterIDHapticIntensityControl
                                                       value:intensity
                                                relativeTime:0];
-  CHHapticDynamicParameter *sharpnessParam =
+  CHHapticDynamicParameter* sharpnessParam =
       [[CHHapticDynamicParameter alloc] initWithParameterID:CHHapticDynamicParameterIDHapticSharpnessControl
                                                       value:sharpness
                                                relativeTime:0];
@@ -161,8 +162,8 @@
 
 namespace aurora::device {
 namespace {
-AuroraDeviceHaptics *haptics() {
-  static AuroraDeviceHaptics *s_haptics = [[AuroraDeviceHaptics alloc] init];
+AuroraDeviceHaptics* haptics() {
+  static AuroraDeviceHaptics* s_haptics = [[AuroraDeviceHaptics alloc] init];
   return s_haptics;
 }
 } // namespace
@@ -174,6 +175,8 @@ void rumble(const uint16_t loqFreq, const uint16_t highFreq, const uint16_t dura
 }
 
 namespace detail {
-void shutdown_rumble() noexcept { [haptics() shutdown]; }
+void shutdown_rumble() noexcept {
+  [haptics() shutdown];
+}
 } // namespace detail
 } // namespace aurora::device

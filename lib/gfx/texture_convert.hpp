@@ -5,7 +5,9 @@
 #include "../webgpu/gpu.hpp"
 
 namespace aurora::gfx {
-inline bool is_pc_texture_format(u32 gxFormat) noexcept { return (gxFormat & _GX_TF_PC) != 0; }
+inline bool is_pc_texture_format(u32 gxFormat) noexcept {
+  return (gxFormat & _GX_TF_PC) != 0;
+}
 
 inline bool uses_direct_texture_upload(u32 gxFormat) noexcept {
   switch (gxFormat) {
