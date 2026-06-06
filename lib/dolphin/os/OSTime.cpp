@@ -80,6 +80,9 @@ OSTime OSGetTime() {
 #endif
     // Compute UTC offset in seconds
     s64 utcOffsetSec = static_cast<s64>(mktime(&localTm)) - static_cast<s64>(mktime(&gmTm));
+    if(gmTm.tm_isdst == 1) {
+        utcOffsetSec += 3600;
+    }
 
     s64 secondsSinceGcnEpoch = (totalMicros / 1000000LL) - gcnEpochUnix + utcOffsetSec;
     s64 remainderMicros = totalMicros % 1000000LL;
