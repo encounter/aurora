@@ -8,6 +8,7 @@ add_library(aurora_gx STATIC
         lib/gfx/tex_copy_conv.cpp
         lib/gfx/tex_palette_conv.cpp
         lib/gfx/texture.cpp
+        lib/gfx/texture_format.cpp
         lib/gfx/texture_convert.cpp
         lib/gfx/texture_replacement.cpp
         lib/gx/command_processor.cpp

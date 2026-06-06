@@ -121,6 +121,62 @@ std::optional<wgpu::TextureFormat> resolve_dx10_format(uint32_t dxgiFormat) noex
     return wgpu::TextureFormat::BC5RGUnorm;
   case 98:
     return wgpu::TextureFormat::BC7RGBAUnorm;
+  case 134:
+    return wgpu::TextureFormat::ASTC4x4Unorm;
+  case 135:
+    return wgpu::TextureFormat::ASTC4x4UnormSrgb;
+  case 138:
+    return wgpu::TextureFormat::ASTC5x4Unorm;
+  case 139:
+    return wgpu::TextureFormat::ASTC5x4UnormSrgb;
+  case 142:
+    return wgpu::TextureFormat::ASTC5x5Unorm;
+  case 143:
+    return wgpu::TextureFormat::ASTC5x5UnormSrgb;
+  case 146:
+    return wgpu::TextureFormat::ASTC6x5Unorm;
+  case 147:
+    return wgpu::TextureFormat::ASTC6x5UnormSrgb;
+  case 150:
+    return wgpu::TextureFormat::ASTC6x6Unorm;
+  case 151:
+    return wgpu::TextureFormat::ASTC6x6UnormSrgb;
+  case 154:
+    return wgpu::TextureFormat::ASTC8x5Unorm;
+  case 155:
+    return wgpu::TextureFormat::ASTC8x5UnormSrgb;
+  case 158:
+    return wgpu::TextureFormat::ASTC8x6Unorm;
+  case 159:
+    return wgpu::TextureFormat::ASTC8x6UnormSrgb;
+  case 162:
+    return wgpu::TextureFormat::ASTC8x8Unorm;
+  case 163:
+    return wgpu::TextureFormat::ASTC8x8UnormSrgb;
+  case 166:
+    return wgpu::TextureFormat::ASTC10x5Unorm;
+  case 167:
+    return wgpu::TextureFormat::ASTC10x5UnormSrgb;
+  case 170:
+    return wgpu::TextureFormat::ASTC10x6Unorm;
+  case 171:
+    return wgpu::TextureFormat::ASTC10x6UnormSrgb;
+  case 174:
+    return wgpu::TextureFormat::ASTC10x8Unorm;
+  case 175:
+    return wgpu::TextureFormat::ASTC10x8UnormSrgb;
+  case 178:
+    return wgpu::TextureFormat::ASTC10x10Unorm;
+  case 179:
+    return wgpu::TextureFormat::ASTC10x10UnormSrgb;
+  case 182:
+    return wgpu::TextureFormat::ASTC12x10Unorm;
+  case 183:
+    return wgpu::TextureFormat::ASTC12x10UnormSrgb;
+  case 186:
+    return wgpu::TextureFormat::ASTC12x12Unorm;
+  case 187:
+    return wgpu::TextureFormat::ASTC12x12UnormSrgb;
   default:
     return std::nullopt;
   }
