@@ -1,7 +1,6 @@
 #include "command_processor.hpp"
 
 #include "../gfx/common.hpp"
-#include "../gfx/texture_replacement.hpp"
 #include "dolphin/gx/GXAurora.h"
 #include "gx.hpp"
 #include "gx_fmt.hpp"
@@ -107,13 +106,13 @@ static constexpr u8 CP_VAT_MASK = GX_VAT_MASK;
 
 // Read helpers for big/little endian
 #if _MSC_VER
-template<typename T>
+template <typename T>
 __forceinline // Yes, this was necessary.
-inline T unaligned_load(const T* ptr) {
+    inline T unaligned_load(const T* ptr) {
   return *static_cast<const __unaligned T*>(ptr);
 }
 #else
-template<typename T>
+template <typename T>
 inline T unaligned_load(const T* ptr) {
   T copy;
   memcpy(&copy, ptr, sizeof(T));
@@ -503,7 +502,8 @@ static void handle_bp(u32 value, bool bigEndian) {
     g_gxState.bpRegCache[0xFE] = 0x00FFFFFF;
     const u32 merged = (g_gxState.bpRegCache[regId] & ~ssMask) | (value & ssMask);
     value = (regId << 24) | (merged & 0x00FFFFFF);
-    if (g_gxState.bpRegCache[regId] == value) return;
+    if (g_gxState.bpRegCache[regId] == value)
+      return;
     g_gxState.bpRegCache[regId] = value;
   }
 
@@ -1180,7 +1180,9 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
       vf.attrs[GX_VA_POS].cnt = static_cast<GXCompCnt>(bp_get(value, 1, 0));
       vf.attrs[GX_VA_POS].type = static_cast<GXCompType>(bp_get(value, 3, 1));
       vf.attrs[GX_VA_POS].frac = static_cast<u8>(bp_get(value, 5, 4));
-      vf.attrs[GX_VA_NRM].cnt = static_cast<GXCompCnt>(bp_get(value, 1, 9));
+      const auto nrm_cnt = bp_get(value, 1, 9);
+      const auto nrm_nbt3 = bp_get(value, 1, 31);
+      vf.attrs[GX_VA_NRM].cnt = static_cast<GXCompCnt>(nrm_nbt3 ? GX_NRM_NBT3 : (nrm_cnt ? GX_NRM_NBT : GX_NRM_XYZ));
       vf.attrs[GX_VA_NRM].type = static_cast<GXCompType>(bp_get(value, 3, 10));
       if (vf.attrs[GX_VA_NRM].type == GX_U8 || vf.attrs[GX_VA_NRM].type == GX_S8) {
         vf.attrs[GX_VA_NRM].frac = 6;
@@ -1281,8 +1283,10 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
       u32 val = read_u32(xfData + i * 4, bigEndian);
 
       // Skip scalar register writes that haven't changed (viewport/projection handled below)
-      if (reg <= 0x19 && val == g_gxState.xfRegCache[reg]) continue;
-      if (reg <= 0x19) g_gxState.xfRegCache[reg] = val;
+      if (reg <= 0x19 && val == g_gxState.xfRegCache[reg])
+        continue;
+      if (reg <= 0x19)
+        g_gxState.xfRegCache[reg] = val;
 
       switch (reg) {
       case 0x08:
@@ -1451,11 +1455,13 @@ static void handle_xf(const u8* data, u32& pos, u32 size, bool bigEndian) {
             if (tgType == 0) {
               tcg.type = proj ? GX_TG_MTX3x4 : GX_TG_MTX2x4;
             } else if (tgType == 1) {
-              // Bump mapping
+              // Bump mapping: type encodes emboss light
               tcg.type = static_cast<GXTexGenType>(bp_get(val, 3, 15) + 2);
             } else if (tgType == 2 || tgType == 3) {
               tcg.type = GX_TG_SRTG;
             }
+            // Emboss source texcoord (bits 12-14); 0 for non-bump types
+            tcg.embossSrc = bp_get(val, 3, 12);
 
             // Decode source from row
             static const GXTexGenSrc rowToSrc[] = {GX_TG_POS,  GX_TG_NRM,  GX_TG_COLOR0, GX_TG_BINRM, GX_TG_TANGENT,
@@ -1517,10 +1523,10 @@ static u32 calculate_last_vtx_size(GXVtxFmt fmt) {
       break;
     }
     case GX_INDEX8:
-      vtxSize += 1;
+      vtxSize += (i == GX_VA_NRM && vtxFmt.attrs[i].cnt == GX_NRM_NBT3) ? 3 : 1;
       break;
     case GX_INDEX16:
-      vtxSize += 2;
+      vtxSize += (i == GX_VA_NRM && vtxFmt.attrs[i].cnt == GX_NRM_NBT3) ? 6 : 2;
       break;
     }
   }
@@ -1547,43 +1553,56 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   pos += 2;
 
   u32 vtxSize;
-  if (g_gxState.lastVtxFmt == fmt) LIKELY {
-    vtxSize = g_gxState.lastVtxSize;
-  } else UNLIKELY {
-    vtxSize = calculate_last_vtx_size(fmt);
-  }
+  if (g_gxState.lastVtxFmt == fmt)
+    LIKELY { vtxSize = g_gxState.lastVtxSize; }
+  else
+    UNLIKELY { vtxSize = calculate_last_vtx_size(fmt); }
 
   u32 totalVtxBytes = vtxCount * vtxSize;
-  if (pos + totalVtxBytes > size) UNLIKELY {
-    handle_draw_overrun(totalVtxBytes, data, pos, size);
-  }
+  if (pos + totalVtxBytes > size)
+    UNLIKELY { handle_draw_overrun(totalVtxBytes, data, pos, size); }
 
-  // Push raw vertex data to buffer
-  gfx::Range vertRange = gfx::push_verts(data + pos, totalVtxBytes);
+  auto* lastDraw = !g_gxState.stateDirty ? gfx::get_last_draw_command<DrawData>() : nullptr;
+  const bool canMerge = lastDraw != nullptr && prim != GX_LINES && prim != GX_LINESTRIP && prim != GX_POINTS &&
+                        lastDraw->instanceCount == 1;
+
+  // Push raw vertex data to buffer. Merged draws must remain byte-contiguous with the previous range.
+  gfx::Range vertRange = gfx::push_verts(data + pos, totalVtxBytes, canMerge ? 0 : 4);
   pos += totalVtxBytes;
 
   // Try to merge with previous draw call
-  if (!g_gxState.stateDirty) LIKELY {
-    auto* lastDraw = gfx::get_last_draw_command<DrawData>();
+  if (canMerge) {
     // Only if the previous draw call was a single instance draw (no lines/points handling)
-    if (lastDraw != nullptr && prim != GX_LINES && prim != GX_LINESTRIP && prim != GX_POINTS &&
-        lastDraw->instanceCount == 1) LIKELY {
-      u32 numIndices = prepare_idx_buffer(handle_draw_idx_buf, prim, lastDraw->vtxCount, vtxCount);
-      gfx::Range idxRange = gfx::push_indices(handle_draw_idx_buf.data(), handle_draw_idx_buf.size());
+    u32 numIndices = 0;
+    gfx::Range idxRange;
+    const bool hadIndexRange = lastDraw->idxRange.size != 0;
+    if (lastDraw->indexCount == 0 && prim != GX_TRIANGLES) {
+      // Generate triangle index buffer for previous draw
+      lastDraw->indexCount = prepare_idx_buffer(handle_draw_idx_buf, GX_TRIANGLES, 0, lastDraw->vtxCount);
+    }
+    if (lastDraw->indexCount != 0) {
+      numIndices += prepare_idx_buffer(handle_draw_idx_buf, prim, lastDraw->vtxCount, vtxCount);
+      idxRange = gfx::push_indices(handle_draw_idx_buf.data(), handle_draw_idx_buf.size(), hadIndexRange ? 0 : 4);
       handle_draw_idx_buf.clear();
-      CHECK(lastDraw->vertRange.offset + lastDraw->vertRange.size == vertRange.offset,
-            "Non-consecutive vertex ranges ({} < {})", lastDraw->vertRange.offset + lastDraw->vertRange.size,
-            vertRange.offset);
+    }
+    CHECK(lastDraw->vertRange.offset + lastDraw->vertRange.size == vertRange.offset,
+          "Non-consecutive vertex ranges ({} < {})", lastDraw->vertRange.offset + lastDraw->vertRange.size,
+          vertRange.offset);
+    if (hadIndexRange) {
       CHECK(lastDraw->idxRange.offset + lastDraw->idxRange.size == idxRange.offset,
             "Non-consecutive index ranges ({} < {})", lastDraw->idxRange.offset + lastDraw->idxRange.size,
             idxRange.offset);
-      lastDraw->vertRange.size += vertRange.size;
-      lastDraw->idxRange.size += idxRange.size;
-      lastDraw->vtxCount += vtxCount;
-      lastDraw->indexCount += numIndices;
-      ++gfx::g_mergedDrawCallCount;
-      return;
     }
+    lastDraw->vertRange.size += vertRange.size;
+    if (lastDraw->idxRange.size == 0) {
+      lastDraw->idxRange = idxRange;
+    } else {
+      lastDraw->idxRange.size += idxRange.size;
+    }
+    lastDraw->vtxCount += vtxCount;
+    lastDraw->indexCount += numIndices;
+    ++gfx::g_mergedDrawCallCount;
+    return;
   }
 
   handle_draw_unmerged(prim, fmt, vtxCount, vertRange);
@@ -1596,11 +1615,11 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
   u32 numIndices = 0;
   gfx::Range idxRange;
 
-  {
-    ByteBuffer idxBuf;
-    auto& realBuf = vtxCount < 1000 ? handle_draw_unmerged_idxBuf : idxBuf;
+  if (prim != GX_TRIANGLES) {
+    ZoneScopedN("build idx buffer");
+    auto& realBuf = handle_draw_unmerged_idxBuf;
     numIndices = prepare_idx_buffer(realBuf, prim, 0, vtxCount);
-    idxRange = gfx::push_indices(realBuf.data(), realBuf.size());
+    idxRange = gfx::push_indices(realBuf.data(), realBuf.size(), 4);
     realBuf.clear();
   }
 
@@ -1765,6 +1784,19 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     slot.tlutDataVersion = read_u32(data + pos, bigEndian);
     pos += 4;
     slot.set_no_cache(false); // Reset no-cache flag
+    g_gxState.stateDirty = true;
+  } else if (subCmd == GX2_SET_POLYGON_OFFSET) {
+    CHECK(pos + 20 <= size, "GX2_SET_POLYGON_OFFSET read overrun");
+    g_gxState.frontOffset = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.frontScale = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.backOffset = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.backScale = read_f32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.clamp = read_f32(data + pos, bigEndian);
+    pos += 4;
     g_gxState.stateDirty = true;
   } else if (subCmd == GX_LOAD_AURORA_DESTROY_TEXOBJ) {
     CHECK(pos + 4 <= size, "GX_LOAD_AURORA_DESTROY_TEXOBJ read overrun");

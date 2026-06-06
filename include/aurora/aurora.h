@@ -13,6 +13,11 @@ extern "C" {
 #endif
 
 typedef enum {
+  SAMPLER_BILINEAR,
+  SAMPLER_AREA,
+} AuroraSampler;
+
+typedef enum {
   BACKEND_AUTO,
   BACKEND_D3D11,
   BACKEND_D3D12,
@@ -78,6 +83,7 @@ typedef struct {
   const char* appName;
   const char* userPath;
   const char* cachePath;
+  const char* resourcesPath;
   AuroraBackend desiredBackend;
   uint32_t msaa;
   uint16_t maxTextureAnisotropy;
@@ -85,8 +91,8 @@ typedef struct {
   bool startFullscreen;
   bool allowJoystickBackgroundEvents;
   bool pauseOnFocusLost;
-  bool allowTextureReplacements;
   bool allowTextureDumps;
+  bool allowCpuAdapter;
   int32_t windowPosX;
   int32_t windowPosY;
   uint32_t windowWidth;
@@ -129,6 +135,7 @@ void aurora_end_frame();
 void aurora_set_log_level(AuroraLogLevel level);
 void aurora_set_pause_on_focus_lost(bool value);
 void aurora_set_background_input(bool value);
+void aurora_set_resampler(AuroraSampler sampler);
 
 AuroraBackend aurora_get_backend();
 const AuroraBackend* aurora_get_available_backends(size_t* count);

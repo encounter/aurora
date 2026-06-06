@@ -15,9 +15,13 @@
 #include <absl/container/flat_hash_set.h>
 #include <tracy/Tracy.hpp>
 
+#include <atomic>
+#include <bit>
 #include <cfloat>
+#include <cmath>
 #include <mutex>
 #include <optional>
+#include <utility>
 
 static aurora::Module Log("aurora::gx");
 
@@ -78,6 +82,14 @@ struct TlutObjectCache {
 
 absl::flat_hash_map<u32, CachedTextureEntry> s_textureObjectCaches;
 absl::flat_hash_map<u32, TlutObjectCache> s_tlutObjectCaches;
+std::atomic_bool s_staticTextureCacheClearPending = false;
+
+void do_clear_static_texture_cache() noexcept {
+  s_textureObjectCaches.clear();
+  for (auto& [_, cache] : s_tlutObjectCaches) {
+    cache.staticTextureUsers.clear();
+  }
+}
 
 DynamicPaletteKey make_dynamic_palette_key(const GXTexObj_& obj, const GXState::CopyTextureRef& source) {
   return {
@@ -147,6 +159,9 @@ gfx::TextureHandle get_tlut_texture(const GXTlutObj_& tlut) {
 
 gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
   ZoneScoped;
+  if (s_staticTextureCacheClearPending.exchange(false, std::memory_order_acq_rel)) {
+    do_clear_static_texture_cache();
+  }
 
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
@@ -167,9 +182,8 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
 #else
     const auto nameStr = "GX Static Texture";
 #endif
-    handle =
-        gfx::new_static_texture_2d(obj.width(), obj.height(), obj.mip_count(), obj.format(),
-                                   {static_cast<const uint8_t*>(obj.data), UINT32_MAX}, false, nameStr);
+    handle = gfx::new_static_texture_2d(obj.width(), obj.height(), obj.mip_count(), obj.format(),
+                                        {static_cast<const uint8_t*>(obj.data), UINT32_MAX}, false, nameStr);
   }
   if (!obj.no_cache()) {
     store_cached_texture(obj, handle);
@@ -179,6 +193,9 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
 
 gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GXTlutObj_& tlut) {
   ZoneScoped;
+  if (s_staticTextureCacheClearPending.exchange(false, std::memory_order_acq_rel)) {
+    do_clear_static_texture_cache();
+  }
 
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
@@ -245,6 +262,18 @@ u32 resolved_format_for_handle(const gfx::TextureHandle& handle) {
     return handle->gxFormat;
   }
   return GX_TF_RGBA8_PC;
+}
+
+template <typename T>
+T round_away_from_zero(float value) noexcept {
+  return static_cast<T>(value < 0.0f ? std::floor(value) : std::ceil(value));
+}
+
+std::pair<f32, f32> polygon_offset_for_cull_mode(GXCullMode cullMode) noexcept {
+  if (cullMode == GX_CULL_FRONT) {
+    return {g_gxState.backOffset, g_gxState.backScale};
+  }
+  return {g_gxState.frontOffset, g_gxState.frontScale};
 }
 } // namespace
 
@@ -369,12 +398,7 @@ void clear_copy_texture_cache() noexcept {
   }
 }
 
-void clear_static_texture_cache() noexcept {
-  s_textureObjectCaches.clear();
-  for (auto& [_, cache] : s_tlutObjectCaches) {
-    cache.staticTextureUsers.clear();
-  }
-}
+void clear_static_texture_cache() noexcept { s_staticTextureCacheClearPending.store(true, std::memory_order_release); }
 
 void evict_copy_texture(const void* dest) noexcept {
   g_gxState.copyTextures.erase(dest);
@@ -585,10 +609,15 @@ static inline wgpu::PrimitiveState to_primitive_state(GXCullMode gx_cullMode) {
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
                                     wgpu::ShaderModule shader, const char* label) noexcept {
   ZoneScoped;
+  const float depthBias = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetBits);
+  const float depthBiasSlopeScale = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetScaleBits);
   const wgpu::DepthStencilState depthStencil{
       .format = g_graphicsConfig.depthFormat,
       .depthWriteEnabled = config.depthCompare && config.depthUpdate,
       .depthCompare = config.depthCompare ? to_compare_function(config.depthFunc) : wgpu::CompareFunction::Always,
+      .depthBias = round_away_from_zero<int32_t>(depthBias),
+      .depthBiasSlopeScale = depthBiasSlopeScale,
+      .depthBiasClamp = std::bit_cast<float>(config.polygonOffsetClampBits),
   };
   const auto blendState =
       to_blend_state(config.blendMode, config.blendFacSrc, config.blendFacDst, config.blendOp, config.dstAlpha);
@@ -691,6 +720,9 @@ u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept {
     switch (cnt) {
     case GX_NRM_XYZ:
       return 3;
+    case GX_NRM_NBT:
+    case GX_NRM_NBT3:
+      return 9;
     default:
       break;
     }
@@ -737,6 +769,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     }
     const auto& attrFmt = vtxFmt.attrs[i];
     const auto cnt = comp_cnt_count(attr, attrFmt.cnt);
+    const bool nbt3 = attr == GX_VA_NRM && attrFmt.cnt == GX_NRM_NBT3;
     mapping = AttrConfig{
         .attrType = static_cast<u8>(type),
         .cnt = cnt,
@@ -745,6 +778,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
         .stride = 0,
         .frac = attrFmt.frac,
         .le = false,
+        .nbt3 = nbt3,
     };
     switch (type) {
     case GX_DIRECT: {
@@ -754,12 +788,12 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     case GX_INDEX8:
       mapping.stride = g_gxState.arrays[i].stride;
       mapping.le = g_gxState.arrays[i].le;
-      vtxOffset += 1;
+      vtxOffset += nbt3 ? 3 : 1;
       break;
     case GX_INDEX16:
       mapping.stride = g_gxState.arrays[i].stride;
       mapping.le = g_gxState.arrays[i].le;
-      vtxOffset += 2;
+      vtxOffset += nbt3 ? 6 : 2;
       break;
     default:
       Log.fatal("populate_pipeline_config: Invalid vertex type {}", type);
@@ -801,16 +835,21 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
   if (g_gxState.alphaCompare) {
     config.shaderConfig.alphaCompare = g_gxState.alphaCompare;
   }
+  const auto cullMode = config.shaderConfig.lineMode == 0 ? g_gxState.cullMode : GX_CULL_NONE;
+  const auto [polygonOffset, polygonOffsetScale] = polygon_offset_for_cull_mode(cullMode);
   config = {
       .msaaSamples = gfx::get_sample_count(),
       .shaderConfig = config.shaderConfig,
       .depthFunc = g_gxState.depthFunc,
-      .cullMode = config.shaderConfig.lineMode == 0 ? g_gxState.cullMode : GX_CULL_NONE,
+      .cullMode = cullMode,
       .blendMode = g_gxState.blendMode,
       .blendFacSrc = g_gxState.blendFacSrc,
       .blendFacDst = g_gxState.blendFacDst,
       .blendOp = g_gxState.blendOp,
       .dstAlpha = g_gxState.dstAlpha,
+      .polygonOffsetBits = std::bit_cast<uint32_t>(polygonOffset),
+      .polygonOffsetScaleBits = std::bit_cast<uint32_t>(polygonOffsetScale),
+      .polygonOffsetClampBits = std::bit_cast<uint32_t>(g_gxState.clamp),
       .depthCompare = g_gxState.depthCompare,
       .depthUpdate = g_gxState.depthUpdate,
       .alphaUpdate = g_gxState.alphaUpdate,
@@ -993,17 +1032,27 @@ static u16 wgpu_aniso(GXAnisotropy aniso) {
 
 wgpu::SamplerDescriptor aurora::gfx::TextureBind::get_descriptor() const noexcept {
   auto [minFilter, mipFilter] = wgpu_filter_mode(texObj.min_filter());
-  const auto [magFilter, _] = wgpu_filter_mode(texObj.mag_filter());
+  auto [magFilter, _] = wgpu_filter_mode(texObj.mag_filter());
+  const bool mipsEnabled = mipFilter != wgpu::MipmapFilterMode::Undefined;
   float minLod = texObj.min_lod();
   float maxLod = texObj.max_lod();
+  u16 maxAnisotropy = wgpu_aniso(texObj.max_aniso());
   if (ref && ref->isReplacement) {
-    minFilter = wgpu::FilterMode::Linear;
-    mipFilter = wgpu::MipmapFilterMode::Linear;
     minLod = 0.f;
-    maxLod = static_cast<float>(std::max(ref->mipCount, 1u) - 1u);
+    maxLod = 1000.f;
+    if (!mipsEnabled) {
+      mipFilter = wgpu::MipmapFilterMode::Nearest;
+    }
   } else if (mipFilter == wgpu::MipmapFilterMode::Undefined) {
     minLod = 0.f;
     maxLod = 0.f;
+  }
+  if ((ref && ref->hasArbitraryMips) || !mipsEnabled) {
+    maxAnisotropy = 1;
+  } else if (maxAnisotropy > 1) {
+    magFilter = wgpu::FilterMode::Linear;
+    minFilter = wgpu::FilterMode::Linear;
+    mipFilter = wgpu::MipmapFilterMode::Linear;
   }
   return {
       .label = "Generated Filtering Sampler",
@@ -1015,6 +1064,6 @@ wgpu::SamplerDescriptor aurora::gfx::TextureBind::get_descriptor() const noexcep
       .mipmapFilter = mipFilter,
       .lodMinClamp = minLod,
       .lodMaxClamp = maxLod,
-      .maxAnisotropy = wgpu_aniso(texObj.max_aniso()),
+      .maxAnisotropy = maxAnisotropy,
   };
 } // namespace aurora::gx

@@ -1,5 +1,7 @@
 #include "../../input.hpp"
+#include "../../device.hpp"
 #include "../../internal.hpp"
+#include "../../fs_helper.hpp"
 #include <dolphin/pad.h>
 #include <dolphin/si.h>
 #include <SDL3/SDL_mouse.h>
@@ -9,7 +11,8 @@
 #include <ranges>
 
 namespace {
-constexpr int32_t k_mappingsFileVersion = 3;
+constexpr int32_t k_mappingsFileVersion = 4;
+constexpr int32_t k_minMappingsFileVersion = 3;
 
 std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsStandard{{
     {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
@@ -25,6 +28,9 @@ std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsStandard{{
     {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
     {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
 }};
+
+std::array<PADStatus, PAD_CHANMAX> g_virtualPadStatus{};
+std::array<bool, PAD_CHANMAX> g_virtualPadActive{};
 
 std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsXBox360{{
     {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
@@ -306,6 +312,55 @@ void PADSetSpec(u32 spec [[maybe_unused]]) {}
 static void load_keyboard_bindings();
 static void save_keyboard_bindings();
 
+static bool device_rumble_available_for_port(const u32 port) {
+  return port == PAD_CHAN0 && aurora::device::rumble_available();
+}
+
+static bool should_use_device_rumble(const u32 port, const aurora::input::GameController* controller) {
+  return device_rumble_available_for_port(port) &&
+         (controller == nullptr ||
+          (!controller->m_isGameCube && (!controller->m_hasRumble || controller->m_forceDeviceRumble)));
+}
+
+static bool device_gyro_available_for_port(const u32 port) {
+  return port == PAD_CHAN0 && aurora::device::gyro_available();
+}
+
+static bool device_accel_available_for_port(const u32 port) {
+  return port == PAD_CHAN0 && aurora::device::accel_available();
+}
+
+static bool device_sensor_available_for_port(const u32 port, const PADSensorType sensor) {
+  switch (sensor) {
+  case PAD_SENSOR_ACCEL:
+    return device_accel_available_for_port(port);
+  case PAD_SENSOR_GYRO:
+    return device_gyro_available_for_port(port);
+  default:
+    return false;
+  }
+}
+
+static bool get_device_sensor_data(const PADSensorType sensor, f32* data, const int nValues) {
+  switch (sensor) {
+  case PAD_SENSOR_ACCEL:
+    return aurora::device::accel(data, nValues);
+  case PAD_SENSOR_GYRO:
+    return aurora::device::gyro(data, nValues);
+  default:
+    return false;
+  }
+}
+
+static bool controller_has_sensor(const aurora::input::GameController* controller, const PADSensorType sensor) {
+  return controller != nullptr && SDL_GamepadHasSensor(controller->m_controller, static_cast<SDL_SensorType>(sensor));
+}
+
+static bool should_use_device_sensor(const u32 port, const aurora::input::GameController* controller,
+                                     const PADSensorType sensor) {
+  return device_sensor_available_for_port(port, sensor) && !controller_has_sensor(controller, sensor);
+}
+
 // ReSharper disable once CppDFAConstantFunctionResult
 BOOL PADInit() {
   if (g_initialized) {
@@ -404,6 +459,7 @@ void __PADSetDefaultMapping(aurora::input::GameController* controller) /*  NOLIN
   switch (SDL_GetGamepadType(controller->m_controller)) {
   case SDL_GAMEPAD_TYPE_XBOX360:
     controller->m_buttonMapping = g_defaultButtonsXBox360;
+    break;
   case SDL_GAMEPAD_TYPE_XBOXONE:
     controller->m_buttonMapping = g_defaultButtonsXBoxOne;
     break;
@@ -471,9 +527,9 @@ void __PADLoadMapping(aurora::input::GameController* controller) /*  NOLINT(*-re
 
   uint32_t version = 0;
   SDL_ReadU32LE(file, &version);
-  if (version != k_mappingsFileVersion) {
-    aurora::input::Log.warn("Invalid controller mapping version! (Expected {0}, found {1})", k_mappingsFileVersion,
-                            version);
+  if (version < k_minMappingsFileVersion || version > k_mappingsFileVersion) {
+    aurora::input::Log.warn("Invalid controller mapping version! (Expected {0}..{1}, found {2})",
+                            k_minMappingsFileVersion, k_mappingsFileVersion, version);
     return;
   }
 
@@ -498,6 +554,9 @@ void __PADLoadMapping(aurora::input::GameController* controller) /*  NOLINT(*-re
   if (!isGameCube) {
     SDL_ReadIO(file, &controller->m_rumbleIntensityLow, sizeof(u16));
     SDL_ReadIO(file, &controller->m_rumbleIntensityHigh, sizeof(u16));
+    if (version >= k_mappingsFileVersion) {
+      SDL_ReadIO(file, &controller->m_forceDeviceRumble, sizeof(bool));
+    }
   }
   SDL_CloseIO(file);
 
@@ -596,6 +655,23 @@ static void apply_unblock_suppression(PADStatus& status, const u32 port, const b
   }
 }
 
+static int dominant_axis_value(const int physical, const int virtualValue, const int min, const int max) {
+  return std::clamp(std::abs(virtualValue) > std::abs(physical) ? virtualValue : physical, min, max);
+}
+
+static void merge_virtual_status(PADStatus& status, const PADStatus& virtualStatus) {
+  status.button |= virtualStatus.button;
+  status.extButton |= virtualStatus.extButton;
+  status.stickX = static_cast<s8>(dominant_axis_value(status.stickX, virtualStatus.stickX, -127, 127));
+  status.stickY = static_cast<s8>(dominant_axis_value(status.stickY, virtualStatus.stickY, -127, 127));
+  status.substickX = static_cast<s8>(dominant_axis_value(status.substickX, virtualStatus.substickX, -127, 127));
+  status.substickY = static_cast<s8>(dominant_axis_value(status.substickY, virtualStatus.substickY, -127, 127));
+  status.triggerLeft = std::max(status.triggerLeft, virtualStatus.triggerLeft);
+  status.triggerRight = std::max(status.triggerRight, virtualStatus.triggerRight);
+  status.analogA = std::max(status.analogA, virtualStatus.analogA);
+  status.analogB = std::max(status.analogB, virtualStatus.analogB);
+}
+
 u32 PADRead(PADStatus* status) {
   if (!g_keyboardBindingsLoaded) {
     g_keyboardBindingsLoaded = true;
@@ -610,8 +686,12 @@ u32 PADRead(PADStatus* status) {
   uint32_t rumbleSupport = 0;
   for (uint32_t i = 0; i < PAD_CHANMAX; ++i) {
     memset(&status[i], 0, sizeof(PADStatus));
+    // Support device rumble on port 0 regardless of whether a controller is connected.
+    if (device_rumble_available_for_port(i)) {
+      rumbleSupport |= PAD_CHAN0_BIT;
+    }
     auto controller = aurora::input::get_controller_for_player(i);
-    if (controller == nullptr && !g_keyboardBindings[i].m_mappingsSet) {
+    if (controller == nullptr && !g_keyboardBindings[i].m_mappingsSet && !g_virtualPadActive[i]) {
       status[i].err = PAD_ERR_NO_CONTROLLER;
       g_suppressedButtons[i] = 0;
       g_suppressLeftTrigger[i] = false;
@@ -824,18 +904,63 @@ u32 PADRead(PADStatus* status) {
       neutralize_status(status[i]);
     } else {
       apply_unblock_suppression(status[i], i, captureHeldInput);
+      if (g_virtualPadActive[i]) {
+        merge_virtual_status(status[i], g_virtualPadStatus[i]);
+      }
     }
   }
   return rumbleSupport;
 }
 
+void PADSetVirtualStatus(const u32 port, const PADStatus* virtualStatus) {
+  if (port >= PAD_CHANMAX || virtualStatus == nullptr) {
+    return;
+  }
+
+  g_virtualPadStatus[port] = *virtualStatus;
+  g_virtualPadStatus[port].err = PAD_ERR_NONE;
+  g_virtualPadActive[port] = true;
+}
+
+void PADClearVirtualStatus(const u32 port) {
+  if (port >= PAD_CHANMAX) {
+    return;
+  }
+
+  g_virtualPadStatus[port] = {};
+  g_virtualPadActive[port] = false;
+}
+
+void PADClearAllVirtualStatus() {
+  g_virtualPadStatus.fill({});
+  g_virtualPadActive.fill(false);
+}
+
 void PADControlMotor(const u32 chan, const u32 cmd) {
   const auto controller = aurora::input::get_controller_for_player(chan);
-  const auto instance = aurora::input::get_instance_for_player(chan);
+  if (should_use_device_rumble(chan, controller)) {
+    u16 low = 0;
+    u16 high = 0;
+    if (controller != nullptr) {
+      EnsureMappingLoaded(controller);
+      low = controller->m_rumbleIntensityLow;
+      high = controller->m_rumbleIntensityHigh;
+    } else {
+      aurora::input::get_device_rumble_intensity(&low, &high);
+    }
+    if (cmd == PAD_MOTOR_STOP || cmd == PAD_MOTOR_STOP_HARD) {
+      aurora::device::rumble(0, 0, 0);
+    } else if (cmd == PAD_MOTOR_RUMBLE) {
+      aurora::device::rumble(low, high, 0);
+    }
+    return;
+  }
+
   if (controller == nullptr) {
     return;
   }
 
+  const auto instance = aurora::input::get_instance_for_player(chan);
   if (controller->m_isGameCube) {
     if (cmd == PAD_MOTOR_STOP) {
       aurora::input::controller_rumble(instance, 0, 1, 0);
@@ -1159,7 +1284,8 @@ constexpr int32_t k_keyboardVersion = 3;
 
 static void load_keyboard_bindings() {
   const auto filePath = std::filesystem::path{aurora::g_config.userPath} / "keyboard_bindings.dat";
-  SDL_IOStream* file = SDL_IOFromFile(filePath.string().c_str(), "rb");
+  const auto pathString = fs_path_to_string(filePath);
+  SDL_IOStream* file = SDL_IOFromFile(pathString.c_str(), "rb");
   if (file == nullptr) {
     return;
   }
@@ -1229,9 +1355,10 @@ static void load_keyboard_bindings() {
 
 static void save_keyboard_bindings() {
   const auto filePath = std::filesystem::path{aurora::g_config.userPath} / "keyboard_bindings.dat";
-  SDL_IOStream* file = SDL_IOFromFile(filePath.string().c_str(), "wb");
+  const auto pathString = fs_path_to_string(filePath);
+  SDL_IOStream* file = SDL_IOFromFile(pathString.c_str(), "wb");
   if (file == nullptr) {
-    aurora::input::Log.warn("save_keyboard_bindings: failed to open {} for writing", filePath.string());
+    aurora::input::Log.warn("save_keyboard_bindings: failed to open {} for writing", pathString);
     return;
   }
 
@@ -1262,7 +1389,7 @@ void PADSerializeMappings() {
     const auto filePath =
         basePath / fmt::format("{}_{:04X}_{:04X}.controller", aurora::input::controller_name(controller.m_index),
                                controller.m_vid, controller.m_pid);
-    std::string filePathStr = filePath.string();
+    std::string filePathStr = fs_path_to_string(filePath);
 
     // don't truncate the file if it already exists
     const char* openMode = std::filesystem::exists(filePath) ? "r+b" : "wb";
@@ -1281,7 +1408,7 @@ void PADSerializeMappings() {
     // start writing data at next 32-byte aligned offset
     const int64_t dataStart = SDL_TellIO(file) + 31 & ~31;
     if (dataStart == -1) {
-      aurora::input::Log.warn("Unable to seek in controller bindings! Path: \"{}\"", filePath.string());
+      aurora::input::Log.warn("Unable to seek in controller bindings! Path: \"{}\"", filePathStr);
       return;
     }
     SDL_SeekIO(file, dataStart, SDL_IO_SEEK_SET);
@@ -1301,6 +1428,7 @@ void PADSerializeMappings() {
     if (!controller.m_isGameCube) {
       SDL_WriteIO(file, &controller.m_rumbleIntensityLow, sizeof(u16));
       SDL_WriteIO(file, &controller.m_rumbleIntensityHigh, sizeof(u16));
+      SDL_WriteIO(file, &controller.m_forceDeviceRumble, sizeof(bool));
     }
     SDL_CloseIO(file);
   }
@@ -1532,64 +1660,125 @@ BOOL PADGetColor(const u32 port, u8* red, u8* green, u8* blue) {
 BOOL PADSetSensorEnabled(const u32 port, const PADSensorType sensor, const BOOL enabled) {
   const auto* ctrl = aurora::input::get_controller_for_player(port);
 
-  if (ctrl == nullptr) {
-    return FALSE;
+  if (controller_has_sensor(ctrl, sensor)) {
+    return SDL_SetGamepadSensorEnabled(ctrl->m_controller, static_cast<SDL_SensorType>(sensor), enabled ? true : false)
+               ? TRUE
+               : FALSE;
   }
 
-  return SDL_SetGamepadSensorEnabled(ctrl->m_controller, static_cast<SDL_SensorType>(sensor), enabled ? true : false)
-             ? TRUE
-             : FALSE;
+  return should_use_device_sensor(port, ctrl, sensor) ? TRUE : FALSE;
 }
 
 BOOL PADHasSensor(const u32 port, const PADSensorType sensor) {
   const auto* ctrl = aurora::input::get_controller_for_player(port);
-  if (ctrl == nullptr) {
-    return FALSE;
+  if (controller_has_sensor(ctrl, sensor)) {
+    return TRUE;
   }
 
-  return SDL_GamepadHasSensor(ctrl->m_controller, static_cast<SDL_SensorType>(sensor)) ? TRUE : FALSE;
+  return should_use_device_sensor(port, ctrl, sensor) ? TRUE : FALSE;
 }
 
 BOOL PADGetSensorData(const u32 port, const PADSensorType sensor, f32* data, const int nValues) {
   const auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (controller_has_sensor(ctrl, sensor)) {
+    return SDL_GetGamepadSensorData(ctrl->m_controller, static_cast<SDL_SensorType>(sensor), data, nValues);
+  }
+
+  if (should_use_device_sensor(port, ctrl, sensor)) {
+    return get_device_sensor_data(sensor, data, nValues) ? TRUE : FALSE;
+  }
+
+  return FALSE;
+}
+
+BOOL PADHasLED(const u32 port) {
+  const auto* ctrl = aurora::input::get_controller_for_player(port);
+
   if (ctrl == nullptr) {
     return FALSE;
   }
 
-  return SDL_GetGamepadSensorData(ctrl->m_controller, static_cast<SDL_SensorType>(sensor), data, nValues);
+  return ctrl->m_hasRgbLed;
 }
 
 BOOL PADSetRumbleIntensity(const u32 port, const u16 low, const u16 high) {
   auto* ctrl = aurora::input::get_controller_for_player(port);
-  if (ctrl == nullptr || ctrl->m_isGameCube || !ctrl->m_hasRumble) {
+  if (ctrl != nullptr) {
+    if (ctrl->m_isGameCube || (!ctrl->m_hasRumble && !should_use_device_rumble(port, ctrl))) {
+      return FALSE;
+    }
+    EnsureMappingLoaded(ctrl);
+    ctrl->m_rumbleIntensityLow = low;
+    ctrl->m_rumbleIntensityHigh = high;
+    return TRUE;
+  }
+
+  if (!should_use_device_rumble(port, nullptr)) {
     return FALSE;
   }
-  ctrl->m_rumbleIntensityLow = low;
-  ctrl->m_rumbleIntensityHigh = high;
-
+  aurora::input::set_device_rumble_intensity(low, high);
   return TRUE;
 }
 
 BOOL PADGetRumbleIntensity(const u32 port, u16* low, u16* high) {
-  const auto* ctrl = aurora::input::get_controller_for_player(port);
-  if (ctrl == nullptr || ctrl->m_isGameCube || !ctrl->m_hasRumble) {
+  auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl != nullptr) {
+    if (ctrl->m_isGameCube || (!ctrl->m_hasRumble && !should_use_device_rumble(port, ctrl))) {
+      *low = 0;
+      *high = 0;
+      return FALSE;
+    }
+    EnsureMappingLoaded(ctrl);
+    *low = ctrl->m_rumbleIntensityLow;
+    *high = ctrl->m_rumbleIntensityHigh;
+    return TRUE;
+  }
+
+  if (!should_use_device_rumble(port, nullptr)) {
     *low = 0;
     *high = 0;
     return FALSE;
   }
 
-  *low = ctrl->m_rumbleIntensityLow;
-  *high = ctrl->m_rumbleIntensityHigh;
+  aurora::input::get_device_rumble_intensity(low, high);
   return TRUE;
 }
 
 BOOL PADSupportsRumbleIntensity(const u32 port) {
+  if (const auto* ctrl = aurora::input::get_controller_for_player(port)) {
+    if (!ctrl->m_isGameCube && (ctrl->m_hasRumble || should_use_device_rumble(port, ctrl))) {
+      return TRUE;
+    }
+    return FALSE;
+  }
+  return should_use_device_rumble(port, nullptr) ? TRUE : FALSE;
+}
+
+BOOL PADCanForceDeviceRumble(const u32 port) {
   const auto* ctrl = aurora::input::get_controller_for_player(port);
-  if (ctrl == nullptr) {
+  return ctrl != nullptr && !ctrl->m_isGameCube && ctrl->m_hasRumble && device_rumble_available_for_port(port) ? TRUE
+                                                                                                               : FALSE;
+}
+
+BOOL PADGetForceDeviceRumble(const u32 port) {
+  auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr || !PADCanForceDeviceRumble(port)) {
     return FALSE;
   }
 
-  return !ctrl->m_isGameCube && ctrl->m_hasRumble;
+  EnsureMappingLoaded(ctrl);
+  return ctrl->m_forceDeviceRumble ? TRUE : FALSE;
+}
+
+BOOL PADSetForceDeviceRumble(const u32 port, const BOOL force) {
+  auto* ctrl = aurora::input::get_controller_for_player(port);
+  if (ctrl == nullptr || !PADCanForceDeviceRumble(port)) {
+    return FALSE;
+  }
+
+  EnsureMappingLoaded(ctrl);
+  ctrl->m_forceDeviceRumble = force != FALSE;
+  return TRUE;
 }
 
 BOOL PADIsGCAdapter(const u32 port) {

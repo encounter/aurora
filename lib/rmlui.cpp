@@ -1,6 +1,7 @@
 #include "rmlui.hpp"
 
 #include <algorithm>
+#include <thread>
 
 #include <RmlUi/Core.h>
 #include <RmlUi_Backend.h>
@@ -26,6 +27,9 @@ constexpr size_t MaxTrackedTouches = 16;
 struct TrackedTouch {
   SDL_FingerID id = 0;
   Rml::Vector2f position;
+  Rml::Vector2f rmlPosition;
+  Rml::Vector2f startPosition;
+  Rml::Element* target = nullptr;
   bool active = false;
 };
 
@@ -80,6 +84,7 @@ void ensure_render_target(Rml::Vector2i dimensions) noexcept {
 
 struct MappedPoint {
   Rml::Vector2f position;
+  bool valid = false;
   bool inside = false;
 };
 
@@ -99,8 +104,7 @@ MappedPoint map_native_point_to_content(float nativeX, float nativeY) noexcept {
                                          static_cast<uint32_t>(contentSize.x), static_cast<uint32_t>(contentSize.y));
   const float right = viewport.left + viewport.width;
   const float bottom = viewport.top + viewport.height;
-  if (viewport.width <= 0.f || viewport.height <= 0.f || nativeX < viewport.left || nativeY < viewport.top ||
-      nativeX >= right || nativeY >= bottom) {
+  if (viewport.width <= 0.f || viewport.height <= 0.f) {
     return {};
   }
 
@@ -110,7 +114,8 @@ MappedPoint map_native_point_to_content(float nativeX, float nativeY) noexcept {
               (nativeX - viewport.left) * static_cast<float>(contentSize.x) / viewport.width,
               (nativeY - viewport.top) * static_cast<float>(contentSize.y) / viewport.height,
           },
-      .inside = true,
+      .valid = true,
+      .inside = nativeX >= viewport.left && nativeY >= viewport.top && nativeX < right && nativeY < bottom,
   };
 }
 
@@ -168,6 +173,24 @@ TrackedTouch* find_free_touch() noexcept {
 
 Rml::TouchList touch_list(SDL_FingerID id, Rml::Vector2f position) {
   return {Rml::Touch{static_cast<Rml::TouchId>(id), position}};
+}
+
+void dispatch_touch_event(TrackedTouch& touch, const char* type, Rml::Vector2f position, bool inside,
+                          Rml::Vector2f delta = {}) noexcept {
+  if (touch.target == nullptr) {
+    return;
+  }
+
+  Rml::Dictionary parameters;
+  parameters["finger_id"] = touch.id;
+  parameters["x"] = position.x;
+  parameters["y"] = position.y;
+  parameters["dx"] = delta.x;
+  parameters["dy"] = delta.y;
+  parameters["start_x"] = touch.startPosition.x;
+  parameters["start_y"] = touch.startPosition.y;
+  parameters["inside"] = inside;
+  touch.target->DispatchEvent(type, parameters, true, true);
 }
 
 void handle_mouse_motion(const SDL_MouseMotionEvent& motion) noexcept {
@@ -234,11 +257,19 @@ void handle_touch_down(const SDL_TouchFingerEvent& finger) noexcept {
   if (tracked == nullptr) {
     return;
   }
+  auto* target = g_context->GetElementAtPoint(mapped.position);
+  if (target == nullptr) {
+    target = g_context->GetRootElement();
+  }
   *tracked = {
       .id = finger.fingerID,
       .position = mapped.position,
+      .rmlPosition = mapped.position,
+      .startPosition = mapped.position,
+      .target = target,
       .active = true,
   };
+  dispatch_touch_event(*tracked, TouchStartEvent, mapped.position, true);
   g_context->ProcessTouchStart(touch_list(finger.fingerID, mapped.position), RmlSDL::GetKeyModifierState());
 }
 
@@ -248,11 +279,16 @@ void handle_touch_motion(const SDL_TouchFingerEvent& finger) noexcept {
     return;
   }
   const auto mapped = map_touch_point_to_content(finger);
-  if (!mapped.inside) {
+  if (!mapped.valid) {
     return;
   }
+  const Rml::Vector2f delta = mapped.position - tracked->position;
   tracked->position = mapped.position;
-  g_context->ProcessTouchMove(touch_list(finger.fingerID, mapped.position), RmlSDL::GetKeyModifierState());
+  dispatch_touch_event(*tracked, TouchMoveEvent, mapped.position, mapped.inside, delta);
+  if (mapped.inside) {
+    tracked->rmlPosition = mapped.position;
+    g_context->ProcessTouchMove(touch_list(finger.fingerID, mapped.position), RmlSDL::GetKeyModifierState());
+  }
 }
 
 void handle_touch_up(const SDL_TouchFingerEvent& finger) noexcept {
@@ -260,9 +296,24 @@ void handle_touch_up(const SDL_TouchFingerEvent& finger) noexcept {
   if (tracked == nullptr) {
     return;
   }
-  const auto position = tracked->position;
+  const auto mapped = map_touch_point_to_content(finger);
+  const Rml::Vector2f position = mapped.valid ? mapped.position : tracked->position;
+  const Rml::Vector2f delta = position - tracked->position;
+  dispatch_touch_event(*tracked, TouchEndEvent, position, mapped.valid && mapped.inside, delta);
+  const auto rmlPosition = tracked->rmlPosition;
   *tracked = {};
-  g_context->ProcessTouchEnd(touch_list(finger.fingerID, position), RmlSDL::GetKeyModifierState());
+  g_context->ProcessTouchEnd(touch_list(finger.fingerID, rmlPosition), RmlSDL::GetKeyModifierState());
+}
+
+void handle_touch_cancel(const SDL_TouchFingerEvent& finger) noexcept {
+  auto* tracked = find_tracked_touch(finger.fingerID);
+  if (tracked == nullptr) {
+    return;
+  }
+  dispatch_touch_event(*tracked, TouchCancelEvent, tracked->position, false);
+  const auto rmlPosition = tracked->rmlPosition;
+  *tracked = {};
+  g_context->ProcessTouchCancel(touch_list(finger.fingerID, rmlPosition));
 }
 } // namespace
 
@@ -300,9 +351,7 @@ Rml::Context* get_context() noexcept { return g_context; }
 
 bool is_initialized() noexcept { return g_context != nullptr; }
 
-void set_ui_scale(float scale) noexcept {
-  s_uiScale = scale > 0.0f ? std::clamp(scale, 0.25f, 4.0f) : 0.0f;
-}
+void set_ui_scale(float scale) noexcept { s_uiScale = scale > 0.0f ? std::clamp(scale, 0.25f, 4.0f) : 0.0f; }
 
 float get_ui_scale() noexcept { return s_uiScale; }
 
@@ -338,8 +387,10 @@ void handle_event(SDL_Event& event) noexcept {
     handle_touch_motion(event.tfinger);
     return;
   case SDL_EVENT_FINGER_UP:
-  case SDL_EVENT_FINGER_CANCELED:
     handle_touch_up(event.tfinger);
+    return;
+  case SDL_EVENT_FINGER_CANCELED:
+    handle_touch_cancel(event.tfinger);
     return;
   case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
     sync_context_metrics(presentation_dimensions_from_window_size(window::get_window_size()));
@@ -357,7 +408,7 @@ void handle_event(SDL_Event& event) noexcept {
   RmlSDL::InputEventHandler(g_context, window::get_sdl_window(), event);
 }
 
-RenderOutput render(const wgpu::CommandEncoder& encoder, const webgpu::Viewport& presentViewport) noexcept {
+wgpu::BindGroup record_frame(const webgpu::Viewport& presentViewport) noexcept {
   if (g_context == nullptr) {
     return {};
   }
@@ -374,7 +425,7 @@ RenderOutput render(const wgpu::CommandEncoder& encoder, const webgpu::Viewport&
 
   auto* renderInterface = get_render_interface();
   renderInterface->SetWindowSize(g_context->GetDimensions());
-  renderInterface->BeginFrame(encoder, s_renderTarget, webgpu::present_source());
+  renderInterface->BeginFrame(s_renderTarget, webgpu::present_source());
 
   Backend::BeginFrame();
   g_context->Render();
@@ -384,11 +435,7 @@ RenderOutput render(const wgpu::CommandEncoder& encoder, const webgpu::Viewport&
     // We didn't render anything
     return {};
   }
-
-  return {
-      .texture = &s_renderTarget,
-      .copyBindGroup = s_renderTargetCopyBindGroup,
-  };
+  return s_renderTargetCopyBindGroup;
 }
 
 void shutdown() noexcept {

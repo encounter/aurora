@@ -148,6 +148,8 @@ void GXSetDispCopyGamma(GXGamma gamma) {}
 void GXCopyDisp(void* dest, GXBool clear) {}
 
 void GXCopyTex(void* dest, GXBool clear) {
+  aurora::gx::fifo::drain();
+
   const auto rect = aurora::gx::map_logical_scissor(g_gxState.texCopySrc);
   const auto [dstWidth, dstHeight] = scale_copy_dst(g_gxState.texCopyDstWidth, g_gxState.texCopyDstHeight);
   const auto texCopyFmt = g_gxState.texCopyFmt;
@@ -165,13 +167,14 @@ void GXCopyTex(void* dest, GXBool clear) {
       handle = aurora::gfx::new_conv_texture(dstWidth, dstHeight, texCopyFmt, "Copy Conv Texture");
     } else {
       // Configure the texture swizzle to use alpha 1.0 if targeting RGB565 or EFB doesn't have alpha
-      const auto fmt = texCopyFmt == GX_TF_RGB565 || g_gxState.pixelFmt == GX_PF_RGB8_Z24 ||
-                               g_gxState.pixelFmt == GX_PF_RGB565_Z16
-                           ? GX_TF_RGB565
-                           : GX_TF_RGBA8;
+      const auto fmt =
+          texCopyFmt == GX_TF_RGB565 || g_gxState.pixelFmt == GX_PF_RGB8_Z24 || g_gxState.pixelFmt == GX_PF_RGB565_Z16
+              ? GX_TF_RGB565
+              : GX_TF_RGBA8;
       handle = aurora::gfx::new_render_texture(dstWidth, dstHeight, fmt, "Resolved Texture");
     }
-    it = g_gxState.copyTextureCache.emplace(key, aurora::gx::GXState::CopyTextureRef{.handle = handle, .revision = 0}).first;
+    it = g_gxState.copyTextureCache.emplace(key, aurora::gx::GXState::CopyTextureRef{.handle = handle, .revision = 0})
+             .first;
   }
   auto& handle = it->second;
 

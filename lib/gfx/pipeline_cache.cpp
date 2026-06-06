@@ -1,7 +1,11 @@
 #include "pipeline_cache.hpp"
 
 #include "clear.hpp"
+#include "../fs_helper.hpp"
 #include "../gx/pipeline.hpp"
+#ifdef AURORA_ENABLE_RMLUI
+#include "../rmlui/pipeline.hpp"
+#endif
 #include "../sqlite_utils.hpp"
 #include "../webgpu/gpu.hpp"
 
@@ -10,9 +14,11 @@
 #include <condition_variable>
 #include <deque>
 #include <filesystem>
+#include <limits>
 #include <mutex>
 #include <thread>
 
+#include <SDL3/SDL_iostream.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <fmt/format.h>
@@ -22,6 +28,8 @@ namespace aurora::gfx {
 static Module Log("aurora::gfx::pipeline_cache");
 
 constexpr int PipelineCacheSchema = 1;
+constexpr const char* InitialPipelineCacheName = "initial_pipeline_cache.db";
+constexpr const char* SdlVfsName = "aurora_pipeline_cache_sdl_vfs";
 
 struct CachedPipeline {
   wgpu::RenderPipeline pipeline;
@@ -40,6 +48,11 @@ struct PipelineCacheWrite {
   uint32_t configVersion;
   ByteBuffer config;
   uint32_t firstFrameUsed = UINT32_MAX;
+};
+
+struct SdlVfsSqliteFile {
+  sqlite3_file base;
+  SDL_IOStream* io = nullptr;
 };
 
 static std::mutex g_pipelineMutex;
@@ -69,6 +82,234 @@ static std::condition_variable g_pipelineCacheWriterCv;
 static std::mutex g_pipelineCacheWriterMutex;
 static std::deque<PipelineCacheWrite> g_pipelineCacheWriteQueue;
 static bool g_pipelineCacheWriterStop = false;
+static int g_sdlVfsRegisterResult = SQLITE_ERROR;
+
+static SdlVfsSqliteFile* sdl_vfs_file(sqlite3_file* file) { return reinterpret_cast<SdlVfsSqliteFile*>(file); }
+
+static sqlite3_vfs* default_vfs(sqlite3_vfs* vfs) { return static_cast<sqlite3_vfs*>(vfs->pAppData); }
+
+static int sdl_vfs_close(sqlite3_file* file) {
+  auto* vfsFile = sdl_vfs_file(file);
+  if (vfsFile->io != nullptr) {
+    SDL_CloseIO(vfsFile->io);
+    vfsFile->io = nullptr;
+  }
+  return SQLITE_OK;
+}
+
+static int sdl_vfs_read(sqlite3_file* file, void* buffer, int amount, sqlite3_int64 offset) {
+  auto* vfsFile = sdl_vfs_file(file);
+  if (vfsFile->io == nullptr || offset < 0 || amount < 0) {
+    return SQLITE_IOERR_READ;
+  }
+  if (SDL_SeekIO(vfsFile->io, offset, SDL_IO_SEEK_SET) < 0) {
+    return SQLITE_IOERR_SEEK;
+  }
+
+  auto* dst = static_cast<uint8_t*>(buffer);
+  int total = 0;
+  while (total < amount) {
+    const size_t read = SDL_ReadIO(vfsFile->io, dst + total, static_cast<size_t>(amount - total));
+    if (read == 0) {
+      if (SDL_GetIOStatus(vfsFile->io) == SDL_IO_STATUS_EOF) {
+        std::memset(dst + total, 0, static_cast<size_t>(amount - total));
+        return SQLITE_IOERR_SHORT_READ;
+      }
+      return SQLITE_IOERR_READ;
+    }
+    if (read > static_cast<size_t>(std::numeric_limits<int>::max() - total)) {
+      return SQLITE_IOERR_READ;
+    }
+    total += static_cast<int>(read);
+  }
+  return SQLITE_OK;
+}
+
+static int sdl_vfs_write(sqlite3_file*, const void*, int, sqlite3_int64) { return SQLITE_READONLY; }
+
+static int sdl_vfs_truncate(sqlite3_file*, sqlite3_int64) { return SQLITE_READONLY; }
+
+static int sdl_vfs_sync(sqlite3_file*, int) { return SQLITE_OK; }
+
+static int sdl_vfs_file_size(sqlite3_file* file, sqlite3_int64* size) {
+  auto* vfsFile = sdl_vfs_file(file);
+  if (vfsFile->io == nullptr || size == nullptr) {
+    return SQLITE_IOERR_FSTAT;
+  }
+
+  const auto ioSize = SDL_GetIOSize(vfsFile->io);
+  if (ioSize < 0) {
+    return SQLITE_IOERR_FSTAT;
+  }
+  *size = static_cast<sqlite3_int64>(ioSize);
+  return SQLITE_OK;
+}
+
+static int sdl_vfs_lock(sqlite3_file*, int) { return SQLITE_OK; }
+
+static int sdl_vfs_unlock(sqlite3_file*, int) { return SQLITE_OK; }
+
+static int sdl_vfs_check_reserved_lock(sqlite3_file*, int* reserved) {
+  if (reserved != nullptr) {
+    *reserved = 0;
+  }
+  return SQLITE_OK;
+}
+
+static int sdl_vfs_file_control(sqlite3_file*, int op, void* arg) {
+  switch (op) {
+  case SQLITE_FCNTL_LOCKSTATE:
+    *static_cast<int*>(arg) = SQLITE_LOCK_NONE;
+    return SQLITE_OK;
+  case SQLITE_FCNTL_HAS_MOVED:
+    *static_cast<int*>(arg) = 0;
+    return SQLITE_OK;
+  case SQLITE_FCNTL_SIZE_HINT:
+    return SQLITE_OK;
+  default:
+    return SQLITE_NOTFOUND;
+  }
+}
+
+static int sdl_vfs_sector_size(sqlite3_file*) { return 4096; }
+
+static int sdl_vfs_device_characteristics(sqlite3_file*) {
+  return SQLITE_IOCAP_IMMUTABLE | SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN;
+}
+
+static constexpr sqlite3_io_methods SdlVfsIoMethods{
+    .iVersion = 1,
+    .xClose = sdl_vfs_close,
+    .xRead = sdl_vfs_read,
+    .xWrite = sdl_vfs_write,
+    .xTruncate = sdl_vfs_truncate,
+    .xSync = sdl_vfs_sync,
+    .xFileSize = sdl_vfs_file_size,
+    .xLock = sdl_vfs_lock,
+    .xUnlock = sdl_vfs_unlock,
+    .xCheckReservedLock = sdl_vfs_check_reserved_lock,
+    .xFileControl = sdl_vfs_file_control,
+    .xSectorSize = sdl_vfs_sector_size,
+    .xDeviceCharacteristics = sdl_vfs_device_characteristics,
+};
+
+static int sdl_vfs_open(sqlite3_vfs*, sqlite3_filename name, sqlite3_file* file, int flags, int* outFlags) {
+  auto* vfsFile = sdl_vfs_file(file);
+  vfsFile->base.pMethods = nullptr;
+  vfsFile->io = nullptr;
+
+  if (name == nullptr || (flags & SQLITE_OPEN_READWRITE) != 0 || (flags & SQLITE_OPEN_READONLY) == 0) {
+    return SQLITE_CANTOPEN;
+  }
+
+  vfsFile->io = SDL_IOFromFile(name, "rb");
+  if (vfsFile->io == nullptr) {
+    return SQLITE_CANTOPEN;
+  }
+
+  vfsFile->base.pMethods = &SdlVfsIoMethods;
+  if (outFlags != nullptr) {
+    *outFlags = SQLITE_OPEN_READONLY;
+  }
+  return SQLITE_OK;
+}
+
+static int sdl_vfs_delete(sqlite3_vfs*, const char*, int) { return SQLITE_READONLY; }
+
+static int sdl_vfs_access(sqlite3_vfs*, const char* name, int flags, int* result) {
+  if (result == nullptr) {
+    return SQLITE_IOERR_ACCESS;
+  }
+  if (name == nullptr || flags == SQLITE_ACCESS_READWRITE) {
+    *result = 0;
+    return SQLITE_OK;
+  }
+
+  auto* io = SDL_IOFromFile(name, "rb");
+  *result = io != nullptr ? 1 : 0;
+  if (io != nullptr) {
+    SDL_CloseIO(io);
+  }
+  return SQLITE_OK;
+}
+
+static int sdl_vfs_full_pathname(sqlite3_vfs*, const char* name, int outSize, char* out) {
+  if (name == nullptr || out == nullptr || outSize <= 0) {
+    return SQLITE_CANTOPEN;
+  }
+  sqlite3_snprintf(outSize, out, "%s", name);
+  return SQLITE_OK;
+}
+
+static void* sdl_vfs_dl_open(sqlite3_vfs*, const char*) { return nullptr; }
+
+static void sdl_vfs_dl_error(sqlite3_vfs*, int bytes, char* message) {
+  if (message != nullptr && bytes > 0) {
+    sqlite3_snprintf(bytes, message, "%s", "Dynamic loading is unsupported");
+  }
+}
+
+static void (*sdl_vfs_dl_sym(sqlite3_vfs*, void*, const char*))(void) { return nullptr; }
+
+static void sdl_vfs_dl_close(sqlite3_vfs*, void*) {}
+
+static int sdl_vfs_randomness(sqlite3_vfs* vfs, int bytes, char* out) {
+  if (auto* base = default_vfs(vfs); base != nullptr && base->xRandomness != nullptr) {
+    return base->xRandomness(base, bytes, out);
+  }
+  if (out != nullptr && bytes > 0) {
+    std::memset(out, 0, static_cast<size_t>(bytes));
+  }
+  return bytes;
+}
+
+static int sdl_vfs_sleep(sqlite3_vfs* vfs, int microseconds) {
+  if (auto* base = default_vfs(vfs); base != nullptr && base->xSleep != nullptr) {
+    return base->xSleep(base, microseconds);
+  }
+  return microseconds;
+}
+
+static int sdl_vfs_current_time(sqlite3_vfs* vfs, double* time) {
+  if (auto* base = default_vfs(vfs); base != nullptr && base->xCurrentTime != nullptr) {
+    return base->xCurrentTime(base, time);
+  }
+  if (time != nullptr) {
+    *time = 2440587.5;
+  }
+  return SQLITE_OK;
+}
+
+static int sdl_vfs_get_last_error(sqlite3_vfs*, int, char*) { return SQLITE_OK; }
+
+static bool register_sdl_vfs() {
+  static std::once_flag registerOnce;
+  std::call_once(registerOnce, [] {
+    auto* baseVfs = sqlite3_vfs_find(nullptr);
+    static sqlite3_vfs sdlVfs{
+        .iVersion = 1,
+        .szOsFile = static_cast<int>(sizeof(SdlVfsSqliteFile)),
+        .mxPathname = 4096,
+        .pNext = nullptr,
+        .zName = SdlVfsName,
+        .pAppData = baseVfs,
+        .xOpen = sdl_vfs_open,
+        .xDelete = sdl_vfs_delete,
+        .xAccess = sdl_vfs_access,
+        .xFullPathname = sdl_vfs_full_pathname,
+        .xDlOpen = sdl_vfs_dl_open,
+        .xDlError = sdl_vfs_dl_error,
+        .xDlSym = sdl_vfs_dl_sym,
+        .xDlClose = sdl_vfs_dl_close,
+        .xRandomness = sdl_vfs_randomness,
+        .xSleep = sdl_vfs_sleep,
+        .xCurrentTime = sdl_vfs_current_time,
+        .xGetLastError = sdl_vfs_get_last_error,
+    };
+    g_sdlVfsRegisterResult = sqlite3_vfs_register(&sdlVfs, 0);
+  });
+  return g_sdlVfsRegisterResult == SQLITE_OK;
+}
 
 #if defined(__cpp_lib_atomic_ref)
 static std::atomic_ref queuedPipelines{g_stats.queuedPipelines};
@@ -139,12 +380,18 @@ static PendingPipeline* touch_pending_pipeline(PipelineRef hash, bool prioritize
   return &g_priorityPipelines.back();
 }
 
+static PipelineRef g_lastPipelineRef = std::numeric_limits<PipelineRef>::max();
+
 template <typename PipelineConfig>
 static PipelineRef find_pipeline_impl(ShaderType type, const PipelineConfig& config, NewPipelineCallback&& cb,
                                       bool persist, std::optional<uint32_t> firstFrameUsedOverride) {
   ZoneScoped;
 
   const PipelineRef hash = xxh3_hash(config, static_cast<HashType>(type));
+  if (hash == g_lastPipelineRef) {
+    return g_lastPipelineRef;
+  }
+  g_lastPipelineRef = hash;
   const uint32_t firstFrameUsed = firstFrameUsedOverride.value_or(current_frame());
   bool notifyWorker = false;
   std::optional<PipelineCacheWrite> cacheWrite;
@@ -219,6 +466,154 @@ static void pipeline_cache_abort() {
   }
 }
 
+static bool write_pipeline_cache_record(const PipelineCacheWrite& write);
+
+static std::string pipeline_cache_seed_path() {
+  if (g_config.resourcesPath == nullptr || g_config.resourcesPath[0] == '\0') {
+    return InitialPipelineCacheName;
+  }
+
+  std::string path{g_config.resourcesPath};
+  if (path.back() != '/' && path.back() != '\\') {
+    path += '/';
+  }
+  path += InitialPipelineCacheName;
+  return path;
+}
+
+static sqlite3* open_pipeline_cache_seed_db(const std::string& path) {
+  if (!register_sdl_vfs()) {
+    Log.warn("Failed to register SDL pipeline cache seed VFS");
+    return nullptr;
+  }
+
+  sqlite3* seedDb = nullptr;
+  const auto ret = sqlite3_open_v2(path.c_str(), &seedDb, SQLITE_OPEN_READONLY | SQLITE_OPEN_PRIVATECACHE, SdlVfsName);
+  if (ret != SQLITE_OK) {
+    if (seedDb != nullptr) {
+      sqlite3_close(seedDb);
+    }
+    Log.info("No bundled initial pipeline cache found at '{}'", path);
+    return nullptr;
+  }
+
+  bool schemaMatch = false;
+  const auto schemaQuery = fmt::format("SELECT 1 FROM aurora_schema WHERE value = {}", PipelineCacheSchema);
+  const auto schemaRet =
+      sqlite::exec(seedDb, schemaQuery.c_str(), [&schemaMatch](int, char**, char**) { schemaMatch = true; });
+  if (schemaRet != SQLITE_OK) {
+    Log.warn("Failed to read bundled pipeline cache schema from '{}': {}", path, sqlite3_errmsg(seedDb));
+    sqlite3_close(seedDb);
+    return nullptr;
+  }
+  if (!schemaMatch) {
+    Log.warn("Bundled pipeline cache '{}' does not use schema version {}", path, PipelineCacheSchema);
+    sqlite3_close(seedDb);
+    return nullptr;
+  }
+
+  return seedDb;
+}
+
+static void seed_pipeline_cache() {
+  if (g_pipelineCacheBroken || g_pipelineCacheDb == nullptr || g_pipelineCacheUpsertStmt == nullptr) {
+    return;
+  }
+
+  const auto seedPath = pipeline_cache_seed_path();
+  sqlite3* seedDb = open_pipeline_cache_seed_db(seedPath);
+  if (seedDb == nullptr) {
+    return;
+  }
+
+  sqlite3_stmt* seedStmt = nullptr;
+  auto closeSeed = [&] {
+    if (seedStmt != nullptr) {
+      sqlite3_finalize(seedStmt);
+      seedStmt = nullptr;
+    }
+    sqlite3_close(seedDb);
+  };
+
+  auto ret = sqlite3_prepare_v3(seedDb,
+                                "SELECT type, hash, config_version, config_size, config, first_frame_used "
+                                "FROM pipeline_cache",
+                                -1, 0, &seedStmt, nullptr);
+  if (ret != SQLITE_OK) {
+    Log.warn("Failed to read bundled pipeline cache rows from '{}': {}", seedPath, sqlite3_errmsg(seedDb));
+    closeSeed();
+    return;
+  }
+
+  bool writeFailed = false;
+  bool readFailed = false;
+  uint32_t mergedRows = 0;
+  uint32_t skippedRows = 0;
+  {
+    sqlite::Transaction tx(g_pipelineCacheDb, Log, true);
+    if (!tx) {
+      Log.error("Failed to begin pipeline cache seed transaction");
+      closeSeed();
+      pipeline_cache_abort();
+      return;
+    }
+
+    while ((ret = sqlite3_step(seedStmt)) == SQLITE_ROW) {
+      const auto typeValue = sqlite3_column_int(seedStmt, 0);
+      const auto hashValue = sqlite3_column_int64(seedStmt, 1);
+      const auto configVersionValue = sqlite3_column_int(seedStmt, 2);
+      const auto configSizeValue = sqlite3_column_int(seedStmt, 3);
+      const auto* configBlob = static_cast<const uint8_t*>(sqlite3_column_blob(seedStmt, 4));
+      const auto configBlobSize = sqlite3_column_bytes(seedStmt, 4);
+      const auto firstFrameUsedValue = sqlite3_column_int64(seedStmt, 5);
+      constexpr auto MaxShaderTypeValue = std::numeric_limits<std::underlying_type_t<ShaderType>>::max();
+      if (typeValue < 0 || typeValue > MaxShaderTypeValue || configVersionValue < 0 || configSizeValue < 0 ||
+          configSizeValue != configBlobSize || (configBlobSize > 0 && configBlob == nullptr) ||
+          firstFrameUsedValue < 0 || firstFrameUsedValue > std::numeric_limits<uint32_t>::max()) {
+        ++skippedRows;
+        continue;
+      }
+
+      PipelineCacheWrite write{
+          .type = static_cast<ShaderType>(typeValue),
+          .hash = static_cast<PipelineRef>(hashValue),
+          .configVersion = static_cast<uint32_t>(configVersionValue),
+          .config = ByteBuffer(static_cast<size_t>(configBlobSize)),
+          .firstFrameUsed = static_cast<uint32_t>(firstFrameUsedValue),
+      };
+      if (configBlobSize > 0) {
+        std::memcpy(write.config.data(), configBlob, static_cast<size_t>(configBlobSize));
+      }
+
+      if (!write_pipeline_cache_record(write)) {
+        writeFailed = true;
+        break;
+      }
+      ++mergedRows;
+    }
+
+    if (!writeFailed && ret != SQLITE_DONE) {
+      Log.warn("Failed while reading bundled pipeline cache rows from '{}': {}", seedPath, sqlite3_errmsg(seedDb));
+      readFailed = true;
+    }
+
+    if (!writeFailed && !readFailed) {
+      tx.commit();
+    }
+  }
+
+  closeSeed();
+
+  if (writeFailed) {
+    pipeline_cache_abort();
+    return;
+  }
+
+  if (!readFailed) {
+    Log.info("Seeded pipeline cache from '{}' ({} rows merged, {} rows skipped)", seedPath, mergedRows, skippedRows);
+  }
+}
+
 static bool prepare_pipeline_cache_db() {
   if (g_pipelineCacheBroken) {
     return false;
@@ -227,7 +622,7 @@ static bool prepare_pipeline_cache_db() {
     return true;
   }
 
-  const auto path = (std::filesystem::path{g_config.cachePath} / "pipeline_cache.db").string();
+  const auto path = fs_path_to_string(std::filesystem::path{g_config.cachePath} / "pipeline_cache.db");
   auto ret = sqlite3_open(path.c_str(), &g_pipelineCacheDb);
   if (ret != SQLITE_OK) {
     Log.error("Failed to open pipeline cache database: {}", sqlite3_errmsg(g_pipelineCacheDb));
@@ -328,6 +723,11 @@ INSERT INTO aurora_schema VALUES ({});)",
     return false;
   }
 
+  seed_pipeline_cache();
+  if (g_pipelineCacheBroken) {
+    return false;
+  }
+
   return true;
 }
 
@@ -351,7 +751,18 @@ static void prune_old_pipeline_cache_versions() {
   if (ret != SQLITE_OK) {
     Log.error("Failed to prune GX pipeline cache rows: {}", sqlite3_errmsg(g_pipelineCacheDb));
     pipeline_cache_abort();
+    return;
   }
+
+#ifdef AURORA_ENABLE_RMLUI
+  const auto rmlDelete = fmt::format("DELETE FROM pipeline_cache WHERE type = {} AND config_version < {}",
+                                     underlying(ShaderType::Rml), rmlui::RmlPipelineConfigVersion);
+  ret = sqlite::exec(g_pipelineCacheDb, rmlDelete.c_str());
+  if (ret != SQLITE_OK) {
+    Log.error("Failed to prune RmlUi pipeline cache rows: {}", sqlite3_errmsg(g_pipelineCacheDb));
+    pipeline_cache_abort();
+  }
+#endif
 }
 
 static bool write_pipeline_cache_record(const PipelineCacheWrite& write) {
@@ -551,6 +962,13 @@ static void load_pipeline_cache() {
     return;
   }
   load_pipeline_cache_entries<gx::PipelineConfig>(ShaderType::GX, gx::GXPipelineConfigVersion, gx::create_pipeline);
+#ifdef AURORA_ENABLE_RMLUI
+  if (g_pipelineCacheBroken) {
+    return;
+  }
+  load_pipeline_cache_entries<rmlui::PipelineConfig>(ShaderType::Rml, rmlui::RmlPipelineConfigVersion,
+                                                     rmlui::create_pipeline);
+#endif
 }
 
 static void start_pipeline_cache_writer() {
@@ -586,6 +1004,13 @@ template <>
 PipelineRef find_pipeline(ShaderType type, const gx::PipelineConfig& config, NewPipelineCallback&& cb) {
   return find_pipeline_impl(type, config, std::move(cb), true, std::nullopt);
 }
+
+#ifdef AURORA_ENABLE_RMLUI
+template <>
+PipelineRef find_pipeline(ShaderType type, const rmlui::PipelineConfig& config, NewPipelineCallback&& cb) {
+  return find_pipeline_impl(type, config, std::move(cb), true, std::nullopt);
+}
+#endif
 
 void initialize_pipeline_cache() {
   g_pipelineCacheBroken = false;

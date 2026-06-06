@@ -1,5 +1,7 @@
 add_library(aurora_core STATIC
         lib/aurora.cpp
+        lib/device.cpp
+        lib/device.hpp
         lib/input.cpp
         lib/window.cpp
         lib/logging.cpp
@@ -15,7 +17,7 @@ target_link_libraries(aurora_core PUBLIC fmt::fmt ${AURORA_SDL3_TARGET} xxhash)
 target_link_libraries(aurora_core PRIVATE absl::btree absl::flat_hash_map sqlite3 TracyClient)
 if (AURORA_ENABLE_GX AND AURORA_CACHE_USE_ZSTD)
     target_compile_definitions(aurora_core PRIVATE AURORA_CACHE_USE_ZSTD)
-    target_link_libraries(aurora_core PRIVATE libzstd_static)
+    target_link_libraries(aurora_core PRIVATE zstd::libzstd)
 endif ()
 
 if (CMAKE_SYSTEM_NAME STREQUAL Windows)
@@ -23,6 +25,13 @@ if (CMAKE_SYSTEM_NAME STREQUAL Windows)
     target_link_libraries(aurora_core PRIVATE wbemuuid.lib comsuppw.lib ntdll.lib DXGI.lib)
 elseif (APPLE)
     target_sources(aurora_core PRIVATE lib/system_info_mac.mm)
+endif ()
+
+if (IOS)
+    find_library(COREHAPTICS_FRAMEWORK CoreHaptics REQUIRED)
+    target_sources(aurora_core PRIVATE lib/device_ios.mm)
+    set_source_files_properties(lib/device_ios.mm PROPERTIES COMPILE_FLAGS -fobjc-arc)
+    target_link_libraries(aurora_core PUBLIC ${COREHAPTICS_FRAMEWORK})
 endif ()
 
 if (AURORA_ENABLE_GX)
@@ -35,6 +44,7 @@ if(AURORA_ENABLE_RMLUI)
 
     target_sources(aurora_core PRIVATE
             lib/rmlui.cpp
+            lib/rmlui/RuntimeTextureProvider.cpp
             lib/rmlui/RmlUi_Backend_Aurora.cpp
             lib/rmlui/WebGPURenderInterface.cpp
             lib/rmlui/SystemInterface_Aurora.cpp

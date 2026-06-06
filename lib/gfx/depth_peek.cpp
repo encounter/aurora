@@ -2,6 +2,7 @@
 
 #include "../dolphin/vi/vi_internal.hpp"
 #include "../gx/gx.hpp"
+#include "../gfx/render_worker.hpp"
 #include "../webgpu/gpu.hpp"
 
 #include <algorithm>
@@ -330,12 +331,6 @@ bool read_latest(uint16_t x, uint16_t y, uint32_t& z) noexcept {
   return true;
 }
 
-void poll() noexcept {
-  if (g_instance) {
-    g_instance.ProcessEvents();
-  }
-}
-
 void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureView& depthView,
                            wgpu::Extent3D sourceSize, uint32_t msaaSamples) noexcept {
   ZoneScoped;
@@ -375,6 +370,7 @@ void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureV
     byteSize = slot->byteSize;
   }
 
+  ASSERT(render_worker::is_worker_thread(), "Depth peek queue write must run on the render worker");
   g_queue.WriteBuffer(paramsBuffer, 0, &params, sizeof(params));
 
   const std::array bindGroupEntries{
@@ -433,11 +429,10 @@ void after_submit() noexcept {
   }
 
   for (const auto& pending : pendingMaps) {
-    pending.readbackBuffer.MapAsync(
-        wgpu::MapMode::Read, 0, pending.byteSize, wgpu::CallbackMode::AllowSpontaneous,
-        [slotIdx = pending.slotIdx](wgpu::MapAsyncStatus status, wgpu::StringView message) {
-          complete_slot(slotIdx, status, message);
-        });
+    pending.readbackBuffer.MapAsync(wgpu::MapMode::Read, 0, pending.byteSize, wgpu::CallbackMode::AllowSpontaneous,
+                                    [slotIdx = pending.slotIdx](wgpu::MapAsyncStatus status, wgpu::StringView message) {
+                                      complete_slot(slotIdx, status, message);
+                                    });
   }
 }
 

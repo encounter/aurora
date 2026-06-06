@@ -60,11 +60,28 @@ if (NOT TARGET xxhash)
   )
   set(XXHASH_BUILD_XXHSUM OFF CACHE INTERNAL "Build the xxhsum binary")
   # xxhash uses CMAKE_DEPENDENT_OPTION(BUILD_SHARED_LIBS ...) which writes
-  # a sticky CACHE INTERNAL entry on reconfigure. Undo it afterward.
-  set(_aurora_xxhash_saved_bsl "${BUILD_SHARED_LIBS}")
+  # a sticky CACHE INTERNAL entry on reconfigure. Undo it afterward, but keep
+  # an existing preset/toolchain cache entry intact for build-time regenerates.
+  set(_aurora_xxhash_had_bsl_var OFF)
+  set(_aurora_xxhash_had_bsl_cache OFF)
+  if (DEFINED BUILD_SHARED_LIBS)
+    set(_aurora_xxhash_had_bsl_var ON)
+    set(_aurora_xxhash_saved_bsl "${BUILD_SHARED_LIBS}")
+  endif ()
+  if (DEFINED CACHE{BUILD_SHARED_LIBS})
+    set(_aurora_xxhash_had_bsl_cache ON)
+  endif ()
   FetchContent_MakeAvailable(xxhash)
   unset(BUILD_SHARED_LIBS CACHE)
-  set(BUILD_SHARED_LIBS "${_aurora_xxhash_saved_bsl}")
+  if (_aurora_xxhash_had_bsl_cache)
+    set(BUILD_SHARED_LIBS "${_aurora_xxhash_saved_bsl}" CACHE BOOL "Build shared libraries" FORCE)
+  elseif (_aurora_xxhash_had_bsl_var)
+    set(BUILD_SHARED_LIBS "${_aurora_xxhash_saved_bsl}")
+  else ()
+    unset(BUILD_SHARED_LIBS)
+  endif ()
+  unset(_aurora_xxhash_had_bsl_cache)
+  unset(_aurora_xxhash_had_bsl_var)
   unset(_aurora_xxhash_saved_bsl)
   if (NOT TARGET xxhash)
     message(FATAL_ERROR "Failed to make xxhash available")
@@ -98,17 +115,16 @@ if (AURORA_ENABLE_GX)
     set(ZLIB_BUILD_SHARED ${_USE_SHARED} CACHE BOOL "Enable building zlib shared library" FORCE)
     set(ZLIB_BUILD_TESTING OFF CACHE BOOL "Enable Zlib Examples as tests" FORCE)
     set(ZLIB_INSTALL OFF CACHE BOOL "Enable installation of zlib" FORCE)
+    set(ZLIB_COMPAT ON CACHE BOOL "Use the compat version of zlib instead of the newer zlib-ng" FORCE)
     FetchContent_Declare(
       ZLIB
-      URL https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz
-      URL_HASH SHA256=bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
+      URL https://github.com/zlib-ng/zlib-ng/archive/refs/tags/2.3.3.tar.gz
+      URL_HASH SHA256=f9c65aa9c852eb8255b636fd9f07ce1c406f061ec19a2e7d508b318ca0c907d1
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE
       EXCLUDE_FROM_ALL
     )
     FetchContent_MakeAvailable(ZLIB)
-    if (NOT TARGET ZLIB::ZLIB)
-      message(FATAL_ERROR "Failed to make zlib available")
-    endif ()
+    add_library(ZLIB::ZLIB ALIAS zlib-ng)
     # libpng calls find_package(ZLIB) even when zlib was already provided by FetchContent.
     file(WRITE "${CMAKE_FIND_PACKAGE_REDIRECTS_DIR}/ZLIBConfig.cmake"
       "set(ZLIB_FOUND TRUE)\n"
@@ -213,7 +229,14 @@ if (AURORA_ENABLE_GX)
     target_link_libraries(imgui PRIVATE ${AURORA_SDL3_TARGET})
   endif ()
 
-  if (NOT TARGET sqlite3)
+  aurora_find_package_global(SQLite3)
+  if (TARGET SQLite3::SQLite3)
+    message(STATUS "aurora: Using existing sqlite3")
+    add_library(sqlite3 ALIAS SQLite3::SQLite3)
+  elseif (TARGET SQLite::SQLite3) # CMake < 4.3
+    message(STATUS "aurora: Using existing sqlite3")
+    add_library(sqlite3 ALIAS SQLite::SQLite3)
+  else ()
     message(STATUS "aurora: Fetching sqlite3")
     FetchContent_Declare(sqlite3
       URL https://sqlite.org/2026/sqlite-amalgamation-3510300.zip
@@ -225,12 +248,20 @@ if (AURORA_ENABLE_GX)
 
     add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
     target_include_directories(sqlite3 PUBLIC ${sqlite3_SOURCE_DIR})
-  else ()
-    message(STATUS "aurora: Using existing sqlite3")
   endif ()
 
   if (AURORA_CACHE_USE_ZSTD)
-    if (NOT TARGET libzstd_static)
+    aurora_find_package_global(zstd CONFIG QUIET)
+    if (NOT TARGET zstd::libzstd)
+      find_package(PkgConfig QUIET)
+      if(PkgConfig_FOUND)
+        pkg_check_modules(ZSTD libzstd IMPORTED_TARGET GLOBAL)
+        if(ZSTD_FOUND)
+          add_library(zstd::libzstd ALIAS PkgConfig::ZSTD)
+        endif()
+      endif()
+    endif()
+    if (NOT TARGET zstd::libzstd)
       message(STATUS "aurora: Fetching zstd")
       set(ZSTD_BUILD_STATIC ON)
       set(ZSTD_BUILD_SHARED OFF)
@@ -243,6 +274,7 @@ if (AURORA_ENABLE_GX)
         EXCLUDE_FROM_ALL
       )
       FetchContent_MakeAvailable(zstd)
+      add_library(zstd::libzstd ALIAS libzstd_static)
     else ()
       message(STATUS "aurora: Using existing zstd")
     endif ()
@@ -271,6 +303,8 @@ if (NOT TARGET TracyClient)
 
   # Default to off, users can enable the cache variable if they want to use it.
   set(TRACY_ENABLE OFF CACHE BOOL "Enable Tracy profiling")
+  set(TRACY_ON_DEMAND ON CACHE BOOL "On-demand profiling")
+  set(TRACY_STATIC ON CACHE BOOL "Whether to build Tracy as a static library" FORCE)
 
   FetchContent_Declare(
           tracy

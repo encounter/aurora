@@ -63,6 +63,22 @@ if (AURORA_ENABLE_GX)
   )
 
   gtest_discover_tests(gx_fifo_tests)
+
+  add_executable(render_worker_tests
+    render_worker_test.cpp
+    ../lib/gfx/render_worker.cpp
+  )
+  target_include_directories(render_worker_tests PRIVATE
+    ../include
+    ../lib
+  )
+  target_compile_definitions(render_worker_tests PRIVATE AURORA TARGET_PC)
+  target_link_libraries(render_worker_tests PRIVATE
+    gtest
+    gtest_main
+    TracyClient
+  )
+  gtest_discover_tests(render_worker_tests)
 endif () # AURORA_ENABLE_GX
 
 # DVD API tests

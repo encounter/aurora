@@ -47,7 +47,17 @@ CardGciFolder::CardGciFolder(CardGciFolder&& other) {
   CardGciFolder::setCurrentMaker(other.m_maker);
 }
 
-CardGciFolder& CardGciFolder::operator=(CardGciFolder&& other) { return *this; }
+CardGciFolder& CardGciFolder::operator=(CardGciFolder&& other) {
+  m_files = std::move(other.m_files);
+  m_bat = std::move(other.m_bat);
+  m_folderPath = other.m_folderPath;
+  m_encoding = other.m_encoding;
+
+  CardGciFolder::setCurrentGame(other.m_game);
+  CardGciFolder::setCurrentMaker(other.m_maker);
+
+  return *this;
+}
 
 void CardGciFolder::InitCard(const char* game, const char* maker) {
   setCurrentGame(game);
@@ -111,7 +121,8 @@ ECardResult CardGciFolder::createFile(const char* filename, size_t size, FileHan
   }
 
   gciFileHeader->swapEndian();
-  m_files.push_back({*gciFileHeader, fileSize, reinterpret_cast<const char8_t*>(gciFilename.c_str()), false}); // push non-endian swapped header first
+  m_files.push_back({*gciFileHeader, fileSize, reinterpret_cast<const char8_t*>(gciFilename.c_str()),
+                     false}); // push non-endian swapped header first
   handleOut = FileHandle(m_files.size() - 1, 0);
 
   return ECardResult::READY;
@@ -213,8 +224,8 @@ ECardResult CardGciFolder::getStatus(uint32_t fileNo, CardStat& statOut) const {
   std::strncpy(statOut.x0_fileName, file->m_filename, 32);
   statOut.x20_length = file->m_blockCount * BlockSize;
   statOut.x24_time = file->m_modifiedTime;
-  memmove(statOut.x28_gameName.data(), file->m_game, 4);
-  memmove(statOut.x2c_company.data(), file->m_maker, 4);
+  memmove(statOut.x28_gameName.data(), file->m_game, statOut.x28_gameName.size());
+  memmove(statOut.x2c_company.data(), file->m_maker, statOut.x2c_company.size());
 
   statOut.x2e_bannerFormat = file->m_bannerFlags;
   statOut.x30_iconAddr = file->m_iconAddress;
@@ -350,8 +361,7 @@ bool CardGciFolder::open(const std::filesystem::path& filepath) {
     return false;
   }
 
-  std::filesystem::directory_iterator it(
-      filepath, std::filesystem::directory_options::skip_permission_denied, ec);
+  std::filesystem::directory_iterator it(filepath, std::filesystem::directory_options::skip_permission_denied, ec);
   if (ec) {
     Log.warn("Failed to enumerate GCI folder '{}': {}", fs_path_to_string(filepath), ec.message());
     return false;

@@ -12,6 +12,10 @@ namespace aurora::gx {
 struct PipelineConfig;
 } // namespace aurora::gx
 
+namespace aurora::rmlui {
+struct PipelineConfig;
+} // namespace aurora::rmlui
+
 namespace aurora::gfx {
 
 using NewPipelineCallback = std::function<wgpu::RenderPipeline()>;

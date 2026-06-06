@@ -169,7 +169,9 @@ typedef enum {
 
 #ifdef TARGET_PC
   GX_TF_R8_PC = 0x1 | _GX_TF_PC,
+  GX_TF_RG8_PC = 0x3 | _GX_TF_PC,
   GX_TF_RGBA8_PC = 0x6 | _GX_TF_PC,
+  GX_TF_BC1_PC = 0xE | _GX_TF_PC,
 #endif
 } GXTexFmt;
 
@@ -867,9 +869,9 @@ typedef enum {
 } GXTlutSize;
 
 typedef enum {
-    GX_READ_00,
-    GX_READ_FF,
-    GX_READ_NONE,
+  GX_READ_00,
+  GX_READ_FF,
+  GX_READ_NONE,
 } GXAlphaReadMode;
 
 typedef enum {
@@ -897,15 +899,15 @@ typedef enum {
 } GXCommand;
 
 typedef enum {
-  GX_CP_REG_MTXIDXA = 0x30,      // Matrix index A
-  GX_CP_REG_MTXIDXB = 0x40,      // Matrix index B
-  GX_CP_REG_VCD_LO = 0x50,       // Vertex descriptor (lo)
-  GX_CP_REG_VCD_HI = 0x60,       // Vertex descriptor (hi)
-  GX_CP_REG_VAT_GRP0 = 0x70,     // Vertex attribute table (group 0)
-  GX_CP_REG_VAT_GRP1 = 0x80,     // Vertex attribute table (group 1)
-  GX_CP_REG_VAT_GRP2 = 0x90,     // Vertex attribute table (group 2)
-  GX_CP_REG_ARRAYBASE = 0xA0,    // Vertex array start/base
-  GX_CP_REG_ARRAYSTRIDE = 0xB0,  // Vertex array stride
+  GX_CP_REG_MTXIDXA = 0x30,     // Matrix index A
+  GX_CP_REG_MTXIDXB = 0x40,     // Matrix index B
+  GX_CP_REG_VCD_LO = 0x50,      // Vertex descriptor (lo)
+  GX_CP_REG_VCD_HI = 0x60,      // Vertex descriptor (hi)
+  GX_CP_REG_VAT_GRP0 = 0x70,    // Vertex attribute table (group 0)
+  GX_CP_REG_VAT_GRP1 = 0x80,    // Vertex attribute table (group 1)
+  GX_CP_REG_VAT_GRP2 = 0x90,    // Vertex attribute table (group 2)
+  GX_CP_REG_ARRAYBASE = 0xA0,   // Vertex array start/base
+  GX_CP_REG_ARRAYSTRIDE = 0xB0, // Vertex array stride
 } GXCPRegs;
 
 #ifdef __cplusplus
