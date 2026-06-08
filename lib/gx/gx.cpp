@@ -401,12 +401,36 @@ void clear_copy_texture_cache() noexcept {
 void clear_static_texture_cache() noexcept { s_staticTextureCacheClearPending.store(true, std::memory_order_release); }
 
 void evict_copy_texture(const void* dest) noexcept {
-  g_gxState.copyTextures.erase(dest);
+  absl::flat_hash_set<const void*> sourceIdentities;
+  if (const auto it = g_gxState.copyTextures.find(dest); it != g_gxState.copyTextures.end()) {
+    if (it->second.handle) {
+      sourceIdentities.insert(it->second.handle.get());
+    }
+    g_gxState.copyTextures.erase(it);
+  }
+
   for (auto it = g_gxState.copyTextureCache.begin(); it != g_gxState.copyTextureCache.end();) {
     if (it->first.dest == dest) {
+      if (it->second.handle) {
+        sourceIdentities.insert(it->second.handle.get());
+      }
       g_gxState.copyTextureCache.erase(it++);
     } else {
       ++it;
+    }
+  }
+
+  if (sourceIdentities.empty()) {
+    return;
+  }
+
+  for (auto& [_, cache] : s_tlutObjectCaches) {
+    for (auto it = cache.dynamicPaletteTextures.begin(); it != cache.dynamicPaletteTextures.end();) {
+      if (sourceIdentities.contains(it->first.sourceIdentity)) {
+        cache.dynamicPaletteTextures.erase(it++);
+      } else {
+        ++it;
+      }
     }
   }
 }
