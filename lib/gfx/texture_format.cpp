@@ -90,4 +90,13 @@ uint64_t calc_texture_size(wgpu::TextureFormat format, u32 width, u32 height, u3
   }
   return total;
 }
+
+bool is_block_aligned(wgpu::TextureFormat format, uint32_t width, uint32_t height) noexcept {
+  if (width == 0 || height == 0) {
+    return false;
+  }
+
+  const auto info = format_info(format);
+  return !info.compressed || (width % info.blockWidth == 0 && height % info.blockHeight == 0);
+}
 } // namespace aurora::gfx

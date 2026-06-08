@@ -469,6 +469,20 @@ constexpr bool is_unsupported_texture_format(wgpu::TextureFormat format) {
   }
 }
 
+bool validate_texture_size(wgpu::TextureFormat format, uint32_t width, uint32_t height,
+                           std::string_view label) noexcept {
+  if (aurora::gfx::is_block_aligned(format, width, height)) {
+    return true;
+  }
+
+  const auto info = aurora::gfx::format_info(format);
+  Log.warn(
+      "texture_replacement: failed to load texture {} because {}x{} is not aligned to {}x{} texel blocks for "
+      "format {}",
+      label, width, height, info.blockWidth, info.blockHeight, static_cast<uint32_t>(format));
+  return false;
+}
+
 std::optional<aurora::gfx::ConvertedTexture> load_file_replacement(const ReplacementEntry& entry) noexcept {
   auto base = load_texture_file(entry.path);
   if (!base.has_value()) {
@@ -478,6 +492,9 @@ std::optional<aurora::gfx::ConvertedTexture> load_file_replacement(const Replace
   if (is_unsupported_texture_format(base->format)) {
     Log.warn("texture_replacement: failed to load texture {} due to unsupported format: {}",
              fs_path_to_string(entry.path), static_cast<uint32_t>(base->format));
+    return std::nullopt;
+  }
+  if (!validate_texture_size(base->format, base->width, base->height, fs_path_to_string(entry.path))) {
     return std::nullopt;
   }
 
@@ -598,16 +615,21 @@ aurora::gfx::TextureHandle create_raw_texture_handle(const ReplacementEntry& ent
     return {};
   }
 
+  const auto label = entry.label.empty() ? fmt::format("{}", entry.id) : entry.label;
   const auto format = aurora::gfx::to_wgpu(entry.gxFormat);
   if (is_unsupported_texture_format(format)) {
-    Log.warn("texture_replacement: failed to load raw replacement {} due to unsupported format: {}",
-             entry.label.empty() ? fmt::format("{}", entry.id) : entry.label, static_cast<uint32_t>(format));
+    Log.warn("texture_replacement: failed to load raw replacement {} due to unsupported format: {}", label,
+             static_cast<uint32_t>(format));
+    return {};
+  }
+  if (!validate_texture_size(format, entry.width, entry.height, label)) {
     return {};
   }
 
-  const auto label = entry.label.empty() ? fmt::format("TextureReplacement {}", entry.id) : entry.label;
-  auto handle = aurora::gfx::new_static_texture_2d(entry.width, entry.height, entry.mipCount, entry.gxFormat,
-                                                   {entry.bytes.data(), entry.bytes.size()}, false, label.c_str());
+  const auto textureLabel = entry.label.empty() ? fmt::format("TextureReplacement {}", entry.id) : entry.label;
+  auto handle =
+      aurora::gfx::new_static_texture_2d(entry.width, entry.height, entry.mipCount, entry.gxFormat,
+                                         {entry.bytes.data(), entry.bytes.size()}, false, textureLabel.c_str());
   if (handle) {
     handle->isReplacement = true;
   }
