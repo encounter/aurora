@@ -871,7 +871,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         });
     deviceDescriptor.SetDeviceLostCallback(wgpu::CallbackMode::AllowSpontaneous,
                                            [](const wgpu::Device& device, wgpu::DeviceLostReason reason,
-                                              wgpu::StringView message) { Log.warn("Device lost: {}", message); });
+                                              wgpu::StringView message) { FATAL("Device lost: {}", message); });
     const auto future =
         g_adapter.RequestDevice(&deviceDescriptor, wgpu::CallbackMode::WaitAnyOnly,
                                 [](wgpu::RequestDeviceStatus status, wgpu::Device device, wgpu::StringView message) {
