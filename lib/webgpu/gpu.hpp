@@ -73,6 +73,7 @@ void draw_clear(const wgpu::RenderPassEncoder& pass, bool clearColor, bool clear
 
 size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valueSize, void* userdata);
 void store_to_cache(void const* key, size_t keySize, void const* value, size_t valueSize, void* userdata);
+void cache_prune();
 void cache_shutdown();
 
 } // namespace aurora::webgpu

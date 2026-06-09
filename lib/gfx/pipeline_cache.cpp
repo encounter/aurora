@@ -72,6 +72,7 @@ static absl::flat_hash_map<PipelineRef, CachedPipeline> g_pipelines;
 static std::deque<PendingPipeline> g_priorityPipelines;
 static std::deque<PendingPipeline> g_backgroundPipelines;
 static absl::flat_hash_set<PipelineRef> g_pendingPipelines;
+static std::atomic_bool g_gpuCachePrunePending = false;
 
 static sqlite3* g_pipelineCacheDb = nullptr;
 static sqlite3_stmt* g_pipelineCacheLoadStmt = nullptr;
@@ -84,13 +85,9 @@ static std::deque<PipelineCacheWrite> g_pipelineCacheWriteQueue;
 static bool g_pipelineCacheWriterStop = false;
 static int g_sdlVfsRegisterResult = SQLITE_ERROR;
 
-static SdlVfsSqliteFile* sdl_vfs_file(sqlite3_file* file) {
-  return reinterpret_cast<SdlVfsSqliteFile*>(file);
-}
+static SdlVfsSqliteFile* sdl_vfs_file(sqlite3_file* file) { return reinterpret_cast<SdlVfsSqliteFile*>(file); }
 
-static sqlite3_vfs* default_vfs(sqlite3_vfs* vfs) {
-  return static_cast<sqlite3_vfs*>(vfs->pAppData);
-}
+static sqlite3_vfs* default_vfs(sqlite3_vfs* vfs) { return static_cast<sqlite3_vfs*>(vfs->pAppData); }
 
 static int sdl_vfs_close(sqlite3_file* file) {
   auto* vfsFile = sdl_vfs_file(file);
@@ -321,11 +318,14 @@ static std::atomic_ref createdPipelines{g_stats.createdPipelines};
 #else
 struct AtomicStatRef {
   uint32_t& ref;
-  void operator++() { __atomic_fetch_add(&ref, 1, __ATOMIC_RELAXED); }
-  void operator--() { __atomic_fetch_sub(&ref, 1, __ATOMIC_RELAXED); }
-  void operator++(int) { __atomic_fetch_add(&ref, 1, __ATOMIC_RELAXED); }
-  void operator--(int) { __atomic_fetch_sub(&ref, 1, __ATOMIC_RELAXED); }
-  void operator=(uint32_t val) { __atomic_store_n(&ref, val, __ATOMIC_RELAXED); }
+  uint32_t operator++() { return __atomic_add_fetch(&ref, 1, __ATOMIC_RELAXED); }
+  uint32_t operator--() { return __atomic_sub_fetch(&ref, 1, __ATOMIC_RELAXED); }
+  uint32_t operator++(int) { return __atomic_fetch_add(&ref, 1, __ATOMIC_RELAXED); }
+  uint32_t operator--(int) { return __atomic_fetch_sub(&ref, 1, __ATOMIC_RELAXED); }
+  uint32_t operator=(uint32_t val) {
+    __atomic_store_n(&ref, val, __ATOMIC_RELAXED);
+    return val;
+  }
 };
 static AtomicStatRef queuedPipelines{g_stats.queuedPipelines};
 static AtomicStatRef createdPipelines{g_stats.createdPipelines};
@@ -492,8 +492,7 @@ static sqlite3* open_pipeline_cache_seed_db(const std::string& path) {
   }
 
   sqlite3* seedDb = nullptr;
-  const auto ret =
-      sqlite3_open_v2(path.c_str(), &seedDb, SQLITE_OPEN_READONLY | SQLITE_OPEN_PRIVATECACHE, SdlVfsName);
+  const auto ret = sqlite3_open_v2(path.c_str(), &seedDb, SQLITE_OPEN_READONLY | SQLITE_OPEN_PRIVATECACHE, SdlVfsName);
   if (ret != SQLITE_OK) {
     if (seedDb != nullptr) {
       sqlite3_close(seedDb);
@@ -504,9 +503,8 @@ static sqlite3* open_pipeline_cache_seed_db(const std::string& path) {
 
   bool schemaMatch = false;
   const auto schemaQuery = fmt::format("SELECT 1 FROM aurora_schema WHERE value = {}", PipelineCacheSchema);
-  const auto schemaRet = sqlite::exec(seedDb, schemaQuery.c_str(), [&schemaMatch](int, char**, char**) {
-    schemaMatch = true;
-  });
+  const auto schemaRet =
+      sqlite::exec(seedDb, schemaQuery.c_str(), [&schemaMatch](int, char**, char**) { schemaMatch = true; });
   if (schemaRet != SQLITE_OK) {
     Log.warn("Failed to read bundled pipeline cache schema from '{}': {}", path, sqlite3_errmsg(seedDb));
     sqlite3_close(seedDb);
@@ -904,29 +902,33 @@ static void pipeline_worker() {
       ++g_pipelinesPerFrame;
     }
     ++createdPipelines;
-    --queuedPipelines;
+    if (--queuedPipelines == 0 && g_gpuCachePrunePending.exchange(false, std::memory_order_acq_rel)) {
+      // Prune GPU cache entries after fully loading the pipeline cache
+      webgpu::cache_prune();
+    }
   }
 }
 
 template <typename PipelineConfig, typename CreateFn>
-static void load_pipeline_cache_entries(ShaderType type, uint32_t configVersion, CreateFn&& create) {
+static size_t load_pipeline_cache_entries(ShaderType type, uint32_t configVersion, CreateFn&& create) {
   if (!prepare_pipeline_cache_db()) {
-    return;
+    return 0;
   }
 
   auto ret = sqlite3_bind_int(g_pipelineCacheLoadStmt, 1, underlying(type));
   if (ret != SQLITE_OK) {
     Log.error("Failed to bind pipeline cache load type: {}", sqlite3_errmsg(g_pipelineCacheDb));
     pipeline_cache_abort();
-    return;
+    return 0;
   }
   ret = sqlite3_bind_int(g_pipelineCacheLoadStmt, 2, static_cast<int>(configVersion));
   if (ret != SQLITE_OK) {
     Log.error("Failed to bind pipeline cache load config version: {}", sqlite3_errmsg(g_pipelineCacheDb));
     pipeline_cache_abort();
-    return;
+    return 0;
   }
 
+  size_t acceptedRows = 0;
   while ((ret = sqlite3_step(g_pipelineCacheLoadStmt)) == SQLITE_ROW) {
     const auto* configBlob = static_cast<const uint8_t*>(sqlite3_column_blob(g_pipelineCacheLoadStmt, 0));
     const auto configSize = sqlite3_column_bytes(g_pipelineCacheLoadStmt, 0);
@@ -942,6 +944,7 @@ static void load_pipeline_cache_entries(ShaderType type, uint32_t configVersion,
     }
 
     find_pipeline_impl(type, config, [=] { return create(config); }, false, firstFrameUsed);
+    ++acceptedRows;
   }
 
   if (ret != SQLITE_DONE) {
@@ -951,30 +954,34 @@ static void load_pipeline_cache_entries(ShaderType type, uint32_t configVersion,
 
   sqlite3_reset(g_pipelineCacheLoadStmt);
   sqlite3_clear_bindings(g_pipelineCacheLoadStmt);
+  return acceptedRows;
 }
 
-static void load_pipeline_cache() {
+static size_t load_pipeline_cache() {
   if (!prepare_pipeline_cache_db()) {
-    return;
+    return 0;
   }
   prune_old_pipeline_cache_versions();
   if (g_pipelineCacheBroken) {
-    return;
+    return 0;
   }
 
-  load_pipeline_cache_entries<clear::PipelineConfig>(ShaderType::Clear, clear::ClearPipelineConfigVersion,
-                                                     clear::create_pipeline);
+  size_t acceptedRows = 0;
+  acceptedRows += load_pipeline_cache_entries<clear::PipelineConfig>(
+      ShaderType::Clear, clear::ClearPipelineConfigVersion, clear::create_pipeline);
   if (g_pipelineCacheBroken) {
-    return;
+    return acceptedRows;
   }
-  load_pipeline_cache_entries<gx::PipelineConfig>(ShaderType::GX, gx::GXPipelineConfigVersion, gx::create_pipeline);
+  acceptedRows +=
+      load_pipeline_cache_entries<gx::PipelineConfig>(ShaderType::GX, gx::GXPipelineConfigVersion, gx::create_pipeline);
 #ifdef AURORA_ENABLE_RMLUI
   if (g_pipelineCacheBroken) {
-    return;
+    return acceptedRows;
   }
-  load_pipeline_cache_entries<rmlui::PipelineConfig>(ShaderType::Rml, rmlui::RmlPipelineConfigVersion,
-                                                     rmlui::create_pipeline);
+  acceptedRows += load_pipeline_cache_entries<rmlui::PipelineConfig>(ShaderType::Rml, rmlui::RmlPipelineConfigVersion,
+                                                                     rmlui::create_pipeline);
 #endif
+  return acceptedRows;
 }
 
 static void start_pipeline_cache_writer() {
@@ -1023,6 +1030,7 @@ void initialize_pipeline_cache() {
   g_pipelineCacheWriterStop = false;
   g_pipelineFrameActive = false;
   g_pipelineThreadEnd = false;
+  g_gpuCachePrunePending = false;
 
   if (webgpu::g_backendType == wgpu::BackendType::OpenGL || webgpu::g_backendType == wgpu::BackendType::OpenGLES ||
       webgpu::g_backendType == wgpu::BackendType::WebGPU) {
@@ -1032,7 +1040,11 @@ void initialize_pipeline_cache() {
     g_pipelineThread = std::thread(pipeline_worker);
   }
 
-  load_pipeline_cache();
+  const size_t loadedCount = load_pipeline_cache();
+  if (!g_pipelineCacheBroken && loadedCount > 0) {
+    g_gpuCachePrunePending = true;
+  }
+
   if (!g_pipelineCacheBroken) {
     start_pipeline_cache_writer();
   }
@@ -1051,6 +1063,7 @@ void shutdown_pipeline_cache() {
   g_pipelineCacheBroken = false;
   g_pipelineFrameActive = false;
   g_pipelinesPerFrame = 0;
+  g_gpuCachePrunePending = false;
   g_pipelines.clear();
   g_priorityPipelines.clear();
   g_backgroundPipelines.clear();

@@ -1,7 +1,10 @@
 #include <cstring>
+#include <cstdint>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <filesystem>
+#include <vector>
 
 #include "../fs_helper.hpp"
 #include "../internal.hpp"
@@ -23,11 +26,18 @@ static sqlite3_stmt* load_stmt;
 static sqlite3_stmt* store_stmt;
 static bool cache_broken;
 static std::mutex cache_mutex;
+static std::vector<XXH128_hash_t> cache_keys_used;
 #if defined(AURORA_CACHE_USE_ZSTD)
 static std::vector<uint8_t> compress_buffer;
 #endif
 
 constexpr int CACHE_SCHEMA = 2;
+// % of rows pruned to trigger a full VACUUM
+constexpr uint64_t VacuumPrunePercentThreshold = 25;
+
+static std::filesystem::path cache_path() {
+  return std::filesystem::path{reinterpret_cast<const char8_t*>(g_config.cachePath)} / "dawn_cache.db";
+}
 
 static void init_abort() {
   cache_broken = true;
@@ -92,7 +102,7 @@ INSERT INTO aurora_schema VALUES ({});)",
 static bool cache_init_core() {
   Log.debug("SQLite version {}", sqlite3_libversion());
 
-  std::string file = fs_path_to_string(std::filesystem::path{reinterpret_cast<const char8_t*>(g_config.cachePath)} / "dawn_cache.db");
+  std::string file = fs_path_to_string(cache_path());
   Log.debug("Using dawn cache at {}", file);
   auto ret = sqlite3_open(file.c_str(), &db);
   if (ret != SQLITE_OK) {
@@ -126,6 +136,67 @@ static bool cache_init_core() {
     return false;
   }
 
+  return true;
+}
+
+static std::optional<uint64_t> select_uint64(const char* sql) {
+  sqlite3_stmt* stmt = nullptr;
+  auto ret = sqlite3_prepare_v3(db, sql, -1, 0, &stmt, nullptr);
+  if (ret != SQLITE_OK) {
+    Log.error("Failed to prepare statement '{}': {}", sql, sqlite3_errmsg(db));
+    return std::nullopt;
+  }
+
+  std::optional<uint64_t> result;
+  ret = sqlite3_step(stmt);
+  if (ret == SQLITE_ROW) {
+    result = static_cast<uint64_t>(sqlite3_column_int64(stmt, 0));
+  } else if (ret != SQLITE_DONE) {
+    Log.error("Failed to execute statement '{}': {}", sql, sqlite3_errmsg(db));
+  }
+
+  sqlite3_finalize(stmt);
+  return result;
+}
+
+static bool fill_used_key_table(const std::vector<XXH128_hash_t>& usedKeys) {
+  auto ret = sqlite::exec(db,
+                          "CREATE TEMP TABLE IF NOT EXISTS cache_keys_used ("
+                          "key BLOB PRIMARY KEY NOT NULL"
+                          ");"
+                          "DELETE FROM cache_keys_used;");
+  if (ret != SQLITE_OK) {
+    Log.error("Failed to prepare dawn cache prune key table: {}", sqlite3_errmsg(db));
+    return false;
+  }
+
+  sqlite3_stmt* stmt = nullptr;
+  ret = sqlite3_prepare_v3(db, "INSERT OR IGNORE INTO cache_keys_used (key) VALUES (?)", -1, 0, &stmt, nullptr);
+  if (ret != SQLITE_OK) {
+    Log.error("Failed to prepare dawn cache prune key insert: {}", sqlite3_errmsg(db));
+    return false;
+  }
+
+  for (const auto& keyHash : usedKeys) {
+    ret = sqlite3_bind_blob(stmt, 1, &keyHash, sizeof(keyHash), SQLITE_TRANSIENT);
+    if (ret != SQLITE_OK) {
+      Log.error("Failed to bind dawn cache prune key: {}", sqlite3_errmsg(db));
+      sqlite3_finalize(stmt);
+      return false;
+    }
+
+    ret = sqlite3_step(stmt);
+    if (ret != SQLITE_DONE) {
+      Log.error("Failed to insert dawn cache prune key: {}", sqlite3_errmsg(db));
+      sqlite3_finalize(stmt);
+      return false;
+    }
+
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+  }
+
+  sqlite3_finalize(stmt);
   return true;
 }
 
@@ -167,6 +238,7 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
 
   const auto ret = sqlite3_step(load_stmt);
   size_t foundSize;
+  bool loadSucceeded = false;
   if (ret == SQLITE_ROW) {
     // Hit
     const auto foundPtr = sqlite3_column_blob(load_stmt, 0);
@@ -174,6 +246,7 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
     const bool compressed = sqlite3_column_int(load_stmt, 2) != 0;
 
     if (value && valueSize == foundSize) {
+      loadSucceeded = true;
       if (compressed) {
 #if defined(AURORA_CACHE_USE_ZSTD)
         const auto compSize = sqlite3_column_bytes(load_stmt, 0);
@@ -181,18 +254,22 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
         if (ZSTD_isError(zstdRet)) {
           Log.error("zstd decompression error: {}", ZSTD_getErrorName(zstdRet));
           foundSize = 0;
+          loadSucceeded = false;
         } else if (zstdRet != foundSize) {
           Log.error("zstd decompression size mismatch: expected {}, got {}", foundSize, zstdRet);
           foundSize = 0;
+          loadSucceeded = false;
         }
 #else
         Log.error("Cache entry is zstd-compressed but zstd support is disabled");
         foundSize = 0;
+        loadSucceeded = false;
 #endif
       } else {
         if (foundSize != 0 && !foundPtr) {
           Log.error("Cache entry is missing raw value data");
           foundSize = 0;
+          loadSucceeded = false;
         } else if (foundSize != 0) {
           std::memcpy(value, foundPtr, foundSize);
         }
@@ -207,6 +284,10 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
   }
 
   check(sqlite3_reset(load_stmt));
+
+  if (loadSucceeded) {
+    cache_keys_used.push_back(keyHash);
+  }
 
   return foundSize;
 }
@@ -270,16 +351,89 @@ void store_to_cache(void const* key, size_t keySize, void const* value, size_t v
   check(sqlite3_bind_null(store_stmt, 4));
 
   tx.commit();
+  cache_keys_used.push_back(keyHash);
+}
+
+void cache_prune() {
+  std::lock_guard lock(cache_mutex);
+  if (!cache_init()) {
+    return;
+  }
+  if (cache_keys_used.empty()) {
+    Log.warn("Skipping Dawn cache prune because no cache keys were used");
+    return;
+  }
+
+  uint64_t totalRows = 0;
+  sqlite3_int64 deletedRows = 0;
+  {
+    sqlite::Transaction tx(db, Log, true);
+    if (!tx) {
+      Log.error("Failed to open dawn cache prune transaction");
+      return;
+    }
+
+    if (!fill_used_key_table(cache_keys_used)) {
+      return;
+    }
+
+    const auto totalRowsResult = select_uint64("SELECT COUNT(*) FROM cache");
+    if (!totalRowsResult) {
+      return;
+    }
+    totalRows = *totalRowsResult;
+
+    const auto ret = sqlite::exec(db,
+                                  "DELETE FROM cache "
+                                  "WHERE NOT EXISTS ("
+                                  "  SELECT 1 FROM cache_keys_used WHERE cache_keys_used.key = cache.key"
+                                  ")");
+    if (ret != SQLITE_OK) {
+      Log.error("Failed to prune dawn cache rows: {}", sqlite3_errmsg(db));
+      return;
+    }
+    deletedRows = sqlite3_changes64(db);
+
+    tx.commit();
+  }
+
+  if (deletedRows == 0) {
+    Log.debug("Dawn cache prune completed; no stale entries found");
+    return;
+  }
+
+  Log.info("Pruned {} stale Dawn cache entries", deletedRows);
+
+  // VACUUM if we removed at least 25% of the rows
+  if (totalRows != 0 && static_cast<uint64_t>(deletedRows) * 100ull >= totalRows * VacuumPrunePercentThreshold) {
+    if (const auto ret = sqlite::exec(db, "VACUUM;"); ret != SQLITE_OK) {
+      Log.warn("Failed to vacuum dawn cache after pruning: {}", sqlite3_errmsg(db));
+      return;
+    }
+  }
+
+  if (const auto ret = sqlite::exec(db, "PRAGMA wal_checkpoint(TRUNCATE);"); ret != SQLITE_OK) {
+    Log.warn("Failed to checkpoint dawn cache WAL: {}", sqlite3_errmsg(db));
+  }
 }
 
 void cache_shutdown() {
 #if defined(AURORA_CACHE_USE_ZSTD)
   compress_buffer.clear();
 #endif
-  check(sqlite3_finalize(load_stmt));
-  check(sqlite3_finalize(store_stmt));
-  check(sqlite3_close(db));
-  db = nullptr;
+  cache_keys_used.clear();
+  if (load_stmt != nullptr) {
+    check(sqlite3_finalize(load_stmt));
+    load_stmt = nullptr;
+  }
+  if (store_stmt != nullptr) {
+    check(sqlite3_finalize(store_stmt));
+    store_stmt = nullptr;
+  }
+  if (db != nullptr) {
+    check(sqlite3_close(db));
+    db = nullptr;
+  }
 }
 
 } // namespace aurora::webgpu
