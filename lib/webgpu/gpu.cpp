@@ -59,6 +59,7 @@ static wgpu::SurfaceCapabilities g_surfaceCapabilities;
 bool g_bcTexturesSupported = false;
 bool g_astcTexturesSupported = false;
 bool g_textureComponentSwizzleSupported = false;
+static std::atomic_bool g_shuttingDown = false;
 
 namespace {
 
@@ -867,11 +868,17 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     });
     deviceDescriptor.SetUncapturedErrorCallback(
         [](const wgpu::Device& device, wgpu::ErrorType type, wgpu::StringView message) {
-          FATAL("WebGPU error {}: {}", underlying(type), message);
+          if (!g_shuttingDown) {
+            FATAL("WebGPU error {}: {}", underlying(type), message);
+          }
         });
-    deviceDescriptor.SetDeviceLostCallback(wgpu::CallbackMode::AllowSpontaneous,
-                                           [](const wgpu::Device& device, wgpu::DeviceLostReason reason,
-                                              wgpu::StringView message) { FATAL("Device lost: {}", message); });
+    deviceDescriptor.SetDeviceLostCallback(
+        wgpu::CallbackMode::AllowSpontaneous,
+        [](const wgpu::Device& device, wgpu::DeviceLostReason reason, wgpu::StringView message) {
+          if (!g_shuttingDown) {
+            FATAL("Device lost: {}", message);
+          }
+        });
     const auto future =
         g_adapter.RequestDevice(&deviceDescriptor, wgpu::CallbackMode::WaitAnyOnly,
                                 [](wgpu::RequestDeviceStatus status, wgpu::Device device, wgpu::StringView message) {
@@ -953,6 +960,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
 }
 
 void shutdown() {
+  g_shuttingDown = true;
   gfx::gpu_synchronize();
   g_CopyBindGroupLayout = {};
   g_CopyPipeline = {};
