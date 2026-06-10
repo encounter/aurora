@@ -61,6 +61,14 @@ extern "C" {
 
 #define GX_LOAD_AURORA_DESTROY_COPY_TEX 0x0034
 
+/**
+ * Draw primitives with the vertex count derived from a byte length, as written by
+ * GXBegin(prim, fmt, GX_AUTO). Must be followed by a u8 draw opcode (vtxfmt|prim),
+ * a u32 vertex data byte length, then that many bytes of vertex data. The byte length
+ * must be a whole multiple of the current vertex size or zero (no draw).
+ */
+#define GX_LOAD_AURORA_DRAW_SIZED 0x0040
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 

@@ -73,6 +73,10 @@ inline void write_f32(const float val) {
   write_data(&out, sizeof(out));
 }
 
+// Overwrites a u32 previously written to the FIFO buffer at the given offset.
+// Not valid during display list recording.
+void patch_u32(uint32_t offset, uint32_t val);
+
 // Display list recording
 void begin_display_list(uint8_t* buf, uint32_t size);
 uint32_t end_display_list();

@@ -1542,16 +1542,8 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
 // Draw command handler - parses vertices inline and caches results
 static ByteBuffer handle_draw_idx_buf;
 
-static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndian) {
+static void draw_prim(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, const u8* data, u32& pos, u32 size) {
   ZoneScoped;
-  u8 opcode = cmd & CP_OPCODE_MASK;
-  GXVtxFmt fmt = static_cast<GXVtxFmt>(cmd & CP_VAT_MASK);
-  GXPrimitive prim = static_cast<GXPrimitive>(opcode);
-
-  CHECK(pos + 2 <= size, "draw vtxCount read overrun");
-  u16 vtxCount = read_u16(data + pos, bigEndian);
-  pos += 2;
-
   u32 vtxSize;
   if (g_gxState.lastVtxFmt == fmt)
     LIKELY { vtxSize = g_gxState.lastVtxSize; }
@@ -1606,6 +1598,17 @@ static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndi
   }
 
   handle_draw_unmerged(prim, fmt, vtxCount, vertRange);
+}
+
+static void handle_draw(u8 cmd, const u8* data, u32& pos, u32 size, bool bigEndian) {
+  GXVtxFmt fmt = static_cast<GXVtxFmt>(cmd & CP_VAT_MASK);
+  GXPrimitive prim = static_cast<GXPrimitive>(cmd & CP_OPCODE_MASK);
+
+  CHECK(pos + 2 <= size, "draw vtxCount read overrun");
+  u16 vtxCount = read_u16(data + pos, bigEndian);
+  pos += 2;
+
+  draw_prim(prim, fmt, vtxCount, data, pos, size);
 }
 
 static ByteBuffer handle_draw_unmerged_idxBuf;
@@ -1810,6 +1813,27 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     CHECK(pos + 8 <= size, "GX_LOAD_AURORA_DESTROY_COPY_TEX read overrun");
     evict_copy_texture(reinterpret_cast<const void*>(read_u64(data + pos, bigEndian)));
     pos += 8;
+  } else if (subCmd == GX_LOAD_AURORA_DRAW_SIZED) {
+    CHECK(pos + 5 <= size, "GX_LOAD_AURORA_DRAW_SIZED read overrun");
+    u8 cmd = data[pos];
+    pos += 1;
+    u32 byteLen = read_u32(data + pos, bigEndian);
+    pos += 4;
+    GXVtxFmt fmt = static_cast<GXVtxFmt>(cmd & CP_VAT_MASK);
+    GXPrimitive prim = static_cast<GXPrimitive>(cmd & CP_OPCODE_MASK);
+    if (byteLen != 0) {
+      u32 vtxSize;
+      if (g_gxState.lastVtxFmt == fmt) {
+        vtxSize = g_gxState.lastVtxSize;
+      } else {
+        vtxSize = calculate_last_vtx_size(fmt);
+      }
+      ASSERT(vtxSize != 0 && byteLen % vtxSize == 0,
+             "GX_LOAD_AURORA_DRAW_SIZED: {} bytes is not a whole number of size-{} vertices", byteLen, vtxSize);
+      u32 vtxCount = byteLen / vtxSize;
+      ASSERT(vtxCount <= 0xFFFF, "GX_LOAD_AURORA_DRAW_SIZED: too many vertices ({})", vtxCount);
+      draw_prim(prim, fmt, static_cast<u16>(vtxCount), data, pos, size);
+    }
   } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_PUSH) {
     auto label = read_string(data, pos, size, bigEndian);
     gfx::push_debug_group(std::move(label));

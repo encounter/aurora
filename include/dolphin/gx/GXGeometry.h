@@ -14,6 +14,13 @@ void GXSetVtxAttrFmtv(GXVtxFmt vtxfmt, const GXVtxAttrFmtList* list);
 void GXSetVtxAttrFmt(GXVtxFmt vtxfmt, GXAttr attr, GXCompCnt cnt, GXCompType type, u8 frac);
 void GXSetNumTexGens(u8 nTexGens);
 void GXBegin(GXPrimitive type, GXVtxFmt vtxfmt, u16 nverts);
+#ifdef TARGET_PC
+/**
+ * Aurora extension: pass as GXBegin's vertex count to have it derived automatically from
+ * the number of bytes written before GXEnd. Not supported while recording a display list.
+ */
+#define GX_AUTO 0xFFFF
+#endif
 void GXSetTexCoordGen2(GXTexCoordID dst_coord, GXTexGenType func, GXTexGenSrc src_param, u32 mtx, GXBool normalize,
                        u32 postmtx);
 void GXSetLineWidth(u8 width, GXTexOffset texOffsets);

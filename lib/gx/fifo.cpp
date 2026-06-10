@@ -39,6 +39,13 @@ void write_data_grow(const void* data, uint32_t length) {
   detail::sBufferCapacity = newCap;
 }
 
+void patch_u32(const uint32_t offset, const uint32_t val) {
+  ASSERT(!detail::sInDisplayList && offset + sizeof(uint32_t) <= detail::sBufferSize,
+         "fifo::patch_u32: invalid patch offset {} (buffer size {})", offset, detail::sBufferSize);
+  const auto out = bswap(val);
+  std::memcpy(detail::sBufferData + offset, &out, sizeof(out));
+}
+
 void begin_display_list(uint8_t* buf, uint32_t size) {
   detail::sInDisplayList = true;
   detail::sDlBuffer = buf;
