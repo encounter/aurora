@@ -274,11 +274,11 @@ static void set_efb_targets(RenderPass& pass) {
       webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.texture : webgpu::g_frameBuffer.texture;
   pass.copySourceView =
       webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.view : webgpu::g_frameBuffer.view;
-  pass.copySourceDepthView = webgpu::g_depthBuffer.view;
+  pass.copySourceDepthView = webgpu::g_depthBuffer.sampleView;  
   pass.targetSize = webgpu::g_frameBuffer.size;
   pass.msaaSamples = webgpu::g_graphicsConfig.msaaSamples;
   pass.hasDepth = true;
-  pass.hasStencil = false;
+  pass.hasStencil = webgpu::g_graphicsConfig.depthStencilSupported;  
 }
 
 struct OffscreenCacheKey {
@@ -1288,10 +1288,13 @@ static void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& pa
                                                 : (passInfo.clearDepth ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load))
                                          : wgpu::LoadOp::Undefined,
         .depthStoreOp = passInfo.hasDepth ? passInfo.depthStoreOp : wgpu::StoreOp::Undefined,
-        .depthClearValue = passInfo.clearDepthValue,
-        .stencilLoadOp = passInfo.hasStencil ? passInfo.stencilLoadOp : wgpu::LoadOp::Undefined,
-        .stencilStoreOp = passInfo.hasStencil ? passInfo.stencilStoreOp : wgpu::StoreOp::Undefined,
-        .stencilClearValue = passInfo.stencilClearValue,
+        .depthClearValue = passInfo.clearDepthValue,        
+        .stencilLoadOp = webgpu::g_graphicsConfig.depthStencilSupported
+                             ? (passInfo.clearDepth ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load)
+                             : wgpu::LoadOp::Undefined,
+        .stencilStoreOp =
+            webgpu::g_graphicsConfig.depthStencilSupported ? wgpu::StoreOp::Store : wgpu::StoreOp::Undefined,
+        .stencilClearValue = 0,
     };
     depthStencilAttachmentPtr = &depthStencilAttachment;
   }

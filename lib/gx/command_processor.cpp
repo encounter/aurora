@@ -737,6 +737,8 @@ static void handle_bp(u32 value, bool bigEndian) {
     g_gxState.depthCompare = bp_get(value, 1, 0) != 0;
     g_gxState.depthFunc = static_cast<GXCompare>(bp_get(value, 3, 1));
     g_gxState.depthUpdate = bp_get(value, 1, 4) != 0;
+    // GX2 stencil: 
+    g_gxState.stencilEnable = false;
     g_gxState.stateDirty = true;
     break;
   }
@@ -1667,6 +1669,7 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
       .instanceCount = instanceCount,
       .bindGroups = bindGroups,
       .dstAlpha = g_gxState.dstAlpha,
+      .stencilRef = g_gxState.stencilRef,
   });
 }
 
@@ -1800,6 +1803,25 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     pos += 4;
     g_gxState.clamp = read_f32(data + pos, bigEndian);
     pos += 4;
+    g_gxState.stateDirty = true;
+  } else if (subCmd == GX2_SET_STENCIL_MASK) {
+    CHECK(pos + 6 <= size, "GX2_SET_STENCIL_MASK read overrun");
+    g_gxState.stencilReadMask = data[pos];
+    g_gxState.stencilWriteMask = data[pos + 1];
+    g_gxState.stencilRef = data[pos + 2];
+    pos += 6;
+    g_gxState.stateDirty = true;
+  } else if (subCmd == GX2_SET_DEPTH_STENCIL_CONTROL) {
+    CHECK(pos + 13 <= size, "GX2_SET_DEPTH_STENCIL_CONTROL read overrun");
+    g_gxState.depthCompare = data[pos] != 0;
+    g_gxState.depthUpdate = data[pos + 1] != 0;
+    g_gxState.depthFunc = static_cast<GXCompare>(data[pos + 2]);
+    g_gxState.stencilEnable = data[pos + 3] != 0;
+    g_gxState.stencilFunc = static_cast<GXCompare>(data[pos + 5]);
+    g_gxState.stencilOpZPass = data[pos + 6];
+    g_gxState.stencilOpZFail = data[pos + 7];
+    g_gxState.stencilOpFail = data[pos + 8];
+    pos += 13;
     g_gxState.stateDirty = true;
   } else if (subCmd == GX_LOAD_AURORA_DESTROY_TEXOBJ) {
     CHECK(pos + 4 <= size, "GX_LOAD_AURORA_DESTROY_TEXOBJ read overrun");

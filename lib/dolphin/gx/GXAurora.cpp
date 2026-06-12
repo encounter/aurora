@@ -8,6 +8,7 @@
 
 #include "../../gfx/common.hpp"
 #include "../../gx/fifo.hpp"
+#include "../../webgpu/gpu.hpp"
 
 static void GXWriteString(const char* label) {
   auto length = strlen(label);
@@ -73,6 +74,41 @@ void GX2SetPolygonOffset(f32 mFrontOffset, f32 mFrontScale, f32 mBackOffset, f32
   GX_WRITE_F32(mBackOffset);
   GX_WRITE_F32(mBackScale);
   GX_WRITE_F32(mClamp);
+}
+
+void GX2SetStencilMask(u8 pre_mask_front, u8 write_mask_front, u8 ref_front, u8 pre_mask_back,
+                       u8 write_mask_back, u8 ref_back) {
+  GX_WRITE_AURORA(GX2_SET_STENCIL_MASK);
+  GX_WRITE_U8(pre_mask_front);
+  GX_WRITE_U8(write_mask_front);
+  GX_WRITE_U8(ref_front);
+  GX_WRITE_U8(pre_mask_back);
+  GX_WRITE_U8(write_mask_back);
+  GX_WRITE_U8(ref_back);
+}
+
+void GX2SetDepthStencilControl(u8 depth_test, u8 depth_write, u8 depth_func, u8 stencil_test,
+                               u8 back_stencil_enable, u8 front_func, u8 front_zpass,
+                               u8 front_zfail, u8 front_fail, u8 back_func, u8 back_zpass,
+                               u8 back_zfail, u8 back_fail) {
+  GX_WRITE_AURORA(GX2_SET_DEPTH_STENCIL_CONTROL);
+  GX_WRITE_U8(depth_test);
+  GX_WRITE_U8(depth_write);
+  GX_WRITE_U8(depth_func);
+  GX_WRITE_U8(stencil_test);
+  GX_WRITE_U8(back_stencil_enable);
+  GX_WRITE_U8(front_func);
+  GX_WRITE_U8(front_zpass);
+  GX_WRITE_U8(front_zfail);
+  GX_WRITE_U8(front_fail);
+  GX_WRITE_U8(back_func);
+  GX_WRITE_U8(back_zpass);
+  GX_WRITE_U8(back_zfail);
+  GX_WRITE_U8(back_fail);
+}
+
+GXBool GX2SupportsStencil(void) {
+  return aurora::webgpu::g_graphicsConfig.depthStencilSupported ? GX_TRUE : GX_FALSE;
 }
 
 void GXCreateFrameBuffer(u32 width, u32 height) {

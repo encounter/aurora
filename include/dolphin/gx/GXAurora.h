@@ -2,6 +2,7 @@
 #define DOLPHIN_GXAURORA_H
 
 #include <dolphin/types.h>
+#include <dolphin/gx/GXEnum.h>
 
 #if __cplusplus
 extern "C" {
@@ -71,6 +72,22 @@ extern "C" {
 
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
+/**
+ * GX2SetStencilMask: compare masks, write masks and reference values for both faces.
+ * Must be followed by six u8 values: pre_mask_front, write_mask_front, ref_front,
+ * pre_mask_back, write_mask_back, ref_back. (Aurora uses the front-face values.)
+ */
+#define GX2_SET_STENCIL_MASK 0x1001
+
+/**
+ * GX2SetDepthStencilControl: depth test/write/func + stencil enable/funcs/ops, one register.
+ * Must be followed by thirteen u8 values: depth_test, depth_write, depth_func (GXCompare),
+ * stencil_test, back_stencil_enable, front_func (GXCompare), front_zpass, front_zfail, front_fail
+ * (GXStencilOp), back_func, back_zpass, back_zfail, back_fail. (Aurora uses the front face.)
+ * NOTE: like on GX2, any GXSetZMode (BP zmode) write also disables the stencil test.
+ */
+#define GX2_SET_DEPTH_STENCIL_CONTROL 0x1002
+
 
 /*
  * Debug marker stuff
@@ -122,6 +139,37 @@ void GXSetViewportRender(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz)
 void GXSetScissorRender(u32 left, u32 top, u32 wd, u32 ht);
 
 void GX2SetPolygonOffset(f32 mFrontOffset, f32 mFrontScale, f32 mBackOffset, f32 mBackScale, f32 mClamp);
+
+typedef enum GXStencilOp {
+  GX_ST_KEEP = 0,
+  GX_ST_ZERO = 1,
+  GX_ST_REPLACE = 2,
+  GX_ST_INCR = 3,
+  GX_ST_DECR = 4,
+  GX_ST_INVERT = 5,
+} GXStencilOp;
+
+/**
+ * GX2SetStencilMask analogue (compare/write masks + refs; front face used).
+ * u8 parameters so decompiled GX2 call sites transcribe verbatim.
+ */
+void GX2SetStencilMask(u8 pre_mask_front, u8 write_mask_front, u8 ref_front, u8 pre_mask_back,
+                       u8 write_mask_back, u8 ref_back);
+
+/**
+ * GX2SetDepthStencilControl analogue. depth_func/front_func take GXCompare values,
+ * the op parameters GXStencilOp values (both numerically identical to GX2 — decomp args are
+ * valid verbatim). A subsequent GXSetZMode write disables the stencil test, as on GX2.
+ */
+void GX2SetDepthStencilControl(u8 depth_test, u8 depth_write, u8 depth_func, u8 stencil_test,
+                               u8 back_stencil_enable, u8 front_func, u8 front_zpass,
+                               u8 front_zfail, u8 front_fail, u8 back_func, u8 back_zpass,
+                               u8 back_zfail, u8 back_fail);
+
+/**
+ * Returns whether the backend depth buffer carries a stencil aspect.
+ */
+GXBool GX2SupportsStencil(void);
 
 /**
  * Create an offscreen framebuffer and switch rendering to it.
