@@ -1538,6 +1538,8 @@ static u32 calculate_last_vtx_size(GXVtxFmt fmt) {
 }
 
 static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange);
+static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange, gfx::Range idxRange,
+                         u32 numIndices);
 
 // Draw command handler - parses vertices inline and caches results
 static ByteBuffer handle_draw_idx_buf;
@@ -1626,6 +1628,11 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
     realBuf.clear();
   }
 
+  push_gx_draw(prim, fmt, vtxCount, vertRange, idxRange, numIndices);
+}
+
+static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange, gfx::Range idxRange,
+                         u32 numIndices) {
   // Build pipeline, bind groups, and push draw command
   BindGroupRanges ranges{};
   for (int i = GX_VA_POS; i <= GX_VA_TEX7; ++i) {
@@ -1833,6 +1840,37 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
       u32 vtxCount = byteLen / vtxSize;
       ASSERT(vtxCount <= 0xFFFF, "GX_LOAD_AURORA_DRAW_SIZED: too many vertices ({})", vtxCount);
       draw_prim(prim, fmt, static_cast<u16>(vtxCount), data, pos, size);
+    }
+  } else if (subCmd == GX_LOAD_AURORA_DRAW_INDEXED) {
+    ZoneScopedN("DRAW_INDEXED");
+    CHECK(pos + 7 <= size, "GX_LOAD_AURORA_DRAW_INDEXED read overrun");
+    const u8 cmd = data[pos];
+    pos += 1;
+    const u16 vtxCount = read_u16(data + pos, bigEndian);
+    pos += 2;
+    const u32 indexCount = read_u32(data + pos, bigEndian);
+    pos += 4;
+    const GXVtxFmt fmt = static_cast<GXVtxFmt>(cmd & CP_VAT_MASK);
+    const GXPrimitive prim = static_cast<GXPrimitive>(cmd & CP_OPCODE_MASK);
+    ASSERT(prim == GX_TRIANGLES, "GX_LOAD_AURORA_DRAW_INDEXED: primitive must be GX_TRIANGLES, got {}",
+           static_cast<u32>(prim));
+    const u32 idxBytes = indexCount * static_cast<u32>(sizeof(u16));
+    CHECK(pos + idxBytes <= size, "GX_LOAD_AURORA_DRAW_INDEXED index data overrun");
+    // Index data is always host-endian; push it to the GPU buffer as-is
+    const gfx::Range idxRange = gfx::push_indices(data + pos, idxBytes, 4);
+    pos += idxBytes;
+    u32 vtxSize;
+    if (g_gxState.lastVtxFmt == fmt) {
+      vtxSize = g_gxState.lastVtxSize;
+    } else {
+      vtxSize = calculate_last_vtx_size(fmt);
+    }
+    const u32 totalVtxBytes = vtxCount * vtxSize;
+    CHECK(pos + totalVtxBytes <= size, "GX_LOAD_AURORA_DRAW_INDEXED vertex data overrun");
+    const gfx::Range vertRange = gfx::push_verts(data + pos, totalVtxBytes, 4);
+    pos += totalVtxBytes;
+    if (indexCount != 0) {
+      push_gx_draw(prim, fmt, vtxCount, vertRange, idxRange, indexCount);
     }
   } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_PUSH) {
     auto label = read_string(data, pos, size, bigEndian);

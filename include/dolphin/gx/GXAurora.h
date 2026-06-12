@@ -69,6 +69,16 @@ extern "C" {
  */
 #define GX_LOAD_AURORA_DRAW_SIZED 0x0040
 
+/**
+ * Draw pre-merged triangles with a prebuilt index buffer, as written by the display
+ * list optimizer (aurora::gx::dl::optimize). Must be followed by a u8 draw opcode
+ * (vtxfmt | GX_TRIANGLES), a u16 vertex count, a u32 index count, that many u16
+ * indices (0-based into this command's vertices), then vertex count * vertex size
+ * bytes of packed vertex data. The index data is always host-endian, regardless of
+ * stream endianness; everything else follows the stream.
+ */
+#define GX_LOAD_AURORA_DRAW_INDEXED 0x0041
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 
