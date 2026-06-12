@@ -5,6 +5,7 @@
 #include "gx/fifo.hpp"
 #include "imgui.hpp"
 #include "webgpu/gpu.hpp"
+#include "webgpu/gpu_prof.hpp"
 #include <webgpu/webgpu_cpp.h>
 #endif
 
@@ -283,6 +284,7 @@ void end_frame() noexcept {
             .label = "EFB copy render pass",
             .colorAttachmentCount = attachments.size(),
             .colorAttachments = attachments.data(),
+            .timestampWrites = webgpu::gpu_prof::pass_writes("Present blit"),
         };
         const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
         // Copy EFB -> XFB (swapchain)
@@ -305,6 +307,7 @@ void end_frame() noexcept {
             .label = "ImGui render pass",
             .colorAttachmentCount = attachments.size(),
             .colorAttachments = attachments.data(),
+            .timestampWrites = webgpu::gpu_prof::pass_writes("ImGui"),
         };
         const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
         pass.SetViewport(0.f, 0.f, static_cast<float>(webgpu::g_graphicsConfig.surfaceConfiguration.width),
@@ -315,12 +318,14 @@ void end_frame() noexcept {
     } else {
       Log.info("Skipping present; window not presentable");
     }
+    webgpu::gpu_prof::frame_end(encoder);
     const wgpu::CommandBufferDescriptor cmdBufDescriptor{.label = "Redraw command buffer"};
     const auto buffer = encoder.Finish(&cmdBufDescriptor);
     {
       ZoneScopedN("Queue Submit");
       g_queue.Submit(1, &buffer);
     }
+    webgpu::gpu_prof::after_submit();
     if (canPresent && g_surface) {
       ZoneScopedN("Present");
       auto presentStatus = g_surface.Present();

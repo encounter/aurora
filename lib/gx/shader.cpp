@@ -1928,7 +1928,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {{{6}{5}
                                         uniBufAttrs, texBindings, vtxOutAttrs, vtxInAttrs, vtxXfrAttrs, fragmentFn,
                                         fragmentFnPre, vtxXfrAttrsPre, uniformPre);
   if (EnableDebugPrints) {
-    Log.info("Generated shader: {}", shaderSource);
+    Log.info("Generated shader (hash {:x}): {}", hash, shaderSource);
   }
 
   return shaderSource;

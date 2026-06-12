@@ -54,6 +54,8 @@ extern bool g_bcTexturesSupported;
 extern bool g_astcTexturesSupported;
 extern bool g_textureComponentSwizzleSupported;
 
+const wgpu::AdapterInfo& adapter_info();
+
 bool initialize(AuroraBackend backend, bool allowCpu);
 void shutdown();
 void release_surface() noexcept;
