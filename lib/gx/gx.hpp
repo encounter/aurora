@@ -368,6 +368,14 @@ struct GXState {
   bool depthUpdate = true;
   bool colorUpdate = true;
   bool alphaUpdate = true;
+  bool stencilEnable = false;
+  GXCompare stencilFunc = GX_ALWAYS;
+  u8 stencilRef = 0;
+  u8 stencilReadMask = 0xff;
+  u8 stencilWriteMask = 0xff;
+  u8 stencilOpFail = 0;
+  u8 stencilOpZFail = 0;
+  u8 stencilOpZPass = 0;
   u8 numChans = 0;
   u8 numIndStages = 0;
   u8 numTevStages = 0;

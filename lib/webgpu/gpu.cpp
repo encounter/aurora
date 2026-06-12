@@ -60,6 +60,7 @@ bool g_bcTexturesSupported = false;
 bool g_astcTexturesSupported = false;
 bool g_textureComponentSwizzleSupported = false;
 static std::atomic_bool g_shuttingDown = false;
+bool g_depthStencilSupported;
 
 namespace {
 
@@ -353,6 +354,13 @@ static TextureWithSampler create_depth_texture(uint32_t width, uint32_t height) 
   };
   auto view = texture.CreateView(&viewDescriptor);
 
+  const wgpu::TextureViewDescriptor sampleViewDescriptor{
+      .label = "Depth sample view",
+      .dimension = wgpu::TextureViewDimension::e2D,
+      .aspect = wgpu::TextureAspect::DepthOnly,
+  };
+  auto sampleView = texture.CreateView(&sampleViewDescriptor);
+
   const wgpu::SamplerDescriptor samplerDescriptor{
       .label = "Depth sampler",
       .addressModeU = wgpu::AddressMode::ClampToEdge,
@@ -373,6 +381,7 @@ static TextureWithSampler create_depth_texture(uint32_t width, uint32_t height) 
       .size = size,
       .format = format,
       .sampler = std::move(sampler),
+      .sampleView = std::move(sampleView),
   };
 }
 
@@ -809,6 +818,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     g_bcTexturesSupported = false;
     g_astcTexturesSupported = false;
     g_textureComponentSwizzleSupported = false;
+    g_depthStencilSupported = true;
     wgpu::SupportedFeatures supportedFeatures;
     g_adapter.GetFeatures(&supportedFeatures);
     for (size_t i = 0; i < supportedFeatures.featureCount; ++i) {
@@ -946,9 +956,10 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
               .height = size.native_fb_height,
               .presentMode = presentMode,
           },
-      .depthFormat = wgpu::TextureFormat::Depth32Float,
+      .depthFormat = wgpu::TextureFormat::Depth24PlusStencil8,
       .msaaSamples = g_config.msaa,
       .textureAnisotropy = g_config.maxTextureAnisotropy,
+      .depthStencilSupported = g_depthStencilSupported,
   };
   create_copy_pipeline();
   create_resample_pipeline();
