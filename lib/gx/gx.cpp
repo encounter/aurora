@@ -630,15 +630,39 @@ static inline wgpu::PrimitiveState to_primitive_state(GXCullMode gx_cullMode) {
   };
 }
 
+static wgpu::StencilOperation to_stencil_op(uint8_t op) noexcept {
+  switch (op) {
+  case 1: return wgpu::StencilOperation::Zero;
+  case 2: return wgpu::StencilOperation::Replace;
+  case 3: return wgpu::StencilOperation::IncrementClamp;
+  case 4: return wgpu::StencilOperation::DecrementClamp;
+  case 5: return wgpu::StencilOperation::Invert;
+  default: return wgpu::StencilOperation::Keep;  
+  }
+}
+
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
                                     wgpu::ShaderModule shader, const char* label) noexcept {
   ZoneScoped;
   const float depthBias = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetBits);
   const float depthBiasSlopeScale = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetScaleBits);
+  const bool stencilOn = g_graphicsConfig.depthStencilSupported && config.stencilEnable != 0;
+  const wgpu::StencilFaceState stencilFace =
+      stencilOn ? wgpu::StencilFaceState{
+                      .compare = to_compare_function(static_cast<GXCompare>(config.stencilFunc)),
+                      .failOp = to_stencil_op(config.stencilOpFail),
+                      .depthFailOp = to_stencil_op(config.stencilOpZFail),
+                      .passOp = to_stencil_op(config.stencilOpZPass),
+                  }
+                : wgpu::StencilFaceState{};
   const wgpu::DepthStencilState depthStencil{
       .format = g_graphicsConfig.depthFormat,
       .depthWriteEnabled = config.depthCompare && config.depthUpdate,
       .depthCompare = config.depthCompare ? to_compare_function(config.depthFunc) : wgpu::CompareFunction::Always,
+      .stencilFront = stencilFace,
+      .stencilBack = stencilFace,
+      .stencilReadMask = stencilOn ? static_cast<uint32_t>(config.stencilReadMask) : 0xFFFFFFFFu,
+      .stencilWriteMask = stencilOn ? static_cast<uint32_t>(config.stencilWriteMask) : 0xFFFFFFFFu,
       .depthBias = round_away_from_zero<int32_t>(depthBias),
       .depthBiasSlopeScale = depthBiasSlopeScale,
       .depthBiasClamp = std::bit_cast<float>(config.polygonOffsetClampBits),
@@ -778,6 +802,14 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
       .depthUpdate = g_gxState.depthUpdate,
       .alphaUpdate = g_gxState.alphaUpdate,
       .colorUpdate = g_gxState.colorUpdate,
+      .stencilEnable = static_cast<uint8_t>(g_gxState.stencilEnable ? 1 : 0),
+      .stencilFunc = static_cast<uint8_t>(g_gxState.stencilFunc),
+      .stencilReadMask = g_gxState.stencilReadMask,
+      .stencilWriteMask = g_gxState.stencilWriteMask,
+      .stencilOpFail = g_gxState.stencilOpFail,
+      .stencilOpZFail = g_gxState.stencilOpZFail,
+      .stencilOpZPass = g_gxState.stencilOpZPass,
+      .stencilPad = 0,
   };
 }
 

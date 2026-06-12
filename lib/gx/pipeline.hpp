@@ -14,9 +14,10 @@ struct DrawData {
   uint32_t instanceCount;
   GXBindGroups bindGroups;
   uint32_t dstAlpha;
+  uint8_t stencilRef = 0; 
 };
 
-constexpr uint32_t GXPipelineConfigVersion = 13;
+constexpr uint32_t GXPipelineConfigVersion = 14;
 struct PipelineConfig {
   uint32_t version = GXPipelineConfigVersion;
   uint32_t msaaSamples = 1;
@@ -31,6 +32,14 @@ struct PipelineConfig {
   uint32_t polygonOffsetScaleBits;
   uint32_t polygonOffsetClampBits;
   bool depthCompare, depthUpdate, alphaUpdate, colorUpdate;
+  uint8_t stencilEnable;
+  uint8_t stencilFunc;     
+  uint8_t stencilReadMask;
+  uint8_t stencilWriteMask;
+  uint8_t stencilOpFail;     
+  uint8_t stencilOpZFail;
+  uint8_t stencilOpZPass;
+  uint8_t stencilPad;        
 };
 static_assert(std::has_unique_object_representations_v<PipelineConfig>);
 
