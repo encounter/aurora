@@ -232,8 +232,17 @@ void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo,
                                          : wgpu::LoadOp::Undefined,
         .depthStoreOp = passInfo.hasDepth ? passInfo.depthStoreOp : wgpu::StoreOp::Undefined,
         .depthClearValue = passInfo.clearDepthValue,
-        .stencilLoadOp = passInfo.hasStencil ? passInfo.stencilLoadOp : wgpu::LoadOp::Undefined,
-        .stencilStoreOp = passInfo.hasStencil ? passInfo.stencilStoreOp : wgpu::StoreOp::Undefined,
+        .stencilLoadOp =
+            passInfo.hasStencil
+                ? (passInfo.stencilLoadOp != wgpu::LoadOp::Undefined
+                       ? passInfo.stencilLoadOp
+                       : (passInfo.clearDepth ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load))
+                : wgpu::LoadOp::Undefined,
+        .stencilStoreOp =
+            passInfo.hasStencil
+                ? (passInfo.stencilStoreOp != wgpu::StoreOp::Undefined ? passInfo.stencilStoreOp
+                                                                       : wgpu::StoreOp::Store)
+                : wgpu::StoreOp::Undefined,
         .stencilClearValue = passInfo.stencilClearValue,
     };
     depthStencilAttachmentPtr = &depthStencilAttachment;
