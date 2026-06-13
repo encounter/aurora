@@ -100,8 +100,8 @@ if (NOT TARGET fmt::fmt)
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE
       EXCLUDE_FROM_ALL
     )
-    FetchContent_MakeAvailable(fmt::fmt)
-    if (NOT TARGET fmt::fmt)
+    FetchContent_MakeAvailable(fmt)
+    if (NOT TARGET fmt)
       message(FATAL_ERROR "Failed to make fmt available")
     endif ()
   else ()
