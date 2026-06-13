@@ -22,14 +22,14 @@ static void GXWriteString(const char* label) {
 }
 
 void GXPushDebugGroup(const char* label) {
-  GX_WRITE_AURORA(GX_LOAD_AURORA_DEBUG_GROUP_PUSH);
+  GX_WRITE_AURORA(GX_AURORA_DEBUG_GROUP_PUSH);
   GXWriteString(label);
 }
 
-void GXPopDebugGroup() { GX_WRITE_AURORA(GX_LOAD_AURORA_DEBUG_GROUP_POP); }
+void GXPopDebugGroup() { GX_WRITE_AURORA(GX_AURORA_DEBUG_GROUP_POP); }
 
 void GXInsertDebugMarker(const char* label) {
-  GX_WRITE_AURORA(GX_LOAD_AURORA_DEBUG_MARKER_INSERT);
+  GX_WRITE_AURORA(GX_AURORA_DEBUG_MARKER_INSERT);
   GXWriteString(label);
 }
 
@@ -49,7 +49,7 @@ void AuroraGetRenderSize(u32* width, u32* height) {
 }
 
 void GXSetViewportRender(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz) {
-  GX_WRITE_AURORA(GX_LOAD_AURORA_VIEWPORT_RENDER);
+  GX_WRITE_AURORA(GX_AURORA_LOAD_VIEWPORT_RENDER);
   GX_WRITE_F32(left);
   GX_WRITE_F32(top);
   GX_WRITE_F32(wd);
@@ -59,7 +59,7 @@ void GXSetViewportRender(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz)
 }
 
 void GXSetScissorRender(u32 left, u32 top, u32 wd, u32 ht) {
-  GX_WRITE_AURORA(GX_LOAD_AURORA_SCISSOR_RENDER);
+  GX_WRITE_AURORA(GX_AURORA_LOAD_SCISSOR_RENDER);
   GX_WRITE_U32(left);
   GX_WRITE_U32(top);
   GX_WRITE_U32(wd);

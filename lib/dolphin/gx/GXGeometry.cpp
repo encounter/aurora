@@ -225,7 +225,7 @@ void GXSetArray(GXAttr attr, const void* data, u32 size, u8 stride, bool le) {
   assert((cpIdx & ~0xF) == 0);
 
   // Write array base
-  GX_WRITE_AURORA(GX_LOAD_AURORA_ARRAYBASE | cpIdx);
+  GX_WRITE_AURORA(GX_AURORA_LOAD_ARRAYBASE | cpIdx);
   GX_WRITE_U64(reinterpret_cast<u64>(data));
   GX_WRITE_U32(size);
   GX_WRITE_U8(le ? 1 : 0);

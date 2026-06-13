@@ -29,7 +29,7 @@ extern "C" {
  * Custom Aurora commands that are followed by another 2-byte identifier.
  * See GXAurora.h for further documentation on these.
  */
-#define GX_LOAD_AURORA              0x50
+#define GX_AURORA                   0x50
 
 #define GX_OPCODE_MASK              0xF8
 #define GX_VAT_MASK                 0x07

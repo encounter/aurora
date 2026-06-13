@@ -135,7 +135,7 @@ if (_aurora_dawn_provider STREQUAL "vendor")
     include(FetchContent)
     FetchContent_Declare(dawn
       URL "https://github.com/google/dawn/archive/${AURORA_DAWN_REF}.tar.gz"
-      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+      DOWNLOAD_EXTRACT_TIMESTAMP FALSE
       EXCLUDE_FROM_ALL
     )
     FetchContent_MakeAvailable(dawn)
@@ -190,7 +190,7 @@ elseif (_aurora_dawn_provider STREQUAL "package")
   include(FetchContent)
   FetchContent_Declare(dawn_prebuilt
     URL "${AURORA_DAWN_PACKAGE_URL}"
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
   )
   FetchContent_MakeAvailable(dawn_prebuilt)
 

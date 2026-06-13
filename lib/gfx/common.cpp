@@ -4,6 +4,7 @@
 #include "depth_peek.hpp"
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"
+#include "../webgpu/gpu_prof.hpp"
 #include "../gx/pipeline.hpp"
 #ifdef AURORA_ENABLE_RMLUI
 #include "../rmlui/pipeline.hpp"
@@ -41,6 +42,15 @@ using webgpu::g_queue;
 std::vector<std::string> g_debugGroupStack;
 std::vector<std::string> g_debugMarkers;
 #endif
+
+static std::string pass_label(std::string_view kind) {
+#ifdef AURORA_GFX_DEBUG_GROUPS
+  if (!g_debugGroupStack.empty()) {
+    return fmt::format("{} ({})", kind, g_debugGroupStack.back());
+  }
+#endif
+  return std::string{kind};
+}
 
 constexpr uint64_t StagingBufferSize = UniformBufferSize + VertexBufferSize + IndexBufferSize + StorageBufferSize +
                                        (UseTextureBuffer ? TextureUploadSize : 0);
@@ -582,6 +592,7 @@ void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool cl
   // Populate new render pass from previous
   const auto msaaSamples = prevPass.msaaSamples;
   RenderPass newPass{
+      .label = pass_label("EFB"),
       .colorView = prevPass.colorView,
       .resolveView = prevPass.resolveView,
       .depthStencilView = prevPass.depthStencilView,
@@ -719,6 +730,7 @@ void begin_offscreen(uint32_t width, uint32_t height) {
 
   // Start a new pass with offscreen targets
   RenderPass newPass{
+      .label = pass_label("Offscreen"),
       .colorView = g_offscreenColor.view,
       .depthStencilView = g_offscreenDepth.view,
       .copySourceTexture = g_offscreenColor.texture,
@@ -761,6 +773,7 @@ void end_offscreen() {
     g_suspendedEfbPass.reset();
   } else {
     auto& pass = current_render_passes().emplace_back();
+    pass.label = pass_label("EFB");
     pass.clearColor = false;
     pass.clearDepth = false;
   }
@@ -1070,6 +1083,7 @@ bool begin_frame() {
 
   current_render_passes().emplace_back();
   auto& pass = current_render_passes()[0];
+  pass.label = pass_label("EFB");
   set_efb_targets(pass);
   pass.clearColorValue = gx::g_gxState.clearColor;
   pass.clearDepthValue = gx::clear_depth_value();
@@ -1085,6 +1099,7 @@ bool begin_frame() {
         .label = "Redraw encoder",
     };
     g_framePackets[frameSlot].encoder = g_device.CreateCommandEncoder(&encoderDescriptor);
+    webgpu::gpu_prof::frame_begin(g_framePackets[frameSlot].encoder);
   });
   return true;
 }
@@ -1204,7 +1219,23 @@ static void copy_staging_buffer_range(wgpu::CommandEncoder& cmd, const FramePack
   copied = highWater;
 }
 
+static bool needs_staging_copy(const FramePacket& frame, const FrameOp& op) {
+  const auto& highWater = op.highWater;
+  if (highWater.verts > frame.copied.verts || highWater.uniforms > frame.copied.uniforms ||
+      highWater.indices > frame.copied.indices || highWater.storage > frame.copied.storage) {
+    return true;
+  }
+  if constexpr (UseTextureBuffer) {
+    return op.textureUploads.size() > frame.copied.textureUploadCount;
+  }
+  return false;
+}
+
 static void copy_staging_to_high_water(wgpu::CommandEncoder& cmd, FramePacket& frame, const FrameOp& op) {
+  if (!needs_staging_copy(frame, op)) {
+    return;
+  }
+  const webgpu::gpu_prof::Zone zone{cmd, "Staging copies"};
   const auto& highWater = op.highWater;
   copy_staging_buffer_range(cmd, frame, frame.copied.verts, highWater.verts, VertexStagingOffset, g_vertexBuffer);
   copy_staging_buffer_range(cmd, frame, frame.copied.uniforms, highWater.uniforms, UniformStagingOffset,
@@ -1241,6 +1272,7 @@ static void encode_op(wgpu::CommandEncoder& cmd, FramePacket& frame, const Frame
     break;
   case FrameOpType::TextureCopy:
     if (op.textureCopy != nullptr) {
+      const webgpu::gpu_prof::Zone zone{cmd, "Texture copy"};
       cmd.CopyTextureToTexture(&op.textureCopy->src, &op.textureCopy->dst, &op.textureCopy->size);
     }
     break;
@@ -1295,12 +1327,14 @@ static void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& pa
     };
     depthStencilAttachmentPtr = &depthStencilAttachment;
   }
-  const auto label = fmt::format("Render pass {}", passIndex);
+  const auto label =
+      passInfo.label.empty() ? fmt::format("Render pass {}", passIndex) : fmt::format("{} {}", passInfo.label, passIndex);
   const wgpu::RenderPassDescriptor renderPassDescriptor{
-      .label = passInfo.label.empty() ? label.c_str() : passInfo.label.c_str(),
+      .label = label.c_str(),
       .colorAttachmentCount = attachments.size(),
       .colorAttachments = attachments.data(),
       .depthStencilAttachment = depthStencilAttachmentPtr,
+      .timestampWrites = webgpu::gpu_prof::pass_writes(label),
   };
 
   auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
@@ -1332,6 +1366,7 @@ static void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& pa
     } else if (needsScaling) {
       tex_copy_conv::blit(cmd, convReq);
     } else {
+      const webgpu::gpu_prof::Zone zone{cmd, "EFB copy"};
       const wgpu::TexelCopyTextureInfo src{
           .texture = passInfo.copySourceTexture,
           .origin =

@@ -17,9 +17,11 @@
 #include "../gfx/render_worker.hpp"
 #include "../internal.hpp"
 #include "../window.hpp"
+#include "gpu_prof.hpp"
 
 #ifdef WEBGPU_DAWN
 #include "../dawn/BackendBinding.hpp"
+#include "../dawn/TracyPlatform.hpp"
 #include <dawn/native/DawnNative.h>
 #endif
 
@@ -54,7 +56,7 @@ static TextureWithSampler g_resampledFrameBuffer;
 
 static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
-static wgpu::AdapterInfo g_adapterInfo;
+wgpu::AdapterInfo g_adapterInfo;
 static wgpu::SurfaceCapabilities g_surfaceCapabilities;
 bool g_bcTexturesSupported = false;
 bool g_astcTexturesSupported = false;
@@ -632,6 +634,7 @@ const TextureWithSampler& resample_present_source(const wgpu::CommandEncoder& en
       .label = "Present resample render pass",
       .colorAttachmentCount = attachments.size(),
       .colorAttachments = attachments.data(),
+      .timestampWrites = gpu_prof::pass_writes("Present resample"),
   };
   const auto pass = encoder.BeginRenderPass(&renderPassDescriptor);
   pass.SetPipeline(g_ResamplePipeline);
@@ -701,6 +704,9 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
 #ifdef WEBGPU_DAWN
     dawn::native::DawnInstanceDescriptor dawnInstanceDescriptor;
     dawnInstanceDescriptor.backendValidationLevel = dawn::native::BackendValidationLevel::Disabled;
+#ifdef TRACY_ENABLE
+    dawnInstanceDescriptor.platform = tracy_dawn_platform();
+#endif
     instanceDescriptor.nextInChain = &dawnInstanceDescriptor;
 #endif
     g_instance = wgpu::CreateInstance(&instanceDescriptor);
@@ -824,6 +830,11 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         }
         requiredFeatures.push_back(feature);
       }
+#ifdef TRACY_ENABLE
+      if (feature == wgpu::FeatureName::TimestampQuery) {
+        requiredFeatures.push_back(feature);
+      }
+#endif
     }
 #ifdef WEBGPU_DAWN
     wgpu::DawnCacheDeviceDescriptor cacheDescriptor({
@@ -834,28 +845,32 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     });
 
     constexpr std::array enableToggles{
-    /* clang-format off */
 #if _WIN32
-      "use_dxc",
+        "use_dxc",
 #ifndef NDEBUG
-      "emit_hlsl_debug_symbols",
+        "emit_hlsl_debug_symbols",
 #endif
 #endif
 #ifdef NDEBUG
-      "skip_validation",
-      "disable_robustness",
+        "skip_validation",
+        "disable_robustness",
 #endif
 #ifndef ANDROID
-      "use_user_defined_labels_in_backend",
+        "use_user_defined_labels_in_backend",
 #endif
-      "disable_symbol_renaming",
-      "enable_immediate_error_handling",
-        /* clang-format on */
+        "allow_unsafe_apis",
+        "disable_symbol_renaming",
+        "enable_immediate_error_handling",
     };
-    wgpu::DawnTogglesDescriptor togglesDescriptor({
+    constexpr std::array disableToggles{
+        "timestamp_quantization",
+    };
+    wgpu::DawnTogglesDescriptor togglesDescriptor(wgpu::DawnTogglesDescriptor::Init{
         .nextInChain = &cacheDescriptor,
         .enabledToggleCount = enableToggles.size(),
         .enabledToggles = enableToggles.data(),
+        .disabledToggleCount = disableToggles.size(),
+        .disabledToggles = disableToggles.data(),
     });
 #endif
     wgpu::DeviceDescriptor deviceDescriptor({
@@ -952,6 +967,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
   };
   create_copy_pipeline();
   create_resample_pipeline();
+  gpu_prof::initialize();
   {
     window::SurfaceLock surfaceLock;
     resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height, true);
@@ -962,6 +978,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
 void shutdown() {
   g_shuttingDown = true;
   gfx::gpu_synchronize();
+  gpu_prof::shutdown();
   g_CopyBindGroupLayout = {};
   g_CopyPipeline = {};
   g_CopyBindGroup = {};

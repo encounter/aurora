@@ -4,6 +4,7 @@
 #include "../gx/gx.hpp"
 #include "../gfx/render_worker.hpp"
 #include "../webgpu/gpu.hpp"
+#include "../webgpu/gpu_prof.hpp"
 
 #include <algorithm>
 #include <array>
@@ -399,6 +400,7 @@ void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureV
 
   const wgpu::ComputePassDescriptor passDescriptor{
       .label = "Depth Peek Compute Pass",
+      .timestampWrites = webgpu::gpu_prof::pass_writes("Depth peek"),
   };
   const auto pass = cmd.BeginComputePass(&passDescriptor);
   pass.SetPipeline(g_pipeline);
