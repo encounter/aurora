@@ -2,6 +2,7 @@
 
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"
+#include "../webgpu/gpu_prof.hpp"
 #include "texture.hpp"
 
 #include <vector>
@@ -249,6 +250,7 @@ void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
       .label = "TexPaletteConv Pass",
       .colorAttachmentCount = colorAttachments.size(),
       .colorAttachments = colorAttachments.data(),
+      .timestampWrites = webgpu::gpu_prof::pass_writes("Palette convert"),
   };
   const auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
   pass.SetPipeline(pipeline);
