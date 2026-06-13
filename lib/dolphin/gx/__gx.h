@@ -72,7 +72,7 @@
 
 #define GX_WRITE_AURORA(cmd)     \
   do {                           \
-    GX_WRITE_U8(GX_LOAD_AURORA); \
+    GX_WRITE_U8(GX_AURORA);      \
     GX_WRITE_U16(cmd);           \
   } while (0)
 

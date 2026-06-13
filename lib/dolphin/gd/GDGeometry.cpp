@@ -255,7 +255,7 @@ void GDSetArraySized(GXAttr attr, void* base_ptr, u32 size, u8 stride, bool le) 
 
   assert((cpAttr & ~0xF) == 0);
 
-  GDWriteAuroraCmd(cpAttr + GX_LOAD_AURORA_ARRAYBASE);
+  GDWriteAuroraCmd(cpAttr + GX_AURORA_LOAD_ARRAYBASE);
   GDWrite_u64((u64)base_ptr);
   GDWrite_u32(size);
   GDWrite_u8(le ? 1 : 0);

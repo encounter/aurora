@@ -142,7 +142,7 @@ inline static void GDWriteBPCmd(u32 regval) {
 }
 
 inline static void GDWriteAuroraCmd(u16 subCommand) {
-  GDWrite_u8(GX_LOAD_AURORA);
+  GDWrite_u8(GX_AURORA);
   GDWrite_u16(subCommand);
 }
 

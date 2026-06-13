@@ -443,7 +443,7 @@ void process(const u8* data, u32 size, bool bigEndian) {
       break;
     }
 
-    case GX_LOAD_AURORA: {
+    case GX_AURORA: {
       handle_aurora(data, pos, size, bigEndian);
       break;
     }
@@ -1241,7 +1241,7 @@ static void handle_cp(u8 addr, u32 value, bool bigEndian) {
     }
     // Array base addresses (0xA0-0xAF)
     else if (addr >= 0xA0 && addr <= 0xAF) {
-      Log.error("CP_REG_ARRAYBASE_ID is not supported on Aurora. Use GX_LOAD_AURORA_ARRAYBASE instead.");
+      Log.error("CP_REG_ARRAYBASE_ID is not supported on Aurora. Use GX_AURORA_LOAD_ARRAYBASE instead.");
     }
     // Array strides (0xB0-0xBF)
     else if (addr >= 0xB0 && addr <= 0xBF) {
@@ -1538,6 +1538,8 @@ static u32 calculate_last_vtx_size(GXVtxFmt fmt) {
 }
 
 static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange);
+static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange, gfx::Range idxRange,
+                         u32 numIndices);
 
 // Draw command handler - parses vertices inline and caches results
 static ByteBuffer handle_draw_idx_buf;
@@ -1626,6 +1628,11 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
     realBuf.clear();
   }
 
+  push_gx_draw(prim, fmt, vtxCount, vertRange, idxRange, numIndices);
+}
+
+static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Range vertRange, gfx::Range idxRange,
+                         u32 numIndices) {
   // Build pipeline, bind groups, and push draw command
   BindGroupRanges ranges{};
   for (int i = GX_VA_POS; i <= GX_VA_TEX7; ++i) {
@@ -1688,8 +1695,8 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
   pos += 2;
 
   // Setting of vertex array bases.
-  if (subCmd == GX_LOAD_AURORA_VIEWPORT_RENDER) {
-    CHECK(pos + 24 <= size, "GX_LOAD_AURORA_VIEWPORT_RENDER read overrun");
+  if (subCmd == GX_AURORA_LOAD_VIEWPORT_RENDER) {
+    CHECK(pos + 24 <= size, "GX_AURORA_LOAD_VIEWPORT_RENDER read overrun");
     const f32 left = read_f32(data + pos, bigEndian);
     pos += 4;
     const f32 top = read_f32(data + pos, bigEndian);
@@ -1710,8 +1717,8 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
         .znear = nearZ,
         .zfar = farZ,
     });
-  } else if (subCmd == GX_LOAD_AURORA_SCISSOR_RENDER) {
-    CHECK(pos + 16 <= size, "GX_LOAD_AURORA_SCISSOR_RENDER read overrun");
+  } else if (subCmd == GX_AURORA_LOAD_SCISSOR_RENDER) {
+    CHECK(pos + 16 <= size, "GX_AURORA_LOAD_SCISSOR_RENDER read overrun");
     const int32_t left = static_cast<int32_t>(read_u32(data + pos, bigEndian));
     pos += 4;
     const int32_t top = static_cast<int32_t>(read_u32(data + pos, bigEndian));
@@ -1721,9 +1728,9 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     const int32_t height = static_cast<int32_t>(read_u32(data + pos, bigEndian));
     pos += 4;
     set_render_scissor({left, top, width, height});
-  } else if (subCmd >= GX_LOAD_AURORA_ARRAYBASE && subCmd <= (GX_LOAD_AURORA_ARRAYBASE | 0x0f)) {
-    CHECK(pos + 13 <= size, "GX_LOAD_AURORA_ARRAYBASE read overrun");
-    u32 attrIdx = subCmd - GX_LOAD_AURORA_ARRAYBASE + GX_VA_POS;
+  } else if (subCmd >= GX_AURORA_LOAD_ARRAYBASE && subCmd <= (GX_AURORA_LOAD_ARRAYBASE | 0x0f)) {
+    CHECK(pos + 13 <= size, "GX_AURORA_LOAD_ARRAYBASE read overrun");
+    u32 attrIdx = subCmd - GX_AURORA_LOAD_ARRAYBASE + GX_VA_POS;
 
     u64 arrayAddr = read_u64(data + pos, bigEndian);
     pos += 8;
@@ -1742,8 +1749,8 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
       array.cachedRange = {};
       g_gxState.stateDirty = true;
     }
-  } else if (subCmd == GX_LOAD_AURORA_TEXOBJ) {
-    CHECK(pos + 34 <= size, "GX_LOAD_AURORA_TEXOBJ read overrun");
+  } else if (subCmd == GX_AURORA_LOAD_TEXOBJ) {
+    CHECK(pos + 34 <= size, "GX_AURORA_LOAD_TEXOBJ read overrun");
     const auto texMapId = data[pos];
     pos += 1;
     CHECK(texMapId < MaxTextures, "invalid texture map id {}", texMapId);
@@ -1770,8 +1777,8 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     pos += 4;
     slot.set_no_cache(false); // Reset no-cache flag
     g_gxState.stateDirty = true;
-  } else if (subCmd == GX_LOAD_AURORA_TLUT) {
-    CHECK(pos + 23 <= size, "GX_LOAD_AURORA_TLUT read overrun");
+  } else if (subCmd == GX_AURORA_LOAD_TLUT) {
+    CHECK(pos + 23 <= size, "GX_AURORA_LOAD_TLUT read overrun");
     const auto idx = data[pos];
     pos += 1;
     CHECK(idx < MaxTluts, "invalid tlut slot {}", idx);
@@ -1801,20 +1808,20 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     g_gxState.clamp = read_f32(data + pos, bigEndian);
     pos += 4;
     g_gxState.stateDirty = true;
-  } else if (subCmd == GX_LOAD_AURORA_DESTROY_TEXOBJ) {
-    CHECK(pos + 4 <= size, "GX_LOAD_AURORA_DESTROY_TEXOBJ read overrun");
+  } else if (subCmd == GX_AURORA_DESTROY_TEXOBJ) {
+    CHECK(pos + 4 <= size, "GX_AURORA_DESTROY_TEXOBJ read overrun");
     evict_texture_object(read_u32(data + pos, bigEndian));
     pos += 4;
-  } else if (subCmd == GX_LOAD_AURORA_DESTROY_TLUT) {
-    CHECK(pos + 4 <= size, "GX_LOAD_AURORA_DESTROY_TLUT read overrun");
+  } else if (subCmd == GX_AURORA_DESTROY_TLUT) {
+    CHECK(pos + 4 <= size, "GX_AURORA_DESTROY_TLUT read overrun");
     evict_tlut_object(read_u32(data + pos, bigEndian));
     pos += 4;
-  } else if (subCmd == GX_LOAD_AURORA_DESTROY_COPY_TEX) {
-    CHECK(pos + 8 <= size, "GX_LOAD_AURORA_DESTROY_COPY_TEX read overrun");
+  } else if (subCmd == GX_AURORA_DESTROY_COPY_TEX) {
+    CHECK(pos + 8 <= size, "GX_AURORA_DESTROY_COPY_TEX read overrun");
     evict_copy_texture(reinterpret_cast<const void*>(read_u64(data + pos, bigEndian)));
     pos += 8;
-  } else if (subCmd == GX_LOAD_AURORA_DRAW_SIZED) {
-    CHECK(pos + 5 <= size, "GX_LOAD_AURORA_DRAW_SIZED read overrun");
+  } else if (subCmd == GX_AURORA_DRAW_SIZED) {
+    CHECK(pos + 5 <= size, "GX_AURORA_DRAW_SIZED read overrun");
     u8 cmd = data[pos];
     pos += 1;
     u32 byteLen = read_u32(data + pos, bigEndian);
@@ -1829,17 +1836,48 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
         vtxSize = calculate_last_vtx_size(fmt);
       }
       ASSERT(vtxSize != 0 && byteLen % vtxSize == 0,
-             "GX_LOAD_AURORA_DRAW_SIZED: {} bytes is not a whole number of size-{} vertices", byteLen, vtxSize);
+             "GX_AURORA_DRAW_SIZED: {} bytes is not a whole number of size-{} vertices", byteLen, vtxSize);
       u32 vtxCount = byteLen / vtxSize;
-      ASSERT(vtxCount <= 0xFFFF, "GX_LOAD_AURORA_DRAW_SIZED: too many vertices ({})", vtxCount);
+      ASSERT(vtxCount <= 0xFFFF, "GX_AURORA_DRAW_SIZED: too many vertices ({})", vtxCount);
       draw_prim(prim, fmt, static_cast<u16>(vtxCount), data, pos, size);
     }
-  } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_PUSH) {
+  } else if (subCmd == GX_AURORA_DRAW_INDEXED) {
+    ZoneScopedN("DRAW_INDEXED");
+    CHECK(pos + 7 <= size, "GX_AURORA_DRAW_INDEXED read overrun");
+    const u8 cmd = data[pos];
+    pos += 1;
+    const u16 vtxCount = read_u16(data + pos, bigEndian);
+    pos += 2;
+    const u32 indexCount = read_u32(data + pos, bigEndian);
+    pos += 4;
+    const GXVtxFmt fmt = static_cast<GXVtxFmt>(cmd & CP_VAT_MASK);
+    const GXPrimitive prim = static_cast<GXPrimitive>(cmd & CP_OPCODE_MASK);
+    ASSERT(prim == GX_TRIANGLES, "GX_AURORA_DRAW_INDEXED: primitive must be GX_TRIANGLES, got {}",
+           static_cast<u32>(prim));
+    const u32 idxBytes = indexCount * static_cast<u32>(sizeof(u16));
+    CHECK(pos + idxBytes <= size, "GX_AURORA_DRAW_INDEXED index data overrun");
+    // Index data is always host-endian; push it to the GPU buffer as-is
+    const gfx::Range idxRange = gfx::push_indices(data + pos, idxBytes, 4);
+    pos += idxBytes;
+    u32 vtxSize;
+    if (g_gxState.lastVtxFmt == fmt) {
+      vtxSize = g_gxState.lastVtxSize;
+    } else {
+      vtxSize = calculate_last_vtx_size(fmt);
+    }
+    const u32 totalVtxBytes = vtxCount * vtxSize;
+    CHECK(pos + totalVtxBytes <= size, "GX_AURORA_DRAW_INDEXED vertex data overrun");
+    const gfx::Range vertRange = gfx::push_verts(data + pos, totalVtxBytes, 4);
+    pos += totalVtxBytes;
+    if (indexCount != 0) {
+      push_gx_draw(prim, fmt, vtxCount, vertRange, idxRange, indexCount);
+    }
+  } else if (subCmd == GX_AURORA_DEBUG_GROUP_PUSH) {
     auto label = read_string(data, pos, size, bigEndian);
     gfx::push_debug_group(std::move(label));
-  } else if (subCmd == GX_LOAD_AURORA_DEBUG_GROUP_POP) {
+  } else if (subCmd == GX_AURORA_DEBUG_GROUP_POP) {
     pop_debug_group();
-  } else if (subCmd == GX_LOAD_AURORA_DEBUG_MARKER_INSERT) {
+  } else if (subCmd == GX_AURORA_DEBUG_MARKER_INSERT) {
     auto label = read_string(data, pos, size, bigEndian);
     gfx::insert_debug_marker(std::move(label));
   }

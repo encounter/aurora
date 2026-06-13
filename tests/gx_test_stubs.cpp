@@ -115,8 +115,6 @@ gfx::Range build_uniform(const ShaderInfo& info, uint32_t vtxStart, const BindGr
 }
 void resolve_sampled_textures(const ShaderInfo& info) noexcept {}
 u8 color_channel(GXChannelID id) noexcept { return 0; }
-u8 comp_type_size(GXAttr attr, GXCompType type) noexcept { return 0; }
-u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept { return 0; }
 } // namespace aurora::gx
 
 // --- Buffer push stubs ---
@@ -145,9 +143,13 @@ template <>
 PipelineRef pipeline_ref<gx::PipelineConfig>(const gx::PipelineConfig& config) {
   return 0;
 }
+gx::DrawData g_testLastDraw{};
+uint32_t g_testDrawCount = 0;
+
 template <>
 void push_draw_command<gx::DrawData>(gx::DrawData data) {
-  // No-op
+  g_testLastDraw = data;
+  ++g_testDrawCount;
 }
 template <>
 gx::DrawData* get_last_draw_command() {

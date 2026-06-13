@@ -308,8 +308,8 @@ if (NOT TARGET TracyClient)
 
   FetchContent_Declare(
           tracy
-          URL https://github.com/wolfpld/tracy/archive/a64b9a20294d59421a2f57aeca3c6383d8c48169.tar.gz
-          URL_HASH SHA256=24d342b5127d7f659dc3cf94f24347b348cc736f25b17a691fd7f69541937658
+          URL https://github.com/wolfpld/tracy/archive/6789e7d6f9a65ec98926b602097a33a9676d2606.tar.gz
+          URL_HASH SHA256=ebfe4fb50d7c254901979355c80a7d4cd33624aa2ec0fe90b3b238153cd5d69b
           DOWNLOAD_EXTRACT_TIMESTAMP TRUE
           EXCLUDE_FROM_ALL
   )
