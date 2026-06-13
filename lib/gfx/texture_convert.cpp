@@ -380,18 +380,22 @@ static ByteBuffer BuildRGBA8FromGCN(uint32_t width, uint32_t height, uint32_t mi
     const uint32_t bheight = (h + 3) / 4;
     for (uint32_t by = 0; by < bheight; ++by) {
       const uint32_t baseY = by * 4;
+      const uint32_t numRows = std::min(h - baseY, 4u);
       for (uint32_t bx = 0; bx < bwidth; ++bx) {
         const uint32_t baseX = bx * 4;
+        const uint32_t numCols = std::min(w - baseX, 4u);
         for (uint32_t c = 0; c < 2; ++c) {
           for (uint32_t y = 0; y < 4; ++y) {
-            RGBA8* target = targetMip + (baseY + y) * w + baseX;
-            for (size_t x = 0; x < 4; ++x) {
-              if (c != 0) {
-                target[x].g = in[x * 2];
-                target[x].b = in[x * 2 + 1];
-              } else {
-                target[x].a = in[x * 2];
-                target[x].r = in[x * 2 + 1];
+            if (y < numRows) {
+              RGBA8* target = targetMip + (baseY + y) * w + baseX;
+              for (uint32_t x = 0; x < numCols; ++x) {
+                if (c != 0) {
+                  target[x].g = in[x * 2];
+                  target[x].b = in[x * 2 + 1];
+                } else {
+                  target[x].a = in[x * 2];
+                  target[x].r = in[x * 2 + 1];
+                }
               }
             }
             in += 8;
