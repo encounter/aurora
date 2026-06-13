@@ -95,7 +95,7 @@ elseif (_aurora_sdl3_provider STREQUAL "package")
   include(FetchContent)
   FetchContent_Declare(sdl3_prebuilt
     URL "${AURORA_SDL3_PACKAGE_URL}"
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
   )
   FetchContent_MakeAvailable(sdl3_prebuilt)
 
