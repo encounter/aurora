@@ -758,7 +758,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
   if (adapterName.IsUndefined()) {
     adapterName = wgpu::StringView("Unknown");
   }
-  if (!allowCpu && g_adapterInfo.adapterType == wgpu::AdapterType::CPU) {
+  if (!allowCpu && g_adapterInfo.adapterType == wgpu::AdapterType::CPU && backend != wgpu::BackendType::Null) {
     Log.warn("Ignoring CPU adapter: {}", adapterName);
     g_adapterInfo = {};
     g_adapter = {};
