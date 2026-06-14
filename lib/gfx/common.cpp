@@ -229,8 +229,6 @@ struct FramePacket {
   size_t stagingBuffer = 0;
   StagingHighWater copied;
   AuroraStats stats{};
-  uint32_t drawCallCount = 0;
-  uint32_t mergedDrawCallCount = 0;
 };
 
 static std::array<FramePacket, FrameSlotCount> g_framePackets;
@@ -253,10 +251,103 @@ using PresentClock = std::chrono::steady_clock;
 static constexpr auto PresentFpsWindow = std::chrono::seconds{1};
 static std::mutex g_presentStatsMutex;
 static std::deque<PresentClock::time_point> g_presentTimes;
+static std::atomic_bool g_processEventsQueued = false;
+static std::atomic_int64_t g_lastPresentNs = 0;
+static std::atomic_int64_t g_presentPeriodNs = 0;
+static std::atomic_int64_t g_cpuFrameTimeNs = 0;
+static PresentClock::time_point g_cpuFrameStart;
+static constexpr auto FrameStartSafetyMargin = std::chrono::milliseconds{2};
+static constexpr auto MaxPacingSample = std::chrono::milliseconds{250};
+static constexpr uint32_t PacingEmaWeight = 8;
+
+static int64_t timestamp_ns(PresentClock::time_point time) {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count();
+}
+
+static int64_t duration_ns(PresentClock::duration duration) {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+}
+
+static void update_ema(std::atomic_int64_t& value, int64_t sample) {
+  if (sample <= 0 || sample > duration_ns(MaxPacingSample)) {
+    return;
+  }
+
+  int64_t current = value.load(std::memory_order_acquire);
+  while (true) {
+    const int64_t next = current == 0 ? sample : current + (sample - current) / static_cast<int64_t>(PacingEmaWeight);
+    if (value.compare_exchange_weak(current, next, std::memory_order_acq_rel, std::memory_order_acquire)) {
+      return;
+    }
+  }
+}
 
 static void prune_present_times(PresentClock::time_point now) {
   while (!g_presentTimes.empty() && g_presentTimes.front() + PresentFpsWindow < now) {
     g_presentTimes.pop_front();
+  }
+}
+
+static void process_events() {
+  ZoneScopedN("ProcessEvents");
+  if (g_instance) {
+    g_instance.ProcessEvents();
+  }
+}
+
+static void enqueue_process_events() {
+  if (render_worker::is_worker_thread()) {
+    process_events();
+    return;
+  }
+
+  bool expected = false;
+  if (!g_processEventsQueued.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
+                                                     std::memory_order_acquire)) {
+    return;
+  }
+
+  render_worker::enqueue_work([] {
+    process_events();
+    g_processEventsQueued.store(false, std::memory_order_release);
+  });
+}
+
+static void wait_for_gpu_progress(std::chrono::nanoseconds sleepDuration) {
+  if (render_worker::is_idle()) {
+    enqueue_process_events();
+  }
+  std::this_thread::sleep_for(sleepDuration);
+}
+
+static void pace_frame_start() {
+  ZoneScopedN("Frame start pacing");
+  if (g_frameSlots.free_count() == FrameSlotCount) {
+    return;
+  }
+
+  const int64_t lastPresentNs = g_lastPresentNs.load(std::memory_order_acquire);
+  const int64_t presentPeriodNs = g_presentPeriodNs.load(std::memory_order_acquire);
+  const int64_t cpuFrameTimeNs = g_cpuFrameTimeNs.load(std::memory_order_acquire);
+  if (lastPresentNs == 0 || presentPeriodNs == 0 || cpuFrameTimeNs == 0) {
+    return;
+  }
+
+  const int64_t safetyMarginNs = duration_ns(FrameStartSafetyMargin);
+  const int64_t targetStartNs = lastPresentNs + presentPeriodNs - cpuFrameTimeNs - safetyMarginNs;
+  int64_t nowNs = timestamp_ns(PresentClock::now());
+  if (targetStartNs <= nowNs) {
+    return;
+  }
+
+  const double initialWaitMs = static_cast<double>(targetStartNs - nowNs) / 1'000'000.0;
+  TracyPlot("aurora: frameStartPaceWaitMs", initialWaitMs);
+  while (nowNs < targetStartNs) {
+    const int64_t remainingNs = targetStartNs - nowNs;
+    const auto sleepDuration = remainingNs > 1'000'000 ? std::chrono::milliseconds{1}
+                                                       : std::chrono::nanoseconds{remainingNs};
+    wait_for_gpu_progress(sleepDuration);
+    nowNs = timestamp_ns(PresentClock::now());
   }
 }
 
@@ -823,6 +914,11 @@ PipelineRef pipeline_ref(const rmlui::PipelineConfig& config) {
 
 void initialize() {
   g_frameIndex = 0;
+  g_processEventsQueued.store(false, std::memory_order_release);
+  g_lastPresentNs.store(0, std::memory_order_release);
+  g_presentPeriodNs.store(0, std::memory_order_release);
+  g_cpuFrameTimeNs.store(0, std::memory_order_release);
+  g_cpuFrameStart = {};
   {
     std::lock_guard lock{g_presentStatsMutex};
     g_presentTimes.clear();
@@ -964,6 +1060,11 @@ void initialize() {
 void shutdown() {
   render_worker::synchronize();
   render_worker::shutdown();
+  g_processEventsQueued.store(false, std::memory_order_release);
+  g_lastPresentNs.store(0, std::memory_order_release);
+  g_presentPeriodNs.store(0, std::memory_order_release);
+  g_cpuFrameTimeNs.store(0, std::memory_order_release);
+  g_cpuFrameStart = {};
   {
     std::lock_guard lock{g_presentStatsMutex};
     g_presentTimes.clear();
@@ -1023,25 +1124,21 @@ static bool wait_for_staging_buffer(size_t slot) {
     if (mappingState == BufferMapState::Unmapped) {
       return false;
     }
-    if (render_worker::is_idle()) {
-      g_instance.ProcessEvents();
-    } else {
-      std::this_thread::sleep_for(std::chrono::milliseconds{1});
-    }
+    wait_for_gpu_progress(std::chrono::milliseconds{1});
   }
 }
 
 static size_t acquire_frame_slot() {
   ZoneScopedN("Acquire frame slot");
+  const auto waitStart = PresentClock::now();
   while (true) {
-    if (auto slot = g_frameSlots.try_acquire()) {
+    if (const auto slot = g_frameSlots.try_acquire()) {
+      const auto waitDuration = PresentClock::now() - waitStart;
+      const double waitMs = std::chrono::duration<double, std::milli>{waitDuration}.count();
+      TracyPlot("aurora: frameSlotWaitMs", waitMs);
       return *slot;
     }
-    if (render_worker::is_idle()) {
-      g_instance.ProcessEvents();
-    } else {
-      std::this_thread::sleep_for(std::chrono::microseconds{100});
-    }
+    wait_for_gpu_progress(std::chrono::microseconds{100});
   }
 }
 
@@ -1055,16 +1152,13 @@ static std::optional<size_t> acquire_mapped_staging_buffer() {
       g_stagingSlots.release(*slot);
       return std::nullopt;
     }
-    if (render_worker::is_idle()) {
-      g_instance.ProcessEvents();
-    } else {
-      std::this_thread::sleep_for(std::chrono::microseconds{100});
-    }
+    wait_for_gpu_progress(std::chrono::microseconds{100});
   }
 }
 
 bool begin_frame() {
   ZoneScoped;
+  pace_frame_start();
   const size_t frameSlot = acquire_frame_slot();
   const auto stagingSlot = acquire_mapped_staging_buffer();
   if (!stagingSlot) {
@@ -1119,6 +1213,7 @@ bool begin_frame() {
     g_framePackets[frameSlot].encoder = g_device.CreateCommandEncoder(&EncoderDescriptor);
     webgpu::gpu_prof::frame_begin(g_framePackets[frameSlot].encoder);
   });
+  g_cpuFrameStart = PresentClock::now();
   return true;
 }
 
@@ -1143,6 +1238,12 @@ void end_frame(EndFrameCallback callback) {
   ZoneScoped;
   ASSERT(!g_inOffscreen, "end_frame called while offscreen rendering is active");
   ASSERT(g_currentRenderPass == UINT32_MAX, "end_frame called before finish finalized the current render pass");
+  if (g_cpuFrameStart.time_since_epoch().count() != 0) {
+    const auto cpuFrameTime = PresentClock::now() - g_cpuFrameStart;
+    update_ema(g_cpuFrameTimeNs, duration_ns(cpuFrameTime));
+    const double cpuFrameTimeMs = std::chrono::duration<double, std::milli>{cpuFrameTime}.count();
+    TracyPlot("aurora: cpuFrameTimeMs", cpuFrameTimeMs);
+  }
   auto& frame = current_frame_packet();
   frame.stats.drawCallCount = g_drawCallCount;
   frame.stats.mergedDrawCallCount = g_mergedDrawCallCount;
@@ -1183,7 +1284,6 @@ void end_frame(EndFrameCallback callback) {
     auto encoder = std::move(packet.encoder);
     const auto stats = packet.stats;
     packet = {};
-    g_frameSlots.release(frameSlot);
     g_stats.drawCallCount = stats.drawCallCount;
     g_stats.mergedDrawCallCount = stats.mergedDrawCallCount;
     g_stats.lastVertSize = stats.lastVertSize;
@@ -1194,6 +1294,7 @@ void end_frame(EndFrameCallback callback) {
     if (callback) {
       callback(encoder);
     }
+    g_frameSlots.release(frameSlot);
     expire_cached_bind_groups();
     map_staging_buffer(stagingSlot, true);
   });
@@ -1412,6 +1513,14 @@ void gpu_synchronize() { render_worker::synchronize(); }
 
 void after_present() noexcept {
   const auto now = PresentClock::now();
+  const int64_t nowNs = timestamp_ns(now);
+  const int64_t previousPresentNs = g_lastPresentNs.exchange(nowNs, std::memory_order_acq_rel);
+  if (previousPresentNs != 0) {
+    update_ema(g_presentPeriodNs, nowNs - previousPresentNs);
+    const double presentPeriodMs =
+        static_cast<double>(g_presentPeriodNs.load(std::memory_order_acquire)) / 1'000'000.0;
+    TracyPlot("aurora: presentPeriodMs", presentPeriodMs);
+  }
   std::lock_guard lock{g_presentStatsMutex};
   g_presentTimes.push_back(now);
   prune_present_times(now);

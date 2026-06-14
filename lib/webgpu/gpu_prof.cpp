@@ -368,7 +368,10 @@ void after_submit() {
                            });
     g_recordSlot = (g_recordSlot + 1) % RingDepth;
   }
-  g_instance.ProcessEvents();
+  {
+    ZoneScopedN("ProcessEvents");
+    g_instance.ProcessEvents();
+  }
   while (true) {
     auto& slot = g_slots[g_emitSlot];
     const auto state = slot.state.load(std::memory_order_acquire);

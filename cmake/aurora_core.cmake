@@ -64,6 +64,9 @@ if (AURORA_ENABLE_GX)
             lib/dawn/BackendBinding.cpp
             lib/dawn/TracyPlatform.cpp
     )
+    if (CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "GNU")
+        set_source_files_properties(lib/dawn/TracyPlatform.cpp PROPERTIES COMPILE_FLAGS -fno-rtti)
+    endif ()
     target_link_libraries(aurora_core PRIVATE dawn::webgpu_dawn)
     if (DAWN_ENABLE_VULKAN)
         target_compile_definitions(aurora_core PRIVATE DAWN_ENABLE_BACKEND_VULKAN)
