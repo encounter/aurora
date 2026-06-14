@@ -81,9 +81,6 @@ Vec2<int> fit_frame_buffer_to_aspect(int width, int height, float aspect) {
 }
 
 void resize_swapchain() noexcept {
-#if defined(SDL_PLATFORM_ANDROID)
-  SurfaceLock surfaceLock;
-#endif
   const auto size = get_window_size();
   if (size == g_windowSize) {
     return;
@@ -211,7 +208,6 @@ void process_event(SDL_Event& event) {
     } else if (event.type == g_sdlCustomEventsStart + CustomEvent::RefreshSurface) {
       // Refresh surface (vsync changed)
 #ifdef AURORA_ENABLE_GX
-      SurfaceLock surfaceLock;
       webgpu::refresh_surface(false);
 #endif
     }

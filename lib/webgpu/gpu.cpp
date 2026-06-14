@@ -667,12 +667,20 @@ static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
   }
 }
 
+static void release_surface_locked() noexcept {
+  if (g_surface) {
+    g_surface.Unconfigure();
+  }
+  g_surface = {};
+}
+
 static bool create_surface() {
   SDL_Window* window = window::get_sdl_window();
   if (window == nullptr) {
     Log.error("Failed to create surface: no window");
     return false;
   }
+  window::SurfaceLock surfaceLock;
   const auto chainedDescriptor = utils::SetupWindowAndGetSurfaceDescriptor(window);
   if (!chainedDescriptor) {
     Log.error("Failed to create surface descriptor for current window");
@@ -682,7 +690,7 @@ static bool create_surface() {
       .nextInChain = chainedDescriptor.get(),
       .label = "Surface",
   };
-  release_surface();
+  release_surface_locked();
   g_surface = g_instance.CreateSurface(&surfaceDescriptor);
   if (!g_surface) {
     Log.error("Failed to create surface");
@@ -722,11 +730,8 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
   g_dawnInstance->EnableBackendValidation(backend != WGPUBackendType::D3D12);
 #endif
 
-  {
-    window::SurfaceLock surfaceLock;
-    if (!create_surface()) {
-      return false;
-    }
+  if (!create_surface()) {
+    return false;
   }
   {
     const wgpu::RequestAdapterOptions options{
@@ -968,10 +973,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
   create_copy_pipeline();
   create_resample_pipeline();
   gpu_prof::initialize();
-  {
-    window::SurfaceLock surfaceLock;
-    resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height, true);
-  }
+  resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height, true);
   return true;
 }
 
@@ -1000,48 +1002,19 @@ void shutdown() {
 
 void release_surface() noexcept {
   gfx::gpu_synchronize();
-  if (g_surface) {
-    g_surface.Unconfigure();
+  {
+    window::SurfaceLock surfaceLock;
+    release_surface_locked();
   }
-  g_surface = {};
 }
 
-bool refresh_surface(bool recreate) {
-  gfx::gpu_synchronize();
-  if (!g_instance || !g_device) {
-    return false;
-  }
-  if (!window::is_presentable()) {
-    release_surface();
-    return false;
-  }
-  if ((!g_surface || recreate) && !create_surface()) {
-    return false;
-  }
-  uint32_t width = g_graphicsConfig.surfaceConfiguration.width;
-  uint32_t height = g_graphicsConfig.surfaceConfiguration.height;
-  uint32_t native_width = width;
-  uint32_t native_height = height;
-  if (window::get_sdl_window() != nullptr) {
-    const auto size = window::get_window_size();
-    width = size.fb_width;
-    height = size.fb_height;
-    native_width = size.native_fb_width;
-    native_height = size.native_fb_height;
-  }
-  if (width != 0 && height != 0) {
-    resize_swapchain(width, height, native_width, native_height, true);
-  }
-  return true;
-}
-
-void resize_swapchain(uint32_t width, uint32_t height, uint32_t native_width, uint32_t native_height, bool force) {
-  gfx::gpu_synchronize();
-  if (!g_surface || !g_device || width == 0 || height == 0 || native_height == 0 || native_width == 0) {
+static void resize_swapchain_internal(uint32_t width, uint32_t height, uint32_t nativeWidth, uint32_t nativeHeight,
+                                      bool force) {
+  if (!g_surface || !g_device || width == 0 || height == 0 || nativeHeight == 0 || nativeWidth == 0) {
     return;
   }
-  const bool sizeChanged = g_graphicsConfig.surfaceConfiguration.width != native_width ||
-                           g_graphicsConfig.surfaceConfiguration.height != native_height ||
+  const bool sizeChanged = g_graphicsConfig.surfaceConfiguration.width != nativeWidth ||
+                           g_graphicsConfig.surfaceConfiguration.height != nativeHeight ||
                            g_frameBuffer.size.width != width || g_frameBuffer.size.height != height;
   if (!force && !sizeChanged) {
     return;
@@ -1050,15 +1023,55 @@ void resize_swapchain(uint32_t width, uint32_t height, uint32_t native_width, ui
     gx::clear_copy_texture_cache();
     gfx::clear_caches();
   }
-  g_graphicsConfig.surfaceConfiguration.width = native_width;
-  g_graphicsConfig.surfaceConfiguration.height = native_height;
+  g_graphicsConfig.surfaceConfiguration.width = nativeWidth;
+  g_graphicsConfig.surfaceConfiguration.height = nativeHeight;
   auto surfaceConfiguration = g_graphicsConfig.surfaceConfiguration;
   surfaceConfiguration.device = g_device;
-  g_surface.Configure(&surfaceConfiguration);
+  {
+    window::SurfaceLock surfaceLock;
+    g_surface.Configure(&surfaceConfiguration);
+  }
   g_frameBuffer = create_render_texture(width, height, true);
   g_frameBufferResolved = create_render_texture(width, height, false);
   g_depthBuffer = create_depth_texture(width, height);
   g_CopyBindGroup = create_copy_bind_group(present_source());
+}
+
+bool refresh_surface(bool recreate) {
+  gfx::gpu_synchronize();
+  if (!g_instance || !g_device) {
+    return false;
+  }
+  if (!window::is_presentable()) {
+    {
+      window::SurfaceLock surfaceLock;
+      release_surface_locked();
+    }
+    return false;
+  }
+  if ((!g_surface || recreate) && !create_surface()) {
+    return false;
+  }
+  uint32_t width = g_graphicsConfig.surfaceConfiguration.width;
+  uint32_t height = g_graphicsConfig.surfaceConfiguration.height;
+  uint32_t nativeWidth = width;
+  uint32_t nativeHeight = height;
+  if (window::get_sdl_window() != nullptr) {
+    const auto size = window::get_window_size();
+    width = size.fb_width;
+    height = size.fb_height;
+    nativeWidth = size.native_fb_width;
+    nativeHeight = size.native_fb_height;
+  }
+  if (width != 0 && height != 0) {
+    resize_swapchain_internal(width, height, nativeWidth, nativeHeight, true);
+  }
+  return true;
+}
+
+void resize_swapchain(uint32_t width, uint32_t height, uint32_t nativeWidth, uint32_t nativeHeight, bool force) {
+  gfx::gpu_synchronize();
+  resize_swapchain_internal(width, height, nativeWidth, nativeHeight, force);
 }
 } // namespace aurora::webgpu
 

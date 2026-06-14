@@ -59,8 +59,7 @@ bool initialize(AuroraBackend backend, bool allowCpu);
 void shutdown();
 void release_surface() noexcept;
 bool refresh_surface(bool recreate = true);
-void resize_swapchain(uint32_t width, uint32_t height, uint32_t native_width, uint32_t native_height,
-                      bool force = false);
+void resize_swapchain(uint32_t width, uint32_t height, uint32_t nativeWidth, uint32_t nativeHeight, bool force = false);
 TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled);
 const TextureWithSampler& present_source() noexcept;
 wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source);

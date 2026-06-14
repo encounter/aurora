@@ -203,7 +203,6 @@ bool begin_frame() noexcept {
   ZoneScoped;
 #ifdef AURORA_ENABLE_GX
   {
-    window::SurfaceLock surfaceLock;
     if (!window::is_presentable()) {
       webgpu::release_surface();
       return false;
@@ -248,18 +247,20 @@ void end_frame() noexcept {
 
   gfx::end_frame([rmlBindGroup = std::move(rmlBindGroup), viewport,
                   imguiDrawData = std::move(imguiDrawData)](wgpu::CommandEncoder& encoder) {
-    window::SurfaceLock surfaceLock;
     wgpu::Texture currentTexture;
     wgpu::TextureView currentView;
     auto surfaceStatus = wgpu::SurfaceGetCurrentTextureStatus::Error;
-    if (window::is_presentable() && g_surface) {
-      ZoneScopedN("Acquire texture");
-      wgpu::SurfaceTexture surfaceTexture;
-      g_surface.GetCurrentTexture(&surfaceTexture);
-      surfaceStatus = surfaceTexture.status;
-      if (surfaceStatus == wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal) {
-        currentTexture = std::move(surfaceTexture.texture);
-        currentView = currentTexture.CreateView();
+    {
+      window::SurfaceLock surfaceLock;
+      if (window::is_presentable() && g_surface) {
+        ZoneScopedN("Acquire texture");
+        wgpu::SurfaceTexture surfaceTexture;
+        g_surface.GetCurrentTexture(&surfaceTexture);
+        surfaceStatus = surfaceTexture.status;
+        if (surfaceStatus == wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal) {
+          currentTexture = std::move(surfaceTexture.texture);
+          currentView = currentTexture.CreateView();
+        }
       }
     }
 
@@ -328,9 +329,15 @@ void end_frame() noexcept {
     webgpu::gpu_prof::after_submit();
     if (canPresent && g_surface) {
       ZoneScopedN("Present");
-      auto presentStatus = g_surface.Present();
-      if (presentStatus != wgpu::Status::Success) {
-        Log.warn("Surface present failed: {}", static_cast<int>(presentStatus));
+      wgpu::ConvertibleStatus status = wgpu::Status::Error;
+      {
+        window::SurfaceLock surfaceLock;
+        if (window::is_presentable()) {
+          status = g_surface.Present();
+        }
+      }
+      if (!status) {
+        Log.warn("Surface present failed");
         webgpu::release_surface();
       }
     } else if (g_surface) {
