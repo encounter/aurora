@@ -95,8 +95,7 @@ TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mi
         .mipLevel = mip,
     };
     if constexpr (UseTextureBuffer) {
-      queue_texture_upload_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks, std::move(dstView),
-                                physicalSize);
+      queue_texture_upload_data(data.data() + offset, bytesPerRow, heightBlocks, std::move(dstView), physicalSize);
     } else {
       const wgpu::TexelCopyBufferLayout dataLayout{
           .bytesPerRow = bytesPerRow,
@@ -245,8 +244,7 @@ void write_texture(TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
         .mipLevel = mip,
     };
     if constexpr (UseTextureBuffer) {
-      queue_texture_upload_data(data.data() + offset, dataSize, bytesPerRow, heightBlocks, std::move(dstView),
-                                physicalSize);
+      queue_texture_upload_data(data.data() + offset, bytesPerRow, heightBlocks, std::move(dstView), physicalSize);
     } else {
       const wgpu::TexelCopyBufferLayout dataLayout{
           .bytesPerRow = bytesPerRow,

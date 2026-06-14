@@ -297,11 +297,7 @@ template <typename T>
 static Range push_storage(const T& data) {
   return push_storage(reinterpret_cast<const uint8_t*>(&data), sizeof(T));
 }
-Range push_texture_data(const uint8_t* data, size_t length, uint32_t bytesPerRow, uint32_t rowsPerImage);
-std::pair<ByteBuffer, Range> map_verts(size_t length);
-std::pair<ByteBuffer, Range> map_indices(size_t length);
-std::pair<ByteBuffer, Range> map_uniform(size_t length);
-std::pair<ByteBuffer, Range> map_storage(size_t length);
+Range push_texture_data(const uint8_t* data, uint32_t bytesPerRow, uint32_t rowsPerImage);
 
 template <typename State>
 const State& get_state();

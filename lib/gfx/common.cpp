@@ -389,12 +389,12 @@ void queue_texture_upload(TextureUpload upload) {
   current_frame_packet().textureUploads.emplace_back(std::move(upload));
 }
 
-void queue_texture_upload_data(const uint8_t* data, size_t length, uint32_t bytesPerRow, uint32_t rowsPerImage,
+void queue_texture_upload_data(const uint8_t* data, uint32_t bytesPerRow, uint32_t rowsPerImage,
                                wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size) {
   const auto copyBytesPerRow = AURORA_ALIGN(bytesPerRow, 256);
   auto& frame = current_frame_packet();
   if (frame.textureUpload.size() + copyBytesPerRow * rowsPerImage <= TextureUploadSize) {
-    const auto range = push_texture_data(data, length, bytesPerRow, rowsPerImage);
+    const auto range = push_texture_data(data, bytesPerRow, rowsPerImage);
     const wgpu::TexelCopyBufferLayout layout{
         .offset = range.offset,
         .bytesPerRow = bytesPerRow,
@@ -813,6 +813,7 @@ PipelineRef pipeline_ref(const rmlui::PipelineConfig& config) {
 void initialize() {
   g_frameIndex = 0;
   render_worker::initialize();
+  // This appears to take a while and blocks the render thread for periods of time
   // render_worker::set_event_pump([] {
   //   if (g_instance) {
   //     g_instance.ProcessEvents();
@@ -1095,10 +1096,8 @@ bool begin_frame() {
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
   begin_pipeline_frame();
   render_worker::enqueue_begin_frame(frame.frameId, [frameSlot] {
-    const auto encoderDescriptor = wgpu::CommandEncoderDescriptor{
-        .label = "Redraw encoder",
-    };
-    g_framePackets[frameSlot].encoder = g_device.CreateCommandEncoder(&encoderDescriptor);
+    static constexpr wgpu::CommandEncoderDescriptor EncoderDescriptor{.label = "Redraw encoder"};
+    g_framePackets[frameSlot].encoder = g_device.CreateCommandEncoder(&EncoderDescriptor);
     webgpu::gpu_prof::frame_begin(g_framePackets[frameSlot].encoder);
   });
   return true;
@@ -1112,7 +1111,7 @@ void finish() {
   ASSERT(!g_inOffscreen, "finish called while offscreen rendering is active");
   if (g_currentRenderPass != UINT32_MAX) {
     auto& frame = current_frame_packet();
-    frame.uniforms.append_zeroes(gx::MaxUniformSize); // Pad the end of the GX uniform buffer slice.
+    frame.uniforms.append_zeroes(gx::MaxUniformSize);
     auto& pass = frame.renderPasses[g_currentRenderPass];
     pass.observable = true;
     pass.captureDepthSnapshot = true;
@@ -1327,8 +1326,8 @@ static void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& pa
     };
     depthStencilAttachmentPtr = &depthStencilAttachment;
   }
-  const auto label =
-      passInfo.label.empty() ? fmt::format("Render pass {}", passIndex) : fmt::format("{} {}", passInfo.label, passIndex);
+  const auto label = passInfo.label.empty() ? fmt::format("Render pass {}", passIndex)
+                                            : fmt::format("{} {}", passInfo.label, passIndex);
   const wgpu::RenderPassDescriptor renderPassDescriptor{
       .label = label.c_str(),
       .colorAttachmentCount = attachments.size(),
@@ -1501,6 +1500,7 @@ static Range push(ByteBuffer& target, const uint8_t* data, size_t length, size_t
   }
   return {static_cast<uint32_t>(begin), static_cast<uint32_t>(length)};
 }
+
 static Range map(ByteBuffer& target, size_t length, size_t alignment) {
   if (alignment != 0) {
     const size_t begin = target.size();
@@ -1515,23 +1515,28 @@ static Range map(ByteBuffer& target, size_t length, size_t alignment) {
   }
   return {static_cast<uint32_t>(begin), static_cast<uint32_t>(length)};
 }
+
 Range push_verts(const uint8_t* data, size_t length, size_t alignment) {
   ZoneScoped;
   return push(current_frame_packet().verts, data, length, alignment);
 }
+
 Range push_indices(const uint8_t* data, size_t length, size_t alignment) {
   ZoneScoped;
   return push(current_frame_packet().indices, data, length, alignment);
 }
+
 Range push_uniform(const uint8_t* data, size_t length) {
   ZoneScoped;
   return push(current_frame_packet().uniforms, data, length, g_cachedLimits.minUniformBufferOffsetAlignment);
 }
+
 Range push_storage(const uint8_t* data, size_t length) {
   ZoneScoped;
   return push(current_frame_packet().storage, data, length, g_cachedLimits.minStorageBufferOffsetAlignment);
 }
-Range push_texture_data(const uint8_t* data, size_t length, u32 bytesPerRow, u32 rowsPerImage) {
+
+Range push_texture_data(const uint8_t* data, u32 bytesPerRow, u32 rowsPerImage) {
   // For CopyBufferToTexture, we need an alignment of 256 per row (see Dawn kTextureBytesPerRowAlignment)
   const auto copyBytesPerRow = AURORA_ALIGN(bytesPerRow, 256);
   const auto range = map(current_frame_packet().textureUpload, copyBytesPerRow * rowsPerImage, 0);
@@ -1542,22 +1547,6 @@ Range push_texture_data(const uint8_t* data, size_t length, u32 bytesPerRow, u32
     dst += copyBytesPerRow;
   }
   return range;
-}
-std::pair<ByteBuffer, Range> map_verts(size_t length) {
-  const auto range = map(current_frame_packet().verts, length, 4);
-  return {ByteBuffer{current_frame_packet().verts.data() + range.offset, range.size}, range};
-}
-std::pair<ByteBuffer, Range> map_indices(size_t length) {
-  const auto range = map(current_frame_packet().indices, length, 4);
-  return {ByteBuffer{current_frame_packet().indices.data() + range.offset, range.size}, range};
-}
-std::pair<ByteBuffer, Range> map_uniform(size_t length) {
-  const auto range = map(current_frame_packet().uniforms, length, g_cachedLimits.minUniformBufferOffsetAlignment);
-  return {ByteBuffer{current_frame_packet().uniforms.data() + range.offset, range.size}, range};
-}
-std::pair<ByteBuffer, Range> map_storage(size_t length) {
-  const auto range = map(current_frame_packet().storage, length, g_cachedLimits.minStorageBufferOffsetAlignment);
-  return {ByteBuffer{current_frame_packet().storage.data() + range.offset, range.size}, range};
 }
 
 BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor) {

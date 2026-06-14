@@ -19,7 +19,7 @@ struct TextureUpload {
   : layout(layout), tex(std::move(tex)), size(size), buffer(std::move(buffer)) {}
 };
 void queue_texture_upload(TextureUpload upload);
-void queue_texture_upload_data(const uint8_t* data, size_t length, uint32_t bytesPerRow, uint32_t rowsPerImage,
+void queue_texture_upload_data(const uint8_t* data, uint32_t bytesPerRow, uint32_t rowsPerImage,
                                wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size);
 
 struct TextureFormatInfo {

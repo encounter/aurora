@@ -200,14 +200,15 @@ gfx::PipelineRef geometry_pipeline(wgpu::TextureFormat colorFormat, uint32_t sam
   default:
     break;
   }
-  return gfx::pipeline_ref(make_pipeline_config(PipelineKind::Geometry, colorFormat, sampleCount, VertexLayoutKind::Geometry,
-                                           stencilMode, BlendMode::Premultiplied, colorWriteMask));
+  return gfx::pipeline_ref(make_pipeline_config(PipelineKind::Geometry, colorFormat, sampleCount,
+                                                VertexLayoutKind::Geometry, stencilMode, BlendMode::Premultiplied,
+                                                colorWriteMask));
 }
 
 gfx::PipelineRef gradient_pipeline(wgpu::TextureFormat colorFormat, uint32_t sampleCount, bool masked) {
-  return gfx::pipeline_ref(make_pipeline_config(PipelineKind::Gradient, colorFormat, sampleCount, VertexLayoutKind::Geometry,
-                                           masked ? StencilMode::EqualKeep : StencilMode::AlwaysKeep,
-                                           BlendMode::Premultiplied));
+  return gfx::pipeline_ref(
+      make_pipeline_config(PipelineKind::Gradient, colorFormat, sampleCount, VertexLayoutKind::Geometry,
+                           masked ? StencilMode::EqualKeep : StencilMode::AlwaysKeep, BlendMode::Premultiplied));
 }
 
 gfx::PipelineRef blit_pipeline(wgpu::TextureFormat colorFormat, uint32_t sampleCount,
@@ -223,9 +224,9 @@ gfx::PipelineRef blit_pipeline(wgpu::TextureFormat colorFormat, uint32_t sampleC
 }
 
 gfx::PipelineRef seed_resample_pipeline(wgpu::TextureFormat colorFormat, uint32_t sampleCount, bool useStencil) {
-  return gfx::pipeline_ref(make_pipeline_config(PipelineKind::SeedResample, colorFormat, sampleCount,
-                                           VertexLayoutKind::Fullscreen,
-                                           useStencil ? StencilMode::AlwaysKeep : StencilMode::None, BlendMode::None));
+  return gfx::pipeline_ref(
+      make_pipeline_config(PipelineKind::SeedResample, colorFormat, sampleCount, VertexLayoutKind::Fullscreen,
+                           useStencil ? StencilMode::AlwaysKeep : StencilMode::None, BlendMode::None));
 }
 
 gfx::PipelineRef filter_pipeline(PipelineKind kind, wgpu::TextureFormat colorFormat,
@@ -242,8 +243,8 @@ void queue_texture_upload_if_needed(ShaderTextureData& texture) {
       .texture = texture.m_texture,
       .aspect = wgpu::TextureAspect::All,
   };
-  gfx::queue_texture_upload_data(texture.m_pendingUpload.data(), texture.m_pendingUpload.size(), texture.m_rowBytes,
-                                 texture.m_size.height, dst, texture.m_size);
+  gfx::queue_texture_upload_data(texture.m_pendingUpload.data(), texture.m_rowBytes, texture.m_size.height, dst,
+                                 texture.m_size);
   texture.m_pendingUpload.clear();
   texture.m_pendingUpload.shrink_to_fit();
   texture.m_uploaded = true;
