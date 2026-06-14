@@ -124,7 +124,7 @@ void emit_context(const Slot& slot, uint64_t frameBegin) {
   // by the time elapsed since this frame was submitted, so the frame zone
   // lands at the submit point on the timeline instead of trailing it by the
   // readback latency. Residual error is the GPU's submit-to-execute delay.
-  const int64_t anchor = int64_t(frameBegin) + (now_ns() - slot.submitNs);
+  const int64_t anchor = static_cast<int64_t>(frameBegin) + (now_ns() - slot.submitNs);
   ___tracy_emit_gpu_new_context_serial({
       .gpuTime = anchor,
       .period = 1.0f,
@@ -132,12 +132,12 @@ void emit_context(const Slot& slot, uint64_t frameBegin) {
       .flags = 0,
       .type = tracy_context_type(g_backendType),
   });
-  const auto& info = adapter_info();
-  const std::string name = fmt::format("{} ({})", std::string_view{info.device}, magic_enum::enum_name(g_backendType));
+  const std::string name =
+      fmt::format("{} ({})", std::string_view{g_adapterInfo.device}, magic_enum::enum_name(g_backendType));
   ___tracy_emit_gpu_context_name_serial({
       .context = ContextId,
       .name = name.c_str(),
-      .len = uint16_t(std::min<size_t>(name.size(), UINT16_MAX)),
+      .len = static_cast<uint16_t>(std::min<size_t>(name.size(), UINT16_MAX)),
   });
 }
 
@@ -269,19 +269,19 @@ void initialize() {
     return;
   }
   g_timestampsEnabled = true; // TODO: check if allow_unsafe_apis enabled?
-  const wgpu::QuerySetDescriptor querySetDescriptor{
+  constexpr wgpu::QuerySetDescriptor querySetDescriptor{
       .label = "GPU profiler timestamps",
       .type = wgpu::QueryType::Timestamp,
       .count = QueryCount,
   };
   g_querySet = g_device.CreateQuerySet(&querySetDescriptor);
-  const wgpu::BufferDescriptor resolveDescriptor{
+  constexpr wgpu::BufferDescriptor resolveDescriptor{
       .label = "GPU profiler resolve",
       .usage = wgpu::BufferUsage::QueryResolve | wgpu::BufferUsage::CopySrc,
       .size = ReadbackSize,
   };
   g_resolveBuffer = g_device.CreateBuffer(&resolveDescriptor);
-  const wgpu::BufferDescriptor readbackDescriptor{
+  constexpr wgpu::BufferDescriptor readbackDescriptor{
       .label = "GPU profiler readback",
       .usage = wgpu::BufferUsage::MapRead | wgpu::BufferUsage::CopyDst,
       .size = ReadbackSize,
