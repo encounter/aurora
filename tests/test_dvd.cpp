@@ -3,8 +3,10 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <thread>
 #include <vector>
 
 // =============================================================================
@@ -267,6 +269,12 @@ TEST_F(DVDDiscTest, ReadAsync) {
   std::vector<u8> buf(readSize);
   BOOL ok = DVDReadAsyncPrio(&fi, buf.data(), static_cast<s32>(readSize), 0, [](s32, DVDFileInfo*) {}, 2);
   EXPECT_EQ(ok, TRUE);
+  for (int i = 0; i < 5000 && (DVDGetFileInfoStatus(&fi) == DVD_STATE_WAITING ||
+                               DVDGetFileInfoStatus(&fi) == DVD_STATE_BUSY);
+       ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  EXPECT_EQ(DVDGetFileInfoStatus(&fi), DVD_STATE_END);
   EXPECT_EQ(DVDGetTransferredSize(&fi), static_cast<s32>(readSize));
 
   DVDClose(&fi);
