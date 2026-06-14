@@ -249,6 +249,17 @@ static webgpu::TextureWithSampler g_offscreenDepth;
 static Viewport g_cachedViewport;
 static ClipRect g_cachedScissor;
 
+using PresentClock = std::chrono::steady_clock;
+static constexpr auto PresentFpsWindow = std::chrono::seconds{1};
+static std::mutex g_presentStatsMutex;
+static std::deque<PresentClock::time_point> g_presentTimes;
+
+static void prune_present_times(PresentClock::time_point now) {
+  while (!g_presentTimes.empty() && g_presentTimes.front() + PresentFpsWindow < now) {
+    g_presentTimes.pop_front();
+  }
+}
+
 static void map_staging_buffer(size_t slot, bool releaseSlotOnCompletion = false) {
   auto expected = BufferMapState::Unmapped;
   if (!s_mappingStates[slot].compare_exchange_strong(expected, BufferMapState::Mapping, std::memory_order_acq_rel,
@@ -812,6 +823,10 @@ PipelineRef pipeline_ref(const rmlui::PipelineConfig& config) {
 
 void initialize() {
   g_frameIndex = 0;
+  {
+    std::lock_guard lock{g_presentStatsMutex};
+    g_presentTimes.clear();
+  }
   render_worker::initialize();
   // This appears to take a while and blocks the render thread for periods of time
   // render_worker::set_event_pump([] {
@@ -949,6 +964,10 @@ void initialize() {
 void shutdown() {
   render_worker::synchronize();
   render_worker::shutdown();
+  {
+    std::lock_guard lock{g_presentStatsMutex};
+    g_presentTimes.clear();
+  }
   shutdown_pipeline_cache();
   depth_peek::shutdown();
   tex_copy_conv::shutdown();
@@ -1391,6 +1410,28 @@ void after_submit() noexcept { depth_peek::after_submit(); }
 
 void gpu_synchronize() { render_worker::synchronize(); }
 
+void after_present() noexcept {
+  const auto now = PresentClock::now();
+  std::lock_guard lock{g_presentStatsMutex};
+  g_presentTimes.push_back(now);
+  prune_present_times(now);
+}
+
+float calculate_fps() noexcept {
+  const auto now = PresentClock::now();
+  std::lock_guard lock{g_presentStatsMutex};
+  prune_present_times(now);
+  if (g_presentTimes.size() < 2) {
+    return 0.f;
+  }
+
+  const auto elapsed = std::chrono::duration<float>(g_presentTimes.back() - g_presentTimes.front()).count();
+  if (elapsed <= 0.f) {
+    return 0.f;
+  }
+  return static_cast<float>(g_presentTimes.size() - 1) / elapsed;
+}
+
 static void render_pass(const wgpu::RenderPassEncoder& pass, FramePacket& frame, const RenderPass& passInfo) {
   ZoneScoped;
   g_currentPipeline = UINTPTR_MAX;
@@ -1616,3 +1657,4 @@ void pop_debug_group() {
 }
 
 const AuroraStats* aurora_get_stats() { return &aurora::gfx::g_stats; }
+float aurora_get_fps() { return aurora::gfx::calculate_fps(); }

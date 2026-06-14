@@ -336,7 +336,9 @@ void end_frame() noexcept {
           status = g_surface.Present();
         }
       }
-      if (!status) {
+      if (status) {
+        gfx::after_present();
+      } else {
         Log.warn("Surface present failed");
         webgpu::release_surface();
       }
