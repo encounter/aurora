@@ -25,7 +25,7 @@ constexpr uint32_t DynamicGroup2 = 1u << 2u;
 constexpr uint64_t CommonUniformBindingSize = AURORA_ALIGN(sizeof(UniformBlock), 16);
 constexpr uint64_t ExtraUniformBindingSize =
     AURORA_ALIGN(std::max({sizeof(BlurUniformBlock), sizeof(DropShadowUniformBlock), sizeof(SimpleFilterUniformBlock),
-                           sizeof(GradientUniforzxmBlock), sizeof(SeedResampleUniformBlock)}),
+                           sizeof(GradientUniformBlock), sizeof(SeedResampleUniformBlock)}),
                  16);
 
 constexpr std::string_view vertexSource = R"(
