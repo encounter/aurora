@@ -24,8 +24,8 @@ constexpr uint32_t DynamicGroup2 = 1u << 2u;
 
 constexpr uint64_t CommonUniformBindingSize = AURORA_ALIGN(sizeof(UniformBlock), 16);
 constexpr uint64_t ExtraUniformBindingSize =
-    AURORA_ALIGN(std::max({sizeof(BlurUniformBlock), sizeof(DropShadowUniformBlock), sizeof(ColorMatrixUniformBlock),
-                           sizeof(GradientUniformBlock), sizeof(SeedResampleUniformBlock)}),
+    AURORA_ALIGN(std::max({sizeof(BlurUniformBlock), sizeof(DropShadowUniformBlock), sizeof(SimpleFilterUniformBlock),
+                           sizeof(GradientUniforzxmBlock), sizeof(SeedResampleUniformBlock)}),
                  16);
 
 constexpr std::string_view vertexSource = R"(
@@ -367,20 +367,21 @@ fn main(@builtin(position) position: vec4<f32>, @location(0) uv: vec2<f32>) -> @
 }
 )"sv;
 
-constexpr std::string_view colorMatrixFragmentSource = R"(
-struct ColorMatrixUniforms {
+constexpr std::string_view simpleFilterFragmentSource = R"(
+struct SimpleFilterUniforms {
     matrix: mat4x4<f32>,
+    opacity: vec4<f32>,
 };
 
 @group(0) @binding(1) var s: sampler;
 @group(1) @binding(0) var t: texture_2d<f32>;
-@group(2) @binding(0) var<uniform> color_matrix: ColorMatrixUniforms;
+@group(2) @binding(0) var<uniform> simple_filter: SimpleFilterUniforms;
 
 @fragment
 fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
     let tex_color = textureSample(t, s, uv);
-    let transformed_color = (color_matrix.matrix * tex_color).rgb;
-    return vec4<f32>(transformed_color, tex_color.a);
+    let transformed_color = simple_filter.matrix * tex_color;
+    return vec4<f32>(transformed_color.rgb, tex_color.a) * simple_filter.opacity.x;
 }
 )"sv;
 
@@ -511,21 +512,6 @@ wgpu::BlendState blend_state(BlendMode mode) {
                 .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha,
             },
     };
-  case BlendMode::Opacity:
-    return {
-        .color =
-            {
-                .operation = wgpu::BlendOperation::Add,
-                .srcFactor = wgpu::BlendFactor::Constant,
-                .dstFactor = wgpu::BlendFactor::Zero,
-            },
-        .alpha =
-            {
-                .operation = wgpu::BlendOperation::Add,
-                .srcFactor = wgpu::BlendFactor::Constant,
-                .dstFactor = wgpu::BlendFactor::Zero,
-            },
-    };
   case BlendMode::None:
   default:
     return {};
@@ -548,7 +534,7 @@ const wgpu::PipelineLayout create_pipeline_layout(PipelineKind kind) {
   case PipelineKind::Blur:
   case PipelineKind::RegionBlit:
   case PipelineKind::DropShadow:
-  case PipelineKind::ColorMatrix:
+  case PipelineKind::SimpleFilter:
   case PipelineKind::SeedResample:
     layouts[layoutCount++] = g_imageBindGroupLayout;
     layouts[layoutCount++] = g_uniformBindGroupLayout;
@@ -556,7 +542,6 @@ const wgpu::PipelineLayout create_pipeline_layout(PipelineKind kind) {
   case PipelineKind::Geometry:
   case PipelineKind::Blit:
   case PipelineKind::OpaqueBlit:
-  case PipelineKind::Opacity:
   default:
     layouts[layoutCount++] = g_imageBindGroupLayout;
     break;
@@ -585,12 +570,11 @@ const std::string_view fragment_source(PipelineKind kind) {
     return regionBlitFragmentSource;
   case PipelineKind::DropShadow:
     return dropShadowFragmentSource;
-  case PipelineKind::ColorMatrix:
-    return colorMatrixFragmentSource;
+  case PipelineKind::SimpleFilter:
+    return simpleFilterFragmentSource;
   case PipelineKind::MaskImage:
     return maskImageFragmentSource;
   case PipelineKind::Blit:
-  case PipelineKind::Opacity:
   default:
     return blitFragmentSource;
   }

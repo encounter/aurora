@@ -9,9 +9,14 @@
 
 namespace aurora::rmlui {
 
+struct RecordedFrame {
+  wgpu::BindGroup bindGroup;
+  bool overlay = false;
+};
+
 void initialize(const AuroraWindowSize& size) noexcept;
 void handle_event(SDL_Event& event) noexcept;
-wgpu::BindGroup record_frame(const webgpu::Viewport& presentViewport) noexcept;
+RecordedFrame record_frame(const webgpu::Viewport& presentViewport) noexcept;
 void shutdown() noexcept;
 
 } // namespace aurora::rmlui

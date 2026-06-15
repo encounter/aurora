@@ -47,6 +47,7 @@ TextureWithSampler g_depthBuffer;
 // EFB -> XFB copy pipeline
 static wgpu::BindGroupLayout g_CopyBindGroupLayout;
 wgpu::RenderPipeline g_CopyPipeline;
+wgpu::RenderPipeline g_CopyPremultipliedAlphaPipeline;
 wgpu::BindGroup g_CopyBindGroup;
 static AuroraSampler g_Resampler = SAMPLER_BILINEAR;
 static wgpu::BindGroupLayout g_ResampleBindGroupLayout;
@@ -411,9 +412,14 @@ fn vs_main(@builtin(vertex_index) vtxIdx: u32) -> VertexOutput {
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_opaque(in: VertexOutput) -> @location(0) vec4<f32> {
     let color = textureSample(efb_texture, efb_sampler, in.uv);
     return vec4(color.rgb, 1.0);
+}
+
+@fragment
+fn fs_premultiplied_alpha(in: VertexOutput) -> @location(0) vec4<f32> {
+    return textureSample(efb_texture, efb_sampler, in.uv);
 }
 )""";
   const wgpu::ShaderModuleDescriptor moduleDescriptor{
@@ -421,16 +427,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
       .label = "XFB Copy Module",
   };
   auto module = g_device.CreateShaderModule(&moduleDescriptor);
-  const std::array colorTargets{wgpu::ColorTargetState{
-      .format = g_graphicsConfig.surfaceConfiguration.format,
-      .writeMask = wgpu::ColorWriteMask::All,
-  }};
-  const wgpu::FragmentState fragmentState{
-      .module = module,
-      .entryPoint = "fs_main",
-      .targetCount = colorTargets.size(),
-      .targets = colorTargets.data(),
-  };
   const std::array bindGroupLayoutEntries{
       wgpu::BindGroupLayoutEntry{
           .binding = 0,
@@ -460,25 +456,58 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
       .bindGroupLayouts = &g_CopyBindGroupLayout,
   };
   auto pipelineLayout = g_device.CreatePipelineLayout(&layoutDescriptor);
-  const wgpu::RenderPipelineDescriptor pipelineDescriptor{
-      .layout = pipelineLayout,
-      .vertex =
-          wgpu::VertexState{
-              .module = module,
-              .entryPoint = "vs_main",
-          },
-      .primitive =
-          wgpu::PrimitiveState{
-              .topology = wgpu::PrimitiveTopology::TriangleList,
-          },
-      .multisample =
-          wgpu::MultisampleState{
-              .count = 1,
-              .mask = UINT32_MAX,
-          },
-      .fragment = &fragmentState,
+
+  const auto make_copy_pipeline = [&](const char* label, const char* fragmentEntryPoint, const wgpu::BlendState* blend) {
+    const std::array colorTargets{wgpu::ColorTargetState{
+        .format = g_graphicsConfig.surfaceConfiguration.format,
+        .blend = blend,
+        .writeMask = wgpu::ColorWriteMask::All,
+    }};
+    const wgpu::FragmentState fragmentState{
+        .module = module,
+        .entryPoint = fragmentEntryPoint,
+        .targetCount = colorTargets.size(),
+        .targets = colorTargets.data(),
+    };
+    const wgpu::RenderPipelineDescriptor pipelineDescriptor{
+        .label = label,
+        .layout = pipelineLayout,
+        .vertex =
+            wgpu::VertexState{
+                .module = module,
+                .entryPoint = "vs_main",
+            },
+        .primitive =
+            wgpu::PrimitiveState{
+                .topology = wgpu::PrimitiveTopology::TriangleList,
+            },
+        .multisample =
+            wgpu::MultisampleState{
+                .count = 1,
+                .mask = UINT32_MAX,
+            },
+        .fragment = &fragmentState,
+    };
+    return g_device.CreateRenderPipeline(&pipelineDescriptor);
   };
-  g_CopyPipeline = g_device.CreateRenderPipeline(&pipelineDescriptor);
+  g_CopyPipeline = make_copy_pipeline("XFB Copy Pipeline", "fs_opaque", nullptr);
+
+  const wgpu::BlendState premultipliedAlphaBlend{
+      .color =
+          {
+              .operation = wgpu::BlendOperation::Add,
+              .srcFactor = wgpu::BlendFactor::One,
+              .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha,
+          },
+      .alpha =
+          {
+              .operation = wgpu::BlendOperation::Add,
+              .srcFactor = wgpu::BlendFactor::One,
+              .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha,
+          },
+  };
+  g_CopyPremultipliedAlphaPipeline =
+      make_copy_pipeline("XFB Premultiplied Alpha Copy Pipeline", "fs_premultiplied_alpha", &premultipliedAlphaBlend);
 }
 
 void create_resample_pipeline() {
@@ -983,6 +1012,7 @@ void shutdown() {
   gpu_prof::shutdown();
   g_CopyBindGroupLayout = {};
   g_CopyPipeline = {};
+  g_CopyPremultipliedAlphaPipeline = {};
   g_CopyBindGroup = {};
   g_ResampleBindGroupLayout = {};
   g_ResamplePipeline = {};

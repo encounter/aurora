@@ -239,13 +239,16 @@ void end_frame() noexcept {
                                                            presentSource.size.width, presentSource.size.height);
 
   wgpu::BindGroup rmlBindGroup;
+  bool rmlOverlay = false;
 #if AURORA_ENABLE_RMLUI
   if (rmlui::is_initialized()) {
-    rmlBindGroup = rmlui::record_frame(viewport);
+    auto rmlFrame = rmlui::record_frame(viewport);
+    rmlBindGroup = std::move(rmlFrame.bindGroup);
+    rmlOverlay = rmlFrame.overlay;
   }
 #endif
 
-  gfx::end_frame([rmlBindGroup = std::move(rmlBindGroup), viewport,
+  gfx::end_frame([rmlBindGroup = std::move(rmlBindGroup), rmlOverlay, viewport,
                   imguiDrawData = std::move(imguiDrawData)](wgpu::CommandEncoder& encoder) {
     wgpu::Texture currentTexture;
     wgpu::TextureView currentView;
@@ -267,7 +270,7 @@ void end_frame() noexcept {
     const bool canPresent = currentTexture && currentView;
     if (canPresent) {
       wgpu::BindGroup presentBindGroup;
-      if (rmlBindGroup) {
+      if (rmlBindGroup && !rmlOverlay) {
         presentBindGroup = rmlBindGroup;
       } else {
         const auto& resampledSource = webgpu::resample_present_source(encoder, viewport);
@@ -294,6 +297,11 @@ void end_frame() noexcept {
         pass.SetViewport(viewport.left, viewport.top, viewport.width, viewport.height, viewport.znear, viewport.zfar);
 
         pass.Draw(3);
+        if (rmlBindGroup && rmlOverlay) {
+          pass.SetPipeline(webgpu::g_CopyPremultipliedAlphaPipeline);
+          pass.SetBindGroup(0, rmlBindGroup, 0, nullptr);
+          pass.Draw(3);
+        }
         pass.End();
       }
       {

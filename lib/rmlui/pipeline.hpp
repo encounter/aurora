@@ -10,7 +10,7 @@
 
 namespace aurora::rmlui {
 
-constexpr uint32_t RmlPipelineConfigVersion = 1;
+constexpr uint32_t RmlPipelineConfigVersion = 2;
 
 enum class PipelineKind : uint32_t {
   Geometry,
@@ -18,11 +18,10 @@ enum class PipelineKind : uint32_t {
   Blit,
   OpaqueBlit,
   SeedResample,
-  Opacity,
+  SimpleFilter,
   Blur,
   RegionBlit,
   DropShadow,
-  ColorMatrix,
   MaskImage,
 };
 
@@ -43,7 +42,6 @@ enum class StencilMode : uint32_t {
 enum class BlendMode : uint32_t {
   None,
   Premultiplied,
-  Opacity,
 };
 
 enum class DrawKind : uint32_t {

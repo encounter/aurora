@@ -27,6 +27,7 @@ namespace {
 Module Log("aurora::rmlui::RenderInterface");
 
 constexpr size_t rmlBufferOffsetAlignment = 4;
+constexpr float FilterEpsilon = 0.0001f;
 
 struct Image {
   std::unique_ptr<uint8_t[]> data;
@@ -51,6 +52,23 @@ struct ShaderTextureData {
 
 struct CompiledShaderData {
   GradientUniformBlock gradient;
+};
+
+enum class FilterType {
+  Opacity,
+  Blur,
+  DropShadow,
+  ColorMatrix,
+  MaskImage,
+};
+
+struct CompiledFilter {
+  FilterType type = FilterType::Blur;
+  float opacity = 1.f;
+  float sigma = 0.f;
+  Rml::Vector2f offset;
+  Rml::ColourbPremultiplied color;
+  Rml::Matrix4f colorMatrix;
 };
 
 Image get_image(const Rml::String& source) {
@@ -158,6 +176,74 @@ Rml::ColumnMajorMatrix4f to_shader_matrix(const Rml::Matrix4f& matrix) {
   }
 }
 
+bool is_identity_matrix(const Rml::Matrix4f& matrix) {
+  const Rml::Matrix4f identity = Rml::Matrix4f::Identity();
+  const auto* matrixData = matrix.data();
+  const auto* identityData = identity.data();
+  for (size_t i = 0; i < 16; ++i) {
+    if (std::abs(matrixData[i] - identityData[i]) > FilterEpsilon) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool is_identity_filter(const CompiledFilter& filter) {
+  switch (filter.type) {
+  case FilterType::Opacity:
+    return std::abs(filter.opacity - 1.f) <= FilterEpsilon;
+  case FilterType::Blur:
+    return filter.sigma < 0.5f;
+  case FilterType::ColorMatrix:
+    return is_identity_matrix(filter.colorMatrix);
+  case FilterType::DropShadow:
+  case FilterType::MaskImage:
+  default:
+    return false;
+  }
+}
+
+std::vector<Rml::CompiledFilterHandle> active_filters(Rml::Span<const Rml::CompiledFilterHandle> filters) {
+  std::vector<Rml::CompiledFilterHandle> activeFilters;
+  activeFilters.reserve(filters.size());
+  for (Rml::CompiledFilterHandle filterHandle : filters) {
+    const auto* filter = reinterpret_cast<const CompiledFilter*>(filterHandle);
+    if (filter != nullptr && !is_identity_filter(*filter)) {
+      activeFilters.push_back(filterHandle);
+    }
+  }
+  return activeFilters;
+}
+
+bool try_fold_simple_filters(Rml::Span<const Rml::CompiledFilterHandle> filters, Rml::Matrix4f& colorMatrix,
+                             float& opacity) {
+  colorMatrix = Rml::Matrix4f::Identity();
+  opacity = 1.f;
+
+  for (Rml::CompiledFilterHandle filterHandle : filters) {
+    const auto* filter = reinterpret_cast<const CompiledFilter*>(filterHandle);
+    if (filter == nullptr) {
+      continue;
+    }
+
+    switch (filter->type) {
+    case FilterType::Opacity:
+      opacity *= filter->opacity;
+      break;
+    case FilterType::ColorMatrix:
+      colorMatrix = filter->colorMatrix * colorMatrix;
+      break;
+    case FilterType::Blur:
+    case FilterType::DropShadow:
+    case FilterType::MaskImage:
+    default:
+      return false;
+    }
+  }
+
+  return true;
+}
+
 Rml::Rectanglei downsample_scissor(Rml::Rectanglei scissor) {
   scissor.p0 = (scissor.p0 + Rml::Vector2i(1)) / 2;
   scissor.p1 = Rml::Math::Max(scissor.p1 / 2, scissor.p0);
@@ -219,6 +305,18 @@ gfx::PipelineRef blit_pipeline(wgpu::TextureFormat colorFormat, uint32_t sampleC
                       type == WebGPURenderInterface::BlitPipelineType::ReplaceMasked;
   return gfx::pipeline_ref(
       make_pipeline_config(PipelineKind::Blit, colorFormat, sampleCount, VertexLayoutKind::Fullscreen,
+                           masked ? StencilMode::EqualKeep : (useStencil ? StencilMode::AlwaysKeep : StencilMode::None),
+                           blend ? BlendMode::Premultiplied : BlendMode::None));
+}
+
+gfx::PipelineRef simple_filter_pipeline(wgpu::TextureFormat colorFormat, uint32_t sampleCount,
+                                        WebGPURenderInterface::BlitPipelineType type, bool useStencil) {
+  const bool blend = type == WebGPURenderInterface::BlitPipelineType::Blend ||
+                     type == WebGPURenderInterface::BlitPipelineType::BlendMasked;
+  const bool masked = type == WebGPURenderInterface::BlitPipelineType::BlendMasked ||
+                      type == WebGPURenderInterface::BlitPipelineType::ReplaceMasked;
+  return gfx::pipeline_ref(
+      make_pipeline_config(PipelineKind::SimpleFilter, colorFormat, sampleCount, VertexLayoutKind::Fullscreen,
                            masked ? StencilMode::EqualKeep : (useStencil ? StencilMode::AlwaysKeep : StencilMode::None),
                            blend ? BlendMode::Premultiplied : BlendMode::None));
 }
@@ -640,6 +738,11 @@ void WebGPURenderInterface::EnsureFrameRenderingStarted() {
   }
 
   m_frameRenderingStarted = true;
+  if (m_baseLayerContent == BaseLayerContent::Transparent) {
+    BeginLayerPass(0, wgpu::LoadOp::Clear, "RmlUi transparent base layer pass", true);
+    return;
+  }
+
   const auto seedBindGroup = texture_bind_group_ref(m_frameSeedView);
   const auto seedUniformRange = gfx::push_uniform(SeedResampleUniformBlock{
       .samplerMode = sampler_mode(),
@@ -832,9 +935,8 @@ void WebGPURenderInterface::RenderBlur(float sigma, const RenderTarget& sourceDe
   }
 }
 
-void WebGPURenderInterface::RenderFilters(Rml::Span<const Rml::CompiledFilterHandle> filters) {
-  constexpr size_t sourceIndex = 0;
-  constexpr size_t shadowIndex = 1;
+size_t WebGPURenderInterface::RenderFilters(Rml::Span<const Rml::CompiledFilterHandle> filters) {
+  size_t sourceIndex = 0;
   constexpr size_t tempIndex = 2;
 
   for (Rml::CompiledFilterHandle filterHandle : filters) {
@@ -842,22 +944,24 @@ void WebGPURenderInterface::RenderFilters(Rml::Span<const Rml::CompiledFilterHan
     if (filter == nullptr) {
       continue;
     }
+    const size_t scratchIndex = sourceIndex == 0 ? 1 : 0;
 
     switch (filter->type) {
     case FilterType::Opacity: {
-      BeginRenderTargetPass(m_postprocessTargets[shadowIndex].view, wgpu::LoadOp::Clear, "RmlUi opacity pass");
+      const SimpleFilterUniformBlock simpleFilterUniform{
+          .matrix = to_shader_matrix(Rml::Matrix4f::Identity()),
+          .opacity = {filter->opacity, 0.f, 0.f, 0.f},
+      };
+      const auto simpleFilterRange = gfx::push_uniform(simpleFilterUniform);
+      BeginRenderTargetPass(m_postprocessTargets[scratchIndex].view, wgpu::LoadOp::Clear, "RmlUi opacity pass");
       DrawFullscreenTexture(texture_bind_group_ref(m_postprocessTargets[sourceIndex].view),
-                            filter_pipeline(PipelineKind::Opacity, m_renderTargetFormat, VertexLayoutKind::Fullscreen,
-                                            BlendMode::Opacity),
-                            0, {}, true, {filter->opacity, filter->opacity, filter->opacity, filter->opacity}, true);
-      CompositeToTarget(texture_bind_group_ref(m_postprocessTargets[shadowIndex].view),
-                        m_postprocessTargets[sourceIndex].view, wgpu::LoadOp::Clear,
-                        blit_pipeline(m_renderTargetFormat, 1, BlitPipelineType::Replace, false),
-                        "RmlUi opacity result copy pass");
+                            filter_pipeline(PipelineKind::SimpleFilter, m_renderTargetFormat), uniform_bind_group_ref(),
+                            simpleFilterRange);
+      sourceIndex = scratchIndex;
       break;
     }
     case FilterType::Blur:
-      RenderBlur(filter->sigma, m_postprocessTargets[sourceIndex], m_postprocessTargets[shadowIndex]);
+      RenderBlur(filter->sigma, m_postprocessTargets[sourceIndex], m_postprocessTargets[tempIndex]);
       break;
     case FilterType::DropShadow: {
       TexCoordLimits texCoordLimits = GetPostprocessTexCoordLimits();
@@ -883,58 +987,52 @@ void WebGPURenderInterface::RenderFilters(Rml::Span<const Rml::CompiledFilterHan
       };
       const auto dropShadowRange = gfx::push_uniform(dropShadowUniform);
       CompositeToTarget(texture_bind_group_ref(m_postprocessTargets[sourceIndex].view),
-                        m_postprocessTargets[shadowIndex].view, wgpu::LoadOp::Clear,
+                        m_postprocessTargets[scratchIndex].view, wgpu::LoadOp::Clear,
                         filter_pipeline(PipelineKind::DropShadow, m_renderTargetFormat), "RmlUi drop shadow pass",
                         uniform_bind_group_ref(), dropShadowRange);
 
-      RenderBlur(filter->sigma, m_postprocessTargets[shadowIndex], m_postprocessTargets[tempIndex]);
+      RenderBlur(filter->sigma, m_postprocessTargets[scratchIndex], m_postprocessTargets[tempIndex]);
 
       CompositeToTarget(texture_bind_group_ref(m_postprocessTargets[sourceIndex].view),
-                        m_postprocessTargets[shadowIndex].view, wgpu::LoadOp::Load,
+                        m_postprocessTargets[scratchIndex].view, wgpu::LoadOp::Load,
                         blit_pipeline(m_renderTargetFormat, 1, BlitPipelineType::Blend, false),
                         "RmlUi drop shadow source composite pass");
-      CompositeToTarget(texture_bind_group_ref(m_postprocessTargets[shadowIndex].view),
-                        m_postprocessTargets[sourceIndex].view, wgpu::LoadOp::Clear,
-                        blit_pipeline(m_renderTargetFormat, 1, BlitPipelineType::Replace, false),
-                        "RmlUi drop shadow result copy pass");
+      sourceIndex = scratchIndex;
       break;
     }
     case FilterType::ColorMatrix: {
-      const ColorMatrixUniformBlock colorMatrixUniform{
+      const SimpleFilterUniformBlock simpleFilterUniform{
           .matrix = to_shader_matrix(filter->colorMatrix),
+          .opacity = {1.f, 0.f, 0.f, 0.f},
       };
-      const auto colorMatrixRange = gfx::push_uniform(colorMatrixUniform);
+      const auto simpleFilterRange = gfx::push_uniform(simpleFilterUniform);
 
       CompositeToTarget(texture_bind_group_ref(m_postprocessTargets[sourceIndex].view),
-                        m_postprocessTargets[shadowIndex].view, wgpu::LoadOp::Clear,
-                        filter_pipeline(PipelineKind::ColorMatrix, m_renderTargetFormat), "RmlUi color matrix pass",
-                        uniform_bind_group_ref(), colorMatrixRange);
-      CompositeToTarget(texture_bind_group_ref(m_postprocessTargets[shadowIndex].view),
-                        m_postprocessTargets[sourceIndex].view, wgpu::LoadOp::Clear,
-                        blit_pipeline(m_renderTargetFormat, 1, BlitPipelineType::Replace, false),
-                        "RmlUi color matrix result copy pass");
+                        m_postprocessTargets[scratchIndex].view, wgpu::LoadOp::Clear,
+                        filter_pipeline(PipelineKind::SimpleFilter, m_renderTargetFormat), "RmlUi color matrix pass",
+                        uniform_bind_group_ref(), simpleFilterRange);
+      sourceIndex = scratchIndex;
       break;
     }
     case FilterType::MaskImage: {
       CompositeToTarget(texture_bind_group_ref(m_postprocessTargets[sourceIndex].view),
-                        m_postprocessTargets[shadowIndex].view, wgpu::LoadOp::Clear,
+                        m_postprocessTargets[scratchIndex].view, wgpu::LoadOp::Clear,
                         filter_pipeline(PipelineKind::MaskImage, m_renderTargetFormat), "RmlUi mask image pass",
                         texture_bind_group_ref(m_blendMaskTarget.view), {}, false);
-      CompositeToTarget(texture_bind_group_ref(m_postprocessTargets[shadowIndex].view),
-                        m_postprocessTargets[sourceIndex].view, wgpu::LoadOp::Clear,
-                        blit_pipeline(m_renderTargetFormat, 1, BlitPipelineType::Replace, false),
-                        "RmlUi mask image result copy pass");
+      sourceIndex = scratchIndex;
       break;
     }
     }
   }
 
   EndActivePass();
+  return sourceIndex;
 }
 
 void WebGPURenderInterface::BeginFrame(const webgpu::TextureWithSampler& target,
-                                       const webgpu::TextureWithSampler& seedTarget) {
-  m_frameSeedView = seedTarget.view;
+                                       const webgpu::TextureWithSampler& sceneTarget,
+                                       BaseLayerContent baseLayerContent) {
+  m_frameSeedView = sceneTarget.view;
   m_frameSize = target.size;
   m_viewport = {
       .left = 0.f,
@@ -950,6 +1048,7 @@ void WebGPURenderInterface::BeginFrame(const webgpu::TextureWithSampler& target,
   m_frameRenderingStarted = false;
   m_frameActive = true;
   m_passActive = false;
+  m_baseLayerContent = baseLayerContent;
 
   NewFrame();
   EnsureFrameTargets(target.size);
@@ -998,6 +1097,7 @@ bool WebGPURenderInterface::EndFrame() {
   m_frameActive = false;
   m_frameSeedView = {};
   m_frameRenderingStarted = false;
+  m_baseLayerContent = BaseLayerContent::Transparent;
   return rendered;
 }
 
@@ -1024,17 +1124,52 @@ void WebGPURenderInterface::CompositeLayers(Rml::LayerHandle source, Rml::LayerH
   }
 
   EnsureFrameRenderingStarted();
-  CompositeToTarget(texture_bind_group_ref(m_layers[source].view), m_postprocessTargets[0].view, wgpu::LoadOp::Clear,
-                    blit_pipeline(m_renderTargetFormat, 1, BlitPipelineType::Replace, false), "RmlUi layer copy pass");
   const Rml::LayerHandle topLayer = m_layerStack.empty() ? 0 : m_layerStack.back();
-  RenderFilters(filters);
+  const std::vector<Rml::CompiledFilterHandle> activeFilterHandles = active_filters(filters);
+  const Rml::Span activeFilters{activeFilterHandles.data(), activeFilterHandles.size()};
 
   const bool replace = blendMode == Rml::BlendMode::Replace;
   const BlitPipelineType pipelineType =
       replace ? (m_clipMaskEnabled ? BlitPipelineType::ReplaceMasked : BlitPipelineType::Replace)
               : (m_clipMaskEnabled ? BlitPipelineType::BlendMasked : BlitPipelineType::Blend);
+  if (activeFilters.empty() && source != destination) {
+    BeginLayerPass(destination, wgpu::LoadOp::Load, "RmlUi layer direct composite pass");
+    DrawFullscreenTexture(texture_bind_group_ref(m_layers[source].view),
+                          blit_pipeline(m_renderTargetFormat, LayerSampleCount, pipelineType, true));
+
+    if (destination != topLayer) {
+      EndActivePass();
+      m_activeLayer = topLayer;
+    }
+    return;
+  }
+
+  Rml::Matrix4f simpleFilterMatrix;
+  float simpleFilterOpacity = 1.f;
+  if (source != destination && try_fold_simple_filters(activeFilters, simpleFilterMatrix, simpleFilterOpacity)) {
+    const SimpleFilterUniformBlock simpleFilterUniform{
+        .matrix = to_shader_matrix(simpleFilterMatrix),
+        .opacity = {simpleFilterOpacity, 0.f, 0.f, 0.f},
+    };
+    const auto simpleFilterRange = gfx::push_uniform(simpleFilterUniform);
+    BeginLayerPass(destination, wgpu::LoadOp::Load, "RmlUi simple filter composite pass");
+    DrawFullscreenTexture(texture_bind_group_ref(m_layers[source].view),
+                          simple_filter_pipeline(m_renderTargetFormat, LayerSampleCount, pipelineType, true),
+                          uniform_bind_group_ref(), simpleFilterRange);
+
+    if (destination != topLayer) {
+      EndActivePass();
+      m_activeLayer = topLayer;
+    }
+    return;
+  }
+
+  CompositeToTarget(texture_bind_group_ref(m_layers[source].view), m_postprocessTargets[0].view, wgpu::LoadOp::Clear,
+                    blit_pipeline(m_renderTargetFormat, 1, BlitPipelineType::Replace, false), "RmlUi layer copy pass");
+  const size_t filteredIndex = RenderFilters(activeFilters);
+
   BeginLayerPass(destination, wgpu::LoadOp::Load, "RmlUi layer composite pass");
-  DrawFullscreenTexture(texture_bind_group_ref(m_postprocessTargets[0].view),
+  DrawFullscreenTexture(texture_bind_group_ref(m_postprocessTargets[filteredIndex].view),
                         blit_pipeline(m_renderTargetFormat, LayerSampleCount, pipelineType, true));
 
   if (destination != topLayer) {

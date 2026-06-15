@@ -41,8 +41,9 @@ struct DropShadowUniformBlock {
   Rml::Vector2f texCoordMax;
 };
 
-struct ColorMatrixUniformBlock {
+struct SimpleFilterUniformBlock {
   Rml::ColumnMajorMatrix4f matrix;
+  Rml::Vector4f opacity;
 };
 
 struct GradientUniformBlock {
@@ -58,6 +59,11 @@ struct GradientUniformBlock {
 struct TexCoordLimits {
   Rml::Vector2f min;
   Rml::Vector2f max;
+};
+
+enum class BaseLayerContent {
+  Transparent,
+  Scene,
 };
 
 class WebGPURenderInterface : public Rml::RenderInterface {
@@ -81,29 +87,12 @@ public:
   };
 
 private:
-  enum class FilterType {
-    Opacity,
-    Blur,
-    DropShadow,
-    ColorMatrix,
-    MaskImage,
-  };
-
   struct RenderTarget {
     wgpu::Texture texture;
     wgpu::TextureView view;
     wgpu::Texture multisampleTexture;
     wgpu::TextureView multisampleView;
     wgpu::Extent3D size;
-  };
-
-  struct CompiledFilter {
-    FilterType type = FilterType::Blur;
-    float opacity = 1.f;
-    float sigma = 0.f;
-    Rml::Vector2f offset;
-    Rml::ColourbPremultiplied color;
-    Rml::Matrix4f colorMatrix;
   };
 
   wgpu::TextureView m_frameSeedView;
@@ -120,10 +109,11 @@ private:
   Rml::Vector2i m_clipResetGeometrySize{};
   std::vector<RenderTarget> m_layers;
   std::array<RenderTarget, 3> m_postprocessTargets{};
-  RenderTarget m_blendMaskTarget;
+  RenderTarget m_blendMaskTarget{};
   std::vector<Rml::LayerHandle> m_layerStack;
   Rml::LayerHandle m_activeLayer = 0;
   Rml::LayerHandle m_nextLayer = 1;
+  BaseLayerContent m_baseLayerContent = BaseLayerContent::Transparent;
 
   Rml::Vector2i m_windowSize{};
   Rml::Matrix4f m_translationMatrix = Rml::Matrix4f::Identity();
@@ -169,7 +159,7 @@ private:
                          gfx::Range extraUniformRange = {}, bool extraBindGroupHasDynamicOffset = true,
                          std::array<float, 4> blendConstant = {}, bool hasBlendConstant = false);
   void RenderBlur(float sigma, const RenderTarget& sourceDestination, const RenderTarget& temp);
-  void RenderFilters(Rml::Span<const Rml::CompiledFilterHandle> filters);
+  size_t RenderFilters(Rml::Span<const Rml::CompiledFilterHandle> filters);
 
 public:
   Rml::CompiledGeometryHandle CompileGeometry(Rml::Span<const Rml::Vertex> vertices,
@@ -199,7 +189,8 @@ public:
                     Rml::TextureHandle texture) override;
   void ReleaseShader(Rml::CompiledShaderHandle shader) override;
 
-  void BeginFrame(const webgpu::TextureWithSampler& target, const webgpu::TextureWithSampler& seed_target);
+  void BeginFrame(const webgpu::TextureWithSampler& target, const webgpu::TextureWithSampler& scene_target,
+                  BaseLayerContent baseLayerContent);
   bool EndFrame();
   void SetWindowSize(const Rml::Vector2i& window_size) { m_windowSize = window_size; }
   void SetRenderTargetFormat(wgpu::TextureFormat render_target_format) { m_renderTargetFormat = render_target_format; }

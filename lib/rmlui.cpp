@@ -4,6 +4,7 @@
 #include <thread>
 
 #include <RmlUi/Core.h>
+#include <RmlUi/Core/Element.h>
 #include <RmlUi_Backend.h>
 #include <RmlUi_Platform_SDL.h>
 #include <tracy/Tracy.hpp>
@@ -80,6 +81,32 @@ void ensure_render_target(Rml::Vector2i dimensions) noexcept {
   }
   s_renderTarget = webgpu::create_render_texture(width, height, false);
   s_renderTargetCopyBindGroup = webgpu::create_copy_bind_group(s_renderTarget);
+}
+
+bool element_has_visible_backdrop_filter(const Rml::Element* element) noexcept {
+  if (element == nullptr || !element->IsVisible(true)) {
+    return false;
+  }
+
+  const auto& computed = element->GetComputedValues();
+  if (computed.opacity() > 0.f && computed.has_backdrop_filter()) {
+    return true;
+  }
+
+  const int childCount = element->GetNumChildren();
+  for (int childIndex = 0; childIndex < childCount; ++childIndex) {
+    if (element_has_visible_backdrop_filter(element->GetChild(childIndex))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool context_has_visible_backdrop_filter(Rml::Context* context) noexcept {
+  if (context == nullptr) {
+    return false;
+  }
+  return element_has_visible_backdrop_filter(context->GetRootElement());
 }
 
 struct MappedPoint {
@@ -408,7 +435,7 @@ void handle_event(SDL_Event& event) noexcept {
   RmlSDL::InputEventHandler(g_context, window::get_sdl_window(), event);
 }
 
-wgpu::BindGroup record_frame(const webgpu::Viewport& presentViewport) noexcept {
+RecordedFrame record_frame(const webgpu::Viewport& presentViewport) noexcept {
   if (g_context == nullptr) {
     return {};
   }
@@ -422,10 +449,12 @@ wgpu::BindGroup record_frame(const webgpu::Viewport& presentViewport) noexcept {
 
   sync_context_metrics(dim);
   g_context->Update();
+  const bool needsBackdrop = context_has_visible_backdrop_filter(g_context);
 
   auto* renderInterface = get_render_interface();
   renderInterface->SetWindowSize(g_context->GetDimensions());
-  renderInterface->BeginFrame(s_renderTarget, webgpu::present_source());
+  renderInterface->BeginFrame(s_renderTarget, webgpu::present_source(),
+                              needsBackdrop ? BaseLayerContent::Scene : BaseLayerContent::Transparent);
 
   Backend::BeginFrame();
   g_context->Render();
@@ -435,7 +464,10 @@ wgpu::BindGroup record_frame(const webgpu::Viewport& presentViewport) noexcept {
     // We didn't render anything
     return {};
   }
-  return s_renderTargetCopyBindGroup;
+  return {
+      .bindGroup = s_renderTargetCopyBindGroup,
+      .overlay = !needsBackdrop,
+  };
 }
 
 void shutdown() noexcept {
