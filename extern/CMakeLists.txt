@@ -289,6 +289,9 @@ if (AURORA_ENABLE_GX)
       URL https://github.com/mikke89/RmlUi/archive/f9b8c9e2935d5df2c7dff2c190d3968e99b0c3dc.tar.gz
       URL_HASH SHA256=42b830abc2509a8c07cf02ba3313505de3a4642725654f489402022d8fefdd79
       DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+      PATCH_COMMAND ${CMAKE_COMMAND}
+        -DRMLUI_SOURCE_DIR=<SOURCE_DIR>
+        -P "${CMAKE_CURRENT_LIST_DIR}/../cmake/patches/apply-rmlui-keyboard-showed-state.cmake"
       EXCLUDE_FROM_ALL
     )
     FetchContent_MakeAvailable(rmlui)
