@@ -1297,6 +1297,7 @@ void end_frame(EndFrameCallback callback) {
     g_frameSlots.release(frameSlot);
     expire_cached_bind_groups();
     map_staging_buffer(stagingSlot, true);
+    process_events();
   });
 }
 
