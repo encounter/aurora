@@ -19,6 +19,7 @@
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_pixels.h>
+#include <tracy/Tracy.hpp>
 
 #if defined(SDL_PLATFORM_ANDROID)
 #include <jni.h>
@@ -223,20 +224,31 @@ void process_event(SDL_Event& event) {
 } // namespace
 
 const AuroraEvent* poll_events() {
+  ZoneScoped;
   g_events.clear();
 
   SDL_Event event;
   // Clear out the previous scroll values to prevent ghost input
   input::set_mouse_scroll(0, 0);
   if (is_paused()) {
+    ZoneScopedN("SDL_WaitEvent (paused)");
     if (SDL_WaitEvent(&event)) {
       process_event(event);
     } else {
       Log.warn("SDL_WaitEvent failed: {}", SDL_GetError());
     }
   }
-  while (SDL_PollEvent(&event)) {
-    process_event(event);
+  while (true) {
+    bool hasEvent = false;
+    {
+      ZoneScopedN("SDL_PollEvent");
+      hasEvent = SDL_PollEvent(&event);
+    }
+    if (hasEvent) {
+      process_event(event);
+    } else {
+      break;
+    }
   }
   g_events.push_back(AuroraEvent{
       .type = AURORA_NONE,
