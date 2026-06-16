@@ -2,6 +2,7 @@
 
 #ifdef AURORA_ENABLE_GX
 #include "gfx/common.hpp"
+#include "gfx/render_worker.hpp"
 #include "gx/fifo.hpp"
 #include "imgui.hpp"
 #include "webgpu/gpu.hpp"
@@ -178,10 +179,11 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
 }
 
 void shutdown() noexcept {
+#ifdef AURORA_ENABLE_GX
+  gfx::render_worker::synchronize();
 #ifdef AURORA_ENABLE_RMLUI
   rmlui::shutdown();
 #endif
-#ifdef AURORA_ENABLE_GX
   imgui::shutdown();
   gfx::shutdown();
   webgpu::shutdown();
