@@ -62,7 +62,7 @@ static wgpu::SurfaceCapabilities g_surfaceCapabilities;
 bool g_bcTexturesSupported = false;
 bool g_astcTexturesSupported = false;
 bool g_textureComponentSwizzleSupported = false;
-static std::atomic_bool g_shuttingDown = false;
+static std::atomic_bool g_initialized = false;
 
 namespace {
 
@@ -457,7 +457,8 @@ fn fs_premultiplied_alpha(in: VertexOutput) -> @location(0) vec4<f32> {
   };
   auto pipelineLayout = g_device.CreatePipelineLayout(&layoutDescriptor);
 
-  const auto make_copy_pipeline = [&](const char* label, const char* fragmentEntryPoint, const wgpu::BlendState* blend) {
+  const auto make_copy_pipeline = [&](const char* label, const char* fragmentEntryPoint,
+                                      const wgpu::BlendState* blend) {
     const std::array colorTargets{wgpu::ColorTargetState{
         .format = g_graphicsConfig.surfaceConfiguration.format,
         .blend = blend,
@@ -917,15 +918,19 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     });
     deviceDescriptor.SetUncapturedErrorCallback(
         [](const wgpu::Device& device, wgpu::ErrorType type, wgpu::StringView message) {
-          if (!g_shuttingDown) {
+          if (g_initialized) {
             FATAL("WebGPU error {}: {}", underlying(type), message);
+          } else {
+            Log.warn("WebGPU error {}: {}", underlying(type), message);
           }
         });
     deviceDescriptor.SetDeviceLostCallback(
         wgpu::CallbackMode::AllowSpontaneous,
         [](const wgpu::Device& device, wgpu::DeviceLostReason reason, wgpu::StringView message) {
-          if (!g_shuttingDown) {
+          if (g_initialized) {
             FATAL("Device lost: {}", message);
+          } else {
+            Log.warn("Device lost: {}", message);
           }
         });
     const auto future =
@@ -1003,11 +1008,12 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
   create_resample_pipeline();
   gpu_prof::initialize();
   resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height, true);
+  g_initialized = true;
   return true;
 }
 
 void shutdown() {
-  g_shuttingDown = true;
+  g_initialized = false;
   gfx::gpu_synchronize();
   gpu_prof::shutdown();
   g_CopyBindGroupLayout = {};
@@ -1026,7 +1032,6 @@ void shutdown() {
   g_device = {};
   g_adapter = {};
   g_instance = {};
-
   cache_shutdown();
 }
 
