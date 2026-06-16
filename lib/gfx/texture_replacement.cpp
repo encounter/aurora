@@ -270,7 +270,7 @@ uint32_t texture_base_level_size(const GXTexObj_& obj) noexcept {
 std::optional<uint64_t> compute_referenced_tlut_hash(const GXTexObj_& obj, std::span<const uint8_t> tlutData) noexcept {
   const uint32_t textureSize = texture_base_level_size(obj);
   const auto* textureData = static_cast<const uint8_t*>(obj.data);
-  if (!is_palette_format(obj.format()) || textureData == nullptr || textureSize == 0 || tlutData.empty()) {
+  if (!is_palette_format(obj.format()) || !obj.has_data() || textureSize == 0 || tlutData.empty()) {
     return std::nullopt;
   }
 
@@ -350,7 +350,7 @@ aurora::texture::TextureSourceKey build_source_key_base(const GXTexObj_& obj) no
   };
 
   const uint32_t textureSize = texture_base_level_size(obj);
-  if (obj.data != nullptr && textureSize != 0) {
+  if (obj.has_data() && textureSize != 0) {
     key.textureHash = XXH64(obj.data, textureSize, 0);
   }
   return key;

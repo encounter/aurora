@@ -106,6 +106,10 @@ struct GXTexObj_ {
   // Custom flag for texture caching
   bool no_cache() const noexcept { return (flags & 0x80) != 0; }
   void set_no_cache(bool value) noexcept { flags = value ? flags | 0x80 : flags & ~0x80; }
+
+  // Hacky workaround for an instances where incremental IDs are used for GXCopyTex, but the copy tex was invalidated
+  // and the texture reference is still present.
+  bool has_data() const noexcept { return reinterpret_cast<uintptr_t>(data) >= 0x10000; }
 };
 static_assert(sizeof(GXTexObj_) <= sizeof(GXTexObj), "GXTexObj too small!");
 struct GXTlutObj_ {

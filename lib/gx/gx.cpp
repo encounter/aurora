@@ -461,14 +461,14 @@ void resolve_sampled_textures(const ShaderInfo& info) noexcept {
         if (tlut.data != nullptr) {
           if (copyRef != nullptr) {
             handle = resolve_dynamic_palette_texture(obj, *copyRef, tlut);
-          } else {
+          } else if (obj.has_data()) {
             handle = resolve_static_palette_texture(obj, tlut);
           }
         }
       }
     } else if (copyRef != nullptr) {
       handle = copyRef->handle;
-    } else if (obj.data != nullptr) {
+    } else if (obj.has_data()) {
       handle = resolve_static_texture(obj);
     }
 
