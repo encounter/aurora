@@ -19,7 +19,6 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
-#include <cctype>
 #include <cstring>
 #include <filesystem>
 #include <list>
@@ -28,6 +27,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using namespace aurora::gx;
 using aurora::webgpu::g_device;
@@ -104,16 +104,75 @@ uint32_t s_sourceEntryCount = 0;
 absl::flat_hash_map<const GXTlutObj*, TlutMetadata> s_pendingTluts;
 std::array<TlutMetadata, MaxTluts> s_loadedTluts{};
 
+unsigned char ascii_lower(unsigned char ch) noexcept {
+  if (ch >= 'A' && ch <= 'Z') {
+    return static_cast<unsigned char>(ch - 'A' + 'a');
+  }
+  return ch;
+}
+
 bool iequals_ascii(std::string_view lhs, std::string_view rhs) noexcept {
   if (lhs.size() != rhs.size()) {
     return false;
   }
   for (size_t i = 0; i < lhs.size(); ++i) {
-    if (std::tolower(static_cast<unsigned char>(lhs[i])) != std::tolower(static_cast<unsigned char>(rhs[i]))) {
+    if (ascii_lower(static_cast<unsigned char>(lhs[i])) != ascii_lower(static_cast<unsigned char>(rhs[i]))) {
       return false;
     }
   }
   return true;
+}
+
+int compare_ascii_ci(std::string_view lhs, std::string_view rhs) noexcept {
+  const size_t count = std::min(lhs.size(), rhs.size());
+  for (size_t i = 0; i < count; ++i) {
+    const auto lhsCh = ascii_lower(static_cast<unsigned char>(lhs[i]));
+    const auto rhsCh = ascii_lower(static_cast<unsigned char>(rhs[i]));
+    if (lhsCh < rhsCh) {
+      return -1;
+    }
+    if (lhsCh > rhsCh) {
+      return 1;
+    }
+  }
+  if (lhs.size() < rhs.size()) {
+    return -1;
+  }
+  if (lhs.size() > rhs.size()) {
+    return 1;
+  }
+  return 0;
+}
+
+std::vector<std::string> path_components(const std::filesystem::path& root, const std::filesystem::path& path) {
+  std::vector<std::string> components;
+  auto relative = path.lexically_relative(root);
+  if (relative.empty()) {
+    relative = path.filename();
+  }
+  for (const auto& component : relative) {
+    components.push_back(fs_path_to_string(component));
+  }
+  return components;
+}
+
+struct ReplacementCandidate {
+  std::filesystem::path path;
+  std::vector<std::string> components;
+};
+
+bool compare_replacement_candidates(const ReplacementCandidate& lhs, const ReplacementCandidate& rhs) noexcept {
+  const size_t count = std::min(lhs.components.size(), rhs.components.size());
+  for (size_t i = 0; i < count; ++i) {
+    const auto cmp = compare_ascii_ci(lhs.components[i], rhs.components[i]);
+    if (cmp != 0) {
+      return cmp < 0;
+    }
+    if (lhs.components[i] != rhs.components[i]) {
+      return lhs.components[i] < rhs.components[i];
+    }
+  }
+  return lhs.components.size() < rhs.components.size();
 }
 
 bool is_relative_to(const std::filesystem::path& path, const std::filesystem::path& root) noexcept {
@@ -945,6 +1004,7 @@ ReplacementGroup load_replacement_directory(const std::filesystem::path& root, R
     return group;
   }
 
+  std::vector<ReplacementCandidate> candidates;
   std::error_code ec;
   for (std::filesystem::recursive_directory_iterator it(
            root,
@@ -974,12 +1034,22 @@ ReplacementGroup load_replacement_directory(const std::filesystem::path& root, R
       continue;
     }
 
-    const auto parsed = parse_replacement_filename(fs_path_to_string(path.filename()));
-    if (!parsed.has_value()) {
+    candidates.push_back({
+        .path = path,
+        .components = path_components(root, path),
+    });
+  }
+
+  std::sort(candidates.begin(), candidates.end(), compare_replacement_candidates);
+
+  absl::flat_hash_set<TextureSourceKey, SourceKeyHash> registeredKeys;
+  for (const auto& candidate : candidates) {
+    const auto parsed = parse_replacement_filename(fs_path_to_string(candidate.path.filename()));
+    if (!parsed.has_value() || registeredKeys.contains(*parsed)) {
       continue;
     }
-
-    group.registrations.push_back(register_file_replacement(*parsed, path, options));
+    registeredKeys.insert(*parsed);
+    group.registrations.push_back(register_file_replacement(*parsed, candidate.path, options));
   }
 
   Log.info("Loaded {} texture replacement registrations from {}", group.registrations.size(), fs_path_to_string(root));
