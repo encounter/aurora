@@ -208,7 +208,7 @@ gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GX
   }
 
   gfx::TextureHandle handle;
-  if (const auto replacement = gfx::texture_replacement::find_replacement(obj); replacement.has_value()) {
+  if (const auto replacement = gfx::texture_replacement::find_replacement(obj, tlut); replacement.has_value()) {
     handle = *replacement;
   } else {
     auto converted = gfx::convert_texture_palette(
