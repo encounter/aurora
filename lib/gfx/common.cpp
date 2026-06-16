@@ -1158,7 +1158,7 @@ static std::optional<size_t> acquire_mapped_staging_buffer() {
 
 bool begin_frame() {
   ZoneScoped;
-  // pace_frame_start();
+  pace_frame_start();
   const size_t frameSlot = acquire_frame_slot();
   const auto stagingSlot = acquire_mapped_staging_buffer();
   if (!stagingSlot) {
@@ -1277,7 +1277,7 @@ void end_frame(EndFrameCallback callback) {
 #endif
 
   const size_t stagingSlot = frame.stagingBuffer;
-  render_worker::enqueue_end_frame(frameId, [frameSlot, stagingSlot, callback = std::move(callback)]() mutable {
+  render_worker::enqueue_end_frame(frameId, [frameSlot, stagingSlot, callback = std::move(callback)] {
     auto& packet = g_framePackets[frameSlot];
     g_stagingBuffers[stagingSlot].Unmap();
     s_mappingStates[stagingSlot].store(BufferMapState::Unmapped, std::memory_order_release);
@@ -1297,6 +1297,7 @@ void end_frame(EndFrameCallback callback) {
     g_frameSlots.release(frameSlot);
     expire_cached_bind_groups();
     map_staging_buffer(stagingSlot, true);
+    process_events();
   });
 }
 
