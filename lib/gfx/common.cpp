@@ -1158,7 +1158,7 @@ static std::optional<size_t> acquire_mapped_staging_buffer() {
 
 bool begin_frame() {
   ZoneScoped;
-  pace_frame_start();
+  // pace_frame_start();
   const size_t frameSlot = acquire_frame_slot();
   const auto stagingSlot = acquire_mapped_staging_buffer();
   if (!stagingSlot) {
