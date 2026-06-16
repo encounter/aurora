@@ -55,7 +55,7 @@ static std::string pass_label(std::string_view kind) {
 constexpr uint64_t StagingBufferSize = UniformBufferSize + VertexBufferSize + IndexBufferSize + StorageBufferSize +
                                        (UseTextureBuffer ? TextureUploadSize : 0);
 constexpr size_t FrameSlotCount = 2;
-constexpr size_t StagingBufferCount = FrameSlotCount + 2;
+constexpr size_t StagingBufferCount = FrameSlotCount + 3;
 
 struct StagingHighWater {
   uint32_t verts = 0;
