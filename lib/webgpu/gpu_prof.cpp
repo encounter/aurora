@@ -35,6 +35,7 @@ constexpr uint32_t FrameEndQuery = MaxZones * 2 + 1;
 constexpr uint64_t ReadbackSize = QueryCount * sizeof(uint64_t);
 constexpr size_t RingDepth = 4;
 constexpr uint8_t ContextId = 0;
+constexpr uint64_t SaneFrameGapNs = UINT64_C(5'000'000'000);
 
 enum class EventKind : uint8_t {
   ZoneBegin,
@@ -62,6 +63,13 @@ struct Slot {
   uint32_t passCount = 0;
   int64_t submitNs = 0;
   std::atomic<SlotState> state{SlotState::Free};
+};
+
+struct TimestampBounds {
+  uint64_t begin = 0;
+  uint64_t end = 0;
+
+  bool valid() const { return begin != 0 && end > begin; }
 };
 
 bool g_enabled = false;
@@ -154,45 +162,64 @@ void emit_zone_end(uint64_t gpuNs) {
   ___tracy_emit_gpu_time_serial({.gpuTime = int64_t(gpuNs), .queryId = queryId, .context = ContextId});
 }
 
+TimestampBounds event_bounds(const Slot& slot, const uint64_t* ts) {
+  TimestampBounds bounds;
+  for (const auto& event : slot.events) {
+    const uint64_t t = ts[event.query];
+    if (t == 0) {
+      continue;
+    }
+    if (bounds.begin == 0 || t < bounds.begin) {
+      bounds.begin = t;
+    }
+    if (t > bounds.end) {
+      bounds.end = t;
+    }
+  }
+  return bounds;
+}
+
 void emit_frame(Slot& slot) {
   const auto* ts = static_cast<const uint64_t*>(slot.readback.GetConstMappedRange(0, ReadbackSize));
   if (ts == nullptr) {
     return;
   }
 
-  // Frame bounds; fall back to the recorded zones when encoder-level
-  // timestamps are unavailable.
-  uint64_t frameBegin = g_timestampsEnabled ? ts[FrameBeginQuery] : 0;
-  uint64_t frameEnd = g_timestampsEnabled ? ts[FrameEndQuery] : 0;
-  if (frameBegin == 0 || frameEnd == 0) {
-    for (const auto& event : slot.events) {
-      const uint64_t t = ts[event.query];
-      if (t == 0) {
-        continue;
-      }
-      if (frameBegin == 0 || t < frameBegin) {
-        frameBegin = t;
-      }
-      if (t > frameEnd) {
-        frameEnd = t;
-      }
-    }
+  // Prefer recorded work bounds. Some backends expose encoder timestamps but
+  // report startup/epoch values that are not stable enough to anchor Tracy's
+  // GPU context, while pass timestamps are already what the emitted zones use.
+  const TimestampBounds zoneBounds = event_bounds(slot, ts);
+  uint64_t frameBegin = zoneBounds.begin;
+  uint64_t frameEnd = zoneBounds.end;
+  if (!zoneBounds.valid() && g_timestampsEnabled) {
+    frameBegin = ts[FrameBeginQuery];
+    frameEnd = ts[FrameEndQuery];
   }
   if (frameBegin == 0 || frameEnd <= frameBegin) {
     return;
   }
 
-  if (!g_contextEmitted) {
-    const uint64_t lastFrameEnd = std::exchange(g_lastFrameEnd, frameEnd);
-    if (!TracyIsConnected) {
+  const uint64_t lastFrameEnd = std::exchange(g_lastFrameEnd, frameEnd);
+  if (lastFrameEnd != 0) {
+    if (frameBegin < lastFrameEnd) {
+      if (frameEnd <= lastFrameEnd || frameEnd - lastFrameEnd >= SaneFrameGapNs) {
+        return;
+      }
+      // Some Dawn/Metal timestamp query begins can remain pinned to an old
+      // value while end timestamps advance normally. Use consecutive frame
+      // ends to keep Tracy's timeline monotonic in that case.
+      frameBegin = lastFrameEnd;
+    } else if (frameBegin - lastFrameEnd >= SaneFrameGapNs) {
       return;
     }
-    // Timestamp warm-up: some backends report a bogus epoch for the first
-    // frames (Dawn re-correlates its Metal CPU/GPU timestamp mapping after
-    // startup). Only anchor the context once two consecutive frames are
-    // mutually consistent, discarding frames until then.
-    constexpr uint64_t SaneFrameGapNs = UINT64_C(5'000'000'000);
-    if (lastFrameEnd == 0 || frameBegin < lastFrameEnd || frameBegin - lastFrameEnd >= SaneFrameGapNs) {
+  }
+
+  if (!TracyIsConnected) {
+    return;
+  }
+
+  if (!g_contextEmitted) {
+    if (lastFrameEnd == 0) {
       return;
     }
     emit_context(slot, frameBegin);
@@ -361,7 +388,7 @@ void after_submit() {
     auto& slot = record_slot();
     slot.submitNs = now_ns();
     slot.state = SlotState::InFlight;
-    slot.readback.MapAsync(wgpu::MapMode::Read, 0, ReadbackSize, wgpu::CallbackMode::AllowProcessEvents,
+    slot.readback.MapAsync(wgpu::MapMode::Read, 0, ReadbackSize, wgpu::CallbackMode::AllowSpontaneous,
                            [&slot](wgpu::MapAsyncStatus status, wgpu::StringView) {
                              slot.state =
                                  status == wgpu::MapAsyncStatus::Success ? SlotState::Mapped : SlotState::Failed;
