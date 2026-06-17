@@ -78,6 +78,11 @@ OSTime OSGetTime() {
     localtime_r(&wallClock, &localTm);
     gmtime_r(&wallClock, &gmTm);
 #endif
+
+    // Fix time with daylight savings
+    localTm.tm_isdst = -1;
+    gmTm.tm_isdst = -1;
+
     // Compute UTC offset in seconds
     s64 utcOffsetSec = static_cast<s64>(mktime(&localTm)) - static_cast<s64>(mktime(&gmTm));
 
