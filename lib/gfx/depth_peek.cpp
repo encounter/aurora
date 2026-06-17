@@ -71,6 +71,7 @@ struct PendingMap {
   uint64_t byteSize = 0;
 };
 
+bool g_enabled = false;
 std::array<Slot, SlotCount> g_slots;
 size_t g_nextSlot = 0;
 wgpu::BindGroupLayout g_bindGroupLayout;
@@ -305,8 +306,12 @@ void complete_slot(size_t slotIdx, wgpu::MapAsyncStatus status, wgpu::StringView
 } // namespace
 
 void initialize() {
+  if (!webgpu::g_hasCoreCompatibility) {
+    return;
+  }
   g_bindGroupLayout = create_bind_group_layout("Depth Peek Bind Group Layout");
   g_pipeline = create_pipeline(g_bindGroupLayout, "Depth Peek Pipeline");
+  g_enabled = true;
 }
 
 void shutdown() {
@@ -319,6 +324,9 @@ void shutdown() {
 }
 
 void request_snapshot() noexcept {
+  if (!g_enabled) {
+    return;
+  }
   std::lock_guard lock{g_mutex};
   g_snapshotRequested = true;
 }
@@ -334,6 +342,10 @@ bool read_latest(uint16_t x, uint16_t y, uint32_t& z) noexcept {
 
 void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureView& depthView,
                            wgpu::Extent3D sourceSize, uint32_t msaaSamples) noexcept {
+  if (!g_enabled) {
+    return;
+  }
+
   ZoneScoped;
   const auto now = Clock::now();
   {
@@ -413,6 +425,10 @@ void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureV
 }
 
 void after_submit() noexcept {
+  if (!g_enabled) {
+    return;
+  }
+
   std::vector<PendingMap> pendingMaps;
   {
     std::lock_guard lock{g_mutex};

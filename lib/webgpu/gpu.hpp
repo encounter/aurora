@@ -52,6 +52,7 @@ extern wgpu::RenderPipeline g_CopyPremultipliedAlphaPipeline;
 extern wgpu::BindGroup g_CopyBindGroup;
 extern wgpu::Instance g_instance;
 extern wgpu::AdapterInfo g_adapterInfo;
+extern bool g_hasCoreCompatibility;
 extern bool g_bcTexturesSupported;
 extern bool g_astcTexturesSupported;
 extern bool g_textureComponentSwizzleSupported;

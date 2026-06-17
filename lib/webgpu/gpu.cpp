@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -59,12 +60,32 @@ static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
 wgpu::AdapterInfo g_adapterInfo;
 static wgpu::SurfaceCapabilities g_surfaceCapabilities;
+bool g_hasCoreCompatibility = false;
 bool g_bcTexturesSupported = false;
 bool g_astcTexturesSupported = false;
 bool g_textureComponentSwizzleSupported = false;
 static std::atomic_bool g_initialized = false;
 
 namespace {
+
+AuroraLogLevel wgpu_log_level(wgpu::LoggingType type) {
+  switch (type) {
+  case wgpu::LoggingType::Verbose:
+    return LOG_DEBUG;
+  case wgpu::LoggingType::Info:
+    return LOG_INFO;
+  case wgpu::LoggingType::Warning:
+    return LOG_WARNING;
+  case wgpu::LoggingType::Error:
+    return LOG_ERROR;
+  default:
+    return LOG_FATAL;
+  }
+}
+
+void wgpu_log(wgpu::LoggingType type, wgpu::StringView message) {
+  Log.report(wgpu_log_level(type), "WebGPU message: {}", message);
+}
 
 struct ResampleUniformBlock {
   uint32_t samplerMode = 0;
@@ -742,6 +763,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
 #ifdef WEBGPU_DAWN
     dawn::native::DawnInstanceDescriptor dawnInstanceDescriptor;
     dawnInstanceDescriptor.backendValidationLevel = dawn::native::BackendValidationLevel::Disabled;
+    dawnInstanceDescriptor.SetLoggingCallback(wgpu_log);
 #ifdef TRACY_ENABLE
     dawnInstanceDescriptor.platform = tracy_dawn_platform();
 #endif
@@ -765,26 +787,47 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
   }
   {
     const wgpu::RequestAdapterOptions options{
+        .featureLevel = wgpu::FeatureLevel::Compatibility,
         .powerPreference = wgpu::PowerPreference::HighPerformance,
         .backendType = backend,
         .compatibleSurface = g_surface,
     };
+    Log.info("Requesting adapter\n  Feature level: {}\n  Power preference: {}\n  Backend: {}\n  Compatible surface: {}",
+             magic_enum::enum_name(options.featureLevel), magic_enum::enum_name(options.powerPreference),
+             magic_enum::enum_name(options.backendType), static_cast<bool>(options.compatibleSurface));
+    bool requestAdapterCallbackCompleted = false;
+    wgpu::RequestAdapterStatus requestAdapterStatus = wgpu::RequestAdapterStatus::CallbackCancelled;
+    std::string requestAdapterMessage;
     const auto future = g_instance.RequestAdapter(
         &options, wgpu::CallbackMode::WaitAnyOnly,
-        [](wgpu::RequestAdapterStatus status, wgpu::Adapter adapter, wgpu::StringView message) {
+        [&](wgpu::RequestAdapterStatus status, wgpu::Adapter adapter, wgpu::StringView message) {
+          requestAdapterCallbackCompleted = true;
+          requestAdapterStatus = status;
+          requestAdapterMessage = std::string{std::string_view{message}};
           if (status == wgpu::RequestAdapterStatus::Success) {
             g_adapter = std::move(adapter);
           } else {
-            Log.warn("Adapter request failed: {}", message);
+            Log.warn("Adapter request failed: {}: {}", magic_enum::enum_name(status), message);
           }
         });
     const auto status = g_instance.WaitAny(future, 5000000000);
     if (status != wgpu::WaitStatus::Success) {
-      Log.error("Failed to create adapter: {}", magic_enum::enum_name(status));
+      if (requestAdapterCallbackCompleted) {
+        Log.error("Failed to create adapter: wait status {}, request status {}, message: {}",
+                  magic_enum::enum_name(status), magic_enum::enum_name(requestAdapterStatus), requestAdapterMessage);
+      } else {
+        Log.error("Failed to create adapter: wait status {}, request callback did not complete",
+                  magic_enum::enum_name(status));
+      }
       return false;
     }
     if (!g_adapter) {
-      Log.error("Failed to create adapter");
+      if (requestAdapterCallbackCompleted) {
+        Log.error("Failed to create adapter: request status {}, message: {}",
+                  magic_enum::enum_name(requestAdapterStatus), requestAdapterMessage);
+      } else {
+        Log.error("Failed to create adapter: request callback did not complete");
+      }
       return false;
     }
   }
@@ -811,7 +854,12 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
   {
     wgpu::Limits supportedLimits{};
     g_adapter.GetLimits(&supportedLimits);
+    wgpu::CompatibilityModeLimits compatibilityModeLimits{wgpu::CompatibilityModeLimits::Init{
+        .maxStorageBuffersInVertexStage = 2,
+        .maxStorageBuffersInFragmentStage = 2,
+    }};
     const wgpu::Limits requiredLimits{
+        .nextInChain = &compatibilityModeLimits,
         // Use "best" supported limits
         .maxTextureDimension1D = supportedLimits.maxTextureDimension1D == 0 ? WGPU_LIMIT_U32_UNDEFINED
                                                                             : supportedLimits.maxTextureDimension1D,
@@ -821,12 +869,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
                                                                             : supportedLimits.maxTextureDimension3D,
         .maxTextureArrayLayers = supportedLimits.maxTextureArrayLayers == 0 ? WGPU_LIMIT_U32_UNDEFINED
                                                                             : supportedLimits.maxTextureArrayLayers,
-        .maxDynamicStorageBuffersPerPipelineLayout = supportedLimits.maxDynamicStorageBuffersPerPipelineLayout == 0
-                                                         ? WGPU_LIMIT_U32_UNDEFINED
-                                                         : supportedLimits.maxDynamicStorageBuffersPerPipelineLayout,
-        .maxStorageBuffersPerShaderStage = supportedLimits.maxStorageBuffersPerShaderStage == 0
-                                               ? WGPU_LIMIT_U32_UNDEFINED
-                                               : supportedLimits.maxStorageBuffersPerShaderStage,
+        .maxStorageBuffersPerShaderStage = 2,
         .minUniformBufferOffsetAlignment =
             supportedLimits.minUniformBufferOffsetAlignment < 64 ? 64 : supportedLimits.minUniformBufferOffsetAlignment,
         .minStorageBufferOffsetAlignment =
@@ -838,15 +881,15 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         "\n  maxTextureDimension2D: {}"
         "\n  maxTextureDimension3D: {}"
         "\n  maxTextureArrayLayers: {}"
-        "\n  maxDynamicStorageBuffersPerPipelineLayout: {}"
         "\n  maxStorageBuffersPerShaderStage: {}"
         "\n  minUniformBufferOffsetAlignment: {}"
         "\n  minStorageBufferOffsetAlignment: {}",
         requiredLimits.maxTextureDimension1D, requiredLimits.maxTextureDimension2D,
         requiredLimits.maxTextureDimension3D, requiredLimits.maxTextureArrayLayers,
-        requiredLimits.maxDynamicStorageBuffersPerPipelineLayout, requiredLimits.maxStorageBuffersPerShaderStage,
-        requiredLimits.minUniformBufferOffsetAlignment, requiredLimits.minStorageBufferOffsetAlignment);
+        requiredLimits.maxStorageBuffersPerShaderStage, requiredLimits.minUniformBufferOffsetAlignment,
+        requiredLimits.minStorageBufferOffsetAlignment);
     std::vector<wgpu::FeatureName> requiredFeatures;
+    g_hasCoreCompatibility = false;
     g_bcTexturesSupported = false;
     g_astcTexturesSupported = false;
     g_textureComponentSwizzleSupported = false;
@@ -854,9 +897,12 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     g_adapter.GetFeatures(&supportedFeatures);
     for (size_t i = 0; i < supportedFeatures.featureCount; ++i) {
       const auto feature = supportedFeatures.features[i];
-      if (feature == wgpu::FeatureName::TextureCompressionBC || feature == wgpu::FeatureName::TextureCompressionASTC ||
+      if (feature == wgpu::FeatureName::CoreFeaturesAndLimits || feature == wgpu::FeatureName::TextureCompressionBC ||
+          feature == wgpu::FeatureName::TextureCompressionASTC ||
           feature == wgpu::FeatureName::TextureComponentSwizzle) {
-        if (feature == wgpu::FeatureName::TextureCompressionBC) {
+        if (feature == wgpu::FeatureName::CoreFeaturesAndLimits) {
+          g_hasCoreCompatibility = true;
+        } else if (feature == wgpu::FeatureName::TextureCompressionBC) {
           g_bcTexturesSupported = true;
         } else if (feature == wgpu::FeatureName::TextureCompressionASTC) {
           g_astcTexturesSupported = true;
@@ -871,6 +917,12 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
       }
 #endif
     }
+    std::string featureList;
+    for (auto featureName : requiredFeatures) {
+      featureList += "\n  ";
+      featureList += magic_enum::enum_name(featureName);
+    }
+    Log.info("Enabling features: {}", featureList);
 #ifdef WEBGPU_DAWN
     wgpu::DawnCacheDeviceDescriptor cacheDescriptor({
         .isolationKey = nullptr,
@@ -896,6 +948,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         "allow_unsafe_apis",
         "disable_symbol_renaming",
         "enable_immediate_error_handling",
+        "gl_allow_context_on_multi_threads",
     };
     constexpr std::array disableToggles{
         "timestamp_quantization",
@@ -950,26 +1003,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     if (!g_device) {
       return false;
     }
-    g_device.SetLoggingCallback([](wgpu::LoggingType type, wgpu::StringView message) {
-      AuroraLogLevel level = LOG_FATAL;
-      switch (type) {
-      case wgpu::LoggingType::Verbose:
-        level = LOG_DEBUG;
-        break;
-      case wgpu::LoggingType::Info:
-        level = LOG_INFO;
-        break;
-      case wgpu::LoggingType::Warning:
-        level = LOG_WARNING;
-        break;
-      case wgpu::LoggingType::Error:
-        level = LOG_ERROR;
-        break;
-      default:
-        break;
-      }
-      Log.report(level, "WebGPU message: {}", message);
-    });
+    g_device.SetLoggingCallback(wgpu_log);
   }
   g_queue = g_device.GetQueue();
 

@@ -635,13 +635,16 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu:
   ZoneScoped;
   const float depthBias = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetBits);
   const float depthBiasSlopeScale = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetScaleBits);
+  const float depthBiasClamp = webgpu::g_hasCoreCompatibility
+                                   ? std::bit_cast<float>(config.polygonOffsetClampBits)
+                                   : 0.0f;
   const wgpu::DepthStencilState depthStencil{
       .format = g_graphicsConfig.depthFormat,
       .depthWriteEnabled = config.depthCompare && config.depthUpdate,
       .depthCompare = config.depthCompare ? to_compare_function(config.depthFunc) : wgpu::CompareFunction::Always,
       .depthBias = round_away_from_zero<int32_t>(depthBias),
       .depthBiasSlopeScale = depthBiasSlopeScale,
-      .depthBiasClamp = std::bit_cast<float>(config.polygonOffsetClampBits),
+      .depthBiasClamp = depthBiasClamp,
   };
   const auto blendState =
       to_blend_state(config.blendMode, config.blendFacSrc, config.blendFacDst, config.blendOp, config.dstAlpha);
