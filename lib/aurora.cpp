@@ -378,7 +378,7 @@ void end_frame() noexcept {
       case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal:
       case wgpu::SurfaceGetCurrentTextureStatus::Outdated:
         Log.info("Surface texture is {}, reconfiguring swapchain", magic_enum::enum_name(surfaceStatus));
-        webgpu::refresh_surface(false);
+        window::push_custom_event(window::CustomEvent::RefreshSurface);
         break;
       case wgpu::SurfaceGetCurrentTextureStatus::Lost:
         Log.warn("Surface texture is {}, releasing surface", magic_enum::enum_name(surfaceStatus));
