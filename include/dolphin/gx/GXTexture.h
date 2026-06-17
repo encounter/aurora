@@ -17,12 +17,22 @@ void GXInitTexObjCI(GXTexObj* obj, const void* data, u16 width, u16 height, GXCI
 void GXInitTexObjData(GXTexObj* obj, const void* data);
 void GXInitTexObjLOD(GXTexObj* obj, GXTexFilter min_filt, GXTexFilter mag_filt, f32 min_lod, f32 max_lod, f32 lod_bias,
                      GXBool bias_clamp, GXBool do_edge_lod, GXAnisotropy max_aniso);
+void GXInitTexObjFilter(GXTexObj* obj, GXTexFilter min_filt, GXTexFilter mag_filt);
+void GXInitTexObjMaxLOD(GXTexObj* obj, f32 max_lod);
+void GXInitTexObjMinLOD(GXTexObj* obj, f32 min_lod);
+void GXInitTexObjLODBias(GXTexObj* obj, f32 lod_bias);
+void GXInitTexObjBiasClamp(GXTexObj* obj, GXBool bias_clamp);
+void GXInitTexObjEdgeLOD(GXTexObj* obj, GXBool do_edge_lod);
+void GXInitTexObjMaxAniso(GXTexObj* obj, GXAnisotropy max_aniso);
+void GXInitTexObjUserData(GXTexObj* obj, void* user_data);
+void* GXGetTexObjUserData(const GXTexObj* obj);
 void GXInitTexObjTlut(GXTexObj* obj_, u32 tlut);
 void GXLoadTexObj(GXTexObj* obj, GXTexMapID id);
 u32 GXGetTexBufferSize(u16 width, u16 height, u32 format, GXBool mipmap, u8 max_lod);
 void GXInvalidateTexAll();
 void GXInitTexObjWrapMode(GXTexObj* obj, GXTexWrapMode s, GXTexWrapMode t);
 void GXInitTlutObj(GXTlutObj* obj, const void* data, GXTlutFmt format, u16 entries);
+void GXInitTlutObjData(GXTlutObj* obj, const void* data);
 void GXLoadTlut(const GXTlutObj* obj, u32 idx);
 void GXSetTexCoordScaleManually(GXTexCoordID coord, GXBool enable, u16 ss, u16 ts);
 void GXSetTexCoordCylWrap(GXTexCoordID coord, GXBool s_enable, GXBool t_enable);

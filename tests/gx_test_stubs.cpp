@@ -42,6 +42,8 @@ wgpu::Buffer g_vertexBuffer;
 wgpu::Buffer g_uniformBuffer;
 wgpu::Buffer g_indexBuffer;
 wgpu::Buffer g_storageBuffer;
+uint32_t g_drawCallCount = 0;
+uint32_t g_mergedDrawCallCount = 0;
 } // namespace aurora::gfx
 
 namespace aurora::webgpu {
@@ -57,11 +59,6 @@ namespace aurora::vi {
 Vec2<uint32_t> configured_fb_size() noexcept { return {640, 480}; }
 void configure(const GXRenderModeObj*) noexcept {}
 } // namespace aurora::vi
-
-// --- Texture uploads ---
-namespace aurora::gfx {
-std::vector<TextureUpload> g_textureUploads;
-} // namespace aurora::gfx
 
 // --- get_texture ---
 namespace aurora::gx {
@@ -118,14 +115,12 @@ gfx::Range build_uniform(const ShaderInfo& info, uint32_t vtxStart, const BindGr
 }
 void resolve_sampled_textures(const ShaderInfo& info) noexcept {}
 u8 color_channel(GXChannelID id) noexcept { return 0; }
-u8 comp_type_size(GXAttr attr, GXCompType type) noexcept { return 0; }
-u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept { return 0; }
 } // namespace aurora::gx
 
 // --- Buffer push stubs ---
 namespace aurora::gfx {
-Range push_verts(const uint8_t* data, size_t length) { return {}; }
-Range push_indices(const uint8_t* data, size_t length) { return {}; }
+Range push_verts(const uint8_t* data, size_t length, size_t alignment) { return {}; }
+Range push_indices(const uint8_t* data, size_t length, size_t alignment) { return {}; }
 Range push_uniform(const uint8_t* data, size_t length) { return {}; }
 Range push_storage(const uint8_t* data, size_t length) { return {}; }
 
@@ -148,9 +143,13 @@ template <>
 PipelineRef pipeline_ref<gx::PipelineConfig>(const gx::PipelineConfig& config) {
   return 0;
 }
+gx::DrawData g_testLastDraw{};
+uint32_t g_testDrawCount = 0;
+
 template <>
 void push_draw_command<gx::DrawData>(gx::DrawData data) {
-  // No-op
+  g_testLastDraw = data;
+  ++g_testDrawCount;
 }
 template <>
 gx::DrawData* get_last_draw_command() {
@@ -177,7 +176,10 @@ TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, 
   return {};
 }
 TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept { return {}; }
-void write_texture(const TextureRef& ref, ArrayRef<uint8_t> data) noexcept {}
+void write_texture(TextureRef& ref, ArrayRef<uint8_t> data) noexcept {}
+void queue_texture_upload(TextureUpload upload) {}
+void queue_texture_upload_data(const uint8_t* data, size_t length, uint32_t bytesPerRow, uint32_t rowsPerImage,
+                               wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size) {}
 void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
                   Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat) {}
 void queue_palette_conv(tex_palette_conv::ConvRequest req) {}
@@ -241,13 +243,13 @@ u32 compute_texture_upload_size(const GXTexObj_& obj) noexcept { return 0; }
 void register_tlut(const GXTlutObj*, const void*, GXTlutFmt, u16) noexcept {}
 void load_tlut(const GXTlutObj*, u32) noexcept {}
 std::optional<TextureHandle> find_replacement(const GXTexObj_&) noexcept { return std::nullopt; }
-bool try_bind_replacement(GXTexObj_&, GXTexMapID) noexcept { return false; }
 } // namespace aurora::gfx::texture_replacement
 
 // --- Window stub ---
 #include "../lib/window.hpp"
 namespace aurora::window {
 AuroraWindowSize get_window_size() { return {640, 480, 640, 480, 640, 480, 1.0f}; }
+void set_frame_buffer_aspect_fit(bool) {}
 } // namespace aurora::window
 
 // --- WebGPU C API stubs (prevent linker errors from wgpu:: destructors) ---

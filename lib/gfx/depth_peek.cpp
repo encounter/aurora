@@ -2,7 +2,9 @@
 
 #include "../dolphin/vi/vi_internal.hpp"
 #include "../gx/gx.hpp"
+#include "../gfx/render_worker.hpp"
 #include "../webgpu/gpu.hpp"
+#include "../webgpu/gpu_prof.hpp"
 
 #include <algorithm>
 #include <array>
@@ -330,12 +332,6 @@ bool read_latest(uint16_t x, uint16_t y, uint32_t& z) noexcept {
   return true;
 }
 
-void poll() noexcept {
-  if (g_instance) {
-    g_instance.ProcessEvents();
-  }
-}
-
 void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureView& depthView,
                            wgpu::Extent3D sourceSize, uint32_t msaaSamples) noexcept {
   ZoneScoped;
@@ -375,6 +371,7 @@ void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureV
     byteSize = slot->byteSize;
   }
 
+  ASSERT(render_worker::is_worker_thread(), "Depth peek queue write must run on the render worker");
   g_queue.WriteBuffer(paramsBuffer, 0, &params, sizeof(params));
 
   const std::array bindGroupEntries{
@@ -403,6 +400,7 @@ void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureV
 
   const wgpu::ComputePassDescriptor passDescriptor{
       .label = "Depth Peek Compute Pass",
+      .timestampWrites = webgpu::gpu_prof::pass_writes("Depth peek"),
   };
   const auto pass = cmd.BeginComputePass(&passDescriptor);
   pass.SetPipeline(g_pipeline);

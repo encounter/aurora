@@ -10,11 +10,17 @@ struct TextureUpload {
   wgpu::TexelCopyBufferLayout layout;
   wgpu::TexelCopyTextureInfo tex;
   wgpu::Extent3D size;
+  wgpu::Buffer buffer;
 
   TextureUpload(wgpu::TexelCopyBufferLayout layout, wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size) noexcept
   : layout(layout), tex(std::move(tex)), size(size) {}
+  TextureUpload(wgpu::TexelCopyBufferLayout layout, wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size,
+                wgpu::Buffer buffer) noexcept
+  : layout(layout), tex(std::move(tex)), size(size), buffer(std::move(buffer)) {}
 };
-extern std::vector<TextureUpload> g_textureUploads;
+void queue_texture_upload(TextureUpload upload);
+void queue_texture_upload_data(const uint8_t* data, uint32_t bytesPerRow, uint32_t rowsPerImage,
+                               wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size);
 
 struct TextureFormatInfo {
   uint8_t blockWidth;
@@ -24,6 +30,7 @@ struct TextureFormatInfo {
 };
 TextureFormatInfo format_info(wgpu::TextureFormat format) noexcept;
 uint64_t calc_texture_size(wgpu::TextureFormat format, uint32_t width, uint32_t height, uint32_t mips) noexcept;
+bool is_block_aligned(wgpu::TextureFormat format, uint32_t width, uint32_t height) noexcept;
 
 constexpr u32 InvalidTextureFormat = -1;
 struct TextureRef {
@@ -35,6 +42,7 @@ struct TextureRef {
   uint32_t mipCount;
   u32 gxFormat;
   bool hasArbitraryMips = false;
+  bool isReplacement = false;
 
   TextureRef(wgpu::Texture texture, wgpu::TextureView sampleTextureView, wgpu::TextureView attachmentTextureView,
              wgpu::Extent3D size, wgpu::TextureFormat format, uint32_t mipCount, u32 gxFormat)
@@ -98,6 +106,10 @@ struct GXTexObj_ {
   // Custom flag for texture caching
   bool no_cache() const noexcept { return (flags & 0x80) != 0; }
   void set_no_cache(bool value) noexcept { flags = value ? flags | 0x80 : flags & ~0x80; }
+
+  // Hacky workaround for an instances where incremental IDs are used for GXCopyTex, but the copy tex was invalidated
+  // and the texture reference is still present.
+  bool has_data() const noexcept { return reinterpret_cast<uintptr_t>(data) >= 0x10000; }
 };
 static_assert(sizeof(GXTexObj_) <= sizeof(GXTexObj), "GXTexObj too small!");
 struct GXTlutObj_ {

@@ -42,7 +42,7 @@ class CardRawFile : public ICard {
   CardHeader m_ch;
   CardHeader m_tmpCh;
 
-  std::string m_filename;
+  std::filesystem::path m_filename;
   FileIO m_fileHandle;
   std::array<Directory, 2> m_dirs;
   std::array<BlockAllocationTable, 2> m_bats;
@@ -398,7 +398,7 @@ public:
    *
    * @return ProbeResults structure.
    */
-  ProbeResults probeCardFile(std::string_view filename) override;
+  ProbeResults probeCardFile(const std::filesystem::path& filename) override;
 
   /**
    * @brief Writes any changes to the Card instance immediately to disk. <br />
@@ -409,7 +409,7 @@ public:
   /**
    * @brief Opens card image (does nothing if currently open path matches).
    */
-  bool open(std::string_view filepath) override;
+  bool open(const std::filesystem::path& filepath) override;
 
   /**
    * @brief Commits changes to disk and closes host file.
@@ -421,7 +421,7 @@ public:
    *
    * @return A view to the card's filename.
    */
-  std::string_view cardFilename() const override { return m_filename; }
+  const std::filesystem::path& cardFilename() const override { return m_filename; }
 
   /**
    * @brief Gets card-scope error state.

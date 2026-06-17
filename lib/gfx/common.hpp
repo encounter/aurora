@@ -1,10 +1,12 @@
 #pragma once
 
 #include "../internal.hpp"
+#include "../webgpu/gpu.hpp"
 
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <type_traits>
 #include <utility>
 
@@ -169,7 +171,7 @@ private:
 } // namespace aurora
 
 namespace aurora::gfx {
-inline constexpr bool UseTextureBuffer = false;
+inline constexpr bool UseTextureBuffer = true;
 inline constexpr uint64_t UniformBufferSize = 25165824;  // 24mb
 inline constexpr uint64_t VertexBufferSize = 3145728;    // 3mb
 inline constexpr uint64_t IndexBufferSize = 1048576;     // 1mb
@@ -177,6 +179,8 @@ inline constexpr uint64_t StorageBufferSize = 8388608;   // 8mb
 inline constexpr uint64_t TextureUploadSize = 25165824;  // 24mb
 
 extern AuroraStats g_stats;
+extern uint32_t g_drawCallCount;
+extern uint32_t g_mergedDrawCallCount;
 extern wgpu::Buffer g_vertexBuffer;
 extern wgpu::Buffer g_uniformBuffer;
 extern wgpu::Buffer g_indexBuffer;
@@ -208,41 +212,57 @@ struct ClipRect {
   bool operator!=(const ClipRect& rhs) const { return !(*this == rhs); }
 };
 
-struct Viewport {
-  float left;
-  float top;
-  float width;
-  float height;
-  float znear;
-  float zfar;
-
-  bool operator==(const Viewport& rhs) const {
-    return left == rhs.left && top == rhs.top && width == rhs.width && height == rhs.height && znear == rhs.znear &&
-           zfar == rhs.zfar;
-  }
-  bool operator!=(const Viewport& rhs) const { return !(*this == rhs); }
-};
+using webgpu::Viewport;
 
 struct TextureRef;
 using TextureHandle = std::shared_ptr<TextureRef>;
+using EndFrameCallback = std::function<void(wgpu::CommandEncoder&)>;
 
 enum class ShaderType : uint8_t {
   Clear = 0,
   GX = 1,
+  Rml = 2,
 };
 
 void initialize();
 void shutdown();
 
-void begin_frame();
-void end_frame(const wgpu::CommandEncoder& cmd);
+bool begin_frame();
+void finish();
+void end_frame(EndFrameCallback callback);
 uint32_t current_frame() noexcept;
-void render(wgpu::CommandEncoder& cmd);
 void render_pass(const wgpu::RenderPassEncoder& pass, uint32_t idx);
 void after_submit() noexcept;
-void map_staging_buffer();
+void gpu_synchronize();
+void after_present() noexcept;
+float calculate_fps() noexcept;
 void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
                   Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat = GX_TF_RGBA8);
+
+struct ColorPassDescriptor {
+  const char* label = nullptr;
+  wgpu::TextureView colorView;
+  wgpu::TextureView resolveView;
+  wgpu::TextureView depthStencilView;
+  wgpu::Extent3D targetSize;
+  uint32_t sampleCount = 1;
+  wgpu::LoadOp colorLoadOp = wgpu::LoadOp::Clear;
+  wgpu::StoreOp colorStoreOp = wgpu::StoreOp::Store;
+  wgpu::Color clearColor{0.f, 0.f, 0.f, 0.f};
+  bool hasDepth = false;
+  wgpu::LoadOp depthLoadOp = wgpu::LoadOp::Undefined;
+  wgpu::StoreOp depthStoreOp = wgpu::StoreOp::Undefined;
+  float depthClearValue = 0.f;
+  bool hasStencil = false;
+  wgpu::LoadOp stencilLoadOp = wgpu::LoadOp::Undefined;
+  wgpu::StoreOp stencilStoreOp = wgpu::StoreOp::Undefined;
+  uint32_t stencilClearValue = 0;
+  bool observable = true;
+};
+
+void begin_color_pass(const ColorPassDescriptor& desc);
+void end_color_pass();
+void queue_texture_copy(wgpu::TexelCopyTextureInfo src, wgpu::TexelCopyTextureInfo dst, wgpu::Extent3D size);
 
 void begin_offscreen(uint32_t width, uint32_t height);
 void end_offscreen();
@@ -255,15 +275,15 @@ struct ConvRequest;
 } // namespace tex_palette_conv
 void queue_palette_conv(tex_palette_conv::ConvRequest req);
 
-Range push_verts(const uint8_t* data, size_t length);
+Range push_verts(const uint8_t* data, size_t length, size_t alignment);
 template <typename T>
-static Range push_verts(ArrayRef<T> data) {
-  return push_verts(reinterpret_cast<const uint8_t*>(data.data()), data.size() * sizeof(T));
+static Range push_verts(ArrayRef<T> data, size_t alignment) {
+  return push_verts(reinterpret_cast<const uint8_t*>(data.data()), data.size() * sizeof(T), alignment);
 }
-Range push_indices(const uint8_t* data, size_t length);
+Range push_indices(const uint8_t* data, size_t length, size_t alignment);
 template <typename T>
-static Range push_indices(ArrayRef<T> data) {
-  return push_indices(reinterpret_cast<const uint8_t*>(data.data()), data.size() * sizeof(T));
+static Range push_indices(ArrayRef<T> data, size_t alignment) {
+  return push_indices(reinterpret_cast<const uint8_t*>(data.data()), data.size() * sizeof(T), alignment);
 }
 Range push_uniform(const uint8_t* data, size_t length);
 template <typename T>
@@ -279,11 +299,7 @@ template <typename T>
 static Range push_storage(const T& data) {
   return push_storage(reinterpret_cast<const uint8_t*>(&data), sizeof(T));
 }
-Range push_texture_data(const uint8_t* data, size_t length, uint32_t bytesPerRow, uint32_t rowsPerImage);
-std::pair<ByteBuffer, Range> map_verts(size_t length);
-std::pair<ByteBuffer, Range> map_indices(size_t length);
-std::pair<ByteBuffer, Range> map_uniform(size_t length);
-std::pair<ByteBuffer, Range> map_storage(size_t length);
+Range push_texture_data(const uint8_t* data, uint32_t bytesPerRow, uint32_t rowsPerImage);
 
 template <typename State>
 const State& get_state();
@@ -297,9 +313,9 @@ PipelineRef pipeline_ref(const PipelineConfig& config);
 bool bind_pipeline(PipelineRef ref, const wgpu::RenderPassEncoder& pass);
 
 BindGroupRef bind_group_ref(const WGPUBindGroupDescriptor& descriptor);
-wgpu::BindGroup& find_bind_group(BindGroupRef id);
+wgpu::BindGroup find_bind_group(BindGroupRef id);
 
-wgpu::Sampler& sampler_ref(const wgpu::SamplerDescriptor& descriptor);
+wgpu::Sampler sampler_ref(const wgpu::SamplerDescriptor& descriptor);
 
 uint32_t align_uniform(uint32_t value);
 

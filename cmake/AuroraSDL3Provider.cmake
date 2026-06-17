@@ -1,4 +1,5 @@
 include_guard(GLOBAL)
+include("${CMAKE_CURRENT_LIST_DIR}/AuroraTargetPlatform.cmake")
 
 # Resolve SDL3 dependency based on AURORA_SDL3_PROVIDER and AURORA_SDL3_LINKAGE.
 #
@@ -68,8 +69,12 @@ elseif (_aurora_sdl3_provider STREQUAL "package")
   if (NOT AURORA_SDL3_PACKAGE_URL)
     if (WIN32)
       # We have custom builds of SDL3 for Win32 x86/AMD64 with libusb support included
-      if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86)$")
-        string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _sdl3_arch)
+      aurora_get_target_arch(_target_arch)
+      set(_sdl3_arch "")
+      if (_target_arch MATCHES "^(AMD64|x86)$")
+        string(TOLOWER "${_target_arch}" _sdl3_arch)
+      endif ()
+      if (_sdl3_arch)
         set(AURORA_SDL3_PACKAGE_URL
           "https://github.com/encounter/sdl3-build/releases/download/v${AURORA_SDL3_VERSION}/SDL3-windows-${_sdl3_arch}.tar.gz")
       else ()
@@ -90,7 +95,7 @@ elseif (_aurora_sdl3_provider STREQUAL "package")
   include(FetchContent)
   FetchContent_Declare(sdl3_prebuilt
     URL "${AURORA_SDL3_PACKAGE_URL}"
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
   )
   FetchContent_MakeAvailable(sdl3_prebuilt)
 
@@ -109,7 +114,11 @@ elseif (_aurora_sdl3_provider STREQUAL "package")
   endforeach ()
 
   set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
-  find_package(SDL3 REQUIRED CONFIG PATHS ${_sdl3_search_paths} NO_DEFAULT_PATH)
+  find_package(SDL3 REQUIRED CONFIG
+    PATHS ${_sdl3_search_paths}
+    NO_DEFAULT_PATH
+    NO_CMAKE_FIND_ROOT_PATH
+  )
   set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL OFF)
   _aurora_sdl3_select_target()
 
@@ -131,8 +140,11 @@ elseif (_aurora_sdl3_provider STREQUAL "vendor")
 
     include(FetchContent)
     FetchContent_Declare(SDL
-      URL "https://github.com/libsdl-org/SDL/releases/download/release-${AURORA_SDL3_VERSION}/SDL3-${AURORA_SDL3_VERSION}.tar.gz"
-      DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+      URL "https://github.com/libsdl-org/SDL/archive/${AURORA_SDL3_REF}.tar.gz"
+      DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+      PATCH_COMMAND ${CMAKE_COMMAND}
+        -DSDL_SOURCE_DIR=<SOURCE_DIR>
+        -P "${CMAKE_CURRENT_LIST_DIR}/patches/apply-sdl3-android-nintendo-auto-mapping.cmake"
       EXCLUDE_FROM_ALL
     )
     FetchContent_MakeAvailable(SDL)

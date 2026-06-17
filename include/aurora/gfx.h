@@ -9,7 +9,7 @@ extern "C" {
 #include "stdint.h"
 #endif
 
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !defined(AURORA_GFX_DEBUG_GROUPS)
 #define AURORA_GFX_DEBUG_GROUPS
 #endif
 
@@ -29,6 +29,7 @@ typedef struct {
 } AuroraStats;
 
 const AuroraStats* aurora_get_stats();
+float aurora_get_fps();
 
 void aurora_enable_vsync(bool enabled);
 

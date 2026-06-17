@@ -15,9 +15,13 @@
 #include <absl/container/flat_hash_set.h>
 #include <tracy/Tracy.hpp>
 
+#include <atomic>
+#include <bit>
 #include <cfloat>
+#include <cmath>
 #include <mutex>
 #include <optional>
+#include <utility>
 
 static aurora::Module Log("aurora::gx");
 
@@ -78,6 +82,14 @@ struct TlutObjectCache {
 
 absl::flat_hash_map<u32, CachedTextureEntry> s_textureObjectCaches;
 absl::flat_hash_map<u32, TlutObjectCache> s_tlutObjectCaches;
+std::atomic_bool s_staticTextureCacheClearPending = false;
+
+void do_clear_static_texture_cache() noexcept {
+  s_textureObjectCaches.clear();
+  for (auto& [_, cache] : s_tlutObjectCaches) {
+    cache.staticTextureUsers.clear();
+  }
+}
 
 DynamicPaletteKey make_dynamic_palette_key(const GXTexObj_& obj, const GXState::CopyTextureRef& source) {
   return {
@@ -147,6 +159,9 @@ gfx::TextureHandle get_tlut_texture(const GXTlutObj_& tlut) {
 
 gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
   ZoneScoped;
+  if (s_staticTextureCacheClearPending.exchange(false, std::memory_order_acq_rel)) {
+    do_clear_static_texture_cache();
+  }
 
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
@@ -161,9 +176,14 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
   if (const auto replacement = gfx::texture_replacement::find_replacement(obj); replacement.has_value()) {
     handle = *replacement;
   } else {
-    handle =
-        gfx::new_static_texture_2d(obj.width(), obj.height(), obj.mip_count(), obj.format(),
-                                   {static_cast<const uint8_t*>(obj.data), UINT32_MAX}, false, "GX Static Texture");
+#if DEBUG
+    const auto name = gfx::texture_replacement::build_texture_replacement_name(obj);
+    const auto nameStr = name.c_str();
+#else
+    const auto nameStr = "GX Static Texture";
+#endif
+    handle = gfx::new_static_texture_2d(obj.width(), obj.height(), obj.mip_count(), obj.format(),
+                                        {static_cast<const uint8_t*>(obj.data), UINT32_MAX}, false, nameStr);
   }
   if (!obj.no_cache()) {
     store_cached_texture(obj, handle);
@@ -173,6 +193,9 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
 
 gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GXTlutObj_& tlut) {
   ZoneScoped;
+  if (s_staticTextureCacheClearPending.exchange(false, std::memory_order_acq_rel)) {
+    do_clear_static_texture_cache();
+  }
 
   if (obj.texObjId != 0) {
     if (const auto it = s_textureObjectCaches.find(obj.texObjId); it != s_textureObjectCaches.end()) {
@@ -185,7 +208,7 @@ gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GX
   }
 
   gfx::TextureHandle handle;
-  if (const auto replacement = gfx::texture_replacement::find_replacement(obj); replacement.has_value()) {
+  if (const auto replacement = gfx::texture_replacement::find_replacement(obj, tlut); replacement.has_value()) {
     handle = *replacement;
   } else {
     auto converted = gfx::convert_texture_palette(
@@ -240,6 +263,18 @@ u32 resolved_format_for_handle(const gfx::TextureHandle& handle) {
   }
   return GX_TF_RGBA8_PC;
 }
+
+template <typename T>
+T round_away_from_zero(float value) noexcept {
+  return static_cast<T>(value < 0.0f ? std::floor(value) : std::ceil(value));
+}
+
+std::pair<f32, f32> polygon_offset_for_cull_mode(GXCullMode cullMode) noexcept {
+  if (cullMode == GX_CULL_FRONT) {
+    return {g_gxState.backOffset, g_gxState.backScale};
+  }
+  return {g_gxState.frontOffset, g_gxState.frontScale};
+}
 } // namespace
 
 Vec2<uint32_t> logical_fb_size() noexcept {
@@ -257,21 +292,13 @@ gfx::Viewport map_logical_viewport(const gfx::Viewport& logicalViewport) noexcep
     return logicalViewport;
   }
 
-  const bool stretch = g_gxState.viewportPolicy == AURORA_VIEWPORT_STRETCH;
   const float scaleX = static_cast<float>(targetWidth) / static_cast<float>(logicalFbWidth);
   const float scaleY = static_cast<float>(targetHeight) / static_cast<float>(logicalFbHeight);
-  const float scale = std::min(scaleX, scaleY);
-  const float xOffset =
-      stretch ? 0.f : (static_cast<float>(targetWidth) - static_cast<float>(logicalFbWidth) * scale) * 0.5f;
-  const float yOffset =
-      stretch ? 0.f : (static_cast<float>(targetHeight) - static_cast<float>(logicalFbHeight) * scale) * 0.5f;
-  const float mappedScaleX = stretch ? scaleX : scale;
-  const float mappedScaleY = stretch ? scaleY : scale;
   return {
-      .left = xOffset + logicalViewport.left * mappedScaleX,
-      .top = yOffset + logicalViewport.top * mappedScaleY,
-      .width = logicalViewport.width * mappedScaleX,
-      .height = logicalViewport.height * mappedScaleY,
+      .left = logicalViewport.left * scaleX,
+      .top = logicalViewport.top * scaleY,
+      .width = logicalViewport.width * scaleX,
+      .height = logicalViewport.height * scaleY,
       .znear = logicalViewport.znear,
       .zfar = logicalViewport.zfar,
   };
@@ -288,21 +315,13 @@ gfx::ClipRect map_logical_scissor(const gfx::ClipRect& logicalScissor) noexcept 
     return logicalScissor;
   }
 
-  const bool stretch = g_gxState.viewportPolicy == AURORA_VIEWPORT_STRETCH;
   const float scaleX = static_cast<float>(targetWidth) / static_cast<float>(logicalFbWidth);
   const float scaleY = static_cast<float>(targetHeight) / static_cast<float>(logicalFbHeight);
-  const float scale = std::min(scaleX, scaleY);
-  const float xOffset =
-      stretch ? 0.f : (static_cast<float>(targetWidth) - static_cast<float>(logicalFbWidth) * scale) * 0.5f;
-  const float yOffset =
-      stretch ? 0.f : (static_cast<float>(targetHeight) - static_cast<float>(logicalFbHeight) * scale) * 0.5f;
-  const float mappedScaleX = stretch ? scaleX : scale;
-  const float mappedScaleY = stretch ? scaleY : scale;
 
-  const float left = xOffset + static_cast<float>(logicalScissor.x) * mappedScaleX;
-  const float top = yOffset + static_cast<float>(logicalScissor.y) * mappedScaleY;
-  const float right = xOffset + static_cast<float>(logicalScissor.x + logicalScissor.width) * mappedScaleX;
-  const float bottom = yOffset + static_cast<float>(logicalScissor.y + logicalScissor.height) * mappedScaleY;
+  const float left = static_cast<float>(logicalScissor.x) * scaleX;
+  const float top = static_cast<float>(logicalScissor.y) * scaleY;
+  const float right = static_cast<float>(logicalScissor.x + logicalScissor.width) * scaleX;
+  const float bottom = static_cast<float>(logicalScissor.y + logicalScissor.height) * scaleY;
 
   const auto mappedLeft = std::clamp(static_cast<int32_t>(std::floor(left)), 0, static_cast<int32_t>(targetWidth));
   const auto mappedTop = std::clamp(static_cast<int32_t>(std::floor(top)), 0, static_cast<int32_t>(targetHeight));
@@ -379,13 +398,39 @@ void clear_copy_texture_cache() noexcept {
   }
 }
 
+void clear_static_texture_cache() noexcept { s_staticTextureCacheClearPending.store(true, std::memory_order_release); }
+
 void evict_copy_texture(const void* dest) noexcept {
-  g_gxState.copyTextures.erase(dest);
+  absl::flat_hash_set<const void*> sourceIdentities;
+  if (const auto it = g_gxState.copyTextures.find(dest); it != g_gxState.copyTextures.end()) {
+    if (it->second.handle) {
+      sourceIdentities.insert(it->second.handle.get());
+    }
+    g_gxState.copyTextures.erase(it);
+  }
+
   for (auto it = g_gxState.copyTextureCache.begin(); it != g_gxState.copyTextureCache.end();) {
     if (it->first.dest == dest) {
+      if (it->second.handle) {
+        sourceIdentities.insert(it->second.handle.get());
+      }
       g_gxState.copyTextureCache.erase(it++);
     } else {
       ++it;
+    }
+  }
+
+  if (sourceIdentities.empty()) {
+    return;
+  }
+
+  for (auto& [_, cache] : s_tlutObjectCaches) {
+    for (auto it = cache.dynamicPaletteTextures.begin(); it != cache.dynamicPaletteTextures.end();) {
+      if (sourceIdentities.contains(it->first.sourceIdentity)) {
+        cache.dynamicPaletteTextures.erase(it++);
+      } else {
+        ++it;
+      }
     }
   }
 }
@@ -416,14 +461,14 @@ void resolve_sampled_textures(const ShaderInfo& info) noexcept {
         if (tlut.data != nullptr) {
           if (copyRef != nullptr) {
             handle = resolve_dynamic_palette_texture(obj, *copyRef, tlut);
-          } else {
+          } else if (obj.has_data()) {
             handle = resolve_static_palette_texture(obj, tlut);
           }
         }
       }
     } else if (copyRef != nullptr) {
       handle = copyRef->handle;
-    } else if (obj.data != nullptr) {
+    } else if (obj.has_data()) {
       handle = resolve_static_texture(obj);
     }
 
@@ -588,10 +633,15 @@ static inline wgpu::PrimitiveState to_primitive_state(GXCullMode gx_cullMode) {
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
                                     wgpu::ShaderModule shader, const char* label) noexcept {
   ZoneScoped;
+  const float depthBias = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetBits);
+  const float depthBiasSlopeScale = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetScaleBits);
   const wgpu::DepthStencilState depthStencil{
       .format = g_graphicsConfig.depthFormat,
       .depthWriteEnabled = config.depthCompare && config.depthUpdate,
       .depthCompare = config.depthCompare ? to_compare_function(config.depthFunc) : wgpu::CompareFunction::Always,
+      .depthBias = round_away_from_zero<int32_t>(depthBias),
+      .depthBiasSlopeScale = depthBiasSlopeScale,
+      .depthBiasClamp = std::bit_cast<float>(config.polygonOffsetClampBits),
   };
   const auto blendState =
       to_blend_state(config.blendMode, config.blendFacSrc, config.blendFacDst, config.blendOp, config.dstAlpha);
@@ -627,103 +677,6 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu:
   return g_device.CreateRenderPipeline(&descriptor);
 }
 
-u8 comp_type_size(GXAttr attr, GXCompType type) noexcept {
-  switch (attr) {
-  case GX_VA_PNMTXIDX:
-  case GX_VA_TEX0MTXIDX:
-  case GX_VA_TEX1MTXIDX:
-  case GX_VA_TEX2MTXIDX:
-  case GX_VA_TEX3MTXIDX:
-  case GX_VA_TEX4MTXIDX:
-  case GX_VA_TEX5MTXIDX:
-  case GX_VA_TEX6MTXIDX:
-  case GX_VA_TEX7MTXIDX:
-    return 1;
-  case GX_VA_CLR0:
-  case GX_VA_CLR1:
-    switch (type) {
-    case GX_RGB565:
-    case GX_RGBA4:
-      return 2;
-    case GX_RGB8:
-    case GX_RGBA6:
-      return 3;
-    case GX_RGBX8:
-    case GX_RGBA8:
-      return 4;
-    }
-  default:
-    switch (type) {
-    case GX_U8:
-    case GX_S8:
-      return 1;
-    case GX_U16:
-    case GX_S16:
-      return 2;
-    case GX_F32:
-      return 4;
-    default:
-      Log.fatal("comp_type_size: Unsupported component type {}", type);
-    }
-  }
-}
-
-u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept {
-  switch (attr) {
-  case GX_VA_PNMTXIDX:
-  case GX_VA_TEX0MTXIDX:
-  case GX_VA_TEX1MTXIDX:
-  case GX_VA_TEX2MTXIDX:
-  case GX_VA_TEX3MTXIDX:
-  case GX_VA_TEX4MTXIDX:
-  case GX_VA_TEX5MTXIDX:
-  case GX_VA_TEX6MTXIDX:
-  case GX_VA_TEX7MTXIDX:
-    return 1;
-  case GX_VA_POS:
-    switch (cnt) {
-    case GX_POS_XY:
-      return 2;
-    case GX_POS_XYZ:
-      return 3;
-    default:
-      break;
-    }
-    break;
-  case GX_VA_NRM:
-    switch (cnt) {
-    case GX_NRM_XYZ:
-      return 3;
-    default:
-      break;
-    }
-    break;
-  case GX_VA_CLR0:
-  case GX_VA_CLR1:
-    return 1;
-  case GX_VA_TEX0:
-  case GX_VA_TEX1:
-  case GX_VA_TEX2:
-  case GX_VA_TEX3:
-  case GX_VA_TEX4:
-  case GX_VA_TEX5:
-  case GX_VA_TEX6:
-  case GX_VA_TEX7:
-    switch (cnt) {
-    case GX_TEX_S:
-      return 1;
-    case GX_TEX_ST:
-      return 2;
-    default:
-      break;
-    }
-    break;
-  default:
-    break;
-  }
-  Log.fatal("comp_cnt_count: Unsupported attr/cnt {} {}", attr, cnt);
-}
-
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept {
   ZoneScoped;
 
@@ -740,6 +693,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     }
     const auto& attrFmt = vtxFmt.attrs[i];
     const auto cnt = comp_cnt_count(attr, attrFmt.cnt);
+    const bool nbt3 = attr == GX_VA_NRM && attrFmt.cnt == GX_NRM_NBT3;
     mapping = AttrConfig{
         .attrType = static_cast<u8>(type),
         .cnt = cnt,
@@ -748,6 +702,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
         .stride = 0,
         .frac = attrFmt.frac,
         .le = false,
+        .nbt3 = nbt3,
     };
     switch (type) {
     case GX_DIRECT: {
@@ -757,12 +712,12 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
     case GX_INDEX8:
       mapping.stride = g_gxState.arrays[i].stride;
       mapping.le = g_gxState.arrays[i].le;
-      vtxOffset += 1;
+      vtxOffset += nbt3 ? 3 : 1;
       break;
     case GX_INDEX16:
       mapping.stride = g_gxState.arrays[i].stride;
       mapping.le = g_gxState.arrays[i].le;
-      vtxOffset += 2;
+      vtxOffset += nbt3 ? 6 : 2;
       break;
     default:
       Log.fatal("populate_pipeline_config: Invalid vertex type {}", type);
@@ -804,16 +759,21 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
   if (g_gxState.alphaCompare) {
     config.shaderConfig.alphaCompare = g_gxState.alphaCompare;
   }
+  const auto cullMode = config.shaderConfig.lineMode == 0 ? g_gxState.cullMode : GX_CULL_NONE;
+  const auto [polygonOffset, polygonOffsetScale] = polygon_offset_for_cull_mode(cullMode);
   config = {
       .msaaSamples = gfx::get_sample_count(),
       .shaderConfig = config.shaderConfig,
       .depthFunc = g_gxState.depthFunc,
-      .cullMode = config.shaderConfig.lineMode == 0 ? g_gxState.cullMode : GX_CULL_NONE,
+      .cullMode = cullMode,
       .blendMode = g_gxState.blendMode,
       .blendFacSrc = g_gxState.blendFacSrc,
       .blendFacDst = g_gxState.blendFacDst,
       .blendOp = g_gxState.blendOp,
       .dstAlpha = g_gxState.dstAlpha,
+      .polygonOffsetBits = std::bit_cast<uint32_t>(polygonOffset),
+      .polygonOffsetScaleBits = std::bit_cast<uint32_t>(polygonOffsetScale),
+      .polygonOffsetClampBits = std::bit_cast<uint32_t>(g_gxState.clamp),
       .depthCompare = g_gxState.depthCompare,
       .depthUpdate = g_gxState.depthUpdate,
       .alphaUpdate = g_gxState.alphaUpdate,
@@ -931,9 +891,6 @@ void initialize() noexcept {
   }
 }
 
-// TODO this is awkward
-extern std::mutex g_gxCachedShadersMutex;
-extern absl::flat_hash_map<gfx::ShaderRef, std::pair<wgpu::ShaderModule, ShaderInfo>> g_gxCachedShaders;
 void shutdown() noexcept {
   // TODO we should probably store this all in g_state.gx instead
   sSamplerBindGroupLayout = {};
@@ -945,10 +902,6 @@ void shutdown() noexcept {
   }
   for (auto& item : g_gxState.textures) {
     item.ref.reset();
-  }
-  {
-    std::lock_guard lock{g_gxCachedShadersMutex};
-    g_gxCachedShaders.clear();
   }
   s_textureObjectCaches.clear();
   s_tlutObjectCaches.clear();
@@ -1002,13 +955,28 @@ static u16 wgpu_aniso(GXAnisotropy aniso) {
 }
 
 wgpu::SamplerDescriptor aurora::gfx::TextureBind::get_descriptor() const noexcept {
-  const auto [minFilter, mipFilter] = wgpu_filter_mode(texObj.min_filter());
-  const auto [magFilter, _] = wgpu_filter_mode(texObj.mag_filter());
+  auto [minFilter, mipFilter] = wgpu_filter_mode(texObj.min_filter());
+  auto [magFilter, _] = wgpu_filter_mode(texObj.mag_filter());
+  const bool mipsEnabled = mipFilter != wgpu::MipmapFilterMode::Undefined;
   float minLod = texObj.min_lod();
   float maxLod = texObj.max_lod();
-  if (mipFilter == wgpu::MipmapFilterMode::Undefined) {
+  u16 maxAnisotropy = wgpu_aniso(texObj.max_aniso());
+  if (ref && ref->isReplacement) {
+    minLod = 0.f;
+    maxLod = 1000.f;
+    if (!mipsEnabled) {
+      mipFilter = wgpu::MipmapFilterMode::Nearest;
+    }
+  } else if (mipFilter == wgpu::MipmapFilterMode::Undefined) {
     minLod = 0.f;
     maxLod = 0.f;
+  }
+  if ((ref && ref->hasArbitraryMips) || !mipsEnabled) {
+    maxAnisotropy = 1;
+  } else if (maxAnisotropy > 1) {
+    magFilter = wgpu::FilterMode::Linear;
+    minFilter = wgpu::FilterMode::Linear;
+    mipFilter = wgpu::MipmapFilterMode::Linear;
   }
   return {
       .label = "Generated Filtering Sampler",
@@ -1020,6 +988,6 @@ wgpu::SamplerDescriptor aurora::gfx::TextureBind::get_descriptor() const noexcep
       .mipmapFilter = mipFilter,
       .lodMinClamp = minLod,
       .lodMaxClamp = maxLod,
-      .maxAnisotropy = wgpu_aniso(texObj.max_aniso()),
+      .maxAnisotropy = maxAnisotropy,
   };
 } // namespace aurora::gx

@@ -32,6 +32,7 @@ struct GameController {
   std::array<PADAxisMapping, PAD_AXIS_COUNT> m_axisMapping{};
   uint16_t m_rumbleIntensityLow = 32767;
   uint16_t m_rumbleIntensityHigh = 32767;
+  bool m_forceDeviceRumble = false;
   bool m_mappingLoaded = false;
   constexpr bool operator==(const GameController& other) const {
     return m_controller == other.m_controller && m_index == other.m_index;
@@ -40,6 +41,7 @@ struct GameController {
   uint8_t m_ledGreen = 0xFF;
   uint8_t m_ledBlue = 0xFF;
   bool m_isColorDirty = true;
+  bool m_hasRgbLed = false;
 };
 
 GameController* get_controller_for_player(uint32_t player) noexcept;
@@ -53,8 +55,11 @@ bool is_gamecube(Uint32 instance) noexcept;
 bool controller_has_rumble(Uint32 instance) noexcept;
 void controller_rumble(uint32_t instance, uint16_t low_freq_intensity, uint16_t high_freq_intensity,
                        uint16_t duration_ms) noexcept;
+void get_device_rumble_intensity(uint16_t* low_freq_intensity, uint16_t* high_freq_intensity) noexcept;
+void set_device_rumble_intensity(uint16_t low_freq_intensity, uint16_t high_freq_intensity) noexcept;
 uint32_t controller_count() noexcept;
 void initialize() noexcept;
+void persist_controller_for_player(uint32_t player, const GameController* controller) noexcept;
 extern absl::flat_hash_map<Uint32, GameController> g_GameControllers;
 
 void set_mouse_scroll(float scrollX, float scrollY) noexcept;

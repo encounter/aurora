@@ -1,5 +1,6 @@
 #include "BackendBinding.hpp"
 
+#import <Foundation/Foundation.h>
 #include <SDL3/SDL_metal.h>
 
 namespace aurora::webgpu::utils {

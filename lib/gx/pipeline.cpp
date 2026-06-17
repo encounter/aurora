@@ -11,7 +11,10 @@ static Module Log("aurora::gx");
 wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
   ZoneScoped;
   const auto shader = build_shader(config.shaderConfig);
-  return build_pipeline(config, {}, shader, "GX Pipeline");
+  const auto label = fmt::format("GX Pipeline {:x} shader {:x}",
+                                 xxh3_hash(config, static_cast<HashType>(gfx::ShaderType::GX)),
+                                 xxh3_hash(config.shaderConfig));
+  return build_pipeline(config, {}, shader, label.c_str());
 }
 
 void render(const DrawData& data, const wgpu::RenderPassEncoder& pass) {
@@ -29,6 +32,10 @@ void render(const DrawData& data, const wgpu::RenderPassEncoder& pass) {
     const wgpu::Color color{0.f, 0.f, 0.f, data.dstAlpha / 255.f};
     pass.SetBlendConstant(&color);
   }
-  pass.DrawIndexed(data.indexCount, data.instanceCount);
+  if (data.indexCount == 0) {
+    pass.Draw(data.vtxCount, data.instanceCount);
+  } else {
+    pass.DrawIndexed(data.indexCount, data.instanceCount);
+  }
 }
 } // namespace aurora::gx

@@ -16,11 +16,14 @@ bool is_alpha_bump_channel(GXChannelID id) { return id == GX_ALPHA_BUMP || id ==
 Vec4<float> texture_size_bias(const gfx::TextureBind& tex) {
   auto width = static_cast<float>(tex.texObj.width());
   auto height = static_cast<float>(tex.texObj.height());
-  const auto vpBias =
-      enableLodBias && tex.ref && tex.ref->hasArbitraryMips
-          ? log2(std::min(g_gxState.renderViewport.width / std::max(g_gxState.logicalViewport.width, 1.f),
-                          g_gxState.renderViewport.height / std::max(g_gxState.logicalViewport.height, 1.f)))
-          : 0.f;
+  float vpBias = 0.f;
+  if (enableLodBias && tex.ref && tex.ref->hasArbitraryMips) {
+    const float viewportScale =
+        std::min(g_gxState.renderViewport.width / std::max(g_gxState.logicalViewport.width, 1.f),
+                 g_gxState.renderViewport.height / std::max(g_gxState.logicalViewport.height, 1.f));
+    const float replacementScale = static_cast<float>(tex.ref->size.width) / std::max(width, 1.f);
+    vpBias = std::log2(viewportScale / std::max(replacementScale, 0.001f));
+  }
   return {width, height, tex.texObj.lod_bias() + vpBias, 0.0f};
 }
 
@@ -254,6 +257,18 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
     }
   }
 
+  // Emboss bump needs its source texcoord generated and a light enabled
+  for (int i = 0; i < info.sampledTexCoords.size(); ++i) {
+    if (!info.sampledTexCoords.test(i)) {
+      continue;
+    }
+    const auto& tcg = config.tcgs[i];
+    if (tcg.type >= GX_TG_BUMP0 && tcg.type <= GX_TG_BUMP7) {
+      info.sampledTexCoords.set(tcg.embossSrc);
+      info.lightingEnabled = true;
+    }
+  }
+
   info.uniformSize += info.loadsTevReg.count() * sizeof(Vec4<float>);
   for (int i = 0; i < info.sampledColorChannels.size(); ++i) {
     if (info.sampledColorChannels.test(i)) {
@@ -303,6 +318,7 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
     info.usesFog = true;
     info.uniformSize += sizeof(Fog);
   }
+  info.uniformSize += MaxTexCoord * sizeof(Vec4<float>);
   if (info.usedIndTexMtxs.any()) {
     info.uniformSize += MaxIndTexMtxs * sizeof(Mat2x4<float>);
   }
@@ -355,7 +371,10 @@ static u32 line_texcoord_mask() noexcept {
 gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart, const BindGroupRanges& ranges) noexcept {
   ZoneScoped;
 
-  auto [buf, range] = gfx::map_uniform(info.uniformSize);
+  static ByteBuffer buf;
+  buf.clear();
+  buf.reserve_extra(info.uniformSize);
+
   buf.append(vtxStart);
   buf.append(g_gxState.currentPnMtx);
   buf.append<f32>(g_gxState.renderViewport.width);
@@ -443,6 +462,10 @@ gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart, const BindGroupRa
     Fog fog{.color = state.color, .a = state.a, .b = state.b, .c = state.c};
     buf.append(fog);
   }
+  for (const auto& scale : g_gxState.texCoordScales) {
+    buf.append(
+        Vec4{static_cast<f32>(scale.scaleS) + 1.0f, static_cast<f32>(scale.scaleT) + 1.0f, 0.0f, 0.0f});
+  }
   if (info.usedIndTexMtxs.any()) {
     for (int i = 0; i < MaxIndTexMtxs; ++i) {
       const auto& mtx = g_gxState.indTexMtxs[i];
@@ -459,6 +482,6 @@ gfx::Range build_uniform(const ShaderInfo& info, u32 vtxStart, const BindGroupRa
     buf.append(texture_size_bias(tex));
   }
   g_gxState.stateDirty = false;
-  return range;
+  return gfx::push_uniform(buf.data(), buf.size());
 }
 } // namespace aurora::gx

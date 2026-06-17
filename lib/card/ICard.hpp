@@ -2,6 +2,7 @@
 
 #include "Constants.hpp"
 #include "Util.hpp"
+#include <filesystem>
 
 namespace aurora::card {
 class ICard {
@@ -35,10 +36,10 @@ public:
   virtual void getEncoding(uint16_t& encoding) const = 0;
   virtual void format(ECardSlot deviceId, ECardSize size = ECardSize::Card2043Mb, EEncoding encoding = EEncoding::ASCII) = 0;
   virtual void commit() = 0;
-  virtual bool open(std::string_view filepath) = 0;
+  virtual bool open(const std::filesystem::path& filepath) = 0;
   virtual void close() = 0;
-  virtual std::string_view cardFilename() const = 0;
+  virtual const std::filesystem::path& cardFilename() const = 0;
   virtual ECardResult getError() const = 0;
-  virtual ProbeResults probeCardFile(std::string_view filename) = 0;
+  virtual ProbeResults probeCardFile(const std::filesystem::path& filename) = 0;
 };
 }

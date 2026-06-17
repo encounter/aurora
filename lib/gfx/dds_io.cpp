@@ -1,5 +1,6 @@
 #include "dds_io.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -52,6 +53,11 @@ struct DDSHeaderDX10 {
 static_assert(sizeof(DDSHeaderDX10) == 20);
 
 constexpr uint32_t kDDSMagic = 0x20534444; // "DDS"
+constexpr uint32_t kDDSDMipmapCount = 0x00020000;
+constexpr uint32_t kDDSCapsComplex = 0x00000008;
+constexpr uint32_t kDDSCapsMipmap = 0x00400000;
+constexpr uint32_t kDDSCaps2Cubemap = 0x00000200;
+constexpr uint32_t kDDSCaps2Volume = 0x00200000;
 
 bool ensure_directory(const std::filesystem::path& dir) noexcept {
   std::error_code ec;
@@ -101,10 +107,34 @@ bool validate_dds_header(const DDSHeader& header) noexcept {
   if (header.width == 0 || header.height == 0) {
     return false;
   }
-  if ((header.caps2 & (0x00000200 | 0x00200000)) != 0) { // Unsupported
+  if ((header.caps2 & (kDDSCaps2Cubemap | kDDSCaps2Volume)) != 0) { // Unsupported
     return false;
   }
   return true;
+}
+
+uint32_t max_mip_count(uint32_t width, uint32_t height) noexcept {
+  uint32_t count = 1;
+  while (width > 1 || height > 1) {
+    width = std::max(width >> 1, 1u);
+    height = std::max(height >> 1, 1u);
+    ++count;
+  }
+  return count;
+}
+
+std::optional<uint32_t> resolve_mip_count(const DDSHeader& header) noexcept {
+  if (header.mipMapCount <= 1) {
+    return 1;
+  }
+
+  const bool hasMipFlags = (header.flags & kDDSDMipmapCount) != 0 && (header.caps & kDDSCapsComplex) != 0 &&
+                           (header.caps & kDDSCapsMipmap) != 0;
+  if (!hasMipFlags || header.mipMapCount > max_mip_count(header.width, header.height)) {
+    return std::nullopt;
+  }
+
+  return header.mipMapCount;
 }
 
 std::optional<wgpu::TextureFormat> resolve_dx10_format(uint32_t dxgiFormat) noexcept {
@@ -121,6 +151,62 @@ std::optional<wgpu::TextureFormat> resolve_dx10_format(uint32_t dxgiFormat) noex
     return wgpu::TextureFormat::BC5RGUnorm;
   case 98:
     return wgpu::TextureFormat::BC7RGBAUnorm;
+  case 134:
+    return wgpu::TextureFormat::ASTC4x4Unorm;
+  case 135:
+    return wgpu::TextureFormat::ASTC4x4UnormSrgb;
+  case 138:
+    return wgpu::TextureFormat::ASTC5x4Unorm;
+  case 139:
+    return wgpu::TextureFormat::ASTC5x4UnormSrgb;
+  case 142:
+    return wgpu::TextureFormat::ASTC5x5Unorm;
+  case 143:
+    return wgpu::TextureFormat::ASTC5x5UnormSrgb;
+  case 146:
+    return wgpu::TextureFormat::ASTC6x5Unorm;
+  case 147:
+    return wgpu::TextureFormat::ASTC6x5UnormSrgb;
+  case 150:
+    return wgpu::TextureFormat::ASTC6x6Unorm;
+  case 151:
+    return wgpu::TextureFormat::ASTC6x6UnormSrgb;
+  case 154:
+    return wgpu::TextureFormat::ASTC8x5Unorm;
+  case 155:
+    return wgpu::TextureFormat::ASTC8x5UnormSrgb;
+  case 158:
+    return wgpu::TextureFormat::ASTC8x6Unorm;
+  case 159:
+    return wgpu::TextureFormat::ASTC8x6UnormSrgb;
+  case 162:
+    return wgpu::TextureFormat::ASTC8x8Unorm;
+  case 163:
+    return wgpu::TextureFormat::ASTC8x8UnormSrgb;
+  case 166:
+    return wgpu::TextureFormat::ASTC10x5Unorm;
+  case 167:
+    return wgpu::TextureFormat::ASTC10x5UnormSrgb;
+  case 170:
+    return wgpu::TextureFormat::ASTC10x6Unorm;
+  case 171:
+    return wgpu::TextureFormat::ASTC10x6UnormSrgb;
+  case 174:
+    return wgpu::TextureFormat::ASTC10x8Unorm;
+  case 175:
+    return wgpu::TextureFormat::ASTC10x8UnormSrgb;
+  case 178:
+    return wgpu::TextureFormat::ASTC10x10Unorm;
+  case 179:
+    return wgpu::TextureFormat::ASTC10x10UnormSrgb;
+  case 182:
+    return wgpu::TextureFormat::ASTC12x10Unorm;
+  case 183:
+    return wgpu::TextureFormat::ASTC12x10UnormSrgb;
+  case 186:
+    return wgpu::TextureFormat::ASTC12x12Unorm;
+  case 187:
+    return wgpu::TextureFormat::ASTC12x12UnormSrgb;
   default:
     return std::nullopt;
   }
@@ -197,8 +283,12 @@ std::optional<ConvertedTexture> parse_dds_bytes(ArrayRef<uint8_t> bytes) noexcep
     return std::nullopt;
   }
 
-  const uint32_t mipCount = 1u;
-  const auto expectedSize = calc_texture_size(parsedLayout->format, header->width, header->height, mipCount);
+  const auto mipCount = resolve_mip_count(*header);
+  if (!mipCount.has_value()) {
+    return std::nullopt;
+  }
+
+  const auto expectedSize = calc_texture_size(parsedLayout->format, header->width, header->height, *mipCount);
   if (expectedSize == 0 || parsedLayout->dataOffset + expectedSize > bytes.size()) {
     return std::nullopt;
   }
@@ -209,7 +299,7 @@ std::optional<ConvertedTexture> parse_dds_bytes(ArrayRef<uint8_t> bytes) noexcep
       .format = parsedLayout->format,
       .width = header->width,
       .height = header->height,
-      .mips = mipCount,
+      .mips = *mipCount,
       .data = std::move(data),
   };
 }

@@ -17,7 +17,7 @@ static bool has_bp_write(const std::vector<u8>& bytes, u8 reg) {
 }
 
 static bool has_aurora_cmd(const std::vector<u8>& bytes, u16 cmd) {
-  const std::array<u8, 3> pattern{GX_LOAD_AURORA, static_cast<u8>(cmd >> 8), static_cast<u8>(cmd & 0xFF)};
+  const std::array<u8, 3> pattern{GX_AURORA, static_cast<u8>(cmd >> 8), static_cast<u8>(cmd & 0xFF)};
   return std::search(bytes.begin(), bytes.end(), pattern.begin(), pattern.end()) != bytes.end();
 }
 
@@ -1139,9 +1139,9 @@ TEST_F(GXFifoTest, SetArray_Pos_EncodesAuroraArrayBaseAndStride) {
   auto bytes = capture_fifo();
 
   ASSERT_EQ(bytes.size(), 22u);
-  EXPECT_EQ(bytes[0], GX_LOAD_AURORA);
+  EXPECT_EQ(bytes[0], GX_AURORA);
   EXPECT_EQ(bytes[1], 0x00);
-  EXPECT_EQ(bytes[2], GX_LOAD_AURORA_ARRAYBASE);
+  EXPECT_EQ(bytes[2], GX_AURORA_LOAD_ARRAYBASE);
 
   const auto expect_be64 = [&](size_t offset, u64 value) {
     for (size_t i = 0; i < 8; ++i) {
@@ -1187,9 +1187,9 @@ TEST_F(GXFifoTest, SetArray_Nbt_UsesNrmCommandSlotAndState) {
   auto bytes = capture_fifo();
 
   ASSERT_EQ(bytes.size(), 22u);
-  EXPECT_EQ(bytes[0], GX_LOAD_AURORA);
+  EXPECT_EQ(bytes[0], GX_AURORA);
   EXPECT_EQ(bytes[1], 0x00);
-  EXPECT_EQ(bytes[2], GX_LOAD_AURORA_ARRAYBASE | 0x01);
+  EXPECT_EQ(bytes[2], GX_AURORA_LOAD_ARRAYBASE | 0x01);
   EXPECT_EQ(bytes[15], 0);
   EXPECT_EQ(bytes[16], GX_LOAD_CP_REG);
   EXPECT_EQ(bytes[17], GX_CP_REG_ARRAYSTRIDE | 0x01);
@@ -1223,9 +1223,9 @@ TEST_F(GXFifoTest, SetArray_LittleEndianFlag_UpdatesStateAndClearsCachedRange) {
   auto bytes = capture_fifo();
 
   ASSERT_EQ(bytes.size(), 22u);
-  EXPECT_EQ(bytes[0], GX_LOAD_AURORA);
+  EXPECT_EQ(bytes[0], GX_AURORA);
   EXPECT_EQ(bytes[1], 0x00);
-  EXPECT_EQ(bytes[2], GX_LOAD_AURORA_ARRAYBASE | (GX_VA_CLR0 - GX_VA_POS));
+  EXPECT_EQ(bytes[2], GX_AURORA_LOAD_ARRAYBASE | (GX_VA_CLR0 - GX_VA_POS));
   EXPECT_EQ(bytes[15], 1);
   EXPECT_EQ(bytes[16], GX_LOAD_CP_REG);
   EXPECT_EQ(bytes[17], GX_CP_REG_ARRAYSTRIDE | (GX_VA_CLR0 - GX_VA_POS));
@@ -1263,7 +1263,7 @@ TEST_F(GXFifoTest, LoadTexObj_EncodesSdkBpBurstAndAuroraMetadata) {
   EXPECT_TRUE(has_bp_write(bytes, 0x8E));
   EXPECT_TRUE(has_bp_write(bytes, 0x92));
   EXPECT_TRUE(has_bp_write(bytes, 0x96));
-  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_TEXOBJ));
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_AURORA_LOAD_TEXOBJ));
 
   reset_gx_state();
   decode_fifo(bytes);
@@ -1292,7 +1292,7 @@ TEST_F(GXFifoTest, LoadTexObjPcFormat_PreservesFullFormatMetadata) {
   GXLoadTexObj(&obj, GX_TEXMAP3);
   auto bytes = capture_fifo();
 
-  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_TEXOBJ));
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_AURORA_LOAD_TEXOBJ));
 
   reset_gx_state();
   decode_fifo(bytes);
@@ -1302,6 +1302,24 @@ TEST_F(GXFifoTest, LoadTexObjPcFormat_PreservesFullFormatMetadata) {
   EXPECT_EQ(slot.height(), 8u);
   EXPECT_EQ(slot.format(), GX_TF_RGBA8_PC);
   EXPECT_EQ(slot.raw_format(), static_cast<u32>(GX_TF_RGBA8));
+}
+
+TEST_F(GXFifoTest, TexImage0BpWrite_ClearsExtendedTextureMetadata) {
+  auto& slot = gxState().loadedTextures[GX_TEXMAP0];
+  slot.mWidth = 1024;
+  slot.mHeight = 1024;
+  slot.mFormat = GX_TF_BC1_PC;
+
+  const u32 image0 = (0x88u << 24) | (7u << 0) | (15u << 10) | (static_cast<u32>(GX_TF_RGBA8) << 20);
+  aurora::gx::fifo::write_u8(0x61);
+  aurora::gx::fifo::write_u32(image0);
+  auto bytes = capture_fifo();
+
+  decode_fifo(bytes);
+
+  EXPECT_EQ(slot.width(), 8u);
+  EXPECT_EQ(slot.height(), 16u);
+  EXPECT_EQ(slot.format(), GX_TF_RGBA8);
 }
 
 TEST_F(GXFifoTest, TexObjRawDimensions_WrapAtTenBitBoundary) {
@@ -1344,8 +1362,8 @@ TEST_F(GXFifoTest, LoadTexObjCiAndTlut_PopulatesTextureAndTlutSlots) {
   EXPECT_TRUE(has_bp_write(bytes, 0x91));
   EXPECT_TRUE(has_bp_write(bytes, 0x95));
   EXPECT_TRUE(has_bp_write(bytes, 0x99));
-  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_TEXOBJ));
-  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_TLUT));
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_AURORA_LOAD_TEXOBJ));
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_AURORA_LOAD_TLUT));
 
   reset_gx_state();
   decode_fifo(bytes);
@@ -1372,7 +1390,7 @@ TEST_F(GXFifoTest, DestroyTexObj_EmitsAuroraDestroyCommandAndClearsIdentity) {
   GXDestroyTexObj(&obj);
   auto bytes = capture_fifo();
 
-  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_DESTROY_TEXOBJ));
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_AURORA_DESTROY_TEXOBJ));
   EXPECT_EQ(reinterpret_cast<const GXTexObj_*>(&obj)->texObjId, 0u);
 
   reset_gx_state();
@@ -1420,7 +1438,7 @@ TEST_F(GXFifoTest, DestroyTlutObj_EmitsAuroraDestroyCommandAndClearsIdentity) {
   GXDestroyTlutObj(&obj);
   auto bytes = capture_fifo();
 
-  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_DESTROY_TLUT));
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_AURORA_DESTROY_TLUT));
   EXPECT_EQ(reinterpret_cast<const GXTlutObj_*>(&obj)->tlutObjId, 0u);
 
   reset_gx_state();
@@ -1467,7 +1485,7 @@ TEST_F(GXFifoTest, DestroyCopyTex_EmitsAuroraDestroyCommand) {
   GXDestroyCopyTex(image);
   auto bytes = capture_fifo();
 
-  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_DESTROY_COPY_TEX));
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_AURORA_DESTROY_COPY_TEX));
 
   reset_gx_state();
   decode_fifo(bytes);
@@ -2149,7 +2167,7 @@ TEST_F(GXFifoTest, ViewportRender_EncodesAuroraOverride) {
   GXSetViewportRender(100.0f, 50.0f, 1280.0f, 720.0f, 0.0f, 1.0f);
   auto bytes = capture_fifo();
 
-  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_VIEWPORT_RENDER));
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_AURORA_LOAD_VIEWPORT_RENDER));
 
   reset_gx_state();
   decode_fifo(bytes);
@@ -2164,7 +2182,7 @@ TEST_F(GXFifoTest, ScissorRender_EncodesAuroraOverride) {
   GXSetScissorRender(100, 40, 800, 600);
   auto bytes = capture_fifo();
 
-  EXPECT_TRUE(has_aurora_cmd(bytes, GX_LOAD_AURORA_SCISSOR_RENDER));
+  EXPECT_TRUE(has_aurora_cmd(bytes, GX_AURORA_LOAD_SCISSOR_RENDER));
 
   reset_gx_state();
   decode_fifo(bytes);
@@ -2831,6 +2849,29 @@ TEST_F(GXFifoTest, IndTexMtx0_Isolation) {
   EXPECT_NEAR(g_gxState.indTexMtxs[1].mtx.m0.x, -1.0f, tol);
   EXPECT_NEAR(g_gxState.indTexMtxs[1].mtx.m1.y, -1.0f, tol);
   EXPECT_EQ(g_gxState.indTexMtxs[1].scaleExp, -2);
+}
+
+TEST_F(GXFifoTest, TevIndTile_UsesTileSizeAndSpacing) {
+  GXSetTevIndTile(GX_TEVSTAGE0, GX_INDTEXSTAGE0, 16, 32, 16, 8, GX_ITF_4, GX_ITM_0, GX_ITB_NONE, GX_ITBA_OFF);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& stage = g_gxState.tevStages[0];
+  EXPECT_EQ(stage.indTexStage, GX_INDTEXSTAGE0);
+  EXPECT_EQ(stage.indTexFormat, GX_ITF_4);
+  EXPECT_EQ(stage.indTexMtxId, GX_ITM_0);
+  EXPECT_EQ(stage.indTexWrapS, GX_ITW_16);
+  EXPECT_EQ(stage.indTexWrapT, GX_ITW_32);
+  EXPECT_TRUE(stage.indTexUseOrigLOD);
+  EXPECT_FALSE(stage.indTexAddPrev);
+
+  const auto& mtx = g_gxState.indTexMtxs[0];
+  const float tol = 1.0f / 1024.0f;
+  EXPECT_NEAR(mtx.mtx.m0.x, 16.0f / 1024.0f, tol);
+  EXPECT_NEAR(mtx.mtx.m1.y, 8.0f / 1024.0f, tol);
+  EXPECT_EQ(mtx.scaleExp, 10);
 }
 
 // ============================================================================

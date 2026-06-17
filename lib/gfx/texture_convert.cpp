@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
+#include <cstring>
+
+#include <tracy/Tracy.hpp>
 
 namespace aurora::gfx {
 static Module Log("aurora::gfx");
@@ -192,11 +194,11 @@ static ByteBuffer DecodeTiled(uint32_t width, uint32_t height, uint32_t mips, Ar
 }
 
 template <TextureDecoder T>
-static ByteBuffer DecodeLinear(uint32_t width, ArrayRef<uint8_t> data) {
-  ByteBuffer buf{width * sizeof(typename T::Target)};
+static ByteBuffer DecodeLinear(uint32_t texelCount, ArrayRef<uint8_t> data) {
+  ByteBuffer buf{texelCount * sizeof(typename T::Target)};
   auto* target = reinterpret_cast<typename T::Target*>(buf.data());
   const auto* in = reinterpret_cast<const typename T::Source*>(data.data());
-  for (uint32_t x = 0; x < width; ++x) {
+  for (uint32_t x = 0; x < texelCount; ++x) {
     T::decode_texel(target, in, x);
   }
   return buf;
@@ -233,6 +235,25 @@ struct TextureDecoderI8 {
     target[x].g = intensity;
     target[x].b = intensity;
     target[x].a = intensity;
+  }
+};
+
+struct TextureDecoderRG8 {
+  struct Source {
+    uint8_t intensity;
+    uint8_t alpha;
+  };
+  using Target = RGBA8;
+
+  static constexpr uint32_t Frac = 1;
+  static constexpr uint32_t BlockWidth = 1;
+  static constexpr uint32_t BlockHeight = 1;
+
+  static void decode_texel(Target* target, const Source* in, const uint32_t x) {
+    target[x].r = in[x].intensity;
+    target[x].g = in[x].intensity;
+    target[x].b = in[x].intensity;
+    target[x].a = in[x].alpha;
   }
 };
 
@@ -294,6 +315,17 @@ struct TextureDecoderC8 {
   static void decode_texel(Target* target, const Source* in, const uint32_t x) { target[x] = in[x]; }
 };
 
+struct TextureDecoderC14X2 {
+  using Source = uint16_t;
+  using Target = uint16_t;
+
+  static constexpr uint32_t Frac = 1;
+  static constexpr uint32_t BlockWidth = 4;
+  static constexpr uint32_t BlockHeight = 4;
+
+  static void decode_texel(Target* target, const Source* in, const uint32_t x) { target[x] = bswap(in[x]) & 0x3fff; }
+};
+
 struct TextureDecoderRGB565 {
   using Source = uint16_t;
   using Target = RGBA8;
@@ -348,18 +380,22 @@ static ByteBuffer BuildRGBA8FromGCN(uint32_t width, uint32_t height, uint32_t mi
     const uint32_t bheight = (h + 3) / 4;
     for (uint32_t by = 0; by < bheight; ++by) {
       const uint32_t baseY = by * 4;
+      const uint32_t numRows = std::min(h - baseY, 4u);
       for (uint32_t bx = 0; bx < bwidth; ++bx) {
         const uint32_t baseX = bx * 4;
+        const uint32_t numCols = std::min(w - baseX, 4u);
         for (uint32_t c = 0; c < 2; ++c) {
           for (uint32_t y = 0; y < 4; ++y) {
-            RGBA8* target = targetMip + (baseY + y) * w + baseX;
-            for (size_t x = 0; x < 4; ++x) {
-              if (c != 0) {
-                target[x].g = in[x * 2];
-                target[x].b = in[x * 2 + 1];
-              } else {
-                target[x].a = in[x * 2];
-                target[x].r = in[x * 2 + 1];
+            if (y < numRows) {
+              RGBA8* target = targetMip + (baseY + y) * w + baseX;
+              for (uint32_t x = 0; x < numCols; ++x) {
+                if (c != 0) {
+                  target[x].g = in[x * 2];
+                  target[x].b = in[x * 2 + 1];
+                } else {
+                  target[x].a = in[x * 2];
+                  target[x].r = in[x * 2 + 1];
+                }
               }
             }
             in += 8;
@@ -462,15 +498,107 @@ static ByteBuffer BuildRGBA8FromCMPR(uint32_t width, uint32_t height, uint32_t m
   return buf;
 }
 
+static ByteBuffer BuildRGBA8FromBC1(uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
+  const size_t texelCount = ComputeMippedTexelCount(width, height, mips);
+  ByteBuffer buf{sizeof(RGBA8) * texelCount};
+
+  uint32_t h = height;
+  uint32_t w = width;
+  uint8_t* dst = buf.data();
+  const uint8_t* src = data.data();
+  for (uint32_t mip = 0; mip < mips; ++mip) {
+    for (uint32_t yy = 0; yy < h; yy += 4) {
+      for (uint32_t xx = 0; xx < w; xx += 4) {
+        const uint16_t color1 = *reinterpret_cast<const uint16_t*>(src);
+        const uint16_t color2 = *reinterpret_cast<const uint16_t*>(src + 2);
+        const uint32_t indices = *reinterpret_cast<const uint32_t*>(src + 4);
+        src += 8;
+
+        std::array<uint8_t, 16> colorTable{};
+
+        colorTable[0] = ExpandTo8<5>(static_cast<uint8_t>((color1 >> 11) & 0x1F));
+        colorTable[1] = ExpandTo8<6>(static_cast<uint8_t>((color1 >> 5) & 0x3F));
+        colorTable[2] = ExpandTo8<5>(static_cast<uint8_t>(color1 & 0x1F));
+        colorTable[3] = 0xFF;
+
+        colorTable[4] = ExpandTo8<5>(static_cast<uint8_t>((color2 >> 11) & 0x1F));
+        colorTable[5] = ExpandTo8<6>(static_cast<uint8_t>((color2 >> 5) & 0x3F));
+        colorTable[6] = ExpandTo8<5>(static_cast<uint8_t>(color2 & 0x1F));
+        colorTable[7] = 0xFF;
+        if (color1 > color2) {
+          colorTable[8] = S3TCBlend(colorTable[4], colorTable[0]);
+          colorTable[9] = S3TCBlend(colorTable[5], colorTable[1]);
+          colorTable[10] = S3TCBlend(colorTable[6], colorTable[2]);
+          colorTable[11] = 0xFF;
+
+          colorTable[12] = S3TCBlend(colorTable[0], colorTable[4]);
+          colorTable[13] = S3TCBlend(colorTable[1], colorTable[5]);
+          colorTable[14] = S3TCBlend(colorTable[2], colorTable[6]);
+          colorTable[15] = 0xFF;
+        } else {
+          colorTable[8] = HalfBlend(colorTable[0], colorTable[4]);
+          colorTable[9] = HalfBlend(colorTable[1], colorTable[5]);
+          colorTable[10] = HalfBlend(colorTable[2], colorTable[6]);
+          colorTable[11] = 0xFF;
+
+          colorTable[12] = 0;
+          colorTable[13] = 0;
+          colorTable[14] = 0;
+          colorTable[15] = 0;
+        }
+
+        for (uint32_t y = 0; y < 4; ++y) {
+          for (uint32_t x = 0; x < 4; ++x) {
+            if (xx + x >= w || yy + y >= h) {
+              continue;
+            }
+            const uint32_t index = (indices >> (2 * (y * 4 + x))) & 3;
+            uint8_t* dstOffs = dst + ((yy + y) * w + (xx + x)) * 4;
+            const uint8_t* colorTableOffs = &colorTable[static_cast<size_t>(index) * 4];
+            memcpy(dstOffs, colorTableOffs, 4);
+          }
+        }
+      }
+    }
+    dst += w * h * 4;
+    if (w > 1) {
+      w /= 2;
+    }
+    if (h > 1) {
+      h /= 2;
+    }
+  }
+
+  return buf;
+}
+
 ConvertedTexture convert_texture(u32 format, uint32_t width, uint32_t height, uint32_t mips, ArrayRef<uint8_t> data) {
+  ZoneScoped;
   ByteBuffer converted;
   switch (format) {
     DEFAULT_FATAL("convert_texture: unknown texture format {}", format);
   case GX_TF_R8_PC:
-    converted = DecodeLinear<TextureDecoderI8>(width * height, data);
-    break;
+    if (!uses_direct_texture_upload(format)) {
+      converted =
+          DecodeLinear<TextureDecoderI8>(static_cast<uint32_t>(ComputeMippedTexelCount(width, height, mips)), data);
+      break;
+    }
+    return {.format = to_wgpu(format), .width = width, .height = height, .mips = mips};
+  case GX_TF_RG8_PC:
+    if (!uses_direct_texture_upload(format)) {
+      converted =
+          DecodeLinear<TextureDecoderRG8>(static_cast<uint32_t>(ComputeMippedTexelCount(width, height, mips)), data);
+      break;
+    }
+    return {.format = to_wgpu(format), .width = width, .height = height, .mips = mips};
   case GX_TF_RGBA8_PC:
-    return {}; // No conversion
+    return {.format = to_wgpu(format), .width = width, .height = height, .mips = mips};
+  case GX_TF_BC1_PC:
+    if (uses_direct_texture_upload(format)) {
+      return {.format = to_wgpu(format), .width = width, .height = height, .mips = mips};
+    }
+    converted = BuildRGBA8FromBC1(width, height, mips, data);
+    break;
   case GX_TF_I4:
     converted = DecodeTiled<TextureDecoderI4>(width, height, mips, data);
     break;
@@ -490,7 +618,8 @@ ConvertedTexture convert_texture(u32 format, uint32_t width, uint32_t height, ui
     converted = DecodeTiled<TextureDecoderC8>(width, height, mips, data);
     break;
   case GX_TF_C14X2:
-    FATAL("convert_texture: C14X2 unimplemented");
+    converted = DecodeTiled<TextureDecoderC14X2>(width, height, mips, data);
+    break;
   case GX_TF_RGB565:
     converted = DecodeTiled<TextureDecoderRGB565>(width, height, mips, data);
     break;
@@ -506,7 +635,7 @@ ConvertedTexture convert_texture(u32 format, uint32_t width, uint32_t height, ui
   }
   const auto wgpuFormat = to_wgpu(format);
   bool hasArbitraryMips = false;
-  if (wgpuFormat == wgpu::TextureFormat::RGBA8Unorm && mips > 1) {
+  if (!is_pc_texture_format(format) && wgpuFormat == wgpu::TextureFormat::RGBA8Unorm && mips > 1) {
     hasArbitraryMips = arb_mip_check(width, height, mips, converted);
   }
   return {
@@ -534,7 +663,7 @@ ConvertedTexture convert_tlut(u32 format, uint32_t width, ArrayRef<uint8_t> data
     break;
   }
   return {
-      .format = wgpu::TextureFormat::R16Sint,
+      .format = wgpu::TextureFormat::RGBA8Unorm,
       .width = width,
       .height = 1,
       .mips = 1,
@@ -571,8 +700,10 @@ ConvertedTexture convert_texture_palette(u32 textureFormat, uint32_t width, uint
 
   const auto* indexData = reinterpret_cast<const u16*>(indices.data.data());
   size_t offset = 0;
+  uint32_t mipWidth = width;
+  uint32_t mipHeight = height;
   for (u32 mip = 0; mip < mips; ++mip) {
-    const size_t pixelCount = static_cast<size_t>(width) * height;
+    const size_t pixelCount = static_cast<size_t>(mipWidth) * mipHeight;
     for (size_t i = 0; i < pixelCount; ++i) {
       const u32 index = indexData[offset + i];
       if (index >= tlutEntries) {
@@ -580,19 +711,12 @@ ConvertedTexture convert_texture_palette(u32 textureFormat, uint32_t width, uint
         pixels.append(transparent, sizeof(transparent));
         continue;
       }
-      if (tlutFormat == GX_TL_IA8) {
-        const size_t src = static_cast<size_t>(index) * 2;
-        const u8 intensity = palette.data.data()[src];
-        const uint8_t rgba[4] = {intensity, intensity, intensity, palette.data.data()[src + 1]};
-        pixels.append(rgba, sizeof(rgba));
-      } else {
-        const size_t src = static_cast<size_t>(index) * 4;
-        pixels.append(palette.data.data() + src, 4);
-      }
+      const size_t src = static_cast<size_t>(index) * 4;
+      pixels.append(palette.data.data() + src, 4);
     }
     offset += pixelCount;
-    width = std::max(width >> 1, 1u);
-    height = std::max(height >> 1, 1u);
+    mipWidth = std::max(mipWidth >> 1, 1u);
+    mipHeight = std::max(mipHeight >> 1, 1u);
   }
 
   bool hasArbitraryMips = arb_mip_check(width, height, mips, pixels);

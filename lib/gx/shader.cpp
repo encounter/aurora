@@ -8,7 +8,7 @@
 
 #include <dolphin/gx/GXEnum.h>
 
-#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <mutex>
 #include <string_view>
 #include <utility>
@@ -22,11 +22,7 @@ using namespace std::string_view_literals;
 
 static Module Log("aurora::gfx::gx");
 
-std::mutex g_gxCachedShadersMutex;
-absl::flat_hash_map<gfx::ShaderRef, std::pair<wgpu::ShaderModule, ShaderInfo>> g_gxCachedShaders;
-#ifndef NDEBUG
-static absl::flat_hash_map<gfx::ShaderRef, ShaderConfig> g_gxCachedShaderConfigs;
-#endif
+absl::flat_hash_set<gfx::ShaderRef> g_seenShaders;
 
 static inline std::string_view chan_comp(GXTevColorChan chan) noexcept {
   switch (chan) {
@@ -402,27 +398,116 @@ static std::string_view tev_bias(GXTevBias bias) {
   }
 }
 
-static std::string alpha_compare(GXCompare comp, u8 ref, bool& valid) {
-  const float fref = ref / 255.f;
+struct AlphaCompareExpr {
+  std::string expr;
+  int constant = -1;
+};
+
+static AlphaCompareExpr alpha_compare_const(bool value) { return {value ? "true"s : "false"s, value ? 1 : 0}; }
+
+static AlphaCompareExpr alpha_compare_not(const AlphaCompareExpr& expr) {
+  if (expr.constant != -1) {
+    return alpha_compare_const(expr.constant == 0);
+  }
+  return {fmt::format("!{}", expr.expr), -1};
+}
+
+static AlphaCompareExpr alpha_compare_and(const AlphaCompareExpr& lhs, const AlphaCompareExpr& rhs) {
+  if (lhs.constant == 0 || rhs.constant == 0) {
+    return alpha_compare_const(false);
+  }
+  if (lhs.constant == 1) {
+    return rhs;
+  }
+  if (rhs.constant == 1) {
+    return lhs;
+  }
+  return {fmt::format("({} && {})", lhs.expr, rhs.expr), -1};
+}
+
+static AlphaCompareExpr alpha_compare_or(const AlphaCompareExpr& lhs, const AlphaCompareExpr& rhs) {
+  if (lhs.constant == 1 || rhs.constant == 1) {
+    return alpha_compare_const(true);
+  }
+  if (lhs.constant == 0) {
+    return rhs;
+  }
+  if (rhs.constant == 0) {
+    return lhs;
+  }
+  return {fmt::format("({} || {})", lhs.expr, rhs.expr), -1};
+}
+
+static AlphaCompareExpr alpha_compare_xor(const AlphaCompareExpr& lhs, const AlphaCompareExpr& rhs) {
+  if (lhs.constant != -1 && rhs.constant != -1) {
+    return alpha_compare_const(lhs.constant != rhs.constant);
+  }
+  if (lhs.constant == 0) {
+    return rhs;
+  }
+  if (rhs.constant == 0) {
+    return lhs;
+  }
+  if (lhs.constant == 1) {
+    return alpha_compare_not(rhs);
+  }
+  if (rhs.constant == 1) {
+    return alpha_compare_not(lhs);
+  }
+  return {fmt::format("({} != {})", lhs.expr, rhs.expr), -1};
+}
+
+static AlphaCompareExpr alpha_compare_xnor(const AlphaCompareExpr& lhs, const AlphaCompareExpr& rhs) {
+  if (lhs.constant != -1 && rhs.constant != -1) {
+    return alpha_compare_const(lhs.constant == rhs.constant);
+  }
+  if (lhs.constant == 0) {
+    return alpha_compare_not(rhs);
+  }
+  if (rhs.constant == 0) {
+    return alpha_compare_not(lhs);
+  }
+  if (lhs.constant == 1) {
+    return rhs;
+  }
+  if (rhs.constant == 1) {
+    return lhs;
+  }
+  return {fmt::format("({} == {})", lhs.expr, rhs.expr), -1};
+}
+
+static AlphaCompareExpr alpha_compare(GXCompare comp, u8 ref) {
+  const auto iref = static_cast<u32>(ref);
   switch (comp) {
     DEFAULT_FATAL("invalid alpha comp {}", underlying(comp));
   case GX_NEVER:
-    return "false"s;
+    return alpha_compare_const(false);
   case GX_LESS:
-    return fmt::format("(prev.a < {}f)", fref);
+    if (ref == 0) {
+      return alpha_compare_const(false);
+    }
+    return {fmt::format("(alphaCompare < {}u)", iref), -1};
   case GX_LEQUAL:
-    return fmt::format("(prev.a <= {}f)", fref);
+    if (ref == 255) {
+      return alpha_compare_const(true);
+    }
+    return {fmt::format("(alphaCompare <= {}u)", iref), -1};
   case GX_EQUAL:
-    return fmt::format("(prev.a == {}f)", fref);
+    return {fmt::format("(alphaCompare == {}u)", iref), -1};
   case GX_NEQUAL:
-    return fmt::format("(prev.a != {}f)", fref);
+    return {fmt::format("(alphaCompare != {}u)", iref), -1};
   case GX_GEQUAL:
-    return fmt::format("(prev.a >= {}f)", fref);
+    if (ref == 0) {
+      return alpha_compare_const(true);
+    }
+    return {fmt::format("(alphaCompare >= {}u)", iref), -1};
   case GX_GREATER:
-    return fmt::format("(prev.a > {}f)", fref);
+    if (ref == 255) {
+      return alpha_compare_const(false);
+    }
+    return {fmt::format("(alphaCompare > {}u)", iref), -1};
   case GX_ALWAYS:
-    valid = false;
-    return "true"s;
+    return alpha_compare_const(true);
   }
 }
 
@@ -487,6 +572,25 @@ constexpr std::array<std::string_view, GX_CA_ZERO + 1> TevAlphaArgNames{
     "APREV"sv, "A0"sv, "A1"sv, "A2"sv, "TEXA"sv, "RASA"sv, "KONST"sv, "ZERO"sv,
 };
 
+auto fetch_fixed16_attr(std::string_view fetchFn, const AttrConfig& mapping, std::string_view buf, 
+                        std::string_view offs, bool le) -> std::string {
+  // Some Adreno drivers appear sensitive to generated shaders that route 2- and
+  // 3-component fixed-16 vertex attributes through reusable vector fetch helpers.
+  // Emitting scalar component fetches at the call site avoids observed artifacts.
+  if (mapping.cnt == 2) {
+    const auto comp0 = fmt::format("{}_1(&{}, {} + 0u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    const auto comp1 = fmt::format("{}_1(&{}, {} + 2u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    return fmt::format("vec2f({}, {})", comp0, comp1);
+  }
+  if (mapping.cnt == 3) {
+    const auto comp0 = fmt::format("{}_1(&{}, {} + 0u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    const auto comp1 = fmt::format("{}_1(&{}, {} + 2u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    const auto comp2 = fmt::format("{}_1(&{}, {} + 4u, {}u, {})", fetchFn, buf, offs, mapping.frac, le);
+    return fmt::format("vec3f({}, {}, {})", comp0, comp1, comp2);
+  }
+  return fmt::format("{}_{}(&{}, {}, {}u, {})", fetchFn, mapping.cnt, buf, offs, mapping.frac, le);
+}
+
 auto fetch_attr(const AttrConfig& mapping, std::string_view buf, std::string_view offs, bool le) -> std::string {
   switch (mapping.compType) {
   case GX_U8:
@@ -494,9 +598,9 @@ auto fetch_attr(const AttrConfig& mapping, std::string_view buf, std::string_vie
   case GX_S8:
     return fmt::format("fetch_s8_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
   case GX_U16:
-    return fmt::format("fetch_u16_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
+    return fetch_fixed16_attr("fetch_u16"sv, mapping, buf, offs, le);
   case GX_S16:
-    return fmt::format("fetch_s16_{}(&{}, {}, {}, {})", mapping.cnt, buf, offs, mapping.frac, le);
+    return fetch_fixed16_attr("fetch_s16"sv, mapping, buf, offs, le);
   case GX_F32:
     return fmt::format("fetch_f32_{}(&{}, {}, {})", mapping.cnt, buf, offs, le);
   case GX_RGBA8:
@@ -525,25 +629,35 @@ auto fetch_color_attr(const AttrConfig& mapping, std::string_view buf, std::stri
   }
 }
 
+struct AttrAddress {
+  std::string offs;
+  std::string_view buf;
+  bool le;
+};
+
+auto attr_address(const AttrConfig& mapping, GXAttr attr, std::string_view vidx, u32 vtxStride, u32 dlExtra, u32 within)
+    -> AttrAddress {
+  const u32 dlOffset = mapping.offset + dlExtra;
+  if (mapping.attrType == GX_INDEX8) {
+    return {fmt::format("ubuf.array_start[{}] + raw_fetch_u8_1(&vbuf, ubuf.vtx_start + {} * {}u + {}u) * {}u + {}u",
+                        attr - GX_VA_POS, vidx, vtxStride, dlOffset, mapping.stride, within),
+            "abuf"sv, mapping.le};
+  }
+  if (mapping.attrType == GX_INDEX16) {
+    return {
+        fmt::format("ubuf.array_start[{}] + raw_fetch_u16_1(&vbuf, ubuf.vtx_start + {} * {}u + {}u, false) * {}u + {}u",
+                    attr - GX_VA_POS, vidx, vtxStride, dlOffset, mapping.stride, within),
+        "abuf"sv, mapping.le};
+  }
+  return {fmt::format("ubuf.vtx_start + {} * {}u + {}u", vidx, vtxStride, dlOffset + within), "vbuf"sv, false};
+}
+
 auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -> std::string {
   const auto& mapping = config.attrs[attr];
   if (mapping.attrType == GX_NONE) {
     return vtx_attr(config, attr);
   }
-  auto buf = "vbuf"sv;
-  auto offs = fmt::format("ubuf.vtx_start + {} * {}u + {}u", vidx, config.vtxStride, mapping.offset);
-  auto le = false; // Vertex buffer is always big endian (for now)
-  if (mapping.attrType == GX_INDEX8) {
-    offs = fmt::format("ubuf.array_start[{}] + raw_fetch_u8_1(&{}, {}) * {}u", attr - GX_VA_POS, buf, offs,
-                       mapping.stride);
-    buf = "abuf"sv;
-    le = mapping.le;
-  } else if (mapping.attrType == GX_INDEX16) {
-    offs = fmt::format("ubuf.array_start[{}] + raw_fetch_u16_1(&{}, {}, {}) * {}u", attr - GX_VA_POS, buf, offs, le,
-                       mapping.stride);
-    buf = "abuf"sv;
-    le = mapping.le;
-  }
+  const auto [offs, buf, le] = attr_address(mapping, attr, vidx, config.vtxStride, 0u, 0u);
   switch (attr) {
   case GX_VA_PNMTXIDX:
     return fmt::format("(raw_fetch_u8_1(&{}, {}) / 3u)", buf, offs);
@@ -564,7 +678,12 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
     return posLoad;
   }
   case GX_VA_NRM:
-    // TODO check for NBT/NBT3
+    // NBT: normal only here; binormal/tangent loaded via attr_load_nbt_slice
+    if (mapping.cnt > 3) {
+      auto nrmMapping = mapping;
+      nrmMapping.cnt = 3;
+      return fetch_attr(nrmMapping, buf, offs, le);
+    }
     return fetch_attr(mapping, buf, offs, le);
   case GX_VA_CLR0:
   case GX_VA_CLR1:
@@ -586,6 +705,42 @@ auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -
   default:
     Log.fatal("attr_load: Unimplemented {}", attr);
   }
+}
+
+enum class NbtSlice : u8 {
+  N,
+  B,
+  T,
+};
+
+auto attr_load_nbt_slice(const ShaderConfig& config, NbtSlice slice, std::string_view vidx) -> std::string {
+  const auto& mapping = config.attrs[GX_VA_NRM];
+  if (mapping.attrType == GX_NONE || mapping.cnt != 9) {
+    Log.fatal("attr_load_nbt_slice: GX_TG_BINRM/TANGENT requires GX_NRM_NBT or GX_NRM_NBT3");
+  }
+  const auto sliceIdx = static_cast<u32>(slice);
+  const auto compsize = comp_type_size(GX_VA_NRM, static_cast<GXCompType>(mapping.compType));
+  u32 dlExtra = 0;
+  if (mapping.nbt3) {
+    if (mapping.attrType == GX_INDEX8) {
+      dlExtra = sliceIdx;
+    } else if (mapping.attrType == GX_INDEX16) {
+      dlExtra = sliceIdx * 2u;
+    }
+  }
+  const u32 within = sliceIdx * 3u * compsize;
+  const auto [offs, buf, le] = attr_address(mapping, GX_VA_NRM, vidx, config.vtxStride, dlExtra, within);
+  auto sliceMapping = mapping;
+  sliceMapping.cnt = 3;
+  return fetch_attr(sliceMapping, buf, offs, le);
+}
+
+static constexpr std::string_view nbt_slice_local(NbtSlice slice) noexcept {
+  return slice == NbtSlice::B ? "in_binrm" : "in_tangent";
+}
+
+static constexpr bool is_emboss_texgen(GXTexGenType type) noexcept {
+  return type >= GX_TG_BUMP0 && type <= GX_TG_BUMP7;
 }
 
 auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 i, bool alpha) -> std::string {
@@ -679,20 +834,13 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
                      alpha ? "a"sv : ""sv);
 }
 
-wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
+std::string build_shader_source(const ShaderConfig& config) noexcept {
   ZoneScoped;
   const auto hash = xxh3_hash(config);
-  {
-    std::lock_guard lock{g_gxCachedShadersMutex};
-    const auto it = g_gxCachedShaders.find(hash);
-    if (it != g_gxCachedShaders.end()) {
-      // CHECK(g_gxCachedShaderConfigs[hash] == config, "Shader collision! {:x}", hash);
-      return it->second.first;
-    }
-  }
-
   const auto info = build_shader_info(config);
-  if (EnableDebugPrints) {
+  if (EnableDebugPrints && !g_seenShaders.contains(hash)) {
+    g_seenShaders.insert(hash);
+
     Log.info("Shader config (hash {:x}):", hash);
     {
       for (int i = 0; i < config.tevStageCount; ++i) {
@@ -818,6 +966,24 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     if ((attr != GX_VA_PNMTXIDX && attr != GX_VA_POS) || config.lineMode == 0) {
       vtxXfrAttrsPre += fmt::format("\n    let {} = {};", vtx_attr(config, attr), attr_load(config, attr, vidxAttr));
     }
+  }
+  bool needsBinrm = false;
+  bool needsTangent = false;
+  for (int i = 0; i < info.sampledTexCoords.size(); ++i) {
+    if (!info.sampledTexCoords.test(i)) {
+      continue;
+    }
+    const bool emboss = is_emboss_texgen(config.tcgs[i].type);
+    needsBinrm = needsBinrm || config.tcgs[i].src == GX_TG_BINRM || emboss;
+    needsTangent = needsTangent || config.tcgs[i].src == GX_TG_TANGENT || emboss;
+  }
+  if (needsBinrm) {
+    vtxXfrAttrsPre += fmt::format("\n    let {} = {};", nbt_slice_local(NbtSlice::B),
+                                  attr_load_nbt_slice(config, NbtSlice::B, vidxAttr));
+  }
+  if (needsTangent) {
+    vtxXfrAttrsPre += fmt::format("\n    let {} = {};", nbt_slice_local(NbtSlice::T),
+                                  attr_load_nbt_slice(config, NbtSlice::T, vidxAttr));
   }
 
   if (config.lineMode == 0) {
@@ -1000,6 +1166,19 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     } else {
       vtxOutAttrs += fmt::format("\n    @location({}) tex{}_uv: vec2f,", vtxOutIdx++, i);
     }
+    if (is_emboss_texgen(tcg.type)) {
+      // Emboss bump: offset the source texcoord by the light projected onto tangent/binormal
+      const u32 lightIdx = tcg.type - GX_TG_BUMP0;
+      vtxXfrAttrs += fmt::format(
+          "\n    let bump_ldir{0} = normalize(ubuf.lights[{1}].pos - mv_pos);"
+          "\n    let bump_tan{0} = vec4f(in_tangent, 0.0) * ubuf.nrm_mtx[in_pnmtxidx];"
+          "\n    let bump_bin{0} = vec4f(in_binrm, 0.0) * ubuf.nrm_mtx[in_pnmtxidx];"
+          "\n    out.tex{0}_uv = tc{2}_proj.xy + vec2f(dot(bump_ldir{0}, bump_tan{0}), dot(bump_ldir{0}, "
+          "bump_bin{0}));",
+          i, lightIdx, tcg.embossSrc);
+      fragmentFnPre += fmt::format("\n    var tex{0}_uv = in.tex{0}_uv.xy;", i);
+      continue;
+    }
     if (tcg.src >= GX_TG_TEX0 && tcg.src <= GX_TG_TEX7) {
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0, 1.0);", i,
                                  vtx_attr(config, GXAttr(GX_VA_TEX0 + (tcg.src - GX_TG_TEX0))));
@@ -1007,6 +1186,14 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, vtx_attr(config, GX_VA_POS));
     } else if (tcg.src == GX_TG_NRM) {
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, vtx_attr(config, GX_VA_NRM));
+    } else if (tcg.src == GX_TG_COLOR0) {
+      vtxXfrAttrs += fmt::format("\n    var tc{} = {};", i, vtx_attr(config, GX_VA_CLR0));
+    } else if (tcg.src == GX_TG_COLOR1) {
+      vtxXfrAttrs += fmt::format("\n    var tc{} = {};", i, vtx_attr(config, GX_VA_CLR1));
+    } else if (tcg.src == GX_TG_BINRM) {
+      vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, nbt_slice_local(NbtSlice::B));
+    } else if (tcg.src == GX_TG_TANGENT) {
+      vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, nbt_slice_local(NbtSlice::T));
     } else
       UNLIKELY FATAL("unhandled tcg src {}", underlying(tcg.src));
     if (tcg.type == GX_TG_MTX2x4 || tcg.type == GX_TG_MTX3x4) {
@@ -1090,18 +1277,19 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
       continue;
     }
     const auto& indStage = config.indStages[i];
-    std::string scaleExpr;
-    if (indStage.scaleS == GX_ITS_1 && indStage.scaleT == GX_ITS_1) {
-      scaleExpr = fmt::format("tex{0}_uv", underlying(indStage.texCoordId));
-    } else {
-      scaleExpr = fmt::format("tex{0}_uv * vec2f({1}, {2})", underlying(indStage.texCoordId),
-                              ind_scale(indStage.scaleS), ind_scale(indStage.scaleT));
-    }
+    const u32 texCoordId = underlying(indStage.texCoordId);
+    const u32 texMapId = underlying(indStage.texMapId);
+    // GX applies the SU texture-coordinate scale before the indirect stage scale.
+    // The shader carries normalized UVs, so convert that texel-space result back
+    // into normalized coordinates for the indirect texture sample.
+    const auto scaleExpr =
+        fmt::format("tex{0}_uv * ubuf.texcoord_scale[{0}].xy * vec2f({1}, {2}) / ubuf.tex{3}_size_bias.xy",
+                    texCoordId, ind_scale(indStage.scaleS), ind_scale(indStage.scaleT), texMapId);
     fragmentFnPre += fmt::format(
         "\n    // Indirect stage {0}"
         "\n    var t_IndTexCoord{0} = 255.0 * textureSampleBias(tex{1}, tex{1}_samp, {2}, "
         "ubuf.tex{1}_size_bias.z).abg;",
-        i, underlying(indStage.texMapId), scaleExpr);
+        i, texMapId, scaleExpr);
   }
   if (info.usedIndStages.any()) {
     fragmentFnPre += "\n    var t_TexCoord = vec2f(0.0);";
@@ -1182,23 +1370,21 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
               ") * ind{0}_c1.z",
               i);
         } else if (stage.indTexMtxId >= GX_ITM_S0 && stage.indTexMtxId <= GX_ITM_S2 && hasBaseCoord) {
-          // Dynamic S: result = uv * texDim * ind_coord.x * scale / 256
+          // Dynamic S: result = scaled texcoord * ind_coord.x * scale / 256
           u32 mtxIdx = stage.indTexMtxId - GX_ITM_S0;
           u32 regTexCoord = underlying(stage.texCoordId);
-          u32 regTexMap = underlying(stage.texMapId);
           indirectOffsetTexel = fmt::format(
-              "tex{1}_uv * ubuf.tex{2}_size_bias.xy * ind{0}_coord.x"
-              " * ubuf.ind_mtx[{3}][1][2] / 256.0",
-              i, regTexCoord, regTexMap, mtxIdx);
+              "tex{1}_uv * ubuf.texcoord_scale[{1}].xy * ind{0}_coord.x"
+              " * ubuf.ind_mtx[{2}][1][2] / 256.0",
+              i, regTexCoord, mtxIdx);
         } else if (stage.indTexMtxId >= GX_ITM_T0 && stage.indTexMtxId <= GX_ITM_T2 && hasBaseCoord) {
-          // Dynamic T: result = uv * texDim * ind_coord.y * scale / 256
+          // Dynamic T: result = scaled texcoord * ind_coord.y * scale / 256
           u32 mtxIdx = stage.indTexMtxId - GX_ITM_T0;
           u32 regTexCoord = underlying(stage.texCoordId);
-          u32 regTexMap = underlying(stage.texMapId);
           indirectOffsetTexel = fmt::format(
-              "tex{1}_uv * ubuf.tex{2}_size_bias.xy * ind{0}_coord.y"
-              " * ubuf.ind_mtx[{3}][1][2] / 256.0",
-              i, regTexCoord, regTexMap, mtxIdx);
+              "tex{1}_uv * ubuf.texcoord_scale[{1}].xy * ind{0}_coord.y"
+              " * ubuf.ind_mtx[{2}][1][2] / 256.0",
+              i, regTexCoord, mtxIdx);
         }
       }
 
@@ -1229,12 +1415,11 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
       std::string baseCoordExpr;
       if (hasBaseCoord) {
         u32 texCoordId = underlying(stage.texCoordId);
-        u32 texMapId = underlying(stage.texMapId);
         if (useSimpleCoords) {
           baseCoordExpr = fmt::format("tex{}_uv", texCoordId);
         } else {
           fragmentFnPre +=
-              fmt::format("\n    var ind{0}_texel = tex{1}_uv * ubuf.tex{2}_size_bias.xy;", i, texCoordId, texMapId);
+              fmt::format("\n    var ind{0}_texel = tex{1}_uv * ubuf.texcoord_scale[{1}].xy;", i, texCoordId);
           baseCoordExpr = fmt::format("ind{}_texel", i);
         }
       }
@@ -1329,6 +1514,7 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
     }
     fragmentFn += "\n    prev = vec4f(mix(prev.rgb, ubuf.fog.color.rgb, clamp(fogZ, 0.0, 1.0)), prev.a);";
   }
+  uniBufAttrs += fmt::format("\n    texcoord_scale: array<vec4f, {}>,", MaxTexCoord);
   if (info.usedIndTexMtxs.any()) {
     uniBufAttrs += "\n    ind_mtx: array<mat2x4f, 3>,";
   }
@@ -1346,27 +1532,32 @@ wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
   }
   fragmentFn += "\n    prev = tev_overflow_vec4f(prev);";
   if (config.alphaCompare) {
-    bool comp0Valid = true;
-    bool comp1Valid = true;
-    std::string comp0 = alpha_compare(config.alphaCompare.comp0, config.alphaCompare.ref0, comp0Valid);
-    std::string comp1 = alpha_compare(config.alphaCompare.comp1, config.alphaCompare.ref1, comp1Valid);
-    if (comp0Valid || comp1Valid) {
-      fragmentFn += "\n    // Alpha compare";
-      switch (config.alphaCompare.op) {
-        DEFAULT_FATAL("invalid alpha compare op {}", underlying(config.alphaCompare.op));
-      case GX_AOP_AND:
-        fragmentFn += fmt::format("\n    if (!({} && {})) {{ discard; }}", comp0, comp1);
-        break;
-      case GX_AOP_OR:
-        fragmentFn += fmt::format("\n    if (!({} || {})) {{ discard; }}", comp0, comp1);
-        break;
-      case GX_AOP_XOR:
-        fragmentFn += fmt::format("\n    if (({} == {})) {{ discard; }}", comp0, comp1);
-        break;
-      case GX_AOP_XNOR:
-        fragmentFn += fmt::format("\n    if (({} != {})) {{ discard; }}", comp0, comp1);
-        break;
-      }
+    const auto comp0 = alpha_compare(config.alphaCompare.comp0, config.alphaCompare.ref0);
+    const auto comp1 = alpha_compare(config.alphaCompare.comp1, config.alphaCompare.ref1);
+    AlphaCompareExpr pass;
+    switch (config.alphaCompare.op) {
+      DEFAULT_FATAL("invalid alpha compare op {}", underlying(config.alphaCompare.op));
+    case GX_AOP_AND:
+      pass = alpha_compare_and(comp0, comp1);
+      break;
+    case GX_AOP_OR:
+      pass = alpha_compare_or(comp0, comp1);
+      break;
+    case GX_AOP_XOR:
+      pass = alpha_compare_xor(comp0, comp1);
+      break;
+    case GX_AOP_XNOR:
+      pass = alpha_compare_xnor(comp0, comp1);
+      break;
+    }
+    const auto discard = alpha_compare_not(pass);
+    if (discard.constant == 1) {
+      fragmentFn += "\n    // Alpha compare\n    discard;";
+    } else if (discard.constant != 0) {
+      fragmentFn +=
+          "\n    // Alpha compare"
+          "\n    let alphaCompare = u32(round(clamp(prev.a, 0.0, 1.0) * 255.0));";
+      fragmentFn += fmt::format("\n    if ({}) {{ discard; }}", discard.expr);
     }
   }
   if constexpr (EnableNormalVisualization) {
@@ -1388,8 +1579,19 @@ fn bswap16(v: u32, le: bool) -> u32 {{
   return select(((v & 0xFFu) << 8u) | (v >> 8u), v, le);
 }}
 
+fn load_word(p: ptr<storage, array<u32>>, word_idx: u32) -> u32 {{
+  // This guard is not expected to handle routine out-of-bounds accesses.
+  // It appears to discourage some Adreno drivers/optimizers from storage buffer
+  // optimizations that can cause visual artifacts, including vertex explosions
+  // in Dusklight.
+  if (word_idx < arrayLength(p)) {{
+    return p[word_idx];
+  }}
+  return 0u;
+}}
+
 fn load_u8(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
-  let word = p[byte_off / 4u];
+  let word = load_word(p, byte_off / 4u);
   let shift = (byte_off & 3u) * 8u;
   return (word >> shift) & 0xFFu;
 }}
@@ -1397,11 +1599,11 @@ fn load_u8(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
 fn load_u32_raw(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
-  let lo = p[word_idx];
+  let lo = load_word(p, word_idx);
   if (sub == 0u) {{
     return lo;
   }}
-  let hi = p[word_idx + 1u];
+  let hi = load_word(p, word_idx + 1u);
   let shift = sub * 8u;
   return (lo >> shift) | (hi << (32u - shift));
 }}
@@ -1409,11 +1611,11 @@ fn load_u32_raw(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
 fn load_u16(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> u32 {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
-  let word = p[word_idx];
+  let word = load_word(p, word_idx);
   if (sub <= 2u) {{
     return bswap16(extractBits(word, sub * 8u, 16u), le);
   }}
-  let next = p[word_idx + 1u];
+  let next = load_word(p, word_idx + 1u);
   let raw = extractBits(word, 24u, 8u) | (extractBits(next, 0u, 8u) << 8u);
   return bswap16(raw, le);
 }}
@@ -1443,7 +1645,7 @@ fn raw_fetch_u8_1(p: ptr<storage, array<u32>>, byte_off: u32) -> u32 {{
 fn raw_fetch_u8_2(p: ptr<storage, array<u32>>, byte_off: u32) -> vec2u {{
   let word_idx = byte_off >> 2u;
   let sub = byte_off & 3u;
-  let word = p[word_idx];
+  let word = load_word(p, word_idx);
   if (sub <= 2u) {{
     let shift = sub * 8u;
     return vec2u(
@@ -1451,7 +1653,7 @@ fn raw_fetch_u8_2(p: ptr<storage, array<u32>>, byte_off: u32) -> vec2u {{
       extractBits(word, shift + 8u, 8u),
     );
   }}
-  let next = p[word_idx + 1u];
+  let next = load_word(p, word_idx + 1u);
   return vec2u(
     extractBits(word, 24u, 8u),
     extractBits(next, 0u, 8u),
@@ -1675,15 +1877,18 @@ fn fetch_rgba8(p: ptr<storage, array<u32>>, byte_off: u32, le: bool) -> vec4f {{
 }}
 
 fn tev_overflow_f32(in: f32) -> f32 {{
-  return f32(i32(in * 255.0f) & 255) / 255.0f;
+  let byte_space = in * 255.0;
+  return (byte_space - floor(byte_space / 256.0) * 256.0) / 255.0;
 }}
 
 fn tev_overflow_vec3f(in: vec3f) -> vec3f {{
-  return vec3f(vec3i(in * 255.0f) & vec3i(255, 255, 255)) / 255.0f;
+  let byte_space = in * 255.0;
+  return (byte_space - floor(byte_space / 256.0) * 256.0) / 255.0;
 }}
 
 fn tev_overflow_vec4f(in: vec4f) -> vec4f {{
-  return vec4f(vec4i(in * 255.0f) & vec4i(255, 255, 255, 255)) / 255.0f;
+  let byte_space = in * 255.0;
+  return (byte_space - floor(byte_space / 256.0) * 256.0) / 255.0;
 }}
 
 {8}
@@ -1723,9 +1928,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {{{6}{5}
                                         uniBufAttrs, texBindings, vtxOutAttrs, vtxInAttrs, vtxXfrAttrs, fragmentFn,
                                         fragmentFnPre, vtxXfrAttrsPre, uniformPre);
   if (EnableDebugPrints) {
-    Log.info("Generated shader: {}", shaderSource);
+    Log.info("Generated shader (hash {:x}): {}", hash, shaderSource);
   }
 
+  return shaderSource;
+}
+
+wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
+  ZoneScoped;
+  const auto shaderSource = build_shader_source(config);
+  const auto hash = xxh3_hash(config);
   wgpu::ShaderSourceWGSL wgslDescriptor{};
   wgslDescriptor.code = shaderSource.c_str();
   const auto label = fmt::format("GX Shader {:x}", hash);
@@ -1733,16 +1945,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {{{6}{5}
       .nextInChain = &wgslDescriptor,
       .label = label.c_str(),
   };
-  auto shader = webgpu::g_device.CreateShaderModule(&shaderDescriptor);
-
-  {
-    std::lock_guard lock{g_gxCachedShadersMutex};
-    g_gxCachedShaders.emplace(hash, std::make_pair(shader, info));
-#ifndef NDEBUG
-    g_gxCachedShaderConfigs.emplace(hash, config);
-#endif
-  }
-
-  return shader;
+  return webgpu::g_device.CreateShaderModule(&shaderDescriptor);
 }
 } // namespace aurora::gx

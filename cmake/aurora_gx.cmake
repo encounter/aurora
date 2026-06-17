@@ -3,13 +3,17 @@ add_library(aurora_gx STATIC
         lib/gfx/common.cpp
         lib/gfx/depth_peek.cpp
         lib/gfx/pipeline_cache.cpp
+        lib/gfx/render_worker.cpp
         lib/gfx/dds_io.cpp
         lib/gfx/tex_copy_conv.cpp
         lib/gfx/tex_palette_conv.cpp
         lib/gfx/texture.cpp
+        lib/gfx/texture_format.cpp
         lib/gfx/texture_convert.cpp
         lib/gfx/texture_replacement.cpp
+        lib/gx/attr_fmt.cpp
         lib/gx/command_processor.cpp
+        lib/gx/dl.cpp
         lib/gx/fifo.cpp
         lib/gx/gx.cpp
         lib/gx/pipeline.cpp
@@ -34,16 +38,19 @@ add_library(aurora_gx STATIC
         lib/dolphin/gx/GXTransform.cpp
         lib/dolphin/gx/GXVert.cpp
         lib/dolphin/gx/GXAurora.cpp
+        lib/gfx/png_io.cpp
+        lib/gfx/png_io.hpp
 )
 add_library(aurora::gx ALIAS aurora_gx)
 set_target_properties(aurora_gx PROPERTIES FOLDER "aurora")
 
-target_link_libraries(aurora_gx PUBLIC aurora::core xxhash)
-target_link_libraries(aurora_gx PRIVATE absl::btree absl::flat_hash_map sqlite3 TracyClient)
-if (EMSCRIPTEN)
-    target_link_options(aurora_gx PUBLIC -sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME)
-    target_compile_definitions(aurora_gx PRIVATE ENABLE_BACKEND_WEBGPU)
-else ()
-    target_link_libraries(aurora_gx PRIVATE dawn::webgpu_dawn)
-    target_compile_definitions(aurora_gx PRIVATE WEBGPU_DAWN)
+target_link_libraries(aurora_gx PUBLIC aurora::core dawn::webgpu_dawn xxhash)
+target_link_libraries(aurora_gx PRIVATE absl::btree absl::flat_hash_map sqlite3 TracyClient PNG::PNG)
+target_compile_definitions(aurora_gx PRIVATE WEBGPU_DAWN)
+
+if (AURORA_ENABLE_RMLUI)
+    target_sources(aurora_gx PRIVATE
+        lib/rmlui/pipeline.cpp
+        lib/rmlui/pipeline.hpp
+    )
 endif ()

@@ -3,20 +3,15 @@
 
 #include "WebGPURenderInterface.hpp"
 #include "SystemInterface_Aurora.h"
-#include "../window.hpp"
 
 namespace Backend {
-
-#define MEMALIGN(_SIZE,_ALIGN)        (((_SIZE) + ((_ALIGN) - 1)) & ~((_ALIGN) - 1))
 
 aurora::rmlui::WebGPURenderInterface* g_RenderInterface = nullptr;
 aurora::rmlui::SystemInterface_Aurora* g_SystemInterface = nullptr;
 
-
 bool Initialize(const char* window_name, int width, int height, bool allow_resize) {
   g_RenderInterface = new aurora::rmlui::WebGPURenderInterface();
   g_SystemInterface = new aurora::rmlui::SystemInterface_Aurora();
-  g_SystemInterface->SetWindow(aurora::window::get_sdl_window());
   return true;
 }
 
@@ -25,24 +20,18 @@ void Shutdown() {
   delete g_RenderInterface;
 }
 
-Rml::SystemInterface* GetSystemInterface() {
-  return g_SystemInterface;
-}
+Rml::SystemInterface* GetSystemInterface() { return g_SystemInterface; }
 
-Rml::RenderInterface* GetRenderInterface() {
-  return g_RenderInterface;
-}
+Rml::RenderInterface* GetRenderInterface() { return g_RenderInterface; }
 
 bool ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback, bool power_save) {
   return true; // events handled directly by aurora
 }
 
-void RequestExit() { }
+void RequestExit() {}
 
-void BeginFrame() { }
+void BeginFrame() {}
 
-void PresentFrame() {
+void PresentFrame() {}
 
-}
-
-}
+} // namespace Backend

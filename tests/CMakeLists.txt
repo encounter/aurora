@@ -5,7 +5,7 @@ if (NOT TARGET gtest)
   FetchContent_Declare(googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.tar.gz
     URL_HASH SHA256=65fab701d9829d38cb77c14acdc431d2108bfdbf8979e40eb8ae567edf10b27c
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
     EXCLUDE_FROM_ALL
   )
   FetchContent_MakeAvailable(googletest)
@@ -40,6 +40,10 @@ if (AURORA_ENABLE_GX)
     # FIFO/command processor (encoder + decoder)
     ../lib/gx/fifo.cpp
     ../lib/gx/command_processor.cpp
+    # Display list reader/optimizer
+    ../lib/gx/attr_fmt.cpp
+    ../lib/gx/dl.cpp
+    gx_dl_test.cpp
   )
 
   target_include_directories(gx_fifo_tests PRIVATE
@@ -63,6 +67,22 @@ if (AURORA_ENABLE_GX)
   )
 
   gtest_discover_tests(gx_fifo_tests)
+
+  add_executable(render_worker_tests
+    render_worker_test.cpp
+    ../lib/gfx/render_worker.cpp
+  )
+  target_include_directories(render_worker_tests PRIVATE
+    ../include
+    ../lib
+  )
+  target_compile_definitions(render_worker_tests PRIVATE AURORA TARGET_PC)
+  target_link_libraries(render_worker_tests PRIVATE
+    gtest
+    gtest_main
+    TracyClient
+  )
+  gtest_discover_tests(render_worker_tests)
 endif () # AURORA_ENABLE_GX
 
 # DVD API tests

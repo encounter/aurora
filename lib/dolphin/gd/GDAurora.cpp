@@ -18,15 +18,15 @@ static void GDWriteString(const char* label) {
 }
 
 void GDPushDebugGroup(const char* label) {
-  GDWriteAuroraCmd(GX_LOAD_AURORA_DEBUG_GROUP_PUSH);
+  GDWriteAuroraCmd(GX_AURORA_DEBUG_GROUP_PUSH);
   GDWriteString(label);
 }
 
 void GDPopDebugGroup() {
-  GDWriteAuroraCmd(GX_LOAD_AURORA_DEBUG_GROUP_POP);
+  GDWriteAuroraCmd(GX_AURORA_DEBUG_GROUP_POP);
 }
 
 void GDInsertDebugMarker(const char* label) {
-  GDWriteAuroraCmd(GX_LOAD_AURORA_DEBUG_MARKER_INSERT);
+  GDWriteAuroraCmd(GX_AURORA_DEBUG_MARKER_INSERT);
   GDWriteString(label);
 }

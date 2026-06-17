@@ -534,8 +534,8 @@ ECardResult CardRawFile::getStatus(uint32_t fileNo, CardStat& statOut) const {
   std::strncpy(statOut.x0_fileName, file->m_filename, 32);
   statOut.x20_length = file->m_blockCount * BlockSize;
   statOut.x24_time = file->m_modifiedTime;
-  memmove(statOut.x28_gameName.data(), file->m_game, 4);
-  memmove(statOut.x2c_company.data(), file->m_maker, 4);
+  memmove(statOut.x28_gameName.data(), file->m_game, statOut.x28_gameName.size());
+  memmove(statOut.x2c_company.data(), file->m_maker, statOut.x2c_company.size());
 
   statOut.x2e_bannerFormat = file->m_bannerFlags;
   statOut.x30_iconAddr = file->m_iconAddress;
@@ -761,7 +761,7 @@ void CardRawFile::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   m_currentBat = 1;
 
   m_fileHandle = {};
-  m_fileHandle = FileIO(m_filename.c_str(), true);
+  m_fileHandle = FileIO(m_filename, true);
 
   if (m_fileHandle) {
     const uint32_t blockCount = (static_cast<uint32_t>(size) * MbitToBlocks) - 5;
@@ -790,11 +790,10 @@ void CardRawFile::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   }
 }
 
-ProbeResults CardRawFile::probeCardFile(std::string_view filename) {
-  std::filesystem::path path(filename);
-  if (!std::filesystem::exists(path))
+ProbeResults CardRawFile::probeCardFile(const std::filesystem::path& filename) {
+  if (!std::filesystem::exists(filename))
     return {ECardResult::NOCARD, 0, 0};
-  return {ECardResult::READY, static_cast<uint32_t>(std::filesystem::file_size(path) / BlockSize) / MbitToBlocks,
+  return {ECardResult::READY, static_cast<uint32_t>(std::filesystem::file_size(filename) / BlockSize) / MbitToBlocks,
           BlockSize};
 }
 
@@ -825,7 +824,7 @@ void CardRawFile::commit() {
   }
 }
 
-bool CardRawFile::open(std::string_view filepath) {
+bool CardRawFile::open(const std::filesystem::path& filepath) {
   m_opened = false;
   m_filename = filepath;
   m_fileHandle = FileIO(m_filename);

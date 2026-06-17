@@ -79,7 +79,7 @@ void init_texobj_common(GXTexObj_& obj, const void* data, u16 width, u16 height,
 }
 
 void emit_loaded_texobj_metadata(const GXTexObj_& obj, GXTexMapID id) {
-  GX_WRITE_AURORA(GX_LOAD_AURORA_TEXOBJ);
+  GX_WRITE_AURORA(GX_AURORA_LOAD_TEXOBJ);
   GX_WRITE_U8(static_cast<u8>(id));
   GX_WRITE_U64(reinterpret_cast<u64>(obj.data));
   GX_WRITE_U32(obj.width());
@@ -92,7 +92,7 @@ void emit_loaded_texobj_metadata(const GXTexObj_& obj, GXTexMapID id) {
 }
 
 void emit_loaded_tlut_metadata(const GXTlutObj_& obj, u32 idx) {
-  GX_WRITE_AURORA(GX_LOAD_AURORA_TLUT);
+  GX_WRITE_AURORA(GX_AURORA_LOAD_TLUT);
   GX_WRITE_U8(static_cast<u8>(idx));
   GX_WRITE_U64(reinterpret_cast<u64>(obj.data));
   GX_WRITE_U32(static_cast<u32>(obj.format));
@@ -154,15 +154,55 @@ void GXInitTexObjTlut(GXTexObj* obj_, u32 tlut) {
   obj->tlut = static_cast<GXTlut>(tlut);
 }
 
-// TODO GXInitTexObjFilter
-// TODO GXInitTexObjMaxLOD
-// TODO GXInitTexObjMinLOD
-// TODO GXInitTexObjLODBias
-// TODO GXInitTexObjBiasClamp
-// TODO GXInitTexObjEdgeLOD
-// TODO GXInitTexObjMaxAniso
-// TODO GXInitTexObjUserData
-// TODO GXGetTexObjUserData
+void GXInitTexObjFilter(GXTexObj* obj_, GXTexFilter minFilt, GXTexFilter magFilt) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  SET_REG_FIELD(0, obj->mode0, 3, 5, GX2HWFiltConv[minFilt]);
+  SET_REG_FIELD(0, obj->mode0, 1, 4, magFilt == GX_LINEAR ? 1 : 0);
+}
+
+void GXInitTexObjMaxLOD(GXTexObj* obj_, float maxLod) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  const auto clampedMax = std::clamp(maxLod, 0.0f, 10.0f);
+  SET_REG_FIELD(0, obj->mode1, 8, 8, static_cast<u8>(16.0f * clampedMax));
+}
+
+void GXInitTexObjMinLOD(GXTexObj* obj_, float minLod) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  const auto clampedMin = std::clamp(minLod, 0.0f, 10.0f);
+  SET_REG_FIELD(0, obj->mode1, 8, 0, static_cast<u8>(16.0f * clampedMin));
+}
+
+void GXInitTexObjLODBias(GXTexObj* obj_, float lodBias) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  const float clampedBias = std::clamp(lodBias, -4.0f, 3.99f);
+  const auto lbias = static_cast<u8>(32.0f * clampedBias);
+  SET_REG_FIELD(0, obj->mode0, 8, 9, lbias);
+}
+
+void GXInitTexObjBiasClamp(GXTexObj* obj_, GXBool biasClamp) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  SET_REG_FIELD(0, obj->mode0, 1, 21, biasClamp);
+}
+
+void GXInitTexObjEdgeLOD(GXTexObj* obj_, GXBool doEdgeLod) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  SET_REG_FIELD(0, obj->mode0, 1, 8, doEdgeLod ? 0 : 1);
+}
+
+void GXInitTexObjMaxAniso(GXTexObj* obj_, GXAnisotropy maxAniso) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  SET_REG_FIELD(0, obj->mode0, 2, 19, maxAniso);
+}
+
+void GXInitTexObjUserData(GXTexObj* obj_, void* userData) {
+  auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
+  obj->userData = userData;
+}
+
+void* GXGetTexObjUserData(const GXTexObj* obj_) {
+  const auto* obj = reinterpret_cast<const GXTexObj_*>(obj_);
+  return const_cast<void*>(obj->userData);
+}
 
 void GXLoadTexObj(GXTexObj* obj_, GXTexMapID id) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
@@ -278,6 +318,12 @@ void GXInitTlutObj(GXTlutObj* obj_, const void* data, GXTlutFmt format, u16 entr
   SET_REG_FIELD(0, obj->tlut, 2, 10, format);
   SET_REG_FIELD(0, obj->loadTlut0, 8, 24, 0x64);
   aurora::gfx::texture_replacement::register_tlut(obj_, data, format, entries);
+}
+
+void GXInitTlutObjData(GXTlutObj* obj_, const void* data) {
+  auto* obj = reinterpret_cast<GXTlutObj_*>(obj_);
+  obj->data = data;
+  ++obj->tlutDataVersion;
 }
 
 void GXLoadTlut(const GXTlutObj* obj_, u32 idx) {

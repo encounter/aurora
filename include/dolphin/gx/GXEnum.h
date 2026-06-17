@@ -169,7 +169,9 @@ typedef enum {
 
 #ifdef TARGET_PC
   GX_TF_R8_PC = 0x1 | _GX_TF_PC,
+  GX_TF_RG8_PC = 0x3 | _GX_TF_PC,
   GX_TF_RGBA8_PC = 0x6 | _GX_TF_PC,
+  GX_TF_BC1_PC = 0xE | _GX_TF_PC,
 #endif
 } GXTexFmt;
 
