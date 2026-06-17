@@ -266,28 +266,6 @@ bool create_window(AuroraBackend backend) {
     flags |= SDL_WINDOW_FULLSCREEN;
   }
 #endif
-  switch (backend) {
-#ifdef AURORA_ENABLE_GX
-#ifdef DAWN_ENABLE_BACKEND_VULKAN
-  case BACKEND_VULKAN:
-    flags |= SDL_WINDOW_VULKAN;
-    break;
-#endif
-#ifdef DAWN_ENABLE_BACKEND_METAL
-  case BACKEND_METAL:
-    flags |= SDL_WINDOW_METAL;
-    break;
-#endif
-#ifdef DAWN_ENABLE_BACKEND_OPENGL
-  case BACKEND_OPENGL:
-  case BACKEND_OPENGLES:
-    flags |= SDL_WINDOW_OPENGL;
-    break;
-#endif
-#endif
-  default:
-    break;
-  }
   auto width = static_cast<Sint32>(g_config.windowWidth);
   auto height = static_cast<Sint32>(g_config.windowHeight);
   if (width == 0 || height == 0) {
@@ -321,6 +299,8 @@ bool create_window(AuroraBackend backend) {
       SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, SDL_GetError());
   TRY(SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, flags), "Failed to set {}: {}",
       SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_GetError());
+  TRY(SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_EXTERNAL_GRAPHICS_CONTEXT_BOOLEAN, backend != BACKEND_NULL),
+      "Failed to set {}: {}", SDL_PROP_WINDOW_CREATE_EXTERNAL_GRAPHICS_CONTEXT_BOOLEAN, SDL_GetError());
   g_window = SDL_CreateWindowWithProperties(props);
   if (g_window == nullptr) {
     Log.error("Failed to create window: {}", SDL_GetError());
