@@ -1192,7 +1192,8 @@ std::optional<TextureHandle> find_source_replacement_locked(const GXTexObj_& obj
                                                             const texture::TextureSourceKey& sourceKey) noexcept {
   const auto replacementKey = find_source_replacement_key_locked(sourceKey);
   if (!replacementKey.has_value()) {
-    report_missing_key(sourceKey, obj);
+    // Enable for debugging
+    // report_missing_key(sourceKey, obj);
     return std::nullopt;
   }
 
