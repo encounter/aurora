@@ -134,7 +134,7 @@ if (_aurora_dawn_provider STREQUAL "vendor")
 
     include(FetchContent)
     FetchContent_Declare(dawn
-      URL "https://github.com/google/dawn/archive/${AURORA_DAWN_REF}.tar.gz"
+      URL "https://github.com/encounter/dawn/archive/${AURORA_DAWN_REF}.tar.gz"
       DOWNLOAD_EXTRACT_TIMESTAMP FALSE
       EXCLUDE_FROM_ALL
     )
@@ -183,7 +183,7 @@ elseif (_aurora_dawn_provider STREQUAL "package")
         " with CMAKE_OSX_ARCHITECTURES='${CMAKE_OSX_ARCHITECTURES}'.")
     endif ()
     set(AURORA_DAWN_PACKAGE_URL
-      "https://github.com/encounter/dawn-build/releases/download/${AURORA_DAWN_VERSION}/dawn-${_dawn_system}-${_dawn_arch}.tar.gz")
+      "https://github.com/encounter/dawn/releases/download/${AURORA_DAWN_VERSION}/dawn-${_dawn_system}-${_dawn_arch}.tar.gz")
   endif ()
   message(STATUS "aurora: Fetching prebuilt Dawn package from ${AURORA_DAWN_PACKAGE_URL}")
 
