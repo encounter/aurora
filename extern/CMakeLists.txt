@@ -91,7 +91,7 @@ else ()
 endif ()
 
 if (NOT TARGET fmt::fmt)
-  aurora_find_package_global(fmt QUIET)
+  aurora_find_package_global(fmt 11 QUIET)
   if (NOT TARGET fmt::fmt)
     message(STATUS "aurora: Fetching fmt")
     FetchContent_Declare(fmt
