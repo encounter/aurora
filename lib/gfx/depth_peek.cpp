@@ -306,7 +306,7 @@ void complete_slot(size_t slotIdx, wgpu::MapAsyncStatus status, wgpu::StringView
 } // namespace
 
 void initialize() {
-  if (!webgpu::g_hasCoreCompatibility) {
+  if (!webgpu::g_hasCoreFeatures) {
     return;
   }
   g_bindGroupLayout = create_bind_group_layout("Depth Peek Bind Group Layout");

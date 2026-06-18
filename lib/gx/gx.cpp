@@ -635,7 +635,7 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu:
   ZoneScoped;
   const float depthBias = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetBits);
   const float depthBiasSlopeScale = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetScaleBits);
-  const float depthBiasClamp = webgpu::g_hasCoreCompatibility
+  const float depthBiasClamp = webgpu::g_hasCoreFeatures
                                    ? std::bit_cast<float>(config.polygonOffsetClampBits)
                                    : 0.0f;
   const wgpu::DepthStencilState depthStencil{

@@ -60,7 +60,7 @@ static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
 wgpu::AdapterInfo g_adapterInfo;
 static wgpu::SurfaceCapabilities g_surfaceCapabilities;
-bool g_hasCoreCompatibility = false;
+bool g_hasCoreFeatures = false;
 bool g_bcTexturesSupported = false;
 bool g_astcTexturesSupported = false;
 bool g_textureComponentSwizzleSupported = false;
@@ -889,7 +889,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         requiredLimits.maxStorageBuffersPerShaderStage, requiredLimits.minUniformBufferOffsetAlignment,
         requiredLimits.minStorageBufferOffsetAlignment);
     std::vector<wgpu::FeatureName> requiredFeatures;
-    g_hasCoreCompatibility = false;
+    g_hasCoreFeatures = false;
     g_bcTexturesSupported = false;
     g_astcTexturesSupported = false;
     g_textureComponentSwizzleSupported = false;
@@ -901,7 +901,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
           feature == wgpu::FeatureName::TextureCompressionASTC ||
           feature == wgpu::FeatureName::TextureComponentSwizzle) {
         if (feature == wgpu::FeatureName::CoreFeaturesAndLimits) {
-          g_hasCoreCompatibility = true;
+          g_hasCoreFeatures = true;
         } else if (feature == wgpu::FeatureName::TextureCompressionBC) {
           g_bcTexturesSupported = true;
         } else if (feature == wgpu::FeatureName::TextureCompressionASTC) {
