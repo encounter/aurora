@@ -59,9 +59,8 @@ OSTime OSGetTime() {
     // GCN epoch: 2000-01-01 00:00:00 UTC = 946684800 seconds after Unix epoch
     static constexpr s64 gcnEpochUnix = 946684800LL;
 
-    // Get current wall-clock time
-    auto elapsed = chrono::steady_clock::now() - startupSteadyTime;
-    auto currentTime = startupTime + chrono::duration_cast<chrono::system_clock::duration>(elapsed);
+    // Get current wall-clock time directly from system_clock
+    auto currentTime = chrono::system_clock::now();
 
     // Convert to seconds since Unix epoch, then offset to GCN epoch
     auto sinceUnix = chrono::duration_cast<chrono::microseconds>(currentTime.time_since_epoch());
