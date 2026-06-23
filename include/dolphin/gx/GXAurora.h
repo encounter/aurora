@@ -61,6 +61,18 @@ extern "C" {
 
 #define GX_AURORA_DESTROY_COPY_TEX 0x0034
 
+#define GX_AURORA_LOAD_COPY_SRC 0x0035
+
+#define GX_AURORA_LOAD_COPY_DST 0x0036
+
+#define GX_AURORA_LOAD_COPY_DEST 0x0037
+
+#define GX_AURORA_REQUEST_DEPTH_SNAPSHOT 0x0038
+
+#define GX_AURORA_BEGIN_OFFSCREEN 0x0039
+
+#define GX_AURORA_END_OFFSCREEN 0x003A
+
 /**
  * Draw primitives with the vertex count derived from a byte length, as written by
  * GXBegin(prim, fmt, GX_AUTO). Must be followed by a u8 draw opcode (vtxfmt|prim),
