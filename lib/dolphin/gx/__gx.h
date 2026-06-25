@@ -83,8 +83,7 @@
   GX_WRITE_U32(value);                \
   } while (0)
 
-// Shadow register struct - mirrors the hardware GX state
-// This is the subset of __GXData_struct needed for aurora's TARGET_PC emulation.
+// Shadow register struct
 struct __GXData_struct {
   u16 vNum;         // vertex count for flush prim
   u16 bpSent;       // BP register was sent (need flush prim before next draw)
@@ -126,6 +125,7 @@ struct __GXData_struct {
   u32 cmode1;       // destination alpha register
   u32 zmode;        // Z-buffer mode register
   u32 peCtrl;       // pixel engine control
+  u32 cpTex;        // copy texture trigger register
 
   u32 genMode;      // general mode (numTexGens, numChans, numTevStages, cullMode, numIndStages)
 

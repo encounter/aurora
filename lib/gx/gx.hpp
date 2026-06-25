@@ -345,8 +345,10 @@ struct GXState {
   std::array<AttrArray, MaxVtxAttr> arrays;
   gfx::ClipRect texCopySrc;
   GXTexFmt texCopyFmt;
-  u16 texCopyDstWidth = 0;
-  u16 texCopyDstHeight = 0;
+  u32 texCopyDstWidth = 0;
+  u32 texCopyDstHeight = 0;
+  bool texCopyDstWide = false;
+  const void* texCopyDest = nullptr;
   struct CopyTextureKey {
     const void* dest = nullptr;
     u32 width = 0;
@@ -406,6 +408,7 @@ void set_logical_viewport(const gfx::Viewport& viewport) noexcept;
 void set_render_viewport(const gfx::Viewport& viewport) noexcept;
 void set_logical_scissor(const gfx::ClipRect& scissor) noexcept;
 void set_render_scissor(const gfx::ClipRect& scissor) noexcept;
+void copy_tex(const void* dest, GXBool clear) noexcept;
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept;
 void resolve_sampled_textures(const ShaderInfo& info) noexcept;
 

@@ -401,7 +401,7 @@ void initialize() {
     }
   }
   // Skip depth copies in compatibility mode
-  if (webgpu::g_hasCoreCompatibility) {
+  if (webgpu::g_hasCoreFeatures) {
     for (const auto& conv : DepthConvPipelines) {
       g_pipelines[conv.fmt] = create_pipeline(conv, DepthShaderPreamble, g_depthBindGroupLayout);
       if (conv.outputFormat != to_wgpu(conv.fmt)) {
@@ -441,7 +441,7 @@ static void execute(const wgpu::CommandEncoder& cmd, const ConvRequest& req, con
   wgpu::BindGroup bindGroup;
   if (gx::is_depth_format(req.fmt)) {
     // Skip depth copies in compatibility mode
-    if (!webgpu::g_hasCoreCompatibility) {
+    if (!webgpu::g_hasCoreFeatures) {
       return;
     }
     const std::array bindGroupEntries{

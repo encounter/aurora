@@ -71,6 +71,7 @@ GXFifoObj* GXInit(void* base, u32 size) {
   SET_REG_FIELD(0, __gx->cmode1, 8, 24, 0x42);
   SET_REG_FIELD(0, __gx->zmode, 8, 24, 0x40);
   SET_REG_FIELD(0, __gx->peCtrl, 8, 24, 0x43);
+  SET_REG_FIELD(0, __gx->cpTex, 2, 7, 0);
   SET_REG_FIELD(0, __gx->IndTexScale0, 8, 24, 0x25);
   SET_REG_FIELD(0, __gx->IndTexScale1, 8, 24, 0x26);
 

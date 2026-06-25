@@ -1,6 +1,7 @@
 #include "command_processor.hpp"
 
 #include "../gfx/common.hpp"
+#include "../gfx/depth_peek.hpp"
 #include "dolphin/gx/GXAurora.h"
 #include "gx.hpp"
 #include "gx_fmt.hpp"
@@ -12,6 +13,7 @@
 #include <tracy/Tracy.hpp>
 
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <optional>
 
@@ -502,7 +504,7 @@ static void handle_bp(u32 value, bool bigEndian) {
     g_gxState.bpRegCache[0xFE] = 0x00FFFFFF;
     const u32 merged = (g_gxState.bpRegCache[regId] & ~ssMask) | (value & ssMask);
     value = (regId << 24) | (merged & 0x00FFFFFF);
-    if (g_gxState.bpRegCache[regId] == value)
+    if (g_gxState.bpRegCache[regId] == value && regId != 0x52)
       return;
     g_gxState.bpRegCache[regId] = value;
   }
@@ -782,6 +784,17 @@ static void handle_bp(u32 value, bool bigEndian) {
     g_gxState.zFmt = static_cast<GXZFmt16>(bp_get(value, 3, 3));
     g_gxState.zCompLocBeforeTex = bp_get(value, 1, 6) != 0;
     g_gxState.stateDirty = true;
+    break;
+  }
+
+  // Texture copy
+  case 0x52: {
+    const bool clear = bp_get(value, 1, 11) != 0;
+    if (bp_get(value, 1, 14) != 0) {
+      Log.warn("STUB: display copy is not implemented");
+    } else {
+      copy_tex(g_gxState.texCopyDest, clear);
+    }
     break;
   }
 
@@ -1808,6 +1821,41 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     g_gxState.clamp = read_f32(data + pos, bigEndian);
     pos += 4;
     g_gxState.stateDirty = true;
+  } else if (subCmd == GX_AURORA_LOAD_COPY_SRC) {
+    CHECK(pos + 16 <= size, "GX_AURORA_LOAD_COPY_SRC read overrun");
+    const int32_t left = static_cast<int32_t>(read_u32(data + pos, bigEndian));
+    pos += 4;
+    const int32_t top = static_cast<int32_t>(read_u32(data + pos, bigEndian));
+    pos += 4;
+    const int32_t width = static_cast<int32_t>(read_u32(data + pos, bigEndian));
+    pos += 4;
+    const int32_t height = static_cast<int32_t>(read_u32(data + pos, bigEndian));
+    pos += 4;
+    g_gxState.texCopySrc = {left, top, width, height};
+  } else if (subCmd == GX_AURORA_LOAD_COPY_DST) {
+    CHECK(pos + 13 <= size, "GX_AURORA_LOAD_COPY_DST read overrun");
+    g_gxState.texCopyDstWidth = read_u32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.texCopyDstHeight = read_u32(data + pos, bigEndian);
+    pos += 4;
+    g_gxState.texCopyFmt = static_cast<GXTexFmt>(read_u32(data + pos, bigEndian));
+    pos += 4;
+    g_gxState.texCopyDstWide = true;
+  } else if (subCmd == GX_AURORA_LOAD_COPY_DEST) {
+    CHECK(pos + 8 <= size, "GX_AURORA_LOAD_COPY_DEST read overrun");
+    g_gxState.texCopyDest = reinterpret_cast<const void*>(read_u64(data + pos, bigEndian));
+    pos += 8;
+  } else if (subCmd == GX_AURORA_REQUEST_DEPTH_SNAPSHOT) {
+    gfx::depth_peek::request_snapshot();
+  } else if (subCmd == GX_AURORA_BEGIN_OFFSCREEN) {
+    CHECK(pos + 8 <= size, "GX_AURORA_BEGIN_OFFSCREEN read overrun");
+    const u32 width = read_u32(data + pos, bigEndian);
+    pos += 4;
+    const u32 height = read_u32(data + pos, bigEndian);
+    pos += 4;
+    gfx::begin_offscreen(width, height);
+  } else if (subCmd == GX_AURORA_END_OFFSCREEN) {
+    gfx::end_offscreen();
   } else if (subCmd == GX_AURORA_DESTROY_TEXOBJ) {
     CHECK(pos + 4 <= size, "GX_AURORA_DESTROY_TEXOBJ read overrun");
     evict_texture_object(read_u32(data + pos, bigEndian));
