@@ -240,8 +240,6 @@ void queue(ConvRequest req) {}
 
 namespace aurora::gfx::texture_replacement {
 u32 compute_texture_upload_size(const GXTexObj_& obj) noexcept { return 0; }
-void register_tlut(const GXTlutObj*, const void*, GXTlutFmt, u16) noexcept {}
-void load_tlut(const GXTlutObj*, u32) noexcept {}
 std::optional<TextureHandle> find_replacement(const GXTexObj_&) noexcept { return std::nullopt; }
 } // namespace aurora::gfx::texture_replacement
 
