@@ -1204,7 +1204,7 @@ std::optional<TextureHandle> find_replacement(const GXTexObj_& obj) noexcept {
   ZoneScoped;
 
   std::lock_guard lk(s_registryMutex);
-  if (s_entriesByKey.empty()) {
+  if (s_entriesByKey.empty() && !g_config.allowTextureDumps) {
     return std::nullopt;
   }
 
@@ -1227,7 +1227,7 @@ std::optional<TextureHandle> find_replacement(const GXTexObj_& obj, const GXTlut
   ZoneScoped;
 
   std::lock_guard lk(s_registryMutex);
-  if (s_entriesByKey.empty()) {
+  if (s_entriesByKey.empty() && !g_config.allowTextureDumps) {
     return std::nullopt;
   }
 
