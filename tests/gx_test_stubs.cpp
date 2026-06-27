@@ -243,6 +243,8 @@ u32 compute_texture_upload_size(const GXTexObj_& obj) noexcept { return 0; }
 void register_tlut(const GXTlutObj*, const void*, GXTlutFmt, u16) noexcept {}
 void load_tlut(const GXTlutObj*, u32) noexcept {}
 std::optional<TextureHandle> find_replacement(const GXTexObj_&) noexcept { return std::nullopt; }
+bool has_replacement(const GXTexObj_&) noexcept { return false; }
+bool has_replacement(const GXTexObj_&, const GXTlutObj_&) noexcept { return false; }
 } // namespace aurora::gfx::texture_replacement
 
 // --- Window stub ---
