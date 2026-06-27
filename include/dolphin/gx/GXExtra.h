@@ -22,6 +22,8 @@ void GXDestroyCopyTex(void* dest);
 
 void GXColor4f32(float r, float g, float b, float a);
 
+GXBool GXIsTexObjReplaced(const GXTexObj* obj, const GXTlutObj* tlut);
+
 #ifdef __cplusplus
 }
 #endif

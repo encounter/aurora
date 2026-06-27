@@ -1246,6 +1246,46 @@ std::optional<TextureHandle> find_replacement(const GXTexObj_& obj, const GXTlut
   return find_source_replacement_locked(obj, sourceKey);
 }
 
+bool has_replacement(const GXTexObj_& obj) noexcept {
+  std::lock_guard lk(s_registryMutex);
+  if (s_entriesByKey.empty()) {
+    return false;
+  }
+
+  if (obj.data != nullptr) {
+    texture::ReplacementKey pointerKey{texture::TexturePointerKey{.data = obj.data}};
+    if (s_entriesByKey.contains(pointerKey)) {
+      return true;
+    }
+  }
+
+  if (s_sourceEntryCount == 0) {
+    return false;
+  }
+
+  return find_source_replacement_key_locked(build_source_key(obj)).has_value();
+}
+
+bool has_replacement(const GXTexObj_& obj, const GXTlutObj_& tlut) noexcept {
+  std::lock_guard lk(s_registryMutex);
+  if (s_entriesByKey.empty()) {
+    return false;
+  }
+
+  if (obj.data != nullptr) {
+    texture::ReplacementKey pointerKey{texture::TexturePointerKey{.data = obj.data}};
+    if (s_entriesByKey.contains(pointerKey)) {
+      return true;
+    }
+  }
+
+  if (s_sourceEntryCount == 0) {
+    return false;
+  }
+
+  return find_source_replacement_key_locked(build_source_key(obj, tlut)).has_value();
+}
+
 std::string build_texture_replacement_name(const GXTexObj_& obj) noexcept {
   const auto key = build_source_key(obj);
   return format_replacement_filename(key);

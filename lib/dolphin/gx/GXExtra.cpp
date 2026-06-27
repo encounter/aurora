@@ -1,6 +1,7 @@
 #include "gx.hpp"
 #include "__gx.h"
 #include "dolphin/gx/GXAurora.h"
+#include "../../gfx/texture_replacement.hpp"
 
 extern "C" {
 void GXDestroyTexObj(GXTexObj* obj_) {
@@ -26,5 +27,14 @@ void GXDestroyCopyTex(void* dest) {
     GX_WRITE_AURORA(GX_AURORA_DESTROY_COPY_TEX);
     GX_WRITE_U64(reinterpret_cast<u64>(dest));
   }
+}
+
+GXBool GXIsTexObjReplaced(const GXTexObj* obj_, const GXTlutObj* tlut_) {
+  const auto* obj = reinterpret_cast<const GXTexObj_*>(obj_);
+  if (tlut_ != nullptr) {
+    const auto* tlut = reinterpret_cast<const GXTlutObj_*>(tlut_);
+    return aurora::gfx::texture_replacement::has_replacement(*obj, *tlut) ? GX_TRUE : GX_FALSE;
+  }
+  return aurora::gfx::texture_replacement::has_replacement(*obj) ? GX_TRUE : GX_FALSE;
 }
 }
