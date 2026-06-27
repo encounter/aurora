@@ -16,7 +16,9 @@
 #include "texture_replacement.hpp"
 #include "texture.hpp"
 #include "../window.hpp"
+#include "../gx/fifo.hpp"
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <deque>
@@ -66,6 +68,12 @@ struct StagingHighWater {
   size_t textureUploadCount = 0;
 };
 
+struct CustomDrawCommand {
+  DrawTypeId type;
+  uint32_t payloadSize;
+  std::array<std::byte, InlineDrawPayloadSize> payload;
+};
+
 struct ShaderDrawCommand {
   ShaderType type;
   union {
@@ -74,6 +82,7 @@ struct ShaderDrawCommand {
 #ifdef AURORA_ENABLE_RMLUI
     rmlui::DrawData rml;
 #endif
+    CustomDrawCommand custom;
   };
 };
 enum class CommandType {
@@ -122,14 +131,43 @@ struct CachedBindGroup {
   uint32_t lastUsedFrame = 0;
 };
 
+struct RuntimeDrawType {
+  std::string label;
+  DrawCallback draw = nullptr;
+  void* userdata = nullptr;
+  uint32_t generation = 1;
+};
+
+constexpr uint32_t draw_type_index(DrawTypeId id) { return static_cast<uint32_t>(id & 0xFFFFFFFFu); }
+constexpr uint32_t draw_type_generation(DrawTypeId id) { return static_cast<uint32_t>(id >> 32); }
+constexpr DrawTypeId make_draw_type_id(uint32_t index, uint32_t generation) {
+  return static_cast<DrawTypeId>(generation) << 32 | index;
+}
+
 constexpr uint32_t BindGroupCacheRetainFrames = 32;
 constexpr uint32_t BindGroupCacheSweepPeriod = 16;
 } // namespace
 
 static absl::flat_hash_map<BindGroupRef, CachedBindGroup> g_cachedBindGroups;
 static absl::flat_hash_map<SamplerRef, wgpu::Sampler> g_cachedSamplers;
+static std::vector<RuntimeDrawType> g_runtimeDrawTypes;
+static std::vector<uint32_t> g_freeDrawTypeSlots;
 static std::mutex g_bindGroupCacheMutex;
 static std::mutex g_samplerCacheMutex;
+static std::mutex g_runtimeDrawTypeMutex;
+
+// Requires g_runtimeDrawTypeMutex held.
+static const RuntimeDrawType* find_runtime_draw_type(DrawTypeId id) {
+  const auto idx = draw_type_index(id);
+  if (id == InvalidDrawType || idx >= g_runtimeDrawTypes.size()) {
+    return nullptr;
+  }
+  const auto& slot = g_runtimeDrawTypes[idx];
+  if (slot.generation != draw_type_generation(id) || slot.draw == nullptr) {
+    return nullptr;
+  }
+  return &slot;
+}
 
 wgpu::Buffer g_vertexBuffer;
 wgpu::Buffer g_uniformBuffer;
@@ -171,6 +209,10 @@ struct RenderPass {
   GXTexFmt resolveFormat = GX_TF_RGBA8;
   ClipRect resolveRect;
   Range resolveUniformRange;
+  // Full-target snapshots for the public resolve_pass API (gfx.hpp), copied
+  // after the pass ends (and after any MSAA resolve).
+  wgpu::Texture snapshotColorDst;
+  wgpu::TextureView snapshotDepthDst;
   Vec4<float> clearColorValue{0.f, 0.f, 0.f, 0.f};
   float clearDepthValue = gx::UseReversedZ ? 0.f : 1.f;
   wgpu::LoadOp colorLoadOp = wgpu::LoadOp::Undefined;
@@ -409,6 +451,72 @@ struct OffscreenCacheEntry {
 };
 static absl::flat_hash_map<OffscreenCacheKey, OffscreenCacheEntry> g_offscreenCache;
 
+// Pooled destinations for the public resolve_pass API. Entries are recycled
+// per frame slot: a slot is only re-acquired after the render worker has
+// submitted its previous frame, and queue serialization orders the new frame's
+// copies after the old frame's reads.
+struct PassSnapshotEntry {
+  webgpu::TextureWithSampler color;
+  webgpu::TextureWithSampler depth; // R32Float raw depth
+};
+struct PassSnapshotPool {
+  std::vector<PassSnapshotEntry> entries;
+  size_t used = 0;
+};
+static std::array<PassSnapshotPool, FrameSlotCount> g_passSnapshotPools;
+
+static PassSnapshotEntry& acquire_pass_snapshot(uint32_t width, uint32_t height, bool wantColor, bool wantDepth) {
+  auto& pool = g_passSnapshotPools[g_recordingFrameSlot];
+  if (pool.used == pool.entries.size()) {
+    pool.entries.emplace_back();
+  }
+  auto& entry = pool.entries[pool.used++];
+  const wgpu::Extent3D size{width, height, 1};
+  if (wantColor &&
+      (!entry.color.texture || entry.color.size.width != width || entry.color.size.height != height ||
+       entry.color.format != webgpu::g_graphicsConfig.surfaceConfiguration.format)) {
+    const auto format = webgpu::g_graphicsConfig.surfaceConfiguration.format;
+    const wgpu::TextureDescriptor desc{
+        .label = "Pass Snapshot Color",
+        .usage = wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::TextureBinding,
+        .dimension = wgpu::TextureDimension::e2D,
+        .size = size,
+        .format = format,
+        .mipLevelCount = 1,
+        .sampleCount = 1,
+    };
+    auto texture = g_device.CreateTexture(&desc);
+    auto view = texture.CreateView();
+    entry.color = webgpu::TextureWithSampler{
+        .texture = std::move(texture),
+        .view = std::move(view),
+        .size = size,
+        .format = format,
+    };
+  }
+  if (wantDepth &&
+      (!entry.depth.texture || entry.depth.size.width != width || entry.depth.size.height != height)) {
+    const wgpu::TextureDescriptor desc{
+        .label = "Pass Snapshot Depth",
+        .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding,
+        .dimension = wgpu::TextureDimension::e2D,
+        .size = size,
+        .format = wgpu::TextureFormat::R32Float,
+        .mipLevelCount = 1,
+        .sampleCount = 1,
+    };
+    auto texture = g_device.CreateTexture(&desc);
+    auto view = texture.CreateView();
+    entry.depth = webgpu::TextureWithSampler{
+        .texture = std::move(texture),
+        .view = std::move(view),
+        .size = size,
+        .format = wgpu::TextureFormat::R32Float,
+    };
+  }
+  return entry;
+}
+
 static FramePacket& current_frame_packet() {
   CHECK(g_recordingFrame != nullptr, "No active frame packet");
   return *g_recordingFrame;
@@ -459,6 +567,8 @@ static void seal_pass(FramePacket& frame, uint32_t passIndex) {
 static void encode_op(wgpu::CommandEncoder& cmd, FramePacket& frame, const FrameOp& op);
 static void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo, uint32_t passIndex);
 static void render_pass(const wgpu::RenderPassEncoder& pass, FramePacket& frame, const RenderPass& passInfo);
+static void render_custom_draw(const CustomDrawCommand& draw, const wgpu::RenderPassEncoder& pass,
+                               const RenderPass& passInfo);
 static void expire_cached_bind_groups();
 static void push_command(CommandType type, const Command::Data& data);
 
@@ -672,8 +782,8 @@ PipelineRef pipeline_ref(const clear::PipelineConfig& config) {
   return find_pipeline(ShaderType::Clear, config, [=] { return create_pipeline(config); });
 }
 
-void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
-                  Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat) {
+void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
+                       Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat) {
   // Resolve current render pass
   auto& prevPass = current_render_passes()[g_currentRenderPass];
   prevPass.resolveTarget = std::move(texture);
@@ -755,6 +865,93 @@ void clear_caches() noexcept {
   g_cachedBindGroups.clear();
 }
 
+wgpu::Device device() noexcept { return webgpu::g_device; }
+
+wgpu::Queue queue() noexcept { return webgpu::g_queue; }
+
+wgpu::TextureFormat color_format() noexcept { return webgpu::g_graphicsConfig.surfaceConfiguration.format; }
+
+wgpu::TextureFormat depth_format() noexcept { return webgpu::g_graphicsConfig.depthFormat; }
+
+uint32_t sample_count() noexcept { return webgpu::g_graphicsConfig.msaaSamples; }
+
+bool uses_reversed_z() noexcept { return gx::UseReversedZ; }
+
+DrawTypeId register_draw_type(const DrawTypeDescriptor& desc) {
+  if (desc.draw == nullptr) {
+    Log.warn("register_draw_type: draw callback is null");
+    return InvalidDrawType;
+  }
+
+  std::lock_guard lock{g_runtimeDrawTypeMutex};
+  uint32_t idx;
+  if (!g_freeDrawTypeSlots.empty()) {
+    idx = g_freeDrawTypeSlots.back();
+    g_freeDrawTypeSlots.pop_back();
+  } else {
+    idx = static_cast<uint32_t>(g_runtimeDrawTypes.size());
+    g_runtimeDrawTypes.emplace_back();
+  }
+  auto& slot = g_runtimeDrawTypes[idx];
+  slot.label = desc.label != nullptr ? desc.label : "";
+  slot.draw = desc.draw;
+  slot.userdata = desc.userdata;
+  return make_draw_type_id(idx, slot.generation);
+}
+
+void unregister_draw_type(DrawTypeId type) noexcept {
+  std::lock_guard lock{g_runtimeDrawTypeMutex};
+  if (find_runtime_draw_type(type) == nullptr) {
+    return;
+  }
+  const auto idx = draw_type_index(type);
+  auto& slot = g_runtimeDrawTypes[idx];
+  slot.label.clear();
+  slot.draw = nullptr;
+  slot.userdata = nullptr;
+  ++slot.generation;
+  g_freeDrawTypeSlots.push_back(idx);
+}
+
+bool push_custom_draw(DrawTypeId type, const void* payload, size_t payloadSize) {
+  if (type == InvalidDrawType) {
+    Log.warn("push_custom_draw: invalid draw type");
+    return false;
+  }
+  if (payloadSize > InlineDrawPayloadSize) {
+    Log.warn("push_custom_draw: payload size {} exceeds inline payload size {}", payloadSize, InlineDrawPayloadSize);
+    return false;
+  }
+  if (payloadSize > 0 && payload == nullptr) {
+    Log.warn("push_custom_draw: non-zero payload size with null payload");
+    return false;
+  }
+  {
+    std::lock_guard lock{g_runtimeDrawTypeMutex};
+    if (find_runtime_draw_type(type) == nullptr) {
+      Log.warn("push_custom_draw: unregistered draw type {:#x}", type);
+      return false;
+    }
+  }
+
+  aurora::gx::fifo::drain();
+
+  if (g_recordingFrame == nullptr || g_currentRenderPass == UINT32_MAX) {
+    Log.warn("push_custom_draw: called outside an active render pass");
+    return false;
+  }
+
+  ShaderDrawCommand draw{};
+  draw.type = ShaderType::Custom;
+  draw.custom.type = type;
+  draw.custom.payloadSize = static_cast<uint32_t>(payloadSize);
+  if (payloadSize > 0) {
+    std::memcpy(draw.custom.payload.data(), payload, payloadSize);
+  }
+  push_draw_command(draw);
+  return true;
+}
+
 static OffscreenCacheEntry get_offscreen_textures(uint32_t width, uint32_t height) {
   OffscreenCacheKey key{width, height};
   if (const auto it = g_offscreenCache.find(key); it != g_offscreenCache.end()) {
@@ -783,7 +980,8 @@ static OffscreenCacheEntry get_offscreen_textures(uint32_t width, uint32_t heigh
   const auto depthFormat = webgpu::g_graphicsConfig.depthFormat;
   const wgpu::TextureDescriptor depthDesc{
       .label = "Offscreen Depth",
-      .usage = wgpu::TextureUsage::RenderAttachment,
+      // TextureBinding: sampled by the public resolve_pass depth snapshot
+      .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding,
       .dimension = wgpu::TextureDimension::e2D,
       .size = size,
       .format = depthFormat,
@@ -886,6 +1084,95 @@ void end_offscreen() {
   g_cachedScissor = g_suspendedEfbScissor;
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
+}
+
+bool create_pass(uint32_t width, uint32_t height) {
+  if (width == 0 || height == 0) {
+    Log.warn("create_pass: invalid size {}x{}", width, height);
+    return false;
+  }
+
+  aurora::gx::fifo::drain();
+
+  if (g_recordingFrame == nullptr || g_currentRenderPass == UINT32_MAX) {
+    Log.warn("create_pass: called outside an active render pass");
+    return false;
+  }
+  if (g_inOffscreen) {
+    Log.warn("create_pass: an offscreen pass is already active (nesting is unsupported)");
+    return false;
+  }
+
+  begin_offscreen(width, height);
+  return true;
+}
+
+bool resolve_pass(const ResolveDesc& desc, ResolvedTargets& out) {
+  out = {};
+  if (!desc.color && !desc.depth) {
+    Log.warn("resolve_pass: nothing requested");
+    return false;
+  }
+
+  aurora::gx::fifo::drain();
+
+  if (g_recordingFrame == nullptr || g_currentRenderPass == UINT32_MAX) {
+    Log.warn("resolve_pass: called outside an active render pass");
+    return false;
+  }
+
+  bool wantDepth = desc.depth;
+  if (wantDepth && !tex_copy_conv::snapshot_depth_supported()) {
+    Log.warn("resolve_pass: depth snapshots are unsupported on this device");
+    wantDepth = false;
+  }
+
+  auto& prevPass = current_render_passes()[g_currentRenderPass];
+  const uint32_t width = prevPass.targetSize.width;
+  const uint32_t height = prevPass.targetSize.height;
+  auto& entry = acquire_pass_snapshot(width, height, desc.color, wantDepth);
+  if (desc.color) {
+    prevPass.snapshotColorDst = entry.color.texture;
+    out.color = entry.color.view;
+    out.colorFormat = entry.color.format;
+  }
+  if (wantDepth) {
+    prevPass.snapshotDepthDst = entry.depth.view;
+    out.depth = entry.depth.view;
+  }
+  out.width = width;
+  out.height = height;
+
+  if (g_inOffscreen) {
+    // GXRestoreFrameBuffer semantics: seal the offscreen pass and resume the EFB.
+    end_offscreen();
+    return true;
+  }
+
+  // GXCopyTex semantics: seal the current EFB pass and continue on a new one
+  // that loads the existing contents.
+  enqueue_pass(current_frame_packet(), g_recordingFrameSlot, g_currentRenderPass);
+  RenderPass newPass{
+      .label = pass_label("EFB"),
+      .colorView = prevPass.colorView,
+      .resolveView = prevPass.resolveView,
+      .depthStencilView = prevPass.depthStencilView,
+      .copySourceTexture = prevPass.copySourceTexture,
+      .copySourceView = prevPass.copySourceView,
+      .copySourceDepthView = prevPass.copySourceDepthView,
+      .targetSize = prevPass.targetSize,
+      .msaaSamples = prevPass.msaaSamples,
+      .clearColor = false,
+      .clearDepth = false,
+      .hasDepth = prevPass.hasDepth,
+      .hasStencil = prevPass.hasStencil,
+  };
+  newPass.commands.reserve(2048);
+  current_render_passes().emplace_back(std::move(newPass));
+  ++g_currentRenderPass;
+  push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
+  push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
+  return true;
 }
 
 template <>
@@ -1087,6 +1374,14 @@ void shutdown() {
     std::lock_guard lock{g_samplerCacheMutex};
     g_cachedSamplers.clear();
   }
+  {
+    std::lock_guard lock{g_runtimeDrawTypeMutex};
+    g_runtimeDrawTypes.clear();
+    g_freeDrawTypeSlots.clear();
+  }
+  for (auto& pool : g_passSnapshotPools) {
+    pool = {};
+  }
   g_vertexBuffer = {};
   g_uniformBuffer = {};
   g_indexBuffer = {};
@@ -1173,6 +1468,8 @@ bool begin_frame() {
   frame.stagingBuffer = *stagingSlot;
   g_recordingFrame = &frame;
   g_recordingFrameSlot = frameSlot;
+  // The worker submitted this slot's previous frame; its snapshots are safe to recycle.
+  g_passSnapshotPools[frameSlot].used = 0;
 
   size_t bufferOffset = 0;
   const auto& stagingBuf = g_stagingBuffers[*stagingSlot];
@@ -1408,7 +1705,8 @@ static void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& pa
   for (const auto& conv : passInfo.paletteConvs) {
     tex_palette_conv::run(cmd, conv);
   }
-  if (!passInfo.observable && !passInfo.resolveTarget && !passInfo.offscreen) {
+  if (!passInfo.observable && !passInfo.resolveTarget && !passInfo.offscreen && !passInfo.snapshotColorDst &&
+      !passInfo.snapshotDepthDst) {
     // Skip intermediate EFB render passes without observable output.
     return;
   }
@@ -1506,6 +1804,25 @@ static void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& pa
       cmd.CopyTextureToTexture(&src, &dst, &size);
     }
   }
+
+  if (passInfo.snapshotColorDst) {
+    const webgpu::gpu_prof::Zone zone{cmd, "Pass snapshot"};
+    const wgpu::TexelCopyTextureInfo src{
+        .texture = passInfo.copySourceTexture,
+    };
+    const wgpu::TexelCopyTextureInfo dst{
+        .texture = passInfo.snapshotColorDst,
+    };
+    const wgpu::Extent3D size{
+        .width = passInfo.targetSize.width,
+        .height = passInfo.targetSize.height,
+        .depthOrArrayLayers = 1,
+    };
+    cmd.CopyTextureToTexture(&src, &dst, &size);
+  }
+  if (passInfo.snapshotDepthDst) {
+    tex_copy_conv::snapshot_depth(cmd, passInfo.copySourceDepthView, passInfo.msaaSamples, passInfo.snapshotDepthDst);
+  }
 }
 
 void after_submit() noexcept { depth_peek::after_submit(); }
@@ -1542,12 +1859,63 @@ float calculate_fps() noexcept {
   return static_cast<float>(g_presentTimes.size() - 1) / elapsed;
 }
 
+static void apply_viewport(const wgpu::RenderPassEncoder& pass, const Viewport& vp) {
+  const float minDepth = gx::UseReversedZ ? 1.f - vp.zfar : vp.znear;
+  const float maxDepth = gx::UseReversedZ ? 1.f - vp.znear : vp.zfar;
+  pass.SetViewport(vp.left, vp.top, vp.width, vp.height, minDepth, maxDepth);
+}
+
+static void apply_scissor(const wgpu::RenderPassEncoder& pass, const ClipRect& sc, const wgpu::Extent3D& size) {
+  const auto x = std::clamp(static_cast<uint32_t>(sc.x), 0u, size.width);
+  const auto y = std::clamp(static_cast<uint32_t>(sc.y), 0u, size.height);
+  const auto w = std::clamp(static_cast<uint32_t>(sc.width), 0u, size.width - x);
+  const auto h = std::clamp(static_cast<uint32_t>(sc.height), 0u, size.height - y);
+  pass.SetScissorRect(x, y, w, h);
+}
+
+static DrawContext make_draw_context(const RenderPass& passInfo) {
+  return {
+      .device = webgpu::g_device,
+      .queue = webgpu::g_queue,
+      .vertexBuffer = g_vertexBuffer,
+      .indexBuffer = g_indexBuffer,
+      .uniformBuffer = g_uniformBuffer,
+      .storageBuffer = g_storageBuffer,
+      .colorFormat = webgpu::g_graphicsConfig.surfaceConfiguration.format,
+      .depthFormat = webgpu::g_graphicsConfig.depthFormat,
+      .sampleCount = passInfo.msaaSamples,
+      .targetWidth = passInfo.targetSize.width,
+      .targetHeight = passInfo.targetSize.height,
+  };
+}
+
+static void render_custom_draw(const CustomDrawCommand& draw, const wgpu::RenderPassEncoder& pass,
+                               const RenderPass& passInfo) {
+  RuntimeDrawType drawType;
+  {
+    std::lock_guard lock{g_runtimeDrawTypeMutex};
+    const auto* slot = find_runtime_draw_type(draw.type);
+    if (slot == nullptr) {
+      // Unregistered between record and replay; the command is a no-op.
+      return;
+    }
+    drawType = *slot;
+  }
+
+  const auto context = make_draw_context(passInfo);
+  drawType.draw(context, pass, draw.payload.data(), draw.payloadSize, drawType.userdata);
+}
+
 static void render_pass(const wgpu::RenderPassEncoder& pass, FramePacket& frame, const RenderPass& passInfo) {
   ZoneScoped;
   g_currentPipeline = UINTPTR_MAX;
 #ifdef AURORA_GFX_DEBUG_GROUPS
   std::vector<std::string> lastDebugGroupStack;
 #endif
+  Viewport currentViewport{};
+  ClipRect currentScissor{};
+  bool hasViewport = false;
+  bool hasScissor = false;
 
   // Bind static bind group for the whole pass
   pass.SetBindGroup(0, g_staticBindGroup);
@@ -1575,18 +1943,15 @@ static void render_pass(const wgpu::RenderPassEncoder& pass, FramePacket& frame,
     switch (cmd.type) {
     case CommandType::SetViewport: {
       const auto& vp = cmd.data.setViewport;
-      const float minDepth = gx::UseReversedZ ? 1.f - vp.zfar : vp.znear;
-      const float maxDepth = gx::UseReversedZ ? 1.f - vp.znear : vp.zfar;
-      pass.SetViewport(vp.left, vp.top, vp.width, vp.height, minDepth, maxDepth);
+      apply_viewport(pass, vp);
+      currentViewport = vp;
+      hasViewport = true;
     } break;
     case CommandType::SetScissor: {
       const auto& sc = cmd.data.setScissor;
-      const auto& size = passInfo.targetSize;
-      const auto x = std::clamp(static_cast<uint32_t>(sc.x), 0u, size.width);
-      const auto y = std::clamp(static_cast<uint32_t>(sc.y), 0u, size.height);
-      const auto w = std::clamp(static_cast<uint32_t>(sc.width), 0u, size.width - x);
-      const auto h = std::clamp(static_cast<uint32_t>(sc.height), 0u, size.height - y);
-      pass.SetScissorRect(x, y, w, h);
+      apply_scissor(pass, sc, passInfo.targetSize);
+      currentScissor = sc;
+      hasScissor = true;
     } break;
     case CommandType::Draw: {
       const auto& draw = cmd.data.draw;
@@ -1596,6 +1961,18 @@ static void render_pass(const wgpu::RenderPassEncoder& pass, FramePacket& frame,
         break;
       case ShaderType::GX:
         gx::render(draw.gx, pass);
+        break;
+      case ShaderType::Custom:
+        render_custom_draw(draw.custom, pass, passInfo);
+        g_currentPipeline = UINTPTR_MAX;
+        pass.SetBindGroup(0, g_staticBindGroup);
+        pass.SetBindGroup(2, gx::g_emptyTextureBindGroup);
+        if (hasViewport) {
+          apply_viewport(pass, currentViewport);
+        }
+        if (hasScissor) {
+          apply_scissor(pass, currentScissor, passInfo.targetSize);
+        }
         break;
 #ifdef AURORA_ENABLE_RMLUI
       case ShaderType::Rml:
@@ -1667,23 +2044,46 @@ static Range map(ByteBuffer& target, size_t length, size_t alignment) {
   return {static_cast<uint32_t>(begin), static_cast<uint32_t>(length)};
 }
 
+// These are public API (gfx.hpp): warn instead of fatally asserting when
+// called outside an active recording frame.
+static bool check_recording(const char* name) {
+  if (g_recordingFrame == nullptr)
+    UNLIKELY {
+      Log.warn("{}: called outside an active frame", name);
+      return false;
+    }
+  return true;
+}
+
 Range push_verts(const uint8_t* data, size_t length, size_t alignment) {
   ZoneScoped;
+  if (!check_recording("push_verts")) {
+    return {};
+  }
   return push(current_frame_packet().verts, data, length, alignment);
 }
 
 Range push_indices(const uint8_t* data, size_t length, size_t alignment) {
   ZoneScoped;
+  if (!check_recording("push_indices")) {
+    return {};
+  }
   return push(current_frame_packet().indices, data, length, alignment);
 }
 
 Range push_uniform(const uint8_t* data, size_t length) {
   ZoneScoped;
+  if (!check_recording("push_uniform")) {
+    return {};
+  }
   return push(current_frame_packet().uniforms, data, length, g_cachedLimits.minUniformBufferOffsetAlignment);
 }
 
 Range push_storage(const uint8_t* data, size_t length) {
   ZoneScoped;
+  if (!check_recording("push_storage")) {
+    return {};
+  }
   return push(current_frame_packet().storage, data, length, g_cachedLimits.minStorageBufferOffsetAlignment);
 }
 

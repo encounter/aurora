@@ -26,4 +26,10 @@ void shutdown();
 void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req);
 void blit(const wgpu::CommandEncoder& cmd, const ConvRequest& req);
 
+// Raw depth snapshot for the public resolve_pass API: copies a same-size depth
+// view (single- or multisampled; sample 0) into an R32Float render target.
+bool snapshot_depth_supported() noexcept;
+void snapshot_depth(const wgpu::CommandEncoder& cmd, const wgpu::TextureView& srcDepth, uint32_t msaaSamples,
+                    const wgpu::TextureView& dst);
+
 } // namespace aurora::gfx::tex_copy_conv
