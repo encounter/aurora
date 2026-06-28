@@ -1,5 +1,7 @@
 #include "CardGciFolder.hpp"
 
+#include <cstring>
+
 #include <filesystem>
 #include "../fs_helper.hpp"
 
