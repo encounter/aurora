@@ -241,6 +241,8 @@ void queue(ConvRequest req) {}
 namespace aurora::gfx::texture_replacement {
 u32 compute_texture_upload_size(const GXTexObj_& obj) noexcept { return 0; }
 std::optional<TextureHandle> find_replacement(const GXTexObj_&) noexcept { return std::nullopt; }
+bool has_replacement(const GXTexObj_&) noexcept { return false; }
+bool has_replacement(const GXTexObj_&, const GXTlutObj_&) noexcept { return false; }
 } // namespace aurora::gfx::texture_replacement
 
 // --- Window stub ---

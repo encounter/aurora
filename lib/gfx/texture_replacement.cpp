@@ -1126,6 +1126,15 @@ void reload_replacement_directory(const std::filesystem::path& root, Replacement
   unregister_replacements(group);
   group = load_replacement_directory(root, options);
 }
+
+bool has_replacement(const GXTexObj* obj, const GXTlutObj* tlut) {
+  const auto* obj_ = reinterpret_cast<const GXTexObj_*>(obj);
+  if (tlut != nullptr) {
+    const auto* tlut_ = reinterpret_cast<const GXTlutObj_*>(tlut);
+    return gfx::texture_replacement::has_replacement(*obj_, *tlut_);
+  }
+  return gfx::texture_replacement::has_replacement(*obj_);
+}
 } // namespace aurora::texture
 
 namespace aurora::gfx::texture_replacement {
@@ -1189,6 +1198,46 @@ std::optional<TextureHandle> find_replacement(const GXTexObj_& obj, const GXTlut
 
   const auto sourceKey = build_source_key(obj, tlut);
   return find_source_replacement_locked(obj, sourceKey);
+}
+
+bool has_replacement(const GXTexObj_& obj) noexcept {
+  std::lock_guard lk(s_registryMutex);
+  if (s_entriesByKey.empty()) {
+    return false;
+  }
+
+  if (obj.data != nullptr) {
+    texture::ReplacementKey pointerKey{texture::TexturePointerKey{.data = obj.data}};
+    if (s_entriesByKey.contains(pointerKey)) {
+      return true;
+    }
+  }
+
+  if (s_sourceEntryCount == 0) {
+    return false;
+  }
+
+  return find_source_replacement_key_locked(build_source_key(obj)).has_value();
+}
+
+bool has_replacement(const GXTexObj_& obj, const GXTlutObj_& tlut) noexcept {
+  std::lock_guard lk(s_registryMutex);
+  if (s_entriesByKey.empty()) {
+    return false;
+  }
+
+  if (obj.data != nullptr) {
+    texture::ReplacementKey pointerKey{texture::TexturePointerKey{.data = obj.data}};
+    if (s_entriesByKey.contains(pointerKey)) {
+      return true;
+    }
+  }
+
+  if (s_sourceEntryCount == 0) {
+    return false;
+  }
+
+  return find_source_replacement_key_locked(build_source_key(obj, tlut)).has_value();
 }
 
 std::string build_texture_replacement_name(const GXTexObj_& obj) noexcept {
