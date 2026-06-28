@@ -2,7 +2,6 @@
 #include "__gx.h"
 
 #include "../../gfx/texture.hpp"
-#include "../../gfx/texture_replacement.hpp"
 #include "dolphin/gx/GXAurora.h"
 
 #include <algorithm>
@@ -317,7 +316,6 @@ void GXInitTlutObj(GXTlutObj* obj_, const void* data, GXTlutFmt format, u16 entr
 
   SET_REG_FIELD(0, obj->tlut, 2, 10, format);
   SET_REG_FIELD(0, obj->loadTlut0, 8, 24, 0x64);
-  aurora::gfx::texture_replacement::register_tlut(obj_, data, format, entries);
 }
 
 void GXInitTlutObjData(GXTlutObj* obj_, const void* data) {
@@ -338,7 +336,6 @@ void GXLoadTlut(const GXTlutObj* obj_, u32 idx) {
   GX_WRITE_RAS_REG(loadTlut1);
   __GXFlushTextureState();
 
-  aurora::gfx::texture_replacement::load_tlut(obj_, idx);
   emit_loaded_tlut_metadata(*obj, idx);
 }
 

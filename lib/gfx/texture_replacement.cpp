@@ -65,14 +65,6 @@ struct SelectedCache {
   std::list<aurora::texture::ReplacementKey>::iterator lruIt;
 };
 
-struct TlutMetadata {
-  uint32_t size = 0;
-  uint32_t format = 0;
-  uint16_t entries = 0;
-  bool valid = false;
-  aurora::ByteBuffer data;
-};
-
 struct SourceKeyHash {
   size_t operator()(const aurora::texture::TextureSourceKey& key) const noexcept {
     return absl::HashOf(key.textureHash, key.tlutHash, key.width, key.height, key.format, key.hasTlut);
@@ -100,9 +92,6 @@ uint64_t s_replacementCacheBytes = 0;
 uint64_t s_nextRegistrationId = 1;
 uint64_t s_nextSequence = 1;
 uint32_t s_sourceEntryCount = 0;
-
-absl::flat_hash_map<const GXTlutObj*, TlutMetadata> s_pendingTluts;
-std::array<TlutMetadata, MaxTluts> s_loadedTluts{};
 
 unsigned char ascii_lower(unsigned char ch) noexcept {
   if (ch >= 'A' && ch <= 'Z') {
@@ -267,7 +256,11 @@ uint32_t texture_base_level_size(const GXTexObj_& obj) noexcept {
   }
 }
 
-std::optional<uint64_t> compute_referenced_tlut_hash(const GXTexObj_& obj, std::span<const uint8_t> tlutData) noexcept {
+aurora::ArrayRef<uint8_t> tlut_bytes(const GXTlutObj_& tlut) noexcept {
+  return {static_cast<const uint8_t*>(tlut.data), static_cast<size_t>(tlut.numEntries) * sizeof(uint16_t)};
+}
+
+std::optional<uint64_t> compute_referenced_tlut_hash(const GXTexObj_& obj, aurora::ArrayRef<uint8_t> tlutData) noexcept {
   const uint32_t textureSize = texture_base_level_size(obj);
   const auto* textureData = static_cast<const uint8_t*>(obj.data);
   if (!is_palette_format(obj.format()) || !obj.has_data() || textureSize == 0 || tlutData.empty()) {
@@ -314,25 +307,25 @@ std::optional<uint64_t> compute_referenced_tlut_hash(const GXTexObj_& obj, std::
 }
 
 std::optional<uint64_t> compute_referenced_tlut_hash(const GXTexObj_& obj) noexcept {
-  if (!is_palette_format(obj.format()) || obj.tlut >= s_loadedTluts.size()) {
+  if (!is_palette_format(obj.format()) || obj.tlut >= g_gxState.loadedTluts.size()) {
     return std::nullopt;
   }
 
-  const auto& tlut = s_loadedTluts[obj.tlut];
-  if (!tlut.valid) {
+  const auto& tlut = g_gxState.loadedTluts[obj.tlut];
+  if (tlut.data == nullptr) {
     return std::nullopt;
   }
 
-  return compute_referenced_tlut_hash(obj, {tlut.data.data(), tlut.data.size()});
+  return compute_referenced_tlut_hash(obj, tlut_bytes(tlut));
 }
 
-const TlutMetadata* get_loaded_tlut(const GXTexObj_& obj) noexcept {
-  if (!is_palette_format(obj.format()) || obj.tlut >= s_loadedTluts.size()) {
+const GXTlutObj_* get_loaded_tlut(const GXTexObj_& obj) noexcept {
+  if (!is_palette_format(obj.format()) || obj.tlut >= g_gxState.loadedTluts.size()) {
     return nullptr;
   }
 
-  const auto& tlut = s_loadedTluts[obj.tlut];
-  return tlut.valid ? &tlut : nullptr;
+  const auto& tlut = g_gxState.loadedTluts[obj.tlut];
+  return tlut.data != nullptr ? &tlut : nullptr;
 }
 
 bool ensure_directory(const std::filesystem::path& dir) noexcept {
@@ -367,10 +360,7 @@ aurora::texture::TextureSourceKey build_source_key(const GXTexObj_& obj) noexcep
 aurora::texture::TextureSourceKey build_source_key(const GXTexObj_& obj, const GXTlutObj_& tlut) noexcept {
   auto key = build_source_key_base(obj);
   if (key.hasTlut && tlut.data != nullptr) {
-    key.tlutHash =
-        compute_referenced_tlut_hash(
-            obj, {static_cast<const uint8_t*>(tlut.data), static_cast<size_t>(tlut.numEntries) * sizeof(uint16_t)})
-            .value_or(0);
+    key.tlutHash = compute_referenced_tlut_hash(obj, tlut_bytes(tlut)).value_or(0);
   }
   return key;
 }
@@ -860,13 +850,12 @@ bool dump_editable_texture_dds(const aurora::texture::TextureSourceKey& key, con
 
   aurora::gfx::ConvertedTexture pixels;
   if (is_palette_format(obj.format())) {
-    const TlutMetadata* tlut = get_loaded_tlut(obj);
+    const GXTlutObj_* tlut = get_loaded_tlut(obj);
     if (tlut == nullptr) {
       return false;
     }
-    pixels = aurora::gfx::convert_texture_palette(obj.format(), texWidth, texHeight, 1, texData,
-                                                  static_cast<GXTlutFmt>(tlut->format), tlut->entries,
-                                                  {tlut->data.data(), tlut->data.size()});
+    pixels = aurora::gfx::convert_texture_palette(obj.format(), texWidth, texHeight, 1, texData, tlut->format,
+                                                  tlut->numEntries, tlut_bytes(*tlut));
   } else {
     pixels = aurora::gfx::convert_texture(obj.format(), texWidth, texHeight, 1, texData);
   }
@@ -1142,58 +1131,14 @@ void reload_replacement_directory(const std::filesystem::path& root, Replacement
 namespace aurora::gfx::texture_replacement {
 void initialize() noexcept {}
 
-void shutdown() noexcept {
-  texture::clear_replacements();
-  s_pendingTluts.clear();
-  for (auto& tlut : s_loadedTluts) {
-    tlut = {};
-  }
-}
-
-void register_tlut(const GXTlutObj* obj, const void* data, GXTlutFmt format, uint16_t entries) noexcept {
-  if (obj == nullptr || data == nullptr) {
-    return;
-  }
-
-  const size_t sz = static_cast<size_t>(entries) * 2;
-  ByteBuffer buffer{sz};
-  std::memcpy(buffer.data(), static_cast<const uint8_t*>(data), sz);
-  s_pendingTluts[obj] = {
-      .size = static_cast<uint32_t>(entries) * 2,
-      .format = static_cast<uint32_t>(format),
-      .entries = entries,
-      .valid = true,
-      .data = std::move(buffer),
-  };
-}
-
-void load_tlut(const GXTlutObj* obj, uint32_t idx) noexcept {
-  if (idx >= s_loadedTluts.size()) {
-    return;
-  }
-
-  const auto it = s_pendingTluts.find(obj);
-  if (it == s_pendingTluts.end()) {
-    s_loadedTluts[idx] = {};
-    return;
-  }
-
-  const auto& pending = it->second;
-  s_loadedTluts[idx] = {
-      .size = pending.size,
-      .format = pending.format,
-      .entries = pending.entries,
-      .valid = pending.valid,
-      .data = pending.data.clone(),
-  };
-}
+void shutdown() noexcept { texture::clear_replacements(); }
 
 std::optional<TextureHandle> find_source_replacement_locked(const GXTexObj_& obj,
                                                             const texture::TextureSourceKey& sourceKey) noexcept {
   const auto replacementKey = find_source_replacement_key_locked(sourceKey);
   if (!replacementKey.has_value()) {
-    // Enable for debugging
-    // report_missing_key(sourceKey, obj);
+    const bool alwaysReportMissingKey = false; // Enable for debugging
+    if (g_config.allowTextureDumps || alwaysReportMissingKey) { report_missing_key(sourceKey, obj); }
     return std::nullopt;
   }
 
@@ -1204,7 +1149,7 @@ std::optional<TextureHandle> find_replacement(const GXTexObj_& obj) noexcept {
   ZoneScoped;
 
   std::lock_guard lk(s_registryMutex);
-  if (s_entriesByKey.empty()) {
+  if (s_entriesByKey.empty() && !g_config.allowTextureDumps) {
     return std::nullopt;
   }
 
@@ -1227,7 +1172,7 @@ std::optional<TextureHandle> find_replacement(const GXTexObj_& obj, const GXTlut
   ZoneScoped;
 
   std::lock_guard lk(s_registryMutex);
-  if (s_entriesByKey.empty()) {
+  if (s_entriesByKey.empty() && !g_config.allowTextureDumps) {
     return std::nullopt;
   }
 
