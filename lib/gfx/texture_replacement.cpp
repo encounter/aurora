@@ -1137,6 +1137,15 @@ void reload_replacement_directory(const std::filesystem::path& root, Replacement
   unregister_replacements(group);
   group = load_replacement_directory(root, options);
 }
+
+bool has_replacement(const GXTexObj* obj, const GXTlutObj* tlut) {
+  const auto* obj_ = reinterpret_cast<const GXTexObj_*>(obj);
+  if (tlut != nullptr) {
+    const auto* tlut_ = reinterpret_cast<const GXTlutObj_*>(tlut);
+    return gfx::texture_replacement::has_replacement(*obj_, *tlut_);
+  }
+  return gfx::texture_replacement::has_replacement(*obj_);
+}
 } // namespace aurora::texture
 
 namespace aurora::gfx::texture_replacement {

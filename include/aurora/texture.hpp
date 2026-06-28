@@ -63,6 +63,8 @@ ReplacementGroup load_replacement_directory(const std::filesystem::path& root, R
 void reload_replacement_directory(const std::filesystem::path& root, ReplacementGroup& group,
                                   ReplacementOptions options = {});
 
+bool has_replacement(const GXTexObj* obj, const GXTlutObj* tlut = nullptr);
+
 } // namespace aurora::texture
 
 #endif
