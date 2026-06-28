@@ -9,7 +9,7 @@ static u32* AR_BlockLength;
 static u32 AR_FreeBlocks;
 static BOOL AR_init_flag;
 
-#define ARAM_STACK_START 0x4000;
+#define ARAM_STACK_START 0x4000
 
 // ARAM emulation: allocate a large buffer to simulate the GameCube's Auxiliary RAM.
 // ARAM "addresses" are offsets into this buffer. On GameCube, ARAM is 16 MB starting
