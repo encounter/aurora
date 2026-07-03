@@ -89,7 +89,9 @@ struct ResolvedTargets {
 /// current frame), then: on the EFB, continues rendering on a fresh EFB pass
 /// (GXCopyTex semantics); in an offscreen pass created by create_pass, ends it
 /// and restores the suspended EFB pass (GXRestoreFrameBuffer semantics).
-/// Returns false (with a warning) outside an active render pass.
+/// Requesting neither color nor depth is a plain pass break (or offscreen
+/// close, discarding its output). Depth is left null when unsupported by the
+/// device. Returns false (with a warning) outside an active render pass.
 bool resolve_pass(const ResolveDesc& desc, ResolvedTargets& out);
 
 /// Opens an offscreen render pass (GXCreateFrameBuffer semantics): cleared
@@ -101,5 +103,10 @@ bool create_pass(uint32_t width, uint32_t height);
 
 /// True while an offscreen pass (create_pass or GXCreateFrameBuffer) is open.
 bool is_offscreen() noexcept;
+
+/// Blocks until the render worker has drained its queue. After this returns,
+/// no draw callback is executing or queued to execute; used before unloading
+/// code that registered draw types. Callable from the game thread only.
+void synchronize();
 
 } // namespace aurora::gfx

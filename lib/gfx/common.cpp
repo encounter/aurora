@@ -865,9 +865,9 @@ void clear_caches() noexcept {
   g_cachedBindGroups.clear();
 }
 
-wgpu::Device device() noexcept { return webgpu::g_device; }
+wgpu::Device device() noexcept { return g_device; }
 
-wgpu::Queue queue() noexcept { return webgpu::g_queue; }
+wgpu::Queue queue() noexcept { return g_queue; }
 
 wgpu::TextureFormat color_format() noexcept { return webgpu::g_graphicsConfig.surfaceConfiguration.format; }
 
@@ -934,7 +934,7 @@ bool push_custom_draw(DrawTypeId type, const void* payload, size_t payloadSize) 
     }
   }
 
-  aurora::gx::fifo::drain();
+  gx::fifo::drain();
 
   if (g_recordingFrame == nullptr || g_currentRenderPass == UINT32_MAX) {
     Log.warn("push_custom_draw: called outside an active render pass");
@@ -1092,7 +1092,7 @@ bool create_pass(uint32_t width, uint32_t height) {
     return false;
   }
 
-  aurora::gx::fifo::drain();
+  gx::fifo::drain();
 
   if (g_recordingFrame == nullptr || g_currentRenderPass == UINT32_MAX) {
     Log.warn("create_pass: called outside an active render pass");
@@ -1109,12 +1109,7 @@ bool create_pass(uint32_t width, uint32_t height) {
 
 bool resolve_pass(const ResolveDesc& desc, ResolvedTargets& out) {
   out = {};
-  if (!desc.color && !desc.depth) {
-    Log.warn("resolve_pass: nothing requested");
-    return false;
-  }
-
-  aurora::gx::fifo::drain();
+  gx::fifo::drain();
 
   if (g_recordingFrame == nullptr || g_currentRenderPass == UINT32_MAX) {
     Log.warn("resolve_pass: called outside an active render pass");
@@ -1130,15 +1125,18 @@ bool resolve_pass(const ResolveDesc& desc, ResolvedTargets& out) {
   auto& prevPass = current_render_passes()[g_currentRenderPass];
   const uint32_t width = prevPass.targetSize.width;
   const uint32_t height = prevPass.targetSize.height;
-  auto& entry = acquire_pass_snapshot(width, height, desc.color, wantDepth);
-  if (desc.color) {
-    prevPass.snapshotColorDst = entry.color.texture;
-    out.color = entry.color.view;
-    out.colorFormat = entry.color.format;
-  }
-  if (wantDepth) {
-    prevPass.snapshotDepthDst = entry.depth.view;
-    out.depth = entry.depth.view;
+  // Requesting no snapshots is a plain pass break (or offscreen close, discarding its output).
+  if (desc.color || wantDepth) {
+    auto& entry = acquire_pass_snapshot(width, height, desc.color, wantDepth);
+    if (desc.color) {
+      prevPass.snapshotColorDst = entry.color.texture;
+      out.color = entry.color.view;
+      out.colorFormat = entry.color.format;
+    }
+    if (wantDepth) {
+      prevPass.snapshotDepthDst = entry.depth.view;
+      out.depth = entry.depth.view;
+    }
   }
   out.width = width;
   out.height = height;
@@ -1829,6 +1827,8 @@ void after_submit() noexcept { depth_peek::after_submit(); }
 
 void gpu_synchronize() { render_worker::synchronize(); }
 
+void synchronize() { render_worker::synchronize(); }
+
 void after_present() noexcept {
   const auto now = PresentClock::now();
   const int64_t nowNs = timestamp_ns(now);
@@ -1875,8 +1875,8 @@ static void apply_scissor(const wgpu::RenderPassEncoder& pass, const ClipRect& s
 
 static DrawContext make_draw_context(const RenderPass& passInfo) {
   return {
-      .device = webgpu::g_device,
-      .queue = webgpu::g_queue,
+      .device = g_device,
+      .queue = g_queue,
       .vertexBuffer = g_vertexBuffer,
       .indexBuffer = g_indexBuffer,
       .uniformBuffer = g_uniformBuffer,
