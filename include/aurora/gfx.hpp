@@ -64,6 +64,43 @@ void unregister_draw_type(DrawTypeId type) noexcept;
 /// is copied. Returns false (with a warning) outside an active render pass.
 bool push_custom_draw(DrawTypeId type, const void* payload, size_t payloadSize);
 
+/// Generational handle with the same semantics as DrawTypeId.
+using EncoderTaskId = uint64_t;
+inline constexpr EncoderTaskId InvalidEncoderTask = 0;
+
+struct EncoderTaskContext {
+  wgpu::Device device;
+  wgpu::Queue queue;
+  wgpu::Buffer vertexBuffer;
+  wgpu::Buffer indexBuffer;
+  wgpu::Buffer uniformBuffer;
+  wgpu::Buffer storageBuffer;
+};
+
+/// Invoked on the render worker thread with the frame's command encoder,
+/// positioned between two render passes. The callback may begin/end compute
+/// passes and record copies on the encoder; it must leave no pass open when it
+/// returns and must not Finish the encoder. Handles in the context are borrowed
+/// and valid only for the duration of the call. Data appended to the streaming
+/// buffers before the task was pushed is GPU-visible inside it.
+using EncoderTaskCallback = void (*)(const EncoderTaskContext& ctx, const wgpu::CommandEncoder& cmd,
+                                     const void* payload, size_t payloadSize, void* userdata);
+
+struct EncoderTaskDescriptor {
+  const char* label = nullptr;
+  EncoderTaskCallback callback = nullptr;
+  void* userdata = nullptr;
+};
+
+EncoderTaskId register_encoder_task_type(const EncoderTaskDescriptor& desc);
+void unregister_encoder_task_type(EncoderTaskId type) noexcept;
+/// Seals the current EFB pass, records an encoder task to execute on the frame
+/// encoder at this point, and resumes rendering on a pass that loads the
+/// existing contents. Payload semantics match push_custom_draw. Returns false
+/// (with a warning) outside an active render pass or while an offscreen pass
+/// is open.
+bool push_encoder_task(EncoderTaskId type, const void* payload, size_t payloadSize);
+
 /// Append transient data to the shared per-frame streaming buffers. Returned
 /// ranges are valid for the current frame only. Returns an empty Range (with a
 /// warning) outside an active recording frame.

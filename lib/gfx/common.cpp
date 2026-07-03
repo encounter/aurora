@@ -138,6 +138,13 @@ struct RuntimeDrawType {
   uint32_t generation = 1;
 };
 
+struct RuntimeEncoderTaskType {
+  std::string label;
+  EncoderTaskCallback callback = nullptr;
+  void* userdata = nullptr;
+  uint32_t generation = 1;
+};
+
 constexpr uint32_t draw_type_index(DrawTypeId id) { return static_cast<uint32_t>(id & 0xFFFFFFFFu); }
 constexpr uint32_t draw_type_generation(DrawTypeId id) { return static_cast<uint32_t>(id >> 32); }
 constexpr DrawTypeId make_draw_type_id(uint32_t index, uint32_t generation) {
@@ -152,6 +159,8 @@ static absl::flat_hash_map<BindGroupRef, CachedBindGroup> g_cachedBindGroups;
 static absl::flat_hash_map<SamplerRef, wgpu::Sampler> g_cachedSamplers;
 static std::vector<RuntimeDrawType> g_runtimeDrawTypes;
 static std::vector<uint32_t> g_freeDrawTypeSlots;
+static std::vector<RuntimeEncoderTaskType> g_runtimeEncoderTaskTypes;
+static std::vector<uint32_t> g_freeEncoderTaskTypeSlots;
 static std::mutex g_bindGroupCacheMutex;
 static std::mutex g_samplerCacheMutex;
 static std::mutex g_runtimeDrawTypeMutex;
@@ -164,6 +173,19 @@ static const RuntimeDrawType* find_runtime_draw_type(DrawTypeId id) {
   }
   const auto& slot = g_runtimeDrawTypes[idx];
   if (slot.generation != draw_type_generation(id) || slot.draw == nullptr) {
+    return nullptr;
+  }
+  return &slot;
+}
+
+// Requires g_runtimeDrawTypeMutex held.
+static const RuntimeEncoderTaskType* find_runtime_encoder_task_type(EncoderTaskId id) {
+  const auto idx = draw_type_index(id);
+  if (id == InvalidEncoderTask || idx >= g_runtimeEncoderTaskTypes.size()) {
+    return nullptr;
+  }
+  const auto& slot = g_runtimeEncoderTaskTypes[idx];
+  if (slot.generation != draw_type_generation(id) || slot.callback == nullptr) {
     return nullptr;
   }
   return &slot;
@@ -231,6 +253,7 @@ struct RenderPass {
   bool observable = false;
   bool captureDepthSnapshot = false;
   bool sealed = false;
+  bool hasDraws = false;
   std::vector<tex_palette_conv::ConvRequest> paletteConvs;
 };
 
@@ -240,9 +263,16 @@ struct TextureCopy {
   wgpu::Extent3D size;
 };
 
+struct EncoderTask {
+  EncoderTaskId type = InvalidEncoderTask;
+  std::array<uint8_t, InlineDrawPayloadSize> payload{};
+  uint32_t payloadSize = 0;
+};
+
 enum class FrameOpType : uint8_t {
   RenderPass,
   TextureCopy,
+  EncoderTask,
 };
 
 struct FrameOp {
@@ -250,6 +280,7 @@ struct FrameOp {
   uint32_t index = 0;
   RenderPass* renderPass = nullptr;
   TextureCopy* textureCopy = nullptr;
+  EncoderTask* encoderTask = nullptr;
   StagingHighWater highWater;
   std::vector<const TextureUpload*> textureUploads;
 };
@@ -258,6 +289,7 @@ using RenderPassList = std::deque<RenderPass>;
 struct FramePacket {
   RenderPassList renderPasses;
   std::deque<TextureCopy> textureCopies;
+  std::deque<EncoderTask> encoderTasks;
   std::deque<FrameOp> ops;
   std::deque<TextureUpload> textureUploads;
   ByteBuffer verts;
@@ -544,6 +576,9 @@ static FrameOp capture_frame_op(FramePacket& frame, FrameOpType type, uint32_t i
       .textureCopy = type == FrameOpType::TextureCopy && index < frame.textureCopies.size()
                          ? &frame.textureCopies[index]
                          : nullptr,
+      .encoderTask = type == FrameOpType::EncoderTask && index < frame.encoderTasks.size()
+                         ? &frame.encoderTasks[index]
+                         : nullptr,
       .highWater = current_high_water(frame),
   };
   op.textureUploads.reserve(op.highWater.textureUploadCount);
@@ -569,6 +604,8 @@ static void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& pa
 static void render_pass(const wgpu::RenderPassEncoder& pass, FramePacket& frame, const RenderPass& passInfo);
 static void render_custom_draw(const CustomDrawCommand& draw, const wgpu::RenderPassEncoder& pass,
                                const RenderPass& passInfo);
+static void execute_encoder_task(wgpu::CommandEncoder& cmd, const EncoderTask& task);
+static void resume_efb_pass_loading(const RenderPass& prevPass);
 static void expire_cached_bind_groups();
 static void push_command(CommandType type, const Command::Data& data);
 
@@ -578,7 +615,7 @@ static void enqueue_op(FramePacket& frame, size_t frameSlot, uint32_t opIndex) {
   }
   auto op = frame.ops[opIndex];
   render_worker::enqueue_encode_pass(frame.frameId, opIndex, [frameSlot, op = std::move(op)] {
-    if (op.renderPass == nullptr && op.textureCopy == nullptr) {
+    if (op.renderPass == nullptr && op.textureCopy == nullptr && op.encoderTask == nullptr) {
       return;
     }
     auto& packet = g_framePackets[frameSlot];
@@ -723,6 +760,9 @@ static inline void push_command(CommandType type, const Command::Data& data) {
   auto& renderPass = current_render_passes()[g_currentRenderPass];
   ASSERT(!renderPass.sealed, "Attempted to append command {} to sealed render pass {}", magic_enum::enum_name(type),
          g_currentRenderPass);
+  if (type == CommandType::Draw) {
+    renderPass.hasDraws = true;
+  }
   renderPass.commands.push_back({
       .type = type,
 #ifdef AURORA_GFX_DEBUG_GROUPS
@@ -1150,6 +1190,14 @@ bool resolve_pass(const ResolveDesc& desc, ResolvedTargets& out) {
   // GXCopyTex semantics: seal the current EFB pass and continue on a new one
   // that loads the existing contents.
   enqueue_pass(current_frame_packet(), g_recordingFrameSlot, g_currentRenderPass);
+  resume_efb_pass_loading(prevPass);
+  return true;
+}
+
+// Continues rendering after a sealed EFB pass on a new pass with the same
+// targets that loads the existing contents. prevPass must outlive the call
+// (render pass storage is a deque; existing references stay valid).
+static void resume_efb_pass_loading(const RenderPass& prevPass) {
   RenderPass newPass{
       .label = pass_label("EFB"),
       .colorView = prevPass.colorView,
@@ -1170,6 +1218,93 @@ bool resolve_pass(const ResolveDesc& desc, ResolvedTargets& out) {
   ++g_currentRenderPass;
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_cachedScissor});
+}
+
+EncoderTaskId register_encoder_task_type(const EncoderTaskDescriptor& desc) {
+  if (desc.callback == nullptr) {
+    Log.warn("register_encoder_task_type: callback is null");
+    return InvalidEncoderTask;
+  }
+
+  std::lock_guard lock{g_runtimeDrawTypeMutex};
+  uint32_t idx;
+  if (!g_freeEncoderTaskTypeSlots.empty()) {
+    idx = g_freeEncoderTaskTypeSlots.back();
+    g_freeEncoderTaskTypeSlots.pop_back();
+  } else {
+    idx = static_cast<uint32_t>(g_runtimeEncoderTaskTypes.size());
+    g_runtimeEncoderTaskTypes.emplace_back();
+  }
+  auto& slot = g_runtimeEncoderTaskTypes[idx];
+  slot.label = desc.label != nullptr ? desc.label : "";
+  slot.callback = desc.callback;
+  slot.userdata = desc.userdata;
+  return make_draw_type_id(idx, slot.generation);
+}
+
+void unregister_encoder_task_type(EncoderTaskId type) noexcept {
+  std::lock_guard lock{g_runtimeDrawTypeMutex};
+  if (find_runtime_encoder_task_type(type) == nullptr) {
+    return;
+  }
+  const auto idx = draw_type_index(type);
+  auto& slot = g_runtimeEncoderTaskTypes[idx];
+  slot.label.clear();
+  slot.callback = nullptr;
+  slot.userdata = nullptr;
+  ++slot.generation;
+  g_freeEncoderTaskTypeSlots.push_back(idx);
+}
+
+bool push_encoder_task(EncoderTaskId type, const void* payload, size_t payloadSize) {
+  if (type == InvalidEncoderTask) {
+    Log.warn("push_encoder_task: invalid encoder task type");
+    return false;
+  }
+  if (payloadSize > InlineDrawPayloadSize) {
+    Log.warn("push_encoder_task: payload size {} exceeds inline payload size {}", payloadSize, InlineDrawPayloadSize);
+    return false;
+  }
+  if (payloadSize > 0 && payload == nullptr) {
+    Log.warn("push_encoder_task: non-zero payload size with null payload");
+    return false;
+  }
+  {
+    std::lock_guard lock{g_runtimeDrawTypeMutex};
+    if (find_runtime_encoder_task_type(type) == nullptr) {
+      Log.warn("push_encoder_task: unregistered encoder task type {:#x}", type);
+      return false;
+    }
+  }
+
+  gx::fifo::drain();
+
+  if (g_recordingFrame == nullptr || g_currentRenderPass == UINT32_MAX) {
+    Log.warn("push_encoder_task: called outside an active render pass");
+    return false;
+  }
+  if (g_inOffscreen) {
+    Log.warn("push_encoder_task: unsupported while an offscreen pass is active");
+    return false;
+  }
+
+  // Seal the current EFB pass, record the task between it and a continuation
+  // pass that loads the existing contents.
+  auto& frame = current_frame_packet();
+  auto& prevPass = current_render_passes()[g_currentRenderPass];
+  enqueue_pass(frame, g_recordingFrameSlot, g_currentRenderPass);
+
+  const auto taskIndex = static_cast<uint32_t>(frame.encoderTasks.size());
+  auto& task = frame.encoderTasks.emplace_back(EncoderTask{.type = type});
+  task.payloadSize = static_cast<uint32_t>(payloadSize);
+  if (payloadSize > 0) {
+    std::memcpy(task.payload.data(), payload, payloadSize);
+  }
+  const auto opIndex = static_cast<uint32_t>(frame.ops.size());
+  frame.ops.emplace_back(capture_frame_op(frame, FrameOpType::EncoderTask, taskIndex));
+  enqueue_op(frame, g_recordingFrameSlot, opIndex);
+
+  resume_efb_pass_loading(prevPass);
   return true;
 }
 
@@ -1691,6 +1826,11 @@ static void encode_op(wgpu::CommandEncoder& cmd, FramePacket& frame, const Frame
       cmd.CopyTextureToTexture(&op.textureCopy->src, &op.textureCopy->dst, &op.textureCopy->size);
     }
     break;
+  case FrameOpType::EncoderTask:
+    if (op.encoderTask != nullptr) {
+      execute_encoder_task(cmd, *op.encoderTask);
+    }
+    break;
   }
 }
 
@@ -1704,8 +1844,11 @@ static void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& pa
     tex_palette_conv::run(cmd, conv);
   }
   if (!passInfo.observable && !passInfo.resolveTarget && !passInfo.offscreen && !passInfo.snapshotColorDst &&
-      !passInfo.snapshotDepthDst) {
-    // Skip intermediate EFB render passes without observable output.
+      !passInfo.snapshotDepthDst && !passInfo.hasDraws) {
+    // Skip intermediate EFB render passes with no content and no observable output (e.g. the
+    // empty pass segment between two back-to-back pass breaks). A pass that recorded draws
+    // must still render even without its own observable output: later pass segments load the
+    // EFB contents it wrote.
     return;
   }
 
@@ -1904,6 +2047,29 @@ static void render_custom_draw(const CustomDrawCommand& draw, const wgpu::Render
 
   const auto context = make_draw_context(passInfo);
   drawType.draw(context, pass, draw.payload.data(), draw.payloadSize, drawType.userdata);
+}
+
+static void execute_encoder_task(wgpu::CommandEncoder& cmd, const EncoderTask& task) {
+  RuntimeEncoderTaskType taskType;
+  {
+    std::lock_guard lock{g_runtimeDrawTypeMutex};
+    const auto* slot = find_runtime_encoder_task_type(task.type);
+    if (slot == nullptr) {
+      // Unregistered between record and encode; the task is a no-op.
+      return;
+    }
+    taskType = *slot;
+  }
+
+  const EncoderTaskContext context{
+      .device = g_device,
+      .queue = g_queue,
+      .vertexBuffer = g_vertexBuffer,
+      .indexBuffer = g_indexBuffer,
+      .uniformBuffer = g_uniformBuffer,
+      .storageBuffer = g_storageBuffer,
+  };
+  taskType.callback(context, cmd, task.payload.data(), task.payloadSize, taskType.userdata);
 }
 
 static void render_pass(const wgpu::RenderPassEncoder& pass, FramePacket& frame, const RenderPass& passInfo) {

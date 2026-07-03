@@ -1741,6 +1741,19 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     const int32_t height = static_cast<int32_t>(read_u32(data + pos, bigEndian));
     pos += 4;
     set_render_scissor({left, top, width, height});
+  } else if (subCmd == GX_AURORA_LOAD_PROJECTION_FULL) {
+    CHECK(pos + 64 <= size, "GX_AURORA_LOAD_PROJECTION_FULL read overrun");
+    // Row-major Mtx44 payload; Mat4x4 rows (mN) hold game matrix row N, matching
+    // GXSetProjection's 6-parameter reconstruction above. projType is left
+    // unchanged: it only describes the last real GXSetProjection.
+    auto& proj = g_gxState.proj;
+    for (int r = 0; r < 4; ++r) {
+      for (int c = 0; c < 4; ++c) {
+        proj[r][c] = read_f32(data + pos, bigEndian);
+        pos += 4;
+      }
+    }
+    g_gxState.stateDirty = true;
   } else if (subCmd >= GX_AURORA_LOAD_ARRAYBASE && subCmd <= (GX_AURORA_LOAD_ARRAYBASE | 0x0f)) {
     CHECK(pos + 13 <= size, "GX_AURORA_LOAD_ARRAYBASE read overrun");
     u32 attrIdx = subCmd - GX_AURORA_LOAD_ARRAYBASE + GX_VA_POS;
