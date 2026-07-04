@@ -79,6 +79,7 @@ function(_aurora_collect_defined_symbols out_var)
         _aurora_strip_inactive_preprocessor_blocks(_contents "${_contents}")
         string(REGEX REPLACE "/\\*([^*]|\\*+[^*/])*\\*+/" " " _contents "${_contents}")
         string(REGEX REPLACE "//[^\n\r]*" " " _contents "${_contents}")
+        string(REGEX REPLACE "(^|\n)[ \t]*#[^\n\r]*" "\n" _contents "${_contents}")
         string(REGEX REPLACE "[\n\r]+" " " _contents "${_contents}")
         string(REGEX MATCHALL
                 "(^|[;{}])[ \t]*((extern[ \t]+\"C\"[ \t]+)?([A-Za-z_][A-Za-z0-9_:<>]*|const|volatile)[ \t*&]+)+[A-Za-z_][A-Za-z0-9_]*[ \t]*\\([^;{}]*\\)[ \t]*(const[ \t]*)?\\{"
