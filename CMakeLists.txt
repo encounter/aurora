@@ -13,7 +13,7 @@ option(AURORA_ENABLE_CARD "Enable CARD implementation based on kabufuda" ON)
 option(AURORA_ENABLE_RMLUI "Enable HTML/CSS Based UI Library for use in end-user UI development." OFF)
 option(AURORA_CACHE_USE_ZSTD "Compress WebGPU cache entries with zstd" ON)
 
-# Dependency versions (shared with standalone consumers of the dependency providers)
+# Dependency versions
 include(cmake/AuroraDependencyVersions.cmake)
 
 # Platform-specific defaults

@@ -1,7 +1,3 @@
-# Single source of truth for aurora's pinned dependency versions. Included by
-# aurora's own CMakeLists and standalone by out-of-tree consumers (e.g. the
-# Dusklight mod SDK) that want to fetch the same prebuilt Dawn package without
-# configuring the full aurora tree.
 include_guard(GLOBAL)
 
 # Specifies a cache string and previous values to forcibly migrate from

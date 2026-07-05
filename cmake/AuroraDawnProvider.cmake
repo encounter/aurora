@@ -8,11 +8,6 @@ include("${CMAKE_CURRENT_LIST_DIR}/AuroraTargetPlatform.cmake")
 #   - dawn::dawncpp_headers target is available (for tests)
 #   - DAWN_ENABLE_* backend variables are set for the target platform
 #   - AURORA_DAWN_IS_SHARED is set to TRUE/FALSE in the including scope
-#
-# This module is includable standalone (without configuring the aurora tree):
-# include AuroraDependencyVersions.cmake first and set AURORA_DAWN_PROVIDER /
-# AURORA_DAWN_LINKAGE cache variables if the defaults from aurora's
-# CMakeLists.txt are not in play.
 
 # When using a non-vendored Dawn, we don't get DAWN_ENABLE_* from its build.
 # Infer from the target platform instead.
