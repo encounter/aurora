@@ -7,7 +7,12 @@ include("${CMAKE_CURRENT_LIST_DIR}/AuroraTargetPlatform.cmake")
 #   - dawn::webgpu_dawn target is available
 #   - dawn::dawncpp_headers target is available (for tests)
 #   - DAWN_ENABLE_* backend variables are set for the target platform
-#   - AURORA_DAWN_IS_SHARED is set to TRUE/FALSE
+#   - AURORA_DAWN_IS_SHARED is set to TRUE/FALSE in the including scope
+#
+# This module is includable standalone (without configuring the aurora tree):
+# include AuroraDependencyVersions.cmake first and set AURORA_DAWN_PROVIDER /
+# AURORA_DAWN_LINKAGE cache variables if the defaults from aurora's
+# CMakeLists.txt are not in play.
 
 # When using a non-vendored Dawn, we don't get DAWN_ENABLE_* from its build.
 # Infer from the target platform instead.
@@ -147,9 +152,9 @@ if (_aurora_dawn_provider STREQUAL "vendor")
   endif ()
 
   if (AURORA_DAWN_LINKAGE STREQUAL "shared")
-    set(AURORA_DAWN_IS_SHARED TRUE PARENT_SCOPE)
+    set(AURORA_DAWN_IS_SHARED TRUE)
   else ()
-    set(AURORA_DAWN_IS_SHARED FALSE PARENT_SCOPE)
+    set(AURORA_DAWN_IS_SHARED FALSE)
   endif ()
 
 elseif (_aurora_dawn_provider STREQUAL "system")
@@ -168,9 +173,9 @@ elseif (_aurora_dawn_provider STREQUAL "system")
 
   get_target_property(_dawn_type dawn::webgpu_dawn TYPE)
   if (_dawn_type STREQUAL "SHARED_LIBRARY")
-    set(AURORA_DAWN_IS_SHARED TRUE PARENT_SCOPE)
+    set(AURORA_DAWN_IS_SHARED TRUE)
   else ()
-    set(AURORA_DAWN_IS_SHARED FALSE PARENT_SCOPE)
+    set(AURORA_DAWN_IS_SHARED FALSE)
   endif ()
 
 elseif (_aurora_dawn_provider STREQUAL "package")
@@ -246,10 +251,10 @@ elseif (_aurora_dawn_provider STREQUAL "package")
 
   get_target_property(_dawn_pkg_type dawn::webgpu_dawn TYPE)
   if (_dawn_pkg_type STREQUAL "SHARED_LIBRARY")
-    set(AURORA_DAWN_IS_SHARED TRUE PARENT_SCOPE)
+    set(AURORA_DAWN_IS_SHARED TRUE)
 
   else ()
-    set(AURORA_DAWN_IS_SHARED FALSE PARENT_SCOPE)
+    set(AURORA_DAWN_IS_SHARED FALSE)
   endif ()
 
 else ()

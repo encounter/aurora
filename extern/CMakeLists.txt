@@ -18,6 +18,9 @@ endfunction()
 
 if (AURORA_ENABLE_GX)
   include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/AuroraDawnProvider.cmake)
+  # The provider sets AURORA_DAWN_IS_SHARED in the including scope; forward it
+  # to the aurora root scope.
+  set(AURORA_DAWN_IS_SHARED "${AURORA_DAWN_IS_SHARED}" PARENT_SCOPE)
 endif ()
 
 # Abseil is needed for core libraries. It normally comes via Dawn's vendor build.
