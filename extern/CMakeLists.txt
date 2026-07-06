@@ -295,7 +295,10 @@ if (AURORA_ENABLE_GX)
         -P "${CMAKE_CURRENT_LIST_DIR}/../cmake/patches/apply-rmlui-keyboard-showed-state.cmake"
       EXCLUDE_FROM_ALL
     )
-    FetchContent_MakeAvailable(rmlui)
+    block(SCOPE_FOR VARIABLES PROPAGATE rmlui_SOURCE_DIR rmlui_BINARY_DIR rmlui_POPULATED)
+      set(BUILD_SHARED_LIBS ON) # Force block scope; RmlUi uses option(BUILD_SHARED_LIBS)
+      FetchContent_MakeAvailable(rmlui)
+    endblock()
 
     add_library(rmlui_backends STATIC ${rmlui_SOURCE_DIR}/Backends/RmlUi_Platform_SDL.cpp)
     # TODO: maybe dont hardcode this to SDL3?

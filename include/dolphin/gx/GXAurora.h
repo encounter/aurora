@@ -151,14 +151,7 @@ void GXSetScissorRender(u32 left, u32 top, u32 wd, u32 ht);
 void GX2SetPolygonOffset(f32 mFrontOffset, f32 mFrontScale, f32 mBackOffset, f32 mBackScale, f32 mClamp);
 
 /**
- * Load an arbitrary 4x4 projection matrix (row-major Mtx44, matrix * column-vector
- * convention like GXSetProjection input), bypassing the 6-parameter hardware
- * encoding — general matrices such as a combined lightProj * lightView * invView
- * survive intact. Stays in effect until the next GXSetProjection/GXSetProjectionv/
- * GXSetProjectionFull. Write-only with respect to GXGetProjectionv: the cached
- * 6-float projection vector is left untouched, so a GXGetProjectionv/
- * GXSetProjectionv pair still round-trips the last real projection around a
- * GXSetProjectionFull scope.
+ * Load an arbitrary 4x4 projection matrix, avoiding the 6-parameter hardware encoding.
  */
 void GXSetProjectionFull(const void* mtx);
 
