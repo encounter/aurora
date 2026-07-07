@@ -1,6 +1,6 @@
 #include "png_io.hpp"
 
-#include <fstream>
+#include <cstring>
 
 #include "dds_io.hpp"
 #include "png.h"
@@ -11,33 +11,31 @@ static aurora::Module Log("aurora::gfx::png");
 namespace aurora::gfx::png {
 
 struct PngStructs {
-  png_structp pStruct;
-  png_infop pInfo;
-  std::ifstream file;
+  png_structp pStruct = nullptr;
+  png_infop pInfo = nullptr;
 
   ~PngStructs() {
     png_destroy_read_struct(&pStruct, &pInfo, nullptr);
   }
 };
 
-static void readPngData(png_structp png, png_bytep data, const size_t length) {
-  auto structs = static_cast<PngStructs*>(png_get_io_ptr(png));
-  structs->file.read(reinterpret_cast<char*>(data), static_cast<std::streamsize>(length));
+struct MemoryCursor {
+  ArrayRef<uint8_t> bytes;
+  size_t pos = 0;
+};
 
-  if (structs->file.eof() || structs->file.fail()) {
-    png_error(png, "file read failed!");
+static void readPngData(png_structp png, png_bytep data, const size_t length) {
+  auto* cursor = static_cast<MemoryCursor*>(png_get_io_ptr(png));
+  if (length > cursor->bytes.size() - cursor->pos) {
+    png_error(png, "unexpected end of data");
   }
+  std::memcpy(data, cursor->bytes.data() + cursor->pos, length);
+  cursor->pos += length;
 }
 
-std::optional<ConvertedTexture>
-load_png_file(const std::filesystem::path& path) noexcept {
+std::optional<ConvertedTexture> parse_png_bytes(ArrayRef<uint8_t> bytes) noexcept {
   PngStructs structs{};
-
-  structs.file = std::move(std::ifstream(path, std::ifstream::in | std::ifstream::binary));
-  if (!structs.file) {
-    Log.error("failed to open file: {}", fs_path_to_string(path));
-    return std::nullopt;
-  }
+  MemoryCursor cursor{bytes};
 
   structs.pStruct = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   if (!structs.pStruct) {
@@ -64,7 +62,7 @@ load_png_file(const std::filesystem::path& path) noexcept {
     return std::nullopt;
   }
 
-  png_set_read_fn(structs.pStruct, &structs, readPngData);
+  png_set_read_fn(structs.pStruct, &cursor, readPngData);
   png_read_info(structs.pStruct, structs.pInfo);
 
   if (!png_get_IHDR(structs.pStruct, structs.pInfo, &width, &height, &bit_depth, &color_type, &interlace_type, &compression_type, &filter_type)) {
@@ -98,5 +96,15 @@ load_png_file(const std::filesystem::path& path) noexcept {
     .mips = 1,
     .data = std::move(imageData)
   };
+}
+
+std::optional<ConvertedTexture>
+load_png_file(const std::filesystem::path& path) noexcept {
+  const auto bytes = dds::read_binary_file(path);
+  if (!bytes.has_value()) {
+    Log.error("failed to open file: {}", fs_path_to_string(path));
+    return std::nullopt;
+  }
+  return parse_png_bytes(*bytes);
 }
 }
