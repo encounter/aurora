@@ -4,15 +4,16 @@
 #include "internal.hpp"
 #include <dolphin/os.h>
 
-static const int YearDays[MONTH_MAX] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
-
-static const int LeapYearDays[MONTH_MAX] = {0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335};
-
 namespace chrono = std::chrono;
+using namespace std::literals::chrono_literals;
+
 using SystemDuration = chrono::system_clock::duration;
 using SystemTime = chrono::time_point<chrono::system_clock>;
 using LocalTime = chrono::local_time<SystemDuration>;
 using TickDuration = chrono::duration<s64, std::ratio<1, OS_TIMER_CLOCK>>;
+
+// GCN epoch: 2000-01-01 00:00:00 UTC = 946684800 seconds after Unix epoch
+static constexpr SystemTime gcnEpochUnix{946684800s};
 
 static const SystemTime startupTime = chrono::system_clock::now();
 static const chrono::time_point<chrono::steady_clock> startupSteadyTime = chrono::steady_clock::now();
@@ -25,7 +26,7 @@ static LocalTime SystemTimeToLocalTime(SystemTime time) {
     // (_LIBCPP_HAS_TIME_ZONE_DATABASE == 0), so zoned_time/current_zone are unavailable there.
     const auto wholeSeconds = chrono::floor<chrono::seconds>(time);
     const auto fractionalSeconds = chrono::duration_cast<SystemDuration>(time - wholeSeconds);
-    std::time_t wallClock = chrono::system_clock::to_time_t(wholeSeconds);
+    const std::time_t wallClock = chrono::system_clock::to_time_t(time);
     std::tm localTm{};
 
 #if defined(_WIN32)
@@ -48,7 +49,33 @@ static LocalTime SystemTimeToLocalTime(SystemTime time) {
 #endif
 }
 
-static const LocalTime startupLocalTime = SystemTimeToLocalTime(startupTime);
+static SystemTime LocalTimeToSystemTime(LocalTime time) {
+#if defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L
+    return chrono::zoned_time(chrono::current_zone(), time).get_sys_time();
+#else
+    // Apple libc++ currently ships <chrono> with the C++20 timezone database API disabled
+    // (_LIBCPP_HAS_TIME_ZONE_DATABASE == 0), so zoned_time/current_zone are unavailable there.
+    const auto& localDays = chrono::floor<chrono::days>(time);
+    const chrono::year_month_day ymd{localDays};
+    const chrono::hh_mm_ss hms{chrono::floor<chrono::microseconds>(time - localDays)};
+
+    std::tm localTm{};
+    localTm.tm_sec = hms.seconds().count();
+    localTm.tm_min = hms.minutes().count();
+    localTm.tm_hour = hms.hours().count();
+    localTm.tm_mday = static_cast<unsigned int>(ymd.day());
+    localTm.tm_mon = static_cast<unsigned int>(ymd.month()) - 1;
+    localTm.tm_year = static_cast<int>(ymd.year()) - 1900;
+    localTm.tm_isdst = -1;
+
+    const std::time_t utcTime = mktime(&localTm);
+
+    ASSERT(utcTime != -1);
+    static_assert(std::is_same_v<std::chrono::microseconds, decltype(hms)::precision>, "hms precision must be in microseconds");
+
+    return chrono::system_clock::from_time_t(utcTime) + hms.subseconds();
+#endif
+}
 
 OSTick OSGetTick() {
     return OSGetTime() & 0xFFFFFFFF;
@@ -58,43 +85,13 @@ OSTime OSGetTime() {
     // System time is provided in the number of timer ticks since 2000-01-01 00:00:00
     // Use time_t arithmetic to avoid chrono duration_cast overflow issues on some platforms.
 
-    // GCN epoch: 2000-01-01 00:00:00 UTC = 946684800 seconds after Unix epoch
-    static constexpr s64 gcnEpochUnix = 946684800LL;
-
     // Get current wall-clock time
-    auto elapsed = chrono::steady_clock::now() - startupSteadyTime;
-    auto currentTime = startupTime + chrono::duration_cast<chrono::system_clock::duration>(elapsed);
+    const auto elapsed = chrono::steady_clock::now() - startupSteadyTime;
+    const auto currentTime = startupTime + chrono::duration_cast<chrono::system_clock::duration>(elapsed);
 
-    // Convert to seconds since Unix epoch, then offset to GCN epoch
-    auto sinceUnix = chrono::duration_cast<chrono::microseconds>(currentTime.time_since_epoch());
-    s64 totalMicros = sinceUnix.count();
-
-    // Apply local timezone offset
-    std::time_t wallClock = chrono::system_clock::to_time_t(currentTime);
-    std::tm localTm{};
-    std::tm gmTm{};
-#if defined(_WIN32)
-    localtime_s(&localTm, &wallClock);
-    gmtime_s(&gmTm, &wallClock);
-#else
-    localtime_r(&wallClock, &localTm);
-    gmtime_r(&wallClock, &gmTm);
-#endif
-
-    // Fix time with daylight savings
-    localTm.tm_isdst = -1;
-    gmTm.tm_isdst = -1;
-
-    // Compute UTC offset in seconds
-    s64 utcOffsetSec = static_cast<s64>(mktime(&localTm)) - static_cast<s64>(mktime(&gmTm));
-
-    s64 secondsSinceGcnEpoch = (totalMicros / 1000000LL) - gcnEpochUnix + utcOffsetSec;
-    s64 remainderMicros = totalMicros % 1000000LL;
-
-    s64 ticksFromSeconds = secondsSinceGcnEpoch * static_cast<s64>(OS_TIMER_CLOCK);
-    s64 ticksFromRemainder = remainderMicros * static_cast<s64>(OS_TIMER_CLOCK) / 1000000LL;
-
-    return ticksFromSeconds + ticksFromRemainder;
+    // Offset to GCN epoch, convert to ticks
+    const auto sinceEpoch = chrono::duration_cast<chrono::microseconds>(currentTime - gcnEpochUnix);
+    return OSMicrosecondsToTicks(sinceEpoch.count());
 }
 
 void AuroraInitClock() {
@@ -105,114 +102,61 @@ void AuroraInitClock() {
   __OSBusClock = OS_TIMER_CLOCK * OS_TIMER_CLOCK_DIVIDER;
 }
 
-
-static int IsLeapYear(int year) {
-    return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-}
-
-static int GetYearDays(int year, int mon) {
-    const int* md = (IsLeapYear(year)) ? LeapYearDays : YearDays;
-
-    return md[mon];
-}
-
-static int GetLeapDays(int year) {
-    ASSERT(0 <= year);
-    
-    if (year < 1) {
-        return 0;
-    }
-    return (year + 3) / 4 - (year - 1) / 100 + (year - 1) / 400;
-}
-
-static void GetDates(int days, OSCalendarTime* td) {
-    int year;
-    int n;
-    int month;
-    const int* md;
-
-    ASSERT(0 <= days);
-
-    td->wday = (days + 6) % WEEK_DAY_MAX;
-
-    for (year = days / YEAR_DAY_MAX;
-         days < (n = year * YEAR_DAY_MAX + GetLeapDays(year)); year--) {
-        ;
-    }
-
-    days -= n;
-    td->year = year;
-    td->yday = days;
-
-    md = IsLeapYear(year) ? LeapYearDays : YearDays;
-    for (month = MONTH_MAX; days < md[--month];) {
-        ;
-    }
-    td->mon = month;
-    td->mday = days - md[month] + 1;
-}
-
 void OSTicksToCalendarTime(OSTime ticks, OSCalendarTime* td) {
-    int days;
-    int secs;
-    OSTime d;
+    // We assume that all input times (ticks) are in UTC, relative to GCN epoch
+    // So convert that to the local time
+    const LocalTime local = SystemTimeToLocalTime(SystemTime{chrono::microseconds{OSTicksToMicroseconds(ticks)} + gcnEpochUnix});
 
-    d = ticks % OS_SEC_TO_TICKS(1);    
-    if (d < 0) {
-        d += OS_SEC_TO_TICKS(1);
-        ASSERT(0 <= d);
-    }
+    // Break up the time into the components we want
+    const auto localDays = chrono::floor<chrono::days>(local);
+    const chrono::year_month_weekday ymwd{localDays};
+    const chrono::year_month_day ymd{localDays};
+    const chrono::hh_mm_ss hms{chrono::floor<chrono::microseconds>(local - localDays)};
 
-    td->usec = OS_TICKS_TO_USEC(d) % USEC_MAX;
-    td->msec = OS_TICKS_TO_MSEC(d) % MSEC_MAX;
+    td->sec = hms.seconds().count();
+    td->min = hms.minutes().count();
+    td->hour = hms.hours().count();
+    td->mday = static_cast<unsigned int>(ymd.day());
+    td->mon = static_cast<unsigned int>(ymd.month()) - 1;
+    td->year = static_cast<int>(ymd.year());
+    td->wday = ymwd.weekday().c_encoding();
+    td->yday = (chrono::local_days{ymd} - chrono::local_days{ymd.year() / 1 / 0}).count();
+
+    static_assert(std::is_same_v<std::chrono::microseconds, decltype(hms)::precision>, "hms precision must be in microseconds");
+    td->msec = std::chrono::duration_cast<chrono::milliseconds>(hms.subseconds()).count();
+    td->usec = std::chrono::duration_cast<chrono::microseconds>(hms.subseconds() - chrono::milliseconds{td->msec}).count();
 
     ASSERT(0 <= td->usec);
     ASSERT(0 <= td->msec);
-
-    ticks -= d;
-
-    ASSERT(ticks % OSSecondsToTicks(1) == 0);
-    ASSERT(0 <= OSTicksToSeconds(ticks) / 86400 + BIAS && OSTicksToSeconds(ticks) / 86400 + BIAS <= INT_MAX);
-
-    days = (OS_TICKS_TO_SEC(ticks) / SECS_IN_DAY) + BIAS;    
-    secs = OS_TICKS_TO_SEC(ticks) % SECS_IN_DAY;
-    if (secs < 0) {
-        days -= 1;
-        secs += SECS_IN_DAY;
-        ASSERT(0 <= secs);
-    }
-
-    GetDates(days, td);
-    td->hour = secs / 60 / 60;
-    td->min = secs / 60 % 60;
-    td->sec = secs % 60;
+    ASSERT(0 <= td->sec);
 }
 
 OSTime OSCalendarTimeToTicks(OSCalendarTime* td) {
-    OSTime secs;
-    int ov_mon;
-    int mon;
-    int year;
+    std::chrono::microseconds us;
 
-    ov_mon = td->mon / MONTH_MAX;
-    mon = td->mon - (ov_mon * MONTH_MAX);
+    const LocalTime& local = chrono::local_days{
+            chrono::year{td->year} / chrono::month{(unsigned int)td->mon + 1} / chrono::day{(unsigned int)td->mday}
+        }
+        + chrono::hours{td->hour}
+        + chrono::minutes{td->min}
+        + chrono::seconds{td->sec}
+        + chrono::milliseconds{td->msec}
+        + chrono::microseconds{td->usec};
 
-    if (mon < 0) {
-        mon += MONTH_MAX;
-        ov_mon--;
-    }
+    const SystemTime sys = LocalTimeToSystemTime(local);
 
-    ASSERT((ov_mon <= 0 && 0 <= td->year + ov_mon) || (0 < ov_mon && td->year <= INT_MAX - ov_mon));
-    
-    year = td->year + ov_mon;
+    return OSMicrosecondsToTicks(chrono::duration_cast<chrono::microseconds>(sys - gcnEpochUnix).count());
+}
 
-    secs = (OSTime)SECS_IN_YEAR * year +
-           (OSTime)SECS_IN_DAY * (GetLeapDays(year) + GetYearDays(year, mon) + td->mday - 1) +
-           (OSTime)SECS_IN_HOUR * td->hour +
-           (OSTime)SECS_IN_MIN * td->min +
-           td->sec -
-           (OSTime)0xEB1E1BF80ULL;
 
-    return OS_SEC_TO_TICKS(secs) + OS_MSEC_TO_TICKS((OSTime)td->msec) +
-           OS_USEC_TO_TICKS((OSTime)td->usec);
+// Extension to get the current system time, with no guarantee that it monotonically increases
+OSTime OSGetSystemTime() {
+    // System time is provided in the number of timer ticks since 2000-01-01 00:00:00
+
+    // Get the current local time
+    const auto currentTime = chrono::system_clock::now();
+
+    // Offset to GCN epoch, convert to ticks
+    const auto sinceEpoch = chrono::duration_cast<chrono::microseconds>(currentTime - gcnEpochUnix);
+    return OSMicrosecondsToTicks(sinceEpoch.count());
 }
