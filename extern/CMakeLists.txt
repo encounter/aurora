@@ -296,7 +296,7 @@ if (AURORA_ENABLE_GX)
       EXCLUDE_FROM_ALL
     )
     block(SCOPE_FOR VARIABLES PROPAGATE rmlui_SOURCE_DIR rmlui_BINARY_DIR rmlui_POPULATED)
-      set(BUILD_SHARED_LIBS ON) # Force block scope; RmlUi uses option(BUILD_SHARED_LIBS)
+      set(BUILD_SHARED_LIBS OFF) # Force block scope; RmlUi uses option(BUILD_SHARED_LIBS)
       FetchContent_MakeAvailable(rmlui)
     endblock()
 
