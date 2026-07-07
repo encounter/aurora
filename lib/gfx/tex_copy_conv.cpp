@@ -244,6 +244,45 @@ static constexpr std::string_view FragZ16 = R"(
 }
 )"sv;
 
+// Depth -> R32Float (no scaling)
+static constexpr std::string_view DepthSnapshotShader = R"(
+@group(0) @binding(0) var src: texture_depth_2d;
+
+var<private> positions: array<vec2f, 3> = array(
+    vec2f(-1.0, 1.0),
+    vec2f(-1.0, -3.0),
+    vec2f(3.0, 1.0),
+);
+
+@vertex fn vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
+    return vec4f(positions[vi], 0.0, 1.0);
+}
+
+@fragment fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+    let depth = textureLoad(src, vec2i(pos.xy), 0);
+    return vec4f(depth, 0.0, 0.0, 1.0);
+}
+)"sv;
+
+static constexpr std::string_view DepthSnapshotShaderMS = R"(
+@group(0) @binding(0) var src: texture_depth_multisampled_2d;
+
+var<private> positions: array<vec2f, 3> = array(
+    vec2f(-1.0, 1.0),
+    vec2f(-1.0, -3.0),
+    vec2f(3.0, 1.0),
+);
+
+@vertex fn vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
+    return vec4f(positions[vi], 0.0, 1.0);
+}
+
+@fragment fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+    let depth = textureLoad(src, vec2i(pos.xy), 0);
+    return vec4f(depth, 0.0, 0.0, 1.0);
+}
+)"sv;
+
 struct ConvPipeline {
   GXTexFmt fmt;
   std::string_view fragShader;
@@ -278,6 +317,75 @@ static wgpu::Sampler g_nearestSampler;
 static wgpu::Sampler g_linearSampler;
 static absl::flat_hash_map<GXTexFmt, wgpu::RenderPipeline> g_pipelines;
 static wgpu::RenderPipeline g_blitPipeline;
+static wgpu::BindGroupLayout g_depthSnapshotBindGroupLayout;
+static wgpu::BindGroupLayout g_depthSnapshotBindGroupLayoutMS;
+static wgpu::RenderPipeline g_depthSnapshotPipeline;
+static wgpu::RenderPipeline g_depthSnapshotPipelineMS;
+
+static wgpu::BindGroupLayout create_depth_snapshot_layout(bool multisampled, const char* label) {
+  const std::array entries{
+      wgpu::BindGroupLayoutEntry{
+          .binding = 0,
+          .visibility = wgpu::ShaderStage::Fragment,
+          .texture =
+              wgpu::TextureBindingLayout{
+                  .sampleType = wgpu::TextureSampleType::Depth,
+                  .viewDimension = wgpu::TextureViewDimension::e2D,
+                  .multisampled = multisampled,
+              },
+      },
+  };
+  const wgpu::BindGroupLayoutDescriptor descriptor{
+      .label = label,
+      .entryCount = entries.size(),
+      .entries = entries.data(),
+  };
+  return g_device.CreateBindGroupLayout(&descriptor);
+}
+
+static wgpu::RenderPipeline create_depth_snapshot_pipeline(const std::string_view shaderSource,
+                                                           const wgpu::BindGroupLayout& bindGroupLayout,
+                                                           const char* label) {
+  const std::string source{shaderSource};
+  const wgpu::ShaderSourceWGSL wgslSource{wgpu::ShaderSourceWGSL::Init{
+      .code = source.c_str(),
+  }};
+  const wgpu::ShaderModuleDescriptor moduleDescriptor{
+      .nextInChain = &wgslSource,
+      .label = label,
+  };
+  const auto module = g_device.CreateShaderModule(&moduleDescriptor);
+
+  const std::array colorTargets{wgpu::ColorTargetState{
+      .format = wgpu::TextureFormat::R32Float,
+  }};
+  const wgpu::FragmentState fragmentState{
+      .module = module,
+      .entryPoint = "fs_main",
+      .targetCount = colorTargets.size(),
+      .targets = colorTargets.data(),
+  };
+  const wgpu::PipelineLayoutDescriptor layoutDescriptor{
+      .bindGroupLayoutCount = 1,
+      .bindGroupLayouts = &bindGroupLayout,
+  };
+  const auto pipelineLayout = g_device.CreatePipelineLayout(&layoutDescriptor);
+  const wgpu::RenderPipelineDescriptor pipelineDescriptor{
+      .label = label,
+      .layout = pipelineLayout,
+      .vertex =
+          wgpu::VertexState{
+              .module = module,
+              .entryPoint = "vs_main",
+          },
+      .primitive =
+          wgpu::PrimitiveState{
+              .topology = wgpu::PrimitiveTopology::TriangleList,
+          },
+      .fragment = &fragmentState,
+  };
+  return g_device.CreateRenderPipeline(&pipelineDescriptor);
+}
 
 static wgpu::RenderPipeline create_pipeline(const ConvPipeline& conv, const std::string_view shaderPreamble,
                                             const wgpu::BindGroupLayout& bindGroupLayout) {
@@ -408,6 +516,12 @@ void initialize() {
         Log.fatal("Output format mismatch for {}", conv.fmt);
       }
     }
+    g_depthSnapshotBindGroupLayout = create_depth_snapshot_layout(false, "Depth Snapshot Bind Group Layout");
+    g_depthSnapshotBindGroupLayoutMS = create_depth_snapshot_layout(true, "Depth Snapshot MS Bind Group Layout");
+    g_depthSnapshotPipeline =
+        create_depth_snapshot_pipeline(DepthSnapshotShader, g_depthSnapshotBindGroupLayout, "Depth Snapshot");
+    g_depthSnapshotPipelineMS =
+        create_depth_snapshot_pipeline(DepthSnapshotShaderMS, g_depthSnapshotBindGroupLayoutMS, "Depth Snapshot MS");
   }
 
   static constexpr wgpu::SamplerDescriptor nearestSamplerDescriptor{
@@ -432,6 +546,10 @@ void shutdown() {
   g_depthBindGroupLayout = {};
   g_nearestSampler = {};
   g_linearSampler = {};
+  g_depthSnapshotBindGroupLayout = {};
+  g_depthSnapshotBindGroupLayoutMS = {};
+  g_depthSnapshotPipeline = {};
+  g_depthSnapshotPipelineMS = {};
 }
 
 static void execute(const wgpu::CommandEncoder& cmd, const ConvRequest& req, const wgpu::RenderPipeline& pipeline) {
@@ -518,5 +636,48 @@ void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
 }
 
 void blit(const wgpu::CommandEncoder& cmd, const ConvRequest& req) { execute(cmd, req, g_blitPipeline); }
+
+bool snapshot_depth_supported() noexcept { return static_cast<bool>(g_depthSnapshotPipeline); }
+
+void snapshot_depth(const wgpu::CommandEncoder& cmd, const wgpu::TextureView& srcDepth, uint32_t msaaSamples,
+                    const wgpu::TextureView& dst) {
+  const bool multisampled = msaaSamples > 1;
+  const auto& pipeline = multisampled ? g_depthSnapshotPipelineMS : g_depthSnapshotPipeline;
+  if (!pipeline) {
+    return;
+  }
+  const std::array bindGroupEntries{
+      wgpu::BindGroupEntry{
+          .binding = 0,
+          .textureView = srcDepth,
+      },
+  };
+  const wgpu::BindGroupDescriptor bindGroupDescriptor{
+      .layout = multisampled ? g_depthSnapshotBindGroupLayoutMS : g_depthSnapshotBindGroupLayout,
+      .entryCount = bindGroupEntries.size(),
+      .entries = bindGroupEntries.data(),
+  };
+  const auto bindGroup = g_device.CreateBindGroup(&bindGroupDescriptor);
+
+  const std::array colorAttachments{
+      wgpu::RenderPassColorAttachment{
+          .view = dst,
+          .loadOp = wgpu::LoadOp::Clear,
+          .storeOp = wgpu::StoreOp::Store,
+          .clearValue = {0.0, 0.0, 0.0, 0.0},
+      },
+  };
+  const wgpu::RenderPassDescriptor renderPassDescriptor{
+      .label = "Depth Snapshot Pass",
+      .colorAttachmentCount = colorAttachments.size(),
+      .colorAttachments = colorAttachments.data(),
+      .timestampWrites = webgpu::gpu_prof::pass_writes("Depth snapshot"),
+  };
+  const auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
+  pass.SetPipeline(pipeline);
+  pass.SetBindGroup(0, bindGroup);
+  pass.Draw(3);
+  pass.End();
+}
 
 } // namespace aurora::gfx::tex_copy_conv

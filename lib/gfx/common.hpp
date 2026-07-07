@@ -11,6 +11,7 @@
 #include <utility>
 
 #include <aurora/gfx.h>
+#include <aurora/gfx.hpp>
 #include <aurora/math.hpp>
 #include <dolphin/gx/GXEnum.h>
 #include <webgpu/webgpu_cpp.h>
@@ -173,7 +174,7 @@ private:
 namespace aurora::gfx {
 inline constexpr bool UseTextureBuffer = true;
 inline constexpr uint64_t UniformBufferSize = 25165824;  // 24mb
-inline constexpr uint64_t VertexBufferSize = 3145728;    // 3mb
+inline constexpr uint64_t VertexBufferSize = 5242880;    // 5mb
 inline constexpr uint64_t IndexBufferSize = 1048576;     // 1mb
 inline constexpr uint64_t StorageBufferSize = 8388608;   // 8mb
 inline constexpr uint64_t TextureUploadSize = 25165824;  // 24mb
@@ -194,13 +195,6 @@ using BindGroupRef = HashType;
 using PipelineRef = HashType;
 using SamplerRef = HashType;
 using ShaderRef = HashType;
-struct Range {
-  uint32_t offset = 0;
-  uint32_t size = 0;
-
-  bool operator==(const Range& rhs) const { return memcmp(this, &rhs, sizeof(*this)) == 0; }
-  bool operator!=(const Range& rhs) const { return !(*this == rhs); }
-};
 
 struct ClipRect {
   int32_t x;
@@ -236,8 +230,8 @@ void after_submit() noexcept;
 void gpu_synchronize();
 void after_present() noexcept;
 float calculate_fps() noexcept;
-void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
-                  Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat = GX_TF_RGBA8);
+void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
+                       Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat = GX_TF_RGBA8);
 
 struct ColorPassDescriptor {
   const char* label = nullptr;
@@ -257,7 +251,6 @@ struct ColorPassDescriptor {
   wgpu::LoadOp stencilLoadOp = wgpu::LoadOp::Undefined;
   wgpu::StoreOp stencilStoreOp = wgpu::StoreOp::Undefined;
   uint32_t stencilClearValue = 0;
-  bool observable = true;
 };
 
 void begin_color_pass(const ColorPassDescriptor& desc);

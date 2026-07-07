@@ -26,4 +26,8 @@ void shutdown();
 void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req);
 void blit(const wgpu::CommandEncoder& cmd, const ConvRequest& req);
 
+bool snapshot_depth_supported() noexcept;
+void snapshot_depth(const wgpu::CommandEncoder& cmd, const wgpu::TextureView& srcDepth, uint32_t msaaSamples,
+                    const wgpu::TextureView& dst);
+
 } // namespace aurora::gfx::tex_copy_conv

@@ -697,7 +697,6 @@ void WebGPURenderInterface::BeginRenderTargetPass(const wgpu::TextureView& view,
       .stencilLoadOp = clearStencil ? wgpu::LoadOp::Clear : wgpu::LoadOp::Undefined,
       .stencilStoreOp = clearStencil ? wgpu::StoreOp::Store : wgpu::StoreOp::Undefined,
       .stencilClearValue = 0,
-      .observable = true,
   });
   m_passActive = true;
   ApplyViewport();
@@ -725,7 +724,6 @@ void WebGPURenderInterface::BeginLayerPass(Rml::LayerHandle layer, wgpu::LoadOp 
       .stencilLoadOp = clearStencil ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load,
       .stencilStoreOp = wgpu::StoreOp::Store,
       .stencilClearValue = 0,
-      .observable = true,
   });
   m_passActive = true;
   ApplyViewport();

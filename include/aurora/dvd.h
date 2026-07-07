@@ -101,8 +101,11 @@ void aurora_dvd_overlay_callbacks(const AuroraOverlayCallbacks* callbacks);
 /**
  * \brief Specify a set of overlay files to be used by the DVD layer.
  *
- * Calling this function immediately applies the new files and rebuilds the FST. This is not thread safe.
- * It is best you only call this once on startup, before the game's code has started.
+ * Calling this function immediately applies the new files and rebuilds the FST, replacing any
+ * previously specified set. It may be called again at runtime; FST reads and overlay opens are
+ * serialized against the rebuild, and previously assigned EntryNums are stable per path. Files
+ * removed by a re-registration fail to open from then on (or revert to the underlying DVD file);
+ * already-open handles are unaffected. Only call from one thread at a time.
  *
  * This function must be called *after* aurora_dvd_overlay_callbacks.
  *
