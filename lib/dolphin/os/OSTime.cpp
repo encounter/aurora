@@ -29,9 +29,11 @@ static LocalTime SystemTimeToLocalTime(SystemTime time) {
     std::tm localTm{};
 
 #if defined(_WIN32)
-    ASSERT(localtime_s(&localTm, &wallClock) == 0);
+    const errno_t result = localtime_s(&localTm, &wallClock);
+    ASSERT(result == 0);
 #else
-    ASSERT(localtime_r(&wallClock, &localTm) != nullptr);
+    const std::tm* result = localtime_r(&wallClock, &localTm);
+    ASSERT(result != nullptr);
 #endif
 
     const auto localDate = chrono::local_days{
