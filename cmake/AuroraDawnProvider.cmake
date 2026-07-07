@@ -147,9 +147,9 @@ if (_aurora_dawn_provider STREQUAL "vendor")
   endif ()
 
   if (AURORA_DAWN_LINKAGE STREQUAL "shared")
-    set(AURORA_DAWN_IS_SHARED TRUE PARENT_SCOPE)
+    set(AURORA_DAWN_IS_SHARED TRUE)
   else ()
-    set(AURORA_DAWN_IS_SHARED FALSE PARENT_SCOPE)
+    set(AURORA_DAWN_IS_SHARED FALSE)
   endif ()
 
 elseif (_aurora_dawn_provider STREQUAL "system")
@@ -168,9 +168,9 @@ elseif (_aurora_dawn_provider STREQUAL "system")
 
   get_target_property(_dawn_type dawn::webgpu_dawn TYPE)
   if (_dawn_type STREQUAL "SHARED_LIBRARY")
-    set(AURORA_DAWN_IS_SHARED TRUE PARENT_SCOPE)
+    set(AURORA_DAWN_IS_SHARED TRUE)
   else ()
-    set(AURORA_DAWN_IS_SHARED FALSE PARENT_SCOPE)
+    set(AURORA_DAWN_IS_SHARED FALSE)
   endif ()
 
 elseif (_aurora_dawn_provider STREQUAL "package")
@@ -246,10 +246,10 @@ elseif (_aurora_dawn_provider STREQUAL "package")
 
   get_target_property(_dawn_pkg_type dawn::webgpu_dawn TYPE)
   if (_dawn_pkg_type STREQUAL "SHARED_LIBRARY")
-    set(AURORA_DAWN_IS_SHARED TRUE PARENT_SCOPE)
+    set(AURORA_DAWN_IS_SHARED TRUE)
 
   else ()
-    set(AURORA_DAWN_IS_SHARED FALSE PARENT_SCOPE)
+    set(AURORA_DAWN_IS_SHARED FALSE)
   endif ()
 
 else ()
