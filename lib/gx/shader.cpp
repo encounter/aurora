@@ -1019,11 +1019,6 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
         "\n    let clip_base = select(clip_a, clip_b, use_b);"
         "\n    out.pos = vec4f(clip_base.xy + offset_ndc * clip_base.w, clip_base.zw);";
   }
-  if constexpr (UseReversedZ) {
-    vtxXfrAttrsPre += "\n    out.pos.z = -out.pos.z;";
-  } else {
-    vtxXfrAttrsPre += "\n    out.pos.z += out.pos.w;";
-  }
   vtxXfrAttrsPre += fmt::format(
       "\n    let nrm_tmp = vec4f({}, 0.0) * ubuf.nrm_mtx[in_pnmtxidx];"
       "\n    let mv_nrm = select(nrm_tmp, normalize(nrm_tmp), dot(nrm_tmp, nrm_tmp) > 1e-10);",
