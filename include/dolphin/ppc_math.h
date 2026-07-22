@@ -117,7 +117,7 @@ static inline double frsqrte(double val) {
     }
 
     key = (uint32_t)(((uint64_t)exponent | mantissa) >> 37);
-    new_exp = ((uint64_t)((0xbfcLL << EXPONENT_SHIFT_F64) - exponent) >> 1) & EXPONENT_MASK_F64;
+    new_exp = (((0xbfcULL << EXPONENT_SHIFT_F64) - (uint64_t)exponent) >> 1) & EXPONENT_MASK_F64;
 
     entry = &RSQRTE_TABLE[0x1fu & (key >> 11)];
     result.u = new_exp | (uint64_t)(entry->base + entry->dec * (int64_t)(key & 0x7ffu));
