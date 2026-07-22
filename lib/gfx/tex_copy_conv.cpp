@@ -234,6 +234,14 @@ static constexpr std::string_view FragGB8 = R"(
 }
 )"sv;
 
+// GX_TF_Z8: Upper 8-bits depth -> I8
+static constexpr std::string_view FragZ8 = R"(
+@fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+    let z8 = f32((gx_z24(in.uv) >> 16u) & 0xFFu) / 255.0;
+    return vec4f(z8, z8, z8, z8);
+}
+)"sv;
+
 // GX_TF_Z16: Upper 16-bits depth -> IA8
 static constexpr std::string_view FragZ16 = R"(
 @fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f {
@@ -308,6 +316,7 @@ static constexpr std::array ConvPipelines{
 };
 
 static constexpr std::array DepthConvPipelines{
+    ConvPipeline{GX_TF_Z8, FragZ8, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv Z8"},
     ConvPipeline{GX_TF_Z16, FragZ16, wgpu::TextureFormat::RGBA8Unorm, "TexCopyConv Z16"},
 };
 
