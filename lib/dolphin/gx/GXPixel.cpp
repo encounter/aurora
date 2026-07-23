@@ -218,7 +218,7 @@ void GXSetFieldMask(GXBool odd_mask, GXBool even_mask) {
 }
 
 void GXSetFieldMode(GXBool field_mode, GXBool half_aspect_ratio) {
-  u32 reg;
+  u32 reg = 0;
 
   SET_REG_FIELD(0x21A, __gx->lpSize, 1, 22, half_aspect_ratio);
   GX_WRITE_RAS_REG(__gx->lpSize);

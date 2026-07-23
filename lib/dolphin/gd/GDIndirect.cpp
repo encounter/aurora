@@ -35,7 +35,7 @@ void GDSetIndTexMtx(GXIndTexMtxID mtx_id, const f32 offset[2][3], s8 scale_exp) 
         break;
     default:
         ASSERTMSGLINE(111, 0, "GDSetIndTexMtx: Invalid matrix id");
-        break;
+        return;
     }
 
     scale_exp += 17;
@@ -202,7 +202,7 @@ void GDSetTevIndBumpST(GXTevStageID tev_stage, GXIndTexStageID ind_stage, GXIndT
         break;
     default:
         ASSERTMSGLINE(332, 0, "GDSetTevIndBumpST: Invalid matrix selection");
-        break;
+        return;
     }
 
     GDSetTevIndirect(tev_stage,
