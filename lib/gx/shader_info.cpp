@@ -55,10 +55,11 @@ void color_arg_reg_info(GXTevColorArg arg, const TevStage& stage, ShaderInfo& in
     break;
   case GX_CC_TEXC:
   case GX_CC_TEXA:
-    CHECK(stage.texCoordId != GX_TEXCOORD_NULL, "tex coord not bound");
-    CHECK(stage.texMapId != GX_TEXMAP_NULL, "tex map not bound");
-    info.sampledTexCoords.set(stage.texCoordId);
-    info.sampledTextures.set(stage.texMapId);
+    if (stage.texMapId != GX_TEXMAP_NULL) {
+      CHECK(stage.texCoordId != GX_TEXCOORD_NULL, "tex coord not bound");
+      info.sampledTexCoords.set(stage.texCoordId);
+      info.sampledTextures.set(stage.texMapId);
+    }
     break;
   case GX_CC_RASC:
   case GX_CC_RASA:
@@ -129,10 +130,11 @@ void alpha_arg_reg_info(GXTevAlphaArg arg, const TevStage& stage, ShaderInfo& in
     }
     break;
   case GX_CA_TEXA:
-    CHECK(stage.texCoordId != GX_TEXCOORD_NULL, "tex coord not bound");
-    CHECK(stage.texMapId != GX_TEXMAP_NULL, "tex map not bound");
-    info.sampledTexCoords.set(stage.texCoordId);
-    info.sampledTextures.set(stage.texMapId);
+    if (stage.texMapId != GX_TEXMAP_NULL) {
+      CHECK(stage.texCoordId != GX_TEXCOORD_NULL, "tex coord not bound");
+      info.sampledTexCoords.set(stage.texCoordId);
+      info.sampledTextures.set(stage.texMapId);
+    }
     break;
   case GX_CA_RASA:
     if (stage.channelId != GX_COLOR_NULL && stage.channelId != GX_COLOR_ZERO &&
