@@ -279,7 +279,7 @@ void GXSetChanCtrl(GXChannelID id, bool lightingEnabled, GXColorSrc ambSrc, GXCo
   SET_REG_FIELD(0, reg, 1, 1, lightingEnabled);
   SET_REG_FIELD(0, reg, 4, 2, lightState & 0xF); // lights 0-3
   SET_REG_FIELD(0, reg, 1, 6, ambSrc);
-  SET_REG_FIELD(0, reg, 2, 7, (attnFn == GX_AF_NONE) ? 0 : diffFn);
+  SET_REG_FIELD(0, reg, 2, 7, (attnFn == GX_AF_SPEC) ? GX_DF_NONE : diffFn);
   SET_REG_FIELD(0, reg, 1, 9, (attnFn != GX_AF_SPEC));   // attn enable
   SET_REG_FIELD(0, reg, 1, 10, (attnFn != GX_AF_NONE));  // attn select
   SET_REG_FIELD(0, reg, 4, 11, (lightState >> 4) & 0xF); // lights 4-7
