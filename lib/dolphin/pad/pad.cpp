@@ -373,6 +373,11 @@ BOOL PADInit() {
     state.m_axisMapping = g_defaultKeyAxis;
   });
 
+  if (!g_keyboardBindingsLoaded) {
+    g_keyboardBindingsLoaded = true;
+    load_keyboard_bindings();
+  }
+
   return true;
 }
 
@@ -673,9 +678,8 @@ static void merge_virtual_status(PADStatus& status, const PADStatus& virtualStat
 }
 
 u32 PADRead(PADStatus* status) {
-  if (!g_keyboardBindingsLoaded) {
-    g_keyboardBindingsLoaded = true;
-    load_keyboard_bindings();
+  if (!g_initialized) {
+    aurora::input::Log.fatal("PADRead called before PADInit()!");
   }
 
   int numKeys = 0;
