@@ -57,6 +57,7 @@ class CardRawFile : public ICard {
 
   void _updateDirAndBat(const Directory& dir, const BlockAllocationTable& bat);
   void _updateChecksum();
+  void _repair_card();
   File* _fileFromHandle(const FileHandle& fh) const;
   void _deleteFile(File& f, BlockAllocationTable& bat);
 
