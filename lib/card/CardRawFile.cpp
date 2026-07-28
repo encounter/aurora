@@ -785,7 +785,7 @@ void CardRawFile::format(ECardSlot id, ECardSize size, EEncoding encoding) {
     std::unique_ptr<uint8_t[]> dummyBlock;
     dummyBlock.reset(new uint8_t[BlockSize * blockCount]);
     memset(dummyBlock.get(), 0xFF, BlockSize * blockCount);
-    m_fileHandle.fileWrite(dummyBlock.get(), BlockSize, BlockSize * blockCount);
+    m_fileHandle.fileWrite(dummyBlock.get(), BlockSize * blockCount, BlockSize * FSTBlocks);
     m_dirty = false;
   }
 }
