@@ -10,7 +10,7 @@
 
 namespace aurora::rmlui {
 
-constexpr uint32_t RmlPipelineConfigVersion = 2;
+constexpr uint32_t RmlPipelineConfigVersion = 3;
 
 enum class PipelineKind : uint32_t {
   Geometry,
@@ -23,6 +23,7 @@ enum class PipelineKind : uint32_t {
   RegionBlit,
   DropShadow,
   MaskImage,
+  Glass,
 };
 
 enum class VertexLayoutKind : uint32_t {

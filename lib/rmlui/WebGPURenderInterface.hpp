@@ -41,6 +41,27 @@ struct DropShadowUniformBlock {
   Rml::Vector2f texCoordMax;
 };
 
+struct GlassUniformBlock {
+  Rml::Vector2f rectCenter;   // border-box center, framebuffer px
+  Rml::Vector2f rectHalfSize; // px
+  Rml::Vector4f cornerRadii;  // tl, tr, br, bl px
+  Rml::Vector4f tintColor;    // premultiplied
+  Rml::Vector2f frameSize;    // layer texture size px
+  Rml::Vector2f texCoordMin;  // valid-data clamp (extended scissor region)
+  Rml::Vector2f texCoordMax;
+  float bezelWidth; // px
+  float refraction; // max displacement px
+  float specular;
+  float saturation;
+  float profile;           // 0 = convex squircle, 1 = lip (fractional values blend)
+  float dome;              // full-surface magnification; rim sample offset = half-size * dome px
+  Rml::Vector4f edgeFades; // per-edge bezel strength (top, right, bottom, left), 0 = masked
+  Rml::Vector2f lightDir;  // screen-space direction from surfaces toward the specular light
+  Rml::Vector2f padding;
+};
+
+inline Rml::Vector2f g_glassLightDir{-0.7071f, -0.7071f};
+
 struct SimpleFilterUniformBlock {
   Rml::ColumnMajorMatrix4f matrix;
   Rml::Vector4f opacity;

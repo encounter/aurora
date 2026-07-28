@@ -49,6 +49,7 @@ if(AURORA_ENABLE_RMLUI)
             lib/rmlui/WebGPURenderInterface.cpp
             lib/rmlui/SystemInterface_Aurora.cpp
             lib/rmlui/FileInterface_SDL.cpp
+            lib/rmlui/GlassFilter.cpp
     )
     target_link_libraries(aurora_core PUBLIC rmlui)
 

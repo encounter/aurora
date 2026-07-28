@@ -1,6 +1,7 @@
 #include "rmlui.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <thread>
 
 #include <RmlUi/Core.h>
@@ -13,6 +14,7 @@
 #include "internal.hpp"
 #include "imgui.hpp"
 #include "rmlui/FileInterface_SDL.h"
+#include "rmlui/GlassFilter.hpp"
 #include "rmlui/SystemInterface_Aurora.h"
 #include "rmlui/WebGPURenderInterface.hpp"
 #include "webgpu/gpu.hpp"
@@ -363,6 +365,10 @@ void initialize(const AuroraWindowSize& size) noexcept {
   renderInterface->CreateDeviceObjects();
 
   Rml::Initialise();
+
+  static GlassFilterInstancer s_glassInstancer;
+  Rml::Factory::RegisterFilterInstancer("glass", &s_glassInstancer);
+
   g_context = Rml::CreateContext("main", dim);
 
   if (g_context) {
@@ -381,6 +387,12 @@ bool is_initialized() noexcept { return g_context != nullptr; }
 void set_ui_scale(float scale) noexcept { s_uiScale = scale > 0.0f ? std::clamp(scale, 0.25f, 4.0f) : 0.0f; }
 
 float get_ui_scale() noexcept { return s_uiScale; }
+
+void set_glass_light_dir(float x, float y) noexcept {
+  if (const float len = std::hypot(x, y); len > 1e-4f) {
+    g_glassLightDir = {x / len, y / len};
+  }
+}
 
 void set_input_type(InputType type) noexcept {
   auto* systemInterface = static_cast<SystemInterface_Aurora*>(Backend::GetSystemInterface());

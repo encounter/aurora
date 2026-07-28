@@ -60,6 +60,7 @@ enum class FilterType {
   DropShadow,
   ColorMatrix,
   MaskImage,
+  Glass,
 };
 
 struct CompiledFilter {
@@ -69,6 +70,15 @@ struct CompiledFilter {
   Rml::Vector2f offset;
   Rml::ColourbPremultiplied color;
   Rml::Matrix4f colorMatrix;
+  float bezel = 0.f;
+  float refraction = 0.f;
+  float specular = 0.f;
+  float saturation = 1.f;
+  float profile = 0.f;
+  float dome = 0.f;
+  float edges = -1.f;
+  Rml::Vector2f rectSize;
+  Rml::Vector4f radii;
 };
 
 Image get_image(const Rml::String& source) {
@@ -196,6 +206,9 @@ bool is_identity_filter(const CompiledFilter& filter) {
     return filter.sigma < 0.5f;
   case FilterType::ColorMatrix:
     return is_identity_matrix(filter.colorMatrix);
+  case FilterType::Glass:
+    return filter.refraction < 0.5f && filter.specular <= FilterEpsilon && filter.color.alpha == 0 &&
+           std::abs(filter.saturation - 1.f) <= FilterEpsilon && std::abs(filter.dome) <= FilterEpsilon;
   case FilterType::DropShadow:
   case FilterType::MaskImage:
   default:
@@ -236,6 +249,7 @@ bool try_fold_simple_filters(Rml::Span<const Rml::CompiledFilterHandle> filters,
     case FilterType::Blur:
     case FilterType::DropShadow:
     case FilterType::MaskImage:
+    case FilterType::Glass:
     default:
       return false;
     }
@@ -1020,6 +1034,90 @@ size_t WebGPURenderInterface::RenderFilters(Rml::Span<const Rml::CompiledFilterH
       sourceIndex = scratchIndex;
       break;
     }
+    case FilterType::Glass: {
+      float inkExtension = 0.f;
+      for (Rml::CompiledFilterHandle handle : filters) {
+        const auto* chained = reinterpret_cast<const CompiledFilter*>(handle);
+        if (chained == nullptr) {
+          continue;
+        }
+        switch (chained->type) {
+        case FilterType::Blur:
+          inkExtension += 3.f * std::max(chained->sigma, 1.f);
+          break;
+        case FilterType::DropShadow:
+          inkExtension += 3.f * chained->sigma + std::max(std::abs(chained->offset.x), std::abs(chained->offset.y));
+          break;
+        case FilterType::Glass:
+          inkExtension += chained->refraction + 1.f;
+          break;
+        default:
+          break;
+        }
+      }
+      const auto recover_center = [inkExtension](float obsMin, float obsMax, float size, float viewport) {
+        if (obsMin > 0.5f) {
+          return obsMin + inkExtension + size * 0.5f;
+        }
+        if (obsMax < viewport - 0.5f) {
+          return obsMax - inkExtension - size * 0.5f;
+        }
+        return (obsMin + obsMax) * 0.5f;
+      };
+      const Rml::Rectanglei scissor = m_scissorRegion;
+      const auto [texCoordMin, texCoordMax] = GetPostprocessTexCoordLimits();
+      const Rml::Vector2f rectCenter{
+          recover_center(static_cast<float>(scissor.Left()), static_cast<float>(scissor.Right()), filter->rectSize.x,
+                         static_cast<float>(m_frameSize.width)),
+          recover_center(static_cast<float>(scissor.Top()), static_cast<float>(scissor.Bottom()), filter->rectSize.y,
+                         static_cast<float>(m_frameSize.height)),
+      };
+      // Per-edge bezel fades (top, right, bottom, left)
+      Rml::Vector4f edgeFades{1.f, 1.f, 1.f, 1.f};
+      if (filter->edges >= 0.f) {
+        const auto bits = static_cast<uint32_t>(filter->edges);
+        edgeFades = {(bits & 1u) != 0 ? 1.f : 0.f, (bits & 2u) != 0 ? 1.f : 0.f, (bits & 4u) != 0 ? 1.f : 0.f,
+                     (bits & 8u) != 0 ? 1.f : 0.f};
+      } else {
+        const Rml::Vector2f halfSize = filter->rectSize * 0.5f;
+        if (rectCenter.y - halfSize.y <= 1.f) {
+          edgeFades.x = 0.f;
+        }
+        if (rectCenter.x + halfSize.x >= static_cast<float>(m_frameSize.width) - 1.f) {
+          edgeFades.y = 0.f;
+        }
+        if (rectCenter.y + halfSize.y >= static_cast<float>(m_frameSize.height) - 1.f) {
+          edgeFades.z = 0.f;
+        }
+        if (rectCenter.x - halfSize.x <= 1.f) {
+          edgeFades.w = 0.f;
+        }
+      }
+      const GlassUniformBlock glassUniform{
+          .rectCenter = rectCenter,
+          .rectHalfSize = filter->rectSize * 0.5f,
+          .cornerRadii = filter->radii,
+          .tintColor = to_colorf(filter->color),
+          .frameSize = {static_cast<float>(m_frameSize.width), static_cast<float>(m_frameSize.height)},
+          .texCoordMin = texCoordMin,
+          .texCoordMax = texCoordMax,
+          .bezelWidth = filter->bezel,
+          .refraction = filter->refraction,
+          .specular = filter->specular,
+          .saturation = filter->saturation,
+          .profile = filter->profile,
+          .dome = filter->dome,
+          .edgeFades = edgeFades,
+          .lightDir = g_glassLightDir,
+      };
+      const auto glassRange = gfx::push_uniform(glassUniform);
+      CompositeToTarget(texture_bind_group_ref(m_postprocessTargets[sourceIndex].view),
+                        m_postprocessTargets[scratchIndex].view, wgpu::LoadOp::Clear,
+                        filter_pipeline(PipelineKind::Glass, m_renderTargetFormat), "RmlUi glass pass",
+                        uniform_bind_group_ref(), glassRange);
+      sourceIndex = scratchIndex;
+      break;
+    }
     }
   }
 
@@ -1309,6 +1407,23 @@ Rml::CompiledFilterHandle WebGPURenderInterface::CompileFilter(const Rml::String
         .sigma = Rml::Get(parameters, "sigma", 0.f),
         .offset = Rml::Get(parameters, "offset", Rml::Vector2f(0.f)),
         .color = Rml::Get(parameters, "color", Rml::Colourb()).ToPremultiplied(),
+    };
+    return reinterpret_cast<Rml::CompiledFilterHandle>(filter);
+  }
+
+  if (name == "glass") {
+    auto* filter = new CompiledFilter{
+        .type = FilterType::Glass,
+        .color = Rml::Get(parameters, "tint", Rml::Colourb()).ToPremultiplied(),
+        .bezel = Rml::Get(parameters, "bezel", 10.f),
+        .refraction = Rml::Get(parameters, "refraction", 20.f),
+        .specular = Rml::Get(parameters, "specular", 0.5f),
+        .saturation = Rml::Get(parameters, "saturation", 1.f),
+        .profile = Rml::Get(parameters, "profile", 0.f),
+        .dome = Rml::Get(parameters, "dome", 0.f),
+        .edges = Rml::Get(parameters, "edges", -1.f),
+        .rectSize = Rml::Get(parameters, "rect_size", Rml::Vector2f(0.f)),
+        .radii = Rml::Get(parameters, "radii", Rml::Vector4f(0.f)),
     };
     return reinterpret_cast<Rml::CompiledFilterHandle>(filter);
   }
