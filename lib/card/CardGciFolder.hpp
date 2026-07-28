@@ -27,10 +27,11 @@ private:
   char m_game[5] = {'\0'};
   char m_maker[3] = {'\0'};
 
-  GciFile* getFile(FileHandle& fh);
-  const GciFile* getFile(FileHandle& fh) const;
-  GciFile* getFile(uint32_t idx);
-  const GciFile* getFile(uint32_t idx) const;
+  GciFile* get_file(uint32_t idx);
+  const GciFile* get_file(uint32_t idx) const;
+  GciFile* get_open_file(const FileHandle& fh);
+  const GciFile* get_open_file(const FileHandle& fh) const;
+
 public:
   CardGciFolder();
   ~CardGciFolder() override = default;
@@ -65,7 +66,8 @@ public:
   void getChecksum(uint16_t& checksum, uint16_t& inverse) const override;
   void getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) const override;
   void getEncoding(uint16_t& encoding) const override;
-  void format(ECardSlot deviceId, ECardSize size = ECardSize::Card2043Mb, EEncoding encoding = EEncoding::ASCII) override;
+  void format(ECardSlot deviceId, ECardSize size = ECardSize::Card2043Mb,
+              EEncoding encoding = EEncoding::ASCII) override;
   void commit() override;
   bool open(const std::filesystem::path& filepath) override;
   void close() override;
@@ -74,4 +76,4 @@ public:
   ProbeResults probeCardFile(const std::filesystem::path& filename) override;
 };
 
-}
+} // namespace aurora::card
