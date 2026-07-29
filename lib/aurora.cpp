@@ -268,7 +268,8 @@ void end_frame() noexcept {
 #endif
 
   gfx::end_frame([rmlBindGroup = std::move(rmlBindGroup), rmlOverlay, viewport,
-                  imguiDrawData = std::move(imguiDrawData)](wgpu::CommandEncoder& encoder) {
+                  imguiDrawData = std::move(imguiDrawData)](
+                     wgpu::CommandEncoder& encoder, std::vector<gfx::AfterSubmitCallback> afterSubmitCallbacks) {
     wgpu::Texture currentTexture;
     wgpu::TextureView currentView;
     auto surfaceStatus = wgpu::SurfaceGetCurrentTextureStatus::Error;
@@ -395,6 +396,11 @@ void end_frame() noexcept {
           Log.error("Failed to get surface texture: {}", magic_enum::enum_name(surfaceStatus));
         }
         break;
+      }
+    }
+    for (auto& callback : afterSubmitCallbacks) {
+      if (callback) {
+        callback();
       }
     }
     gfx::after_submit();

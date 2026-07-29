@@ -210,7 +210,8 @@ using webgpu::Viewport;
 
 struct TextureRef;
 using TextureHandle = std::shared_ptr<TextureRef>;
-using EndFrameCallback = std::function<void(wgpu::CommandEncoder&)>;
+using AfterSubmitCallback = std::function<void()>;
+using EndFrameCallback = std::function<void(wgpu::CommandEncoder&, std::vector<AfterSubmitCallback>)>;
 
 enum class ShaderType : uint8_t {
   Clear = 0,

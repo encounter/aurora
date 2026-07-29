@@ -76,6 +76,11 @@ struct EncoderTaskContext {
   wgpu::Buffer storageBuffer;
 };
 
+struct EncoderTaskCompletionContext {
+  wgpu::Device device;
+  wgpu::Queue queue;
+};
+
 /// Invoked on the render worker thread with the frame's command encoder,
 /// positioned between two render passes. The callback may begin/end compute
 /// passes and record copies on the encoder; it must leave no pass open when it
@@ -85,10 +90,17 @@ struct EncoderTaskContext {
 using EncoderTaskCallback = void (*)(const EncoderTaskContext& ctx, const wgpu::CommandEncoder& cmd,
                                      const void* payload, size_t payloadSize, void* userdata);
 
+/// Invoked on the render worker after the frame command buffer containing the
+/// encoder task has been submitted. This can be used to e.g. call present on
+/// an externally managed surface rendered to by the task.
+using EncoderTaskCompletionCallback = void (*)(const EncoderTaskCompletionContext& ctx, const void* payload,
+                                               size_t payloadSize, void* userdata);
+
 struct EncoderTaskDescriptor {
   const char* label = nullptr;
   EncoderTaskCallback callback = nullptr;
   void* userdata = nullptr;
+  EncoderTaskCompletionCallback afterSubmit = nullptr;
 };
 
 EncoderTaskId register_encoder_task_type(const EncoderTaskDescriptor& desc);
@@ -139,6 +151,9 @@ bool create_pass(uint32_t width, uint32_t height);
 
 /// True while an offscreen pass (create_pass or GXCreateFrameBuffer) is open.
 bool is_offscreen() noexcept;
+
+/// Increments on aurora_end_frame.
+uint32_t current_frame() noexcept;
 
 /// Blocks until the render worker has drained its queue. After this returns,
 /// no draw callback is executing or queued to execute; used before unloading

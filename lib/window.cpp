@@ -115,18 +115,25 @@ void set_window_icon() noexcept {
   SDL_DestroySurface(iconSurface);
 }
 
+bool targets_primary_window(const SDL_Event* event) noexcept {
+  const SDL_Window* eventWindow = SDL_GetWindowFromEvent(event);
+  return eventWindow == nullptr || eventWindow == g_window;
+}
+
 bool SDLCALL lifecycle_event_watch(void*, SDL_Event* event) {
-  switch (event->type) {
+  if (targets_primary_window(event)) {
+    switch (event->type) {
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_APPLE)
-  case SDL_EVENT_WINDOW_MINIMIZED:
-    g_backgrounded.store(true, std::memory_order_relaxed);
-    break;
-  case SDL_EVENT_WINDOW_RESTORED:
-    g_backgrounded.store(false, std::memory_order_relaxed);
-    break;
+    case SDL_EVENT_WINDOW_MINIMIZED:
+      g_backgrounded.store(true, std::memory_order_relaxed);
+      break;
+    case SDL_EVENT_WINDOW_RESTORED:
+      g_backgrounded.store(false, std::memory_order_relaxed);
+      break;
 #endif
-  default:
-    break;
+    default:
+      break;
+    }
   }
   return true;
 }
@@ -143,15 +150,21 @@ void sync_paused() {
 }
 
 void process_event(SDL_Event& event) {
+  const bool primaryWindow = targets_primary_window(&event);
+  if (primaryWindow) {
 #ifdef AURORA_ENABLE_GX
-  imgui::process_event(event);
+    imgui::process_event(event);
 #endif
 #ifdef AURORA_ENABLE_RMLUI
-  rmlui::handle_event(event);
+    rmlui::handle_event(event);
 #endif
+  }
 
   switch (event.type) {
   case SDL_EVENT_WINDOW_MOVED: {
+    if (!primaryWindow) {
+      break;
+    }
     g_events.push_back(AuroraEvent{
         .type = AURORA_WINDOW_MOVED,
         .windowPos = {.x = event.window.data1, .y = event.window.data2},
@@ -159,6 +172,9 @@ void process_event(SDL_Event& event) {
     break;
   }
   case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED: {
+    if (!primaryWindow) {
+      break;
+    }
     resize_swapchain();
     g_events.push_back(AuroraEvent{
         .type = AURORA_DISPLAY_SCALE_CHANGED,
@@ -167,6 +183,9 @@ void process_event(SDL_Event& event) {
     break;
   }
   case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
+    if (!primaryWindow) {
+      break;
+    }
     resize_swapchain();
     g_events.push_back(AuroraEvent{
         .type = AURORA_WINDOW_RESIZED,
@@ -191,7 +210,9 @@ void process_event(SDL_Event& event) {
     break;
   }
   case SDL_EVENT_MOUSE_WHEEL:
-    input::set_mouse_scroll(event.wheel.x, event.wheel.y);
+    if (primaryWindow) {
+      input::set_mouse_scroll(event.wheel.x, event.wheel.y);
+    }
     break;
   case SDL_EVENT_QUIT:
     g_events.push_back(AuroraEvent{
@@ -215,7 +236,9 @@ void process_event(SDL_Event& event) {
     break;
   }
 
-  sync_paused();
+  if (primaryWindow) {
+    sync_paused();
+  }
   g_events.push_back(AuroraEvent{
       .type = AURORA_SDL_EVENT,
       .sdl = event,

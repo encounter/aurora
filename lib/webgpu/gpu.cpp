@@ -1,6 +1,7 @@
 #include "gpu.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include <aurora/aurora.h>
+#include <aurora/webgpu.hpp>
 #include <aurora/gfx.h>
 #include <magic_enum.hpp>
 #include <webgpu/webgpu_cpp.h>
@@ -21,7 +23,6 @@
 #include "gpu_prof.hpp"
 
 #ifdef WEBGPU_DAWN
-#include "../dawn/BackendBinding.hpp"
 #include "../dawn/TracyPlatform.hpp"
 #include <dawn/native/DawnNative.h>
 #endif
@@ -65,6 +66,7 @@ bool g_bcTexturesSupported = false;
 bool g_astcTexturesSupported = false;
 bool g_textureComponentSwizzleSupported = false;
 static std::atomic_bool g_initialized = false;
+static std::atomic_bool g_vsyncEnabled = true;
 
 namespace {
 
@@ -187,31 +189,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 )"sv;
 
-wgpu::PresentMode best_present_mode(bool vsync) {
-  const auto supports = [](const wgpu::PresentMode candidate) {
-    for (size_t i = 0; i < g_surfaceCapabilities.presentModeCount; ++i) {
-      if (g_surfaceCapabilities.presentModes[i] == candidate) {
-        return true;
-      }
-    }
-    return false;
-  };
-  if (vsync) {
-    if (supports(wgpu::PresentMode::FifoRelaxed)) {
-      return wgpu::PresentMode::FifoRelaxed;
-    }
-  } else {
-    // Dawn only disables CAMetalLayer displaySyncEnabled for Immediate on Metal
-    if (g_backendType != wgpu::BackendType::Metal && supports(wgpu::PresentMode::Mailbox)) {
-      return wgpu::PresentMode::Mailbox;
-    }
-    if (supports(wgpu::PresentMode::Immediate)) {
-      return wgpu::PresentMode::Immediate;
-    }
-  }
-  return wgpu::PresentMode::Fifo;
-}
-
 wgpu::TextureFormat to_linear(wgpu::TextureFormat format) {
   if (format == wgpu::TextureFormat::RGBA8UnormSrgb) {
     return wgpu::TextureFormat::RGBA8Unorm;
@@ -250,6 +227,33 @@ uint32_t viewport_extent(float value) noexcept {
 }
 
 } // namespace
+
+bool vsync_enabled() noexcept { return g_vsyncEnabled.load(std::memory_order_acquire); }
+
+wgpu::PresentMode select_present_mode(const wgpu::SurfaceCapabilities& capabilities) noexcept {
+  const auto supports = [&capabilities](const wgpu::PresentMode candidate) {
+    for (size_t i = 0; i < capabilities.presentModeCount; ++i) {
+      if (capabilities.presentModes[i] == candidate) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (vsync_enabled()) {
+    if (supports(wgpu::PresentMode::FifoRelaxed)) {
+      return wgpu::PresentMode::FifoRelaxed;
+    }
+  } else {
+    // Dawn only disables CAMetalLayer displaySyncEnabled for Immediate on Metal
+    if (g_backendType != wgpu::BackendType::Metal && supports(wgpu::PresentMode::Mailbox)) {
+      return wgpu::PresentMode::Mailbox;
+    }
+    if (supports(wgpu::PresentMode::Immediate)) {
+      return wgpu::PresentMode::Immediate;
+    }
+  }
+  return wgpu::PresentMode::Fifo;
+}
 
 TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled) {
   const wgpu::Extent3D size{
@@ -732,17 +736,8 @@ static bool create_surface() {
     return false;
   }
   window::SurfaceLock surfaceLock;
-  const auto chainedDescriptor = utils::SetupWindowAndGetSurfaceDescriptor(window);
-  if (!chainedDescriptor) {
-    Log.error("Failed to create surface descriptor for current window");
-    return false;
-  }
-  const wgpu::SurfaceDescriptor surfaceDescriptor{
-      .nextInChain = chainedDescriptor.get(),
-      .label = "Surface",
-  };
   release_surface_locked();
-  g_surface = g_instance.CreateSurface(&surfaceDescriptor);
+  g_surface = create_window_surface(g_instance, window, "Surface");
   if (!g_surface) {
     Log.error("Failed to create surface");
     return false;
@@ -1021,7 +1016,8 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     return false;
   }
   auto surfaceFormat = best_surface_format();
-  auto presentMode = best_present_mode(g_config.vsync);
+  g_vsyncEnabled.store(g_config.vsync, std::memory_order_release);
+  auto presentMode = select_present_mode(g_surfaceCapabilities);
   Log.info("Using surface format {}, present mode {}", magic_enum::enum_name(surfaceFormat),
            magic_enum::enum_name(presentMode));
   const auto size = window::get_window_size();
@@ -1145,6 +1141,8 @@ void resize_swapchain(uint32_t width, uint32_t height, uint32_t nativeWidth, uin
 } // namespace aurora::webgpu
 
 void aurora_enable_vsync(const bool enabled) {
-  aurora::webgpu::g_graphicsConfig.surfaceConfiguration.presentMode = aurora::webgpu::best_present_mode(enabled);
+  aurora::webgpu::g_vsyncEnabled.store(enabled, std::memory_order_release);
+  aurora::webgpu::g_graphicsConfig.surfaceConfiguration.presentMode =
+      aurora::webgpu::select_present_mode(aurora::webgpu::g_surfaceCapabilities);
   aurora::window::push_custom_event(aurora::window::CustomEvent::RefreshSurface);
 }
