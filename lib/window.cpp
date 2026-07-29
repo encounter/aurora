@@ -214,6 +214,13 @@ void process_event(SDL_Event& event) {
       input::set_mouse_scroll(event.wheel.x, event.wheel.y);
     }
     break;
+  case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+    if (primaryWindow) {
+      g_events.push_back(AuroraEvent{
+          .type = AURORA_EXIT,
+      });
+    }
+    break;
   case SDL_EVENT_QUIT:
     g_events.push_back(AuroraEvent{
         .type = AURORA_EXIT,
