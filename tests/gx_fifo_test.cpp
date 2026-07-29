@@ -7,6 +7,7 @@
 #include "gx_test_common.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 
 using aurora::gx::g_gxState;
@@ -1638,6 +1639,62 @@ TEST_F(GXFifoTest, NumChans) {
 // ============================================================================
 // XF registers (direct FIFO writes)
 // ============================================================================
+
+// --- GXLoadPosMtxIndx (indexed XF load from GX_POS_MTX_ARRAY) ---
+
+TEST_F(GXFifoTest, LoadPosMtxIndx_RoundTripWithFullIndexAndFollowingCommand) {
+  std::array<aurora::Mat3x4<float>, 257> matrices{};
+  auto& source = matrices[0x100];
+  source.m0 = {1.0f, 2.0f, 3.0f, 10.0f};
+  source.m1 = {4.0f, 5.0f, 6.0f, 20.0f};
+  source.m2 = {7.0f, 8.0f, 9.0f, 30.0f};
+
+  GXSetArray(GX_POS_MTX_ARRAY, matrices.data(), sizeof(matrices), sizeof(matrices[0]), true);
+  GXLoadPosMtxIndx(0x100, GX_PNMTX3);
+  GXSetBlendMode(GX_BM_SUBTRACT, GX_BL_ONE, GX_BL_ONE, GX_LO_NOOP);
+  auto bytes = capture_fifo();
+
+  ASSERT_EQ(bytes.size(), 32u);
+  EXPECT_EQ(bytes[22], GX_LOAD_INDX_A);
+  EXPECT_EQ(bytes[23], 0x01);
+  EXPECT_EQ(bytes[24], 0x00);
+  EXPECT_EQ(bytes[25], 0xB0);
+  EXPECT_EQ(bytes[26], 0x24);
+  EXPECT_EQ(bytes[27], GX_LOAD_BP_REG);
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& decoded = g_gxState.pnMtx[3].pos;
+  EXPECT_EQ(decoded, source);
+  EXPECT_EQ(g_gxState.blendMode, GX_BM_SUBTRACT);
+}
+
+TEST_F(GXFifoTest, LoadPosMtxIndx_DecodesBigEndianArray) {
+  const std::array<f32, 12> values{
+      1.0f, 2.0f, 3.0f, 10.0f, 4.0f, 5.0f, 6.0f, 20.0f, 7.0f, 8.0f, 9.0f, 30.0f,
+  };
+  std::array<u8, sizeof(values)> source{};
+  for (size_t i = 0; i < values.size(); ++i) {
+    const u32 bits = std::bit_cast<u32>(values[i]);
+    source[i * 4] = static_cast<u8>(bits >> 24);
+    source[i * 4 + 1] = static_cast<u8>(bits >> 16);
+    source[i * 4 + 2] = static_cast<u8>(bits >> 8);
+    source[i * 4 + 3] = static_cast<u8>(bits);
+  }
+
+  GXSetArray(GX_POS_MTX_ARRAY, source.data(), source.size(), source.size(), false);
+  GXLoadPosMtxIndx(0, GX_PNMTX0);
+  auto bytes = capture_fifo();
+
+  reset_gx_state();
+  decode_fifo(bytes);
+
+  const auto& decoded = g_gxState.pnMtx[0].pos;
+  for (size_t i = 0; i < values.size(); ++i) {
+    EXPECT_FLOAT_EQ(reinterpret_cast<const f32*>(&decoded)[i], values[i]);
+  }
+}
 
 // --- GXLoadPosMtxImm (XF 0x000-0x077) ---
 

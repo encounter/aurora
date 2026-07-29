@@ -253,6 +253,7 @@ static bool copy_xf_data(u32 addr, const u8* data, u32 len, bool bigEndian) {
       flat[i] = read_f32(data + i * 4, bigEndian);
     }
     g_gxState.stateDirty = true;
+    return true;
   } else if (addr < 0x0F0) {
     // Texture matrices (0x078-0x0EF)
     u32 texBase = addr - 0x078;
@@ -416,19 +417,26 @@ void process(const u8* data, u32 size, bool bigEndian) {
       ZoneScopedN("LOAD_INDX");
       // Indexed XF load: 4 bytes of data
       CHECK(pos + 4 <= size, "indexed XF read overrun");
-      u32 arrayType = GX_POS_MTX_ARRAY + (opcode - (CP_CMD_LOAD_INDX_A / 0x08));
-      u8 srcArrayIdx = data[pos++];
+      const u32 arrayType = GX_POS_MTX_ARRAY + (opcode - CP_CMD_LOAD_INDX_A) / 0x08;
+      const u16 srcArrayIdx = read_u16(data + pos, bigEndian);
+      const u16 addrLen = read_u16(data + pos + 2, bigEndian);
+      pos += 4;
+
+      const u16 len = (addrLen >> 12) + 1;
+      const u16 dstAddr = addrLen & 0x0FFF;
       auto const& array = g_gxState.arrays[arrayType];
-      u8* srcData = ((u8*)array.data) + srcArrayIdx * array.stride;
-      u16 addrLen = read_u16(data + pos, bigEndian);
-      u16 len = (addrLen >> 12) + 1;
-      u16 dstAddr = addrLen & 0x0FFF;
-      if (!copy_xf_data(dstAddr, srcData, len, bigEndian)) {
+      const u32 srcOffset = static_cast<u32>(srcArrayIdx) * array.stride;
+      const u32 srcSize = static_cast<u32>(len) * sizeof(u32);
+      ASSERT(array.data != nullptr, "indexed XF load from unmapped array {}", arrayType);
+      ASSERT(srcOffset <= array.size && srcSize <= array.size - srcOffset,
+             "indexed XF load outside array {}: offset={}, size={}, array size={}", arrayType, srcOffset, srcSize,
+             array.size);
+      auto const* srcData = static_cast<const u8*>(array.data) + srcOffset;
+      if (!copy_xf_data(dstAddr, srcData, len, !array.le)) {
 #ifndef NDEBUG
         Log.debug("Unimplemented indexed XF load (opcode 0x{:02X}, dstAddr=%04x)", opcode, dstAddr);
 #endif
       }
-      pos += 4;
       break;
     }
 

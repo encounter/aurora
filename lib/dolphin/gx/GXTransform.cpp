@@ -64,6 +64,14 @@ void GXLoadPosMtxImm(const void* mtx_, u32 id) {
   }
 }
 
+void GXLoadPosMtxIndx(u16 mtxIndx, u32 id) {
+  CHECK(id >= GX_PNMTX0 && id <= GX_PNMTX9, "invalid pn mtx {}", static_cast<int>(id));
+
+  GX_WRITE_U8(GX_LOAD_INDX_A);
+  GX_WRITE_U16(mtxIndx);
+  GX_WRITE_U16((11u << 12) | id * 4);
+}
+
 void GXLoadNrmMtxImm(const void* mtx_, u32 id) {
   CHECK(id >= GX_PNMTX0 && id <= GX_PNMTX9, "invalid pn mtx {}", static_cast<int>(id));
   const auto* mtx = reinterpret_cast<const f32*>(mtx_);
@@ -184,7 +192,6 @@ void GXProject(f32 x, f32 y, f32 z, const f32 mtx[3][4], const f32* pm, const f3
   *sz = vp[5] + (wc * (zc * (vp[5] - vp[4])));
 }
 
-// TODO GXLoadPosMtxIndx
 // TODO GXLoadNrmMtxImm3x3
 // TODO GXLoadNrmMtxIndx3x3
 // TODO GXLoadTexMtxIndx
