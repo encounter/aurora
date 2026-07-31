@@ -427,8 +427,8 @@ void process(const u8* data, u32 size, bool bigEndian) {
       auto const& array = g_gxState.arrays[arrayType];
       const u32 srcOffset = static_cast<u32>(srcArrayIdx) * array.stride;
       const u32 srcSize = static_cast<u32>(len) * sizeof(u32);
-      ASSERT(array.data != nullptr, "indexed XF load from unmapped array {}", arrayType);
-      ASSERT(srcOffset <= array.size && srcSize <= array.size - srcOffset,
+      AURORA_ASSERT(array.data != nullptr, "indexed XF load from unmapped array {}", arrayType);
+      AURORA_ASSERT(srcOffset <= array.size && srcSize <= array.size - srcOffset,
              "indexed XF load outside array {}: offset={}, size={}, array size={}", arrayType, srcOffset, srcSize,
              array.size);
       auto const* srcData = static_cast<const u8*>(array.data) + srcOffset;
