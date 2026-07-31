@@ -28,7 +28,7 @@ void GXBegin(GXPrimitive primitive, GXVtxFmt vtxFmt, u16 nVerts) {
   const u8 drawCmd = static_cast<u8>(vtxFmt) | static_cast<u8>(primitive);
   sBeginAuto = nVerts == GX_AUTO;
   if (sBeginAuto) {
-    ASSERT(!aurora::gx::fifo::in_display_list(), "GXBegin: GX_AUTO not supported in display lists");
+    AURORA_ASSERT(!aurora::gx::fifo::in_display_list(), "GXBegin: GX_AUTO not supported in display lists");
     GX_WRITE_AURORA(GX_AURORA_DRAW_SIZED);
     GX_WRITE_U8(drawCmd);
     sBeginSizeOffset = aurora::gx::fifo::get_buffer_size();

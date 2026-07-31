@@ -79,7 +79,9 @@ u32 ARInit(u32* stack_index_addr, u32 num_entries) {
 
 u32 ARGetSize(void) { return aurora::g_config.mem2Size; }
 
+#if !defined(_MSC_VER)
 #pragma mark ARQ
+#endif
 void ARQPostRequest(ARQRequest* request, u32 owner, u32 type, u32 priority, uintptr_t source, uintptr_t dest,
                     u32 length, ARQCallback callback) {
   // Emulate ARAM DMA transfers using memcpy.

@@ -203,6 +203,9 @@ BOOL OSRestoreInterrupts(BOOL level);
 #define OS_CONSOLE_ARTHUR      0x10000002
 #define OS_CONSOLE_PC_EMULATOR 0x10000001
 #define OS_CONSOLE_EMULATOR    0x10000000
+#define OS_CONSOLE_DEV_MASK    OS_CONSOLE_DEVELOPMENT
+
+#define OS_CONSOLE_IS_DEV() ((OSGetConsoleType() & OS_CONSOLE_DEV_MASK) != 0)
 
 #define OS_SOUND_MODE_MONO   0
 #define OS_SOUND_MODE_STEREO 1
@@ -214,6 +217,8 @@ DECL_WEAK void OSReport(const char* msg, ...);
 DECL_WEAK void OSVReport(const char* msg, va_list list);
 DECL_WEAK void OSPanic NORETURN(const char* file, int line, const char* msg, ...);
 void OSFatal NORETURN(GXColor fg, GXColor bg, const char* msg);
+
+#define OSErrorLine(line, ...) OSPanic(__FILE__, line, __VA_ARGS__)
 
 #define OSRoundUp32B(x)   (((uintptr_t)(x) + 32 - 1) & ~(32 - 1))
 #define OSRoundDown32B(x) (((uintptr_t)(x)) & ~(32 - 1))

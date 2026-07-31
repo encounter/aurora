@@ -12,6 +12,7 @@ extern "C" {
 #define CARD_FILENAME_MAX 32
 #define CARD_MAX_FILE 127
 #define CARD_ICON_MAX 8
+#define CARD_NUM_CHANS 2
 
 #if TARGET_PC
 

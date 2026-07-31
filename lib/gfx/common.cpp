@@ -449,7 +449,7 @@ static void map_staging_buffer(size_t slot, bool releaseSlotOnCompletion = false
           }
           return;
         }
-        ASSERT(status == wgpu::MapAsyncStatus::Success, "Buffer mapping failed: {} {}", magic_enum::enum_name(status),
+        AURORA_ASSERT(status == wgpu::MapAsyncStatus::Success, "Buffer mapping failed: {} {}", magic_enum::enum_name(status),
                message);
         s_mappingStates[slot].store(BufferMapState::Mapped, std::memory_order_release);
         if (releaseSlotOnCompletion) {
@@ -635,7 +635,7 @@ static void enqueue_pass(FramePacket& frame, size_t frameSlot, uint32_t passInde
 
 void queue_texture_upload(TextureUpload upload) {
   if (g_currentRenderPass != UINT32_MAX) {
-    ASSERT(!current_render_passes()[g_currentRenderPass].sealed,
+    AURORA_ASSERT(!current_render_passes()[g_currentRenderPass].sealed,
            "Attempted to append texture upload to sealed render pass {}", g_currentRenderPass);
   }
   current_frame_packet().textureUploads.emplace_back(std::move(upload));
@@ -760,7 +760,7 @@ static void push_command(CommandType type, const Command::Data& data) {
       return;
     }
   auto& renderPass = current_render_passes()[g_currentRenderPass];
-  ASSERT(!renderPass.sealed, "Attempted to append command {} to sealed render pass {}", magic_enum::enum_name(type),
+  AURORA_ASSERT(!renderPass.sealed, "Attempted to append command {} to sealed render pass {}", magic_enum::enum_name(type),
          g_currentRenderPass);
   if (type == CommandType::Draw || type == CommandType::CustomDraw) {
     renderPass.hasDraws = true;
@@ -890,7 +890,7 @@ void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bo
 
 void queue_palette_conv(tex_palette_conv::ConvRequest req) {
   auto& renderPass = current_render_passes()[g_currentRenderPass];
-  ASSERT(!renderPass.sealed, "Attempted to append palette conversion to sealed render pass {}", g_currentRenderPass);
+  AURORA_ASSERT(!renderPass.sealed, "Attempted to append palette conversion to sealed render pass {}", g_currentRenderPass);
   renderPass.paletteConvs.push_back(std::move(req));
 }
 
@@ -1658,7 +1658,7 @@ void finish() {
   if (g_recordingFrame == nullptr) {
     return;
   }
-  ASSERT(!g_inOffscreen, "finish called while offscreen rendering is active");
+  AURORA_ASSERT(!g_inOffscreen, "finish called while offscreen rendering is active");
   if (g_currentRenderPass != UINT32_MAX) {
     auto& frame = current_frame_packet();
     frame.uniforms.append_zeroes(gx::MaxUniformSize);
@@ -1671,8 +1671,8 @@ void finish() {
 
 void end_frame(EndFrameCallback callback) {
   ZoneScoped;
-  ASSERT(!g_inOffscreen, "end_frame called while offscreen rendering is active");
-  ASSERT(g_currentRenderPass == UINT32_MAX, "end_frame called before finish finalized the current render pass");
+  AURORA_ASSERT(!g_inOffscreen, "end_frame called while offscreen rendering is active");
+  AURORA_ASSERT(g_currentRenderPass == UINT32_MAX, "end_frame called before finish finalized the current render pass");
   if (g_cpuFrameStart.time_since_epoch().count() != 0) {
     const auto cpuFrameTime = PresentClock::now() - g_cpuFrameStart;
     update_ema(g_cpuFrameTimeNs, duration_ns(cpuFrameTime));

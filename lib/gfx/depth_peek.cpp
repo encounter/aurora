@@ -383,7 +383,7 @@ void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureV
     byteSize = slot->byteSize;
   }
 
-  ASSERT(render_worker::is_worker_thread(), "Depth peek queue write must run on the render worker");
+  AURORA_ASSERT(render_worker::is_worker_thread(), "Depth peek queue write must run on the render worker");
   g_queue.WriteBuffer(paramsBuffer, 0, &params, sizeof(params));
 
   const std::array bindGroupEntries{

@@ -99,13 +99,13 @@ auto underlying(T value) -> std::underlying_type_t<T> {
 #define LIKELY
 #endif
 #define FATAL(msg, ...) Log.fatal(msg, ##__VA_ARGS__);
-#define ASSERT(cond, msg, ...)                                                                                         \
+#define AURORA_ASSERT(cond, msg, ...)                                                                                  \
   if (!(cond))                                                                                                         \
   UNLIKELY FATAL(msg, ##__VA_ARGS__)
 #ifdef NDEBUG
 #define CHECK(cond, msg, ...)
 #else
-#define CHECK(cond, msg, ...) ASSERT(cond, msg, ##__VA_ARGS__)
+#define CHECK(cond, msg, ...) AURORA_ASSERT(cond, msg, ##__VA_ARGS__)
 #endif
 #define DEFAULT_FATAL(msg, ...) UNLIKELY default : FATAL(msg, ##__VA_ARGS__)
 #define TRY(cond, msg, ...)                                                                                            \
