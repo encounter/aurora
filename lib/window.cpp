@@ -557,8 +557,8 @@ void set_background_input(bool value) { SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACK
 } // namespace aurora::window
 
 #if defined(SDL_PLATFORM_ANDROID)
-extern "C" JNIEXPORT void JNICALL Java_org_libsdl_app_SDLSurface_auroraNativeSetSurfaceReady(JNIEnv*, jclass,
-                                                                                             jboolean ready) {
+extern "C" JNIEXPORT void JNICALL Java_dev_encounter_aurora_AuroraSurface_nativeSetSurfaceReady(JNIEnv*, jclass,
+                                                                                                jboolean ready) {
   aurora::window::set_surface_ready(ready == JNI_TRUE);
 }
 #endif
