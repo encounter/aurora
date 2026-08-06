@@ -1,5 +1,8 @@
 include(FetchContent)
 include(GoogleTest)
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/AuroraCopyRuntimeDLLs.cmake)
+
+set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 
 if (NOT TARGET gtest)
   FetchContent_Declare(googletest
@@ -88,6 +91,7 @@ if (AURORA_ENABLE_GX)
     TracyClient
     ${AURORA_SDL3_TARGET}
   )
+  aurora_copy_runtime_dlls(gx_texture_cache_tests)
   gtest_discover_tests(gx_texture_cache_tests)
 
   add_executable(texture_replacement_streaming_tests
@@ -104,6 +108,7 @@ if (AURORA_ENABLE_GX)
     gtest
     gtest_main
   )
+  aurora_copy_runtime_dlls(texture_replacement_streaming_tests)
   gtest_discover_tests(texture_replacement_streaming_tests)
 
   add_executable(render_worker_tests
