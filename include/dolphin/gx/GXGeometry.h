@@ -20,6 +20,13 @@ void GXBegin(GXPrimitive type, GXVtxFmt vtxfmt, u16 nverts);
  * the number of bytes written before GXEnd. Not supported while recording a display list.
  */
 #define GX_AUTO 0xFFFF
+
+/**
+ * Aurora extension: begin an indexed triangle draw. The caller writes each of the
+ * nverts unique vertices once using the normal GX vertex functions, then calls GXEnd.
+ * Indices are copied immediately and may be released after this function returns.
+ */
+void GXBeginIndexed(GXVtxFmt vtxfmt, u16 nverts, const u16* indices, u32 nindices);
 #endif
 void GXSetTexCoordGen2(GXTexCoordID dst_coord, GXTexGenType func, GXTexGenSrc src_param, u32 mtx, GXBool normalize,
                        u32 postmtx);

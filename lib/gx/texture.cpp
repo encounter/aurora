@@ -256,6 +256,7 @@ struct TextureKeys {
 };
 
 TextureKeys hash_texture_source(const GXTexObj_& obj, const GXTlutObj_* tlut, bool buildSourceKey) {
+  ZoneScoped;
   const size_t textureBytes = texture::texture_source_size(obj.format(), obj.width(), obj.height(), obj.mip_count());
   CHECK(obj.has_data() && textureBytes != 0, "invalid texture source for content hash");
 
