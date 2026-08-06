@@ -146,6 +146,14 @@ TEST(DVDNoDisc, ChangeDirFails) { EXPECT_EQ(DVDChangeDir("/"), FALSE); }
 
 TEST(DVDNoDisc, ConvertPathFails) { EXPECT_EQ(DVDConvertPathToEntrynum("/test"), -1); }
 
+TEST(DVDNoDisc, ConvertEntrynumToPathFails) {
+  char buf[16] = "unchanged";
+  EXPECT_EQ(DVDConvertEntrynumToPath(0, buf, sizeof(buf)), FALSE);
+  EXPECT_STREQ(buf, "");
+  EXPECT_EQ(DVDConvertEntrynumToPath(0, nullptr, sizeof(buf)), FALSE);
+  EXPECT_EQ(DVDConvertEntrynumToPath(0, buf, 0), FALSE);
+}
+
 TEST(DVDNoDisc, GetCurrentDir) {
   char buf[256];
   EXPECT_EQ(DVDGetCurrentDir(buf, sizeof(buf)), TRUE);
@@ -197,6 +205,59 @@ TEST_F(DVDDiscTest, ConvertPathDotDotDot) {
 
 TEST_F(DVDDiscTest, ConvertPathInvalid) {
   EXPECT_EQ(DVDConvertPathToEntrynum("/nonexistent_file_that_should_not_exist"), -1);
+}
+
+TEST_F(DVDDiscTest, ConvertEntrynumToPathRoot) {
+  char path[2] = {};
+  EXPECT_EQ(DVDConvertEntrynumToPath(0, path, sizeof(path)), TRUE);
+  EXPECT_STREQ(path, "/");
+}
+
+TEST_F(DVDDiscTest, ConvertEntrynumToPathFile) {
+  char expectedPath[256] = {};
+  const s32 entryNum = findFirstRootFile(expectedPath, sizeof(expectedPath));
+  if (entryNum < 0) {
+    GTEST_SKIP() << "No files in root directory";
+  }
+
+  char actualPath[256] = {};
+  EXPECT_EQ(DVDConvertEntrynumToPath(entryNum, actualPath, sizeof(actualPath)), TRUE);
+  EXPECT_STREQ(actualPath, expectedPath);
+
+  char truncatedPath[2] = {};
+  EXPECT_EQ(DVDConvertEntrynumToPath(entryNum, truncatedPath, sizeof(truncatedPath)), FALSE);
+  EXPECT_EQ(truncatedPath[sizeof(truncatedPath) - 1], '\0');
+}
+
+TEST_F(DVDDiscTest, ConvertEntrynumToPathOverlay) {
+  const AuroraOverlayCallbacks callbacks{
+      .open = [](void*) -> void* { return nullptr; },
+      .close = [](void*) {},
+      .read = [](void*, uint8_t*, size_t) -> int64_t { return 0; },
+      .seek = [](void*, int64_t, int32_t) -> int64_t { return 0; },
+  };
+  aurora_dvd_overlay_callbacks(&callbacks);
+
+  const AuroraOverlayFile overlay{
+      .fileName = "/__aurora_dvd_test__/nested/file.bin",
+      .userData = nullptr,
+      .size = 0,
+  };
+  s32 fileEntryNum = -1;
+  aurora_dvd_overlay_files(&overlay, 1, &fileEntryNum);
+  struct OverlayReset {
+    ~OverlayReset() { aurora_dvd_overlay_files(nullptr, 0, nullptr); }
+  } overlayReset;
+
+  ASSERT_GE(fileEntryNum, 0);
+  char path[256] = {};
+  EXPECT_EQ(DVDConvertEntrynumToPath(fileEntryNum, path, sizeof(path)), TRUE);
+  EXPECT_STREQ(path, overlay.fileName);
+
+  const s32 dirEntryNum = DVDConvertPathToEntrynum("/__aurora_dvd_test__/nested");
+  ASSERT_GE(dirEntryNum, 0);
+  EXPECT_EQ(DVDConvertEntrynumToPath(dirEntryNum, path, sizeof(path)), TRUE);
+  EXPECT_STREQ(path, "/__aurora_dvd_test__/nested/");
 }
 
 TEST_F(DVDDiscTest, OpenDirRoot) {

@@ -3,6 +3,7 @@
 #include <dolphin/os.h>
 
 #include "dolphin/gx/GXAurora.h"
+#include "gd.hpp"
 
 void GDSetVtxDescv(const GXVtxDescList* attrPtr) {
     u32 nnorms = 0;
@@ -263,13 +264,9 @@ void GDSetArraySized(GXAttr attr, void* base_ptr, u32 size, u8 stride, bool le) 
   GDWriteCPCmd(cpAttr + CP_REG_ARRAYSTRIDE_ID, stride);
 }
 
-void GDSetArray(GXAttr, void*, u8) {
-    OSPanic(__FILE__, __LINE__, "GDSetArray is not supported on Aurora");
-}
+void GDSetArray(GXAttr, void*, u8) { Log.fatal("GDSetArray is not supported on Aurora"); }
 
-void GDSetArrayRaw(GXAttr, u32, u8) {
-    OSPanic(__FILE__, __LINE__, "GDSetArrayRaw is not supported on Aurora");
-}
+void GDSetArrayRaw(GXAttr, u32, u8) { Log.fatal("GDSetArrayRaw is not supported on Aurora"); }
 
 void GDPatchArrayPtr(void* base_ptr) {
     GDWrite_u32(OSCachedToPhysical(base_ptr));

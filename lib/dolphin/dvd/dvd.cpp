@@ -190,13 +190,14 @@ FstIndex findInDir(FstIndex dirEntry, const char* name, size_t nameLen) {
   return -1;
 }
 
-std::string buildDirPath(FstIndex entryNum) {
-  if (entryNum <= 0 || !isValidFstIndex(entryNum)) {
+std::string build_path(FstIndex fstIndex) {
+  if (fstIndex <= 0 || !isValidFstIndex(fstIndex)) {
     return "/";
   }
 
+  const bool isDir = s_fstEntries[fstIndex].isDir;
   std::vector<std::string> parts;
-  FstIndex cur = entryNum;
+  FstIndex cur = fstIndex;
   while (cur > 0 && isValidFstIndex(cur)) {
     parts.push_back(s_fstEntries[cur].name);
     auto parent = s_fstEntries[cur].parent;
@@ -208,7 +209,12 @@ std::string buildDirPath(FstIndex entryNum) {
 
   std::string out = "/";
   for (auto it = parts.rbegin(); it != parts.rend(); ++it) {
+    if (it != parts.rbegin()) {
+      out += '/';
+    }
     out += *it;
+  }
+  if (isDir) {
     out += '/';
   }
   return out;
@@ -1037,6 +1043,25 @@ s32 DVDConvertPathToEntrynum(const char* pathPtr) {
   return s_fstEntries[current].origEntryNum;
 }
 
+BOOL DVDConvertEntrynumToPath(s32 entrynum, char* path, u32 maxlen) {
+  std::lock_guard lock(s_fstLock);
+
+  if (path == nullptr || maxlen == 0) {
+    return FALSE;
+  }
+  path[0] = '\0';
+
+  if (!s_initialized || !isValidEntryNum(entrynum)) {
+    return FALSE;
+  }
+
+  const std::string entryPath = build_path(s_entryNumToFstIndex[entrynum]);
+  const size_t copyLen = std::min(entryPath.size(), static_cast<size_t>(maxlen - 1));
+  std::memcpy(path, entryPath.data(), copyLen);
+  path[copyLen] = '\0';
+  return entryPath.size() < maxlen ? TRUE : FALSE;
+}
+
 BOOL DVDFastOpen(s32 entrynum, DVDFileInfo* fileInfo) {
   std::lock_guard lock(s_fstLock);
 
@@ -1124,7 +1149,7 @@ BOOL DVDChangeDir(const char* dirName) {
   }
 
   s_currentDir = fstIndex;
-  s_currentPath = buildDirPath(fstIndex);
+  s_currentPath = build_path(fstIndex);
   return TRUE;
 }
 
@@ -1280,10 +1305,8 @@ BOOL DVDPrepareStreamAsync(DVDFileInfo* fileInfo, u32 length, u32 offset, DVDCal
   }
   const uint64_t end = static_cast<uint64_t>(offset) + static_cast<uint64_t>(length);
   if (!(offset < fileInfo->length && end <= fileInfo->length)) {
-    OSPanic(__FILE__, 0x484,
-            "DVDPrepareStreamAsync(): The area specified (offset(0x%x), length(0x%x)) is out of the file", offset,
-            length);
-    return FALSE;
+    Log.fatal("DVDPrepareStreamAsync(): The area specified (offset(0x{:x}), length(0x{:x})) is out of the file", offset,
+              length);
   }
   fileInfo->callback = callback;
   return DVDPrepareStreamAbsAsync(&fileInfo->cb, length, offset, cbForPrepareStreamAsync);

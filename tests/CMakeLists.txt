@@ -130,7 +130,11 @@ endif () # AURORA_ENABLE_GX
 
 # DVD API tests
 if (TARGET aurora::dvd)
-  add_executable(dvd_tests test_dvd.cpp)
+  add_executable(dvd_tests
+    test_dvd.cpp
+    dvd_test_stubs.cpp
+    ../lib/logging.cpp
+  )
   target_link_libraries(dvd_tests PRIVATE aurora::dvd gtest gtest_main)
 
   # Pass disc image path as a compile definition if provided
