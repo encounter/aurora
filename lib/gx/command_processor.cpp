@@ -7,6 +7,7 @@
 #include "gx_fmt.hpp"
 #include "pipeline.hpp"
 #include "shader_info.hpp"
+#include "texture.hpp"
 #include "../internal.hpp"
 
 #include <absl/container/flat_hash_map.h>
@@ -1814,6 +1815,8 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     pos += 1;
     CHECK(idx < MaxTluts, "invalid tlut slot {}", idx);
     auto& slot = g_gxState.loadedTluts[idx];
+    const u32 oldTlutObjId = slot.tlutObjId;
+    const u32 oldTlutDataVersion = slot.tlutDataVersion;
     slot.data = reinterpret_cast<const void*>(read_u64(data + pos, bigEndian));
     pos += 8;
     slot.format = static_cast<GXTlutFmt>(read_u32(data + pos, bigEndian));
@@ -1825,6 +1828,9 @@ void handle_aurora(const u8* data, u32& pos, u32 size, bool bigEndian) {
     slot.tlutDataVersion = read_u32(data + pos, bigEndian);
     pos += 4;
     slot.set_no_cache(false); // Reset no-cache flag
+    if (slot.tlutObjId != oldTlutObjId || slot.tlutDataVersion != oldTlutDataVersion) {
+      texture::invalidate_bindings();
+    }
     g_gxState.stateDirty = true;
   } else if (subCmd == GX2_SET_POLYGON_OFFSET) {
     CHECK(pos + 20 <= size, "GX2_SET_POLYGON_OFFSET read overrun");

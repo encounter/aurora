@@ -63,6 +63,9 @@ void configure(const GXRenderModeObj*) noexcept {}
 // --- get_texture ---
 namespace aurora::gx {
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[id]; }
+namespace texture {
+void invalidate_bindings() noexcept {}
+} // namespace texture
 void evict_texture_object(u32 texObjId) noexcept {
   for (auto& obj : g_gxState.loadedTextures) {
     if (obj.texObjId == texObjId) {

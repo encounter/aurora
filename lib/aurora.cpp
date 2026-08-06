@@ -4,6 +4,7 @@
 #include "gfx/common.hpp"
 #include "gfx/render_worker.hpp"
 #include "gx/fifo.hpp"
+#include "gx/texture.hpp"
 #include "imgui.hpp"
 #include "webgpu/gpu.hpp"
 #include "webgpu/gpu_prof.hpp"
@@ -248,6 +249,7 @@ bool begin_frame() noexcept {
 void end_frame() noexcept {
   ZoneScoped;
 #ifdef AURORA_ENABLE_GX
+  gx::texture::end_frame();
   gx::fifo::drain();
   gfx::finish();
   auto imguiDrawData = imgui::freeze();

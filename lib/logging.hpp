@@ -15,38 +15,39 @@ extern AuroraConfig g_config;
 
 struct Module {
   const char* name;
-  explicit Module(const char* name) noexcept : name(name) {}
+  explicit constexpr Module(const char* name) noexcept : name(name) {}
 
   template <typename... T>
-  void report(const AuroraLogLevel level, fmt::format_string<T...> fmt, T&&... args) noexcept {
-    if (g_config.logLevel > level) return;
-
+  void report(const AuroraLogLevel level, fmt::format_string<T...> fmt, T&&... args) const noexcept {
+    if (g_config.logLevel > level) {
+      return;
+    }
     auto message = fmt::format(fmt, std::forward<T>(args)...);
     log_internal(level, name, message.c_str(), static_cast<unsigned int>(message.size()));
   }
 
   template <typename... T>
-  void debug(fmt::format_string<T...> fmt, T&&... args) noexcept {
+  void debug(fmt::format_string<T...> fmt, T&&... args) const noexcept {
     report(LOG_DEBUG, fmt, std::forward<T>(args)...);
   }
 
   template <typename... T>
-  void info(fmt::format_string<T...> fmt, T&&... args) noexcept {
+  void info(fmt::format_string<T...> fmt, T&&... args) const noexcept {
     report(LOG_INFO, fmt, std::forward<T>(args)...);
   }
 
   template <typename... T>
-  void warn(fmt::format_string<T...> fmt, T&&... args) noexcept {
+  void warn(fmt::format_string<T...> fmt, T&&... args) const noexcept {
     report(LOG_WARNING, fmt, std::forward<T>(args)...);
   }
 
   template <typename... T>
-  void error(fmt::format_string<T...> fmt, T&&... args) noexcept {
+  void error(fmt::format_string<T...> fmt, T&&... args) const noexcept {
     report(LOG_ERROR, fmt, std::forward<T>(args)...);
   }
 
   template <typename... T>
-  [[noreturn]] void fatal(fmt::format_string<T...> fmt, T&&... args) noexcept {
+  [[noreturn]] void fatal(fmt::format_string<T...> fmt, T&&... args) const noexcept {
     report(LOG_FATAL, fmt, std::forward<T>(args)...);
     std::abort();
   }

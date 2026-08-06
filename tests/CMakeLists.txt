@@ -68,6 +68,28 @@ if (AURORA_ENABLE_GX)
 
   gtest_discover_tests(gx_fifo_tests)
 
+  add_executable(gx_texture_cache_tests
+    gx_texture_cache_test.cpp
+    gx_texture_cache_test_stubs.cpp
+    ../lib/gx/texture.cpp
+  )
+  target_include_directories(gx_texture_cache_tests PRIVATE
+    ../include
+    ../lib
+  )
+  target_compile_definitions(gx_texture_cache_tests PRIVATE AURORA TARGET_PC)
+  target_link_libraries(gx_texture_cache_tests PRIVATE
+    gtest
+    gtest_main
+    fmt::fmt
+    xxhash
+    absl::flat_hash_map
+    dawn::webgpu_dawn
+    TracyClient
+    ${AURORA_SDL3_TARGET}
+  )
+  gtest_discover_tests(gx_texture_cache_tests)
+
   add_executable(render_worker_tests
     render_worker_test.cpp
     ../lib/gfx/render_worker.cpp

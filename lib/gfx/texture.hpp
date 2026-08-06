@@ -132,9 +132,11 @@ namespace aurora::gfx {
 struct TextureBind {
   TextureHandle ref;
   GXTexObj_ texObj;
+  uint64_t generation = 0;
 
   TextureBind() noexcept = default;
-  TextureBind(const GXTexObj_& obj, TextureHandle handle) noexcept : ref(std::move(handle)), texObj(obj) {}
+  TextureBind(const GXTexObj_& obj, TextureHandle handle, uint64_t bindGeneration = 0) noexcept
+  : ref(std::move(handle)), texObj(obj), generation(bindGeneration) {}
   void reset() noexcept { ref.reset(); }
   [[nodiscard]] wgpu::SamplerDescriptor get_descriptor() const noexcept;
   operator bool() const noexcept { return ref.operator bool(); }

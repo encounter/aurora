@@ -6,6 +6,7 @@
 #include "../../window.hpp"
 #include "../../gfx/clear.hpp"
 #include "../../webgpu/gpu.hpp"
+#include "../../gx/texture.hpp"
 #include "../vi/vi_internal.hpp"
 
 #include <algorithm>
@@ -82,6 +83,7 @@ void copy_tex(const void* dest, GXBool clear) noexcept {
                          clear_depth_value(), texCopyFmt);
   ++handle.revision;
   g_gxState.copyTextures[dest] = handle;
+  texture::invalidate_bindings();
 }
 } // namespace aurora::gx
 
