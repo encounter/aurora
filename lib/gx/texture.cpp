@@ -21,6 +21,8 @@
 
 namespace aurora::gx {
 namespace {
+constexpr Module Log{"aurora::gx::texture"};
+
 struct DynamicPaletteKey {
   const void* sourceIdentity = nullptr;
   u32 width = 0;
