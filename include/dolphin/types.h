@@ -78,7 +78,7 @@ typedef int BOOL;
 #define ATTRIBUTE_ALIGN(num) __attribute__((aligned(num)))
 #elif defined(_MSC_VER)
 #define AT_ADDRESS(addr)
-#define ATTRIBUTE_ALIGN(num)
+#define ATTRIBUTE_ALIGN(num) __declspec(align(num))
 #else
 #error unknown compiler
 #endif
