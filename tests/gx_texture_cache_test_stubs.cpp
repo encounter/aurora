@@ -17,6 +17,8 @@ uint64_t s_paletteConversions = 0;
 aurora::gfx::TextureHandle s_replacement;
 std::optional<aurora::texture::TextureSourceKey> s_sourceKey;
 aurora::gfx::TextureHandle s_sourceReplacement;
+uint64_t s_replacementId = 0;
+uint64_t s_sourceReplacementId = 0;
 } // namespace
 
 namespace aurora {
@@ -48,14 +50,20 @@ void reset_texture_stubs() {
   s_replacement.reset();
   s_sourceKey.reset();
   s_sourceReplacement.reset();
+  s_replacementId = 0;
+  s_sourceReplacementId = 0;
 }
 
 uint64_t texture_allocations() { return s_textureAllocations; }
 uint64_t palette_conversions() { return s_paletteConversions; }
-void set_replacement(gfx::TextureHandle handle) { s_replacement = std::move(handle); }
+void set_replacement(gfx::TextureHandle handle, uint64_t id) {
+  s_replacement = std::move(handle);
+  s_replacementId = id;
+}
 void set_source_replacement(aurora::texture::TextureSourceKey key, gfx::TextureHandle handle) {
   s_sourceKey = key;
   s_sourceReplacement = std::move(handle);
+  s_sourceReplacementId = 2;
 }
 } // namespace testing
 } // namespace aurora::gx
@@ -104,23 +112,20 @@ void queue_palette_conv(tex_palette_conv::ConvRequest req) { ++s_paletteConversi
 } // namespace aurora::gfx
 
 namespace aurora::gfx::texture_replacement {
-std::optional<TextureHandle> find_replacement(const GXTexObj_& obj) noexcept {
-  return s_replacement ? std::optional{s_replacement} : std::nullopt;
-}
+StreamingStats process_streaming() noexcept { return {}; }
 
-std::optional<TextureHandle> find_replacement(const GXTexObj_& obj, const GXTlutObj_& tlut) noexcept {
-  return s_replacement ? std::optional{s_replacement} : std::nullopt;
-}
-
-std::optional<TextureHandle> find_pointer_replacement(const GXTexObj_& obj) noexcept {
-  return s_replacement ? std::optional{s_replacement} : std::nullopt;
+std::optional<ReplacementResult> find_pointer_replacement(const GXTexObj_& obj) noexcept {
+  return s_replacementId != 0 ? std::optional{ReplacementResult{.handle = s_replacement, .id = s_replacementId}}
+                              : std::nullopt;
 }
 
 bool should_build_source_key() noexcept { return s_sourceKey.has_value(); }
 
-std::optional<TextureHandle> find_source_replacement(const GXTexObj_& obj,
-                                                     const aurora::texture::TextureSourceKey& sourceKey) noexcept {
-  return s_sourceKey.has_value() && sourceKey == *s_sourceKey ? std::optional{s_sourceReplacement} : std::nullopt;
+std::optional<ReplacementResult> find_source_replacement(const GXTexObj_& obj,
+                                                         const aurora::texture::TextureSourceKey& sourceKey) noexcept {
+  return s_sourceKey.has_value() && sourceKey == *s_sourceKey
+             ? std::optional{ReplacementResult{.handle = s_sourceReplacement, .id = s_sourceReplacementId}}
+             : std::nullopt;
 }
 
 std::string build_texture_replacement_name(const GXTexObj_& obj) noexcept { return "test texture"; }

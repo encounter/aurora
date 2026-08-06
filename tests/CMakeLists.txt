@@ -90,6 +90,22 @@ if (AURORA_ENABLE_GX)
   )
   gtest_discover_tests(gx_texture_cache_tests)
 
+  add_executable(texture_replacement_streaming_tests
+    texture_replacement_streaming_test.cpp
+  )
+  target_include_directories(texture_replacement_streaming_tests PRIVATE
+    ../include
+    ../lib
+  )
+  target_compile_definitions(texture_replacement_streaming_tests PRIVATE AURORA TARGET_PC)
+  target_link_libraries(texture_replacement_streaming_tests PRIVATE
+    aurora::gx
+    aurora::vi
+    gtest
+    gtest_main
+  )
+  gtest_discover_tests(texture_replacement_streaming_tests)
+
   add_executable(render_worker_tests
     render_worker_test.cpp
     ../lib/gfx/render_worker.cpp

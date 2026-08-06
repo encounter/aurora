@@ -1360,7 +1360,6 @@ void initialize() {
   depth_peek::initialize();
   tex_copy_conv::initialize();
   tex_palette_conv::initialize();
-  texture_replacement::initialize();
 
   // For uniform & storage buffer offset alignments
   g_device.GetLimits(&g_cachedLimits);

@@ -64,9 +64,11 @@ std::optional<TextureSourceKey> parse_replacement_filename(std::string_view file
 /// Callback source for replacement files that do not live on the filesystem.
 ///
 /// read() loads the entire encoded file at `path` into outBytes, returning false if the file is
-/// unavailable. It must be thread safe: it is invoked lazily, from arbitrary threads, at any point
-/// between registration and unregistration, with internal registry locks held. It must not call
-/// back into aurora::texture.
+/// unavailable. It must be thread safe: it is invoked lazily from Aurora worker threads without
+/// internal registry locks held. `userData` must remain valid until unregistration returns;
+/// unregistration may wait for one in-flight read callback to finish.
+///
+/// The callback must not call back into aurora::texture.
 struct VirtualFileSource {
   bool (*read)(void* userData, const char* path, std::vector<uint8_t>& outBytes) = nullptr;
   void* userData = nullptr;
@@ -82,7 +84,7 @@ ReplacementRegistration register_virtual_replacement(std::string_view path, Virt
                                                      ReplacementOptions options = {});
 
 ReplacementRegistration register_replacement(ReplacementKey key, RawTextureReplacement replacement,
-                                              ReplacementOptions options = {});
+                                             ReplacementOptions options = {});
 void unregister_replacement(const ReplacementRegistration& registration);
 void unregister_replacements(std::span<const ReplacementRegistration> registrations);
 void unregister_replacements(const ReplacementGroup& group);

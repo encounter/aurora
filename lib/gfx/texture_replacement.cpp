@@ -2,6 +2,7 @@
 
 #include "../fs_helper.hpp"
 #include "../gx/gx.hpp"
+#include "../gx/texture.hpp"
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"
 #include "dds_io.hpp"
@@ -10,6 +11,7 @@
 
 #include <aurora/texture.hpp>
 #include <fmt/format.h>
+#include <SDL3/SDL_thread.h>
 #include <tracy/Tracy.hpp>
 
 #include <absl/container/flat_hash_map.h>
@@ -19,14 +21,21 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
+#include <deque>
 #include <filesystem>
 #include <list>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace aurora::texture {
@@ -43,6 +52,13 @@ enum class EntryKind {
   Virtual,
 };
 
+struct VirtualReadState {
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool cancelled = false;
+  uint32_t inFlight = 0;
+};
+
 struct ReplacementEntry {
   uint64_t id = 0;
   int32_t priority = 0;
@@ -57,6 +73,14 @@ struct ReplacementEntry {
   std::filesystem::path path;
   std::string virtualPath;
   VirtualFileSource source;
+  std::shared_ptr<VirtualReadState> virtualReadState;
+  std::optional<gfx::ConvertedTexture> thumbnail;
+  bool thumbnailIncludesBase = false;
+};
+
+enum class Tier {
+  Thumbnail,
+  Full,
 };
 
 struct SelectedCache {
@@ -64,6 +88,30 @@ struct SelectedCache {
   uint64_t id = 0;
   uint64_t bytes = 0;
   std::list<ReplacementKey>::iterator lruIt;
+  Tier tier = Tier::Full;
+};
+
+struct EntryLoadSnapshot {
+  ReplacementKey key;
+  uint64_t id = 0;
+  EntryKind kind = EntryKind::File;
+  std::string label;
+  std::filesystem::path path;
+  std::string virtualPath;
+  VirtualFileSource source;
+  std::shared_ptr<VirtualReadState> virtualReadState;
+};
+
+struct LoadJob {
+  Tier tier = Tier::Full;
+  EntryLoadSnapshot entry;
+};
+
+struct LoadCompletion {
+  Tier tier = Tier::Full;
+  EntryLoadSnapshot entry;
+  std::optional<gfx::ConvertedTexture> texture;
+  bool thumbnailStored = false;
 };
 
 struct SourceKeyHash {
@@ -93,6 +141,23 @@ uint64_t s_replacementCacheBytes = 0;
 uint64_t s_nextRegistrationId = 1;
 uint64_t s_nextSequence = 1;
 uint32_t s_sourceEntryCount = 0;
+
+std::mutex s_jobMutex;
+std::condition_variable s_jobCv;
+std::deque<LoadJob> s_highPriorityJobs;
+std::deque<LoadJob> s_lowPriorityJobs;
+std::deque<LoadCompletion> s_workerCompletions;
+std::vector<LoadCompletion> s_readyPublishes;
+std::unordered_map<uint64_t, uint64_t> s_pendingFullLoads;
+std::unordered_set<uint64_t> s_pendingThumbnailLoads;
+std::vector<std::thread> s_workers;
+uint64_t s_requestSequence = 0;
+bool s_workersStopping = false;
+bool s_workersPaused = false;
+uint32_t s_workerCountOverride = 0;
+
+const ReplacementEntry* find_selected_entry_locked(const ReplacementKey& key) noexcept;
+ReplacementEntry* find_entry_locked(const ReplacementKey& key, uint64_t id) noexcept;
 
 unsigned char ascii_lower(unsigned char ch) noexcept {
   if (ch >= 'A' && ch <= 'Z') {
@@ -491,6 +556,35 @@ struct FileTextureSource {
   std::optional<gfx::ConvertedTexture> load_mip() { return load_texture_file(mipPath); }
 };
 
+bool guarded_virtual_read(const std::shared_ptr<VirtualReadState>& state, const VirtualFileSource& source,
+                          const char* path, std::vector<uint8_t>& outBytes) {
+  if (!state || source.read == nullptr) {
+    return false;
+  }
+
+  {
+    std::unique_lock lock{state->mutex};
+    state->cv.wait(lock, [&] { return state->cancelled || state->inFlight == 0; });
+    if (state->cancelled) {
+      return false;
+    }
+    state->inFlight = 1;
+  }
+
+  bool read = false;
+  try {
+    read = source.read(source.userData, path, outBytes);
+  } catch (...) { Log.warn("texture_replacement: virtual read callback threw for {}", path); }
+  bool cancelled = false;
+  {
+    std::lock_guard lock{state->mutex};
+    cancelled = state->cancelled;
+    state->inFlight = 0;
+  }
+  state->cv.notify_all();
+  return read && !cancelled;
+}
+
 std::string derive_virtual_mip_name(std::string_view path, uint32_t mipLevel) {
   const size_t slash = path.rfind('/');
   const size_t nameStart = slash == std::string_view::npos ? 0 : slash + 1;
@@ -503,7 +597,8 @@ std::string derive_virtual_mip_name(std::string_view path, uint32_t mipLevel) {
 
 struct VirtualTextureSource {
   std::string_view path;
-  const VirtualFileSource& source;
+  VirtualFileSource source;
+  std::shared_ptr<VirtualReadState> readState;
   std::vector<uint8_t> bytes;
   std::string mipPath;
 
@@ -518,7 +613,8 @@ struct VirtualTextureSource {
   std::string name() const { return std::string{path}; }
   std::optional<gfx::ConvertedTexture> load_base() {
     bytes.clear();
-    if (!source.read(source.userData, std::string{path}.c_str(), bytes)) {
+    const auto pathString = std::string{path};
+    if (!guarded_virtual_read(readState, source, pathString.c_str(), bytes)) {
       return std::nullopt;
     }
     return decode();
@@ -526,7 +622,7 @@ struct VirtualTextureSource {
   bool open_mip(uint32_t mipLevel) {
     mipPath = derive_virtual_mip_name(path, mipLevel);
     bytes.clear();
-    return source.read(source.userData, mipPath.c_str(), bytes);
+    return guarded_virtual_read(readState, source, mipPath.c_str(), bytes);
   }
   std::string mip_name() const { return mipPath; }
   std::optional<gfx::ConvertedTexture> load_mip() { return decode(); }
@@ -622,19 +718,242 @@ std::optional<gfx::ConvertedTexture> load_encoded_replacement(Source&& src) noex
   };
 }
 
-std::optional<gfx::ConvertedTexture> load_file_replacement(const ReplacementEntry& entry) noexcept {
+std::optional<gfx::ConvertedTexture> load_file_replacement(const EntryLoadSnapshot& entry) noexcept {
   return load_encoded_replacement(FileTextureSource{.path = entry.path});
 }
 
-std::optional<gfx::ConvertedTexture> load_virtual_replacement(const ReplacementEntry& entry) noexcept {
-  return load_encoded_replacement(VirtualTextureSource{.path = entry.virtualPath, .source = entry.source});
+std::optional<gfx::ConvertedTexture> load_virtual_replacement(const EntryLoadSnapshot& entry) noexcept {
+  return load_encoded_replacement(VirtualTextureSource{
+      .path = entry.virtualPath,
+      .source = entry.source,
+      .readState = entry.virtualReadState,
+  });
+}
+
+EntryLoadSnapshot snapshot_entry(const ReplacementKey& key, const ReplacementEntry& entry) {
+  return EntryLoadSnapshot{
+      .key = key,
+      .id = entry.id,
+      .kind = entry.kind,
+      .label = entry.label,
+      .path = entry.path,
+      .virtualPath = entry.virtualPath,
+      .source = entry.source,
+      .virtualReadState = entry.virtualReadState,
+  };
+}
+
+bool is_dds_entry(const EntryLoadSnapshot& entry) {
+  const std::string extension = entry.kind == EntryKind::File
+                                    ? fs_path_to_string(entry.path.extension())
+                                    : fs_path_to_string(std::filesystem::path{entry.virtualPath}.extension());
+  return iequals_ascii(extension, ".dds");
+}
+
+std::optional<gfx::dds::MipTail> load_thumbnail(const EntryLoadSnapshot& entry) noexcept {
+  if (!is_dds_entry(entry)) {
+    return std::nullopt;
+  }
+  if (entry.kind == EntryKind::File) {
+    return gfx::dds::load_dds_mip_tail(entry.path, gx::texture::ReplacementThumbnailDim);
+  }
+  if (entry.kind != EntryKind::Virtual) {
+    return std::nullopt;
+  }
+
+  std::vector<uint8_t> bytes;
+  if (!guarded_virtual_read(entry.virtualReadState, entry.source, entry.virtualPath.c_str(), bytes)) {
+    return std::nullopt;
+  }
+  return gfx::dds::parse_dds_mip_tail({bytes.data(), bytes.size()}, gx::texture::ReplacementThumbnailDim);
+}
+
+void worker_main() {
+  SDL_SetCurrentThreadPriority(SDL_THREAD_PRIORITY_LOW);
+  while (true) {
+    LoadJob job;
+    {
+      std::unique_lock lock{s_jobMutex};
+      s_jobCv.wait(lock, [] {
+        return s_workersStopping || (!s_workersPaused && (!s_highPriorityJobs.empty() || !s_lowPriorityJobs.empty()));
+      });
+      if (s_workersStopping) {
+        return;
+      }
+      if (!s_highPriorityJobs.empty()) {
+        job = std::move(s_highPriorityJobs.front());
+        s_highPriorityJobs.pop_front();
+      } else {
+        job = std::move(s_lowPriorityJobs.front());
+        s_lowPriorityJobs.pop_front();
+      }
+    }
+
+    std::optional<gfx::ConvertedTexture> texture;
+    bool thumbnailIncludesBase = false;
+    bool thumbnailStored = false;
+    if (job.tier == Tier::Thumbnail) {
+      if (auto thumbnail = load_thumbnail(job.entry); thumbnail.has_value()) {
+        texture = std::move(thumbnail->texture);
+        thumbnailIncludesBase = thumbnail->includesBase;
+      }
+    } else if (job.entry.kind == EntryKind::File) {
+      texture = load_file_replacement(job.entry);
+    } else if (job.entry.kind == EntryKind::Virtual) {
+      texture = load_virtual_replacement(job.entry);
+    }
+
+    if (job.tier == Tier::Thumbnail && texture.has_value() && !is_unsupported_texture_format(texture->format) &&
+        validate_texture_size(texture->format, texture->width, texture->height, job.entry.label)) {
+      std::lock_guard lock{s_registryMutex};
+      if (auto* entry = find_entry_locked(job.entry.key, job.entry.id); entry != nullptr) {
+        entry->thumbnail = std::move(texture);
+        entry->thumbnailIncludesBase = thumbnailIncludesBase;
+        thumbnailStored = true;
+      }
+    }
+
+    {
+      std::lock_guard lock{s_jobMutex};
+      if (!s_workersStopping) {
+        if (job.tier == Tier::Thumbnail) {
+          s_pendingThumbnailLoads.erase(job.entry.id);
+        }
+        s_workerCompletions.push_back({
+            .tier = job.tier,
+            .entry = std::move(job.entry),
+            .texture = job.tier == Tier::Full ? std::move(texture) : std::nullopt,
+            .thumbnailStored = thumbnailStored,
+        });
+      }
+    }
+    s_jobCv.notify_all();
+  }
+}
+
+void start_worker_pool() {
+  if constexpr (!gx::texture::AsyncTextureReplacements) {
+    return;
+  }
+  std::lock_guard lock{s_jobMutex};
+  if (!s_workers.empty()) {
+    return;
+  }
+  s_workersStopping = false;
+  const uint32_t hardwareThreads = std::max(std::thread::hardware_concurrency(), 1u);
+  const uint32_t workerCount =
+      s_workerCountOverride != 0 ? s_workerCountOverride : std::clamp(hardwareThreads / 2, 2u, 4u);
+  for (uint32_t i = 0; i < workerCount; ++i) {
+    s_workers.emplace_back(worker_main);
+  }
+}
+
+void stop_worker_pool() {
+  if constexpr (!gx::texture::AsyncTextureReplacements) {
+    return;
+  }
+  {
+    std::lock_guard lock{s_jobMutex};
+    s_workersStopping = true;
+    s_highPriorityJobs.clear();
+    s_lowPriorityJobs.clear();
+  }
+  s_jobCv.notify_all();
+  for (auto& worker : s_workers) {
+    if (worker.joinable()) {
+      worker.join();
+    }
+  }
+  {
+    std::lock_guard lock{s_jobMutex};
+    s_workers.clear();
+    s_workerCompletions.clear();
+    s_pendingFullLoads.clear();
+    s_pendingThumbnailLoads.clear();
+    s_requestSequence = 0;
+    s_workersPaused = false;
+    s_workersStopping = false;
+  }
+  s_readyPublishes.clear();
+}
+
+void queue_full_load(const EntryLoadSnapshot& entry) {
+  if constexpr (!gx::texture::AsyncTextureReplacements) {
+    return;
+  }
+  start_worker_pool();
+  std::lock_guard lock{s_jobMutex};
+  const uint64_t priority = ++s_requestSequence;
+  const auto [it, inserted] = s_pendingFullLoads.emplace(entry.id, priority);
+  if (!inserted) {
+    it->second = priority;
+    return;
+  }
+  s_highPriorityJobs.push_back({.tier = Tier::Full, .entry = entry});
+  s_jobCv.notify_one();
+}
+
+void queue_thumbnail_load(const EntryLoadSnapshot& entry) {
+  if constexpr (!gx::texture::AsyncTextureReplacements || gx::texture::ReplacementThumbnailDim == 0) {
+    return;
+  }
+  if (!is_dds_entry(entry)) {
+    return;
+  }
+  start_worker_pool();
+  std::lock_guard lock{s_jobMutex};
+  if (!s_pendingThumbnailLoads.insert(entry.id).second) {
+    return;
+  }
+  s_lowPriorityJobs.push_back({.tier = Tier::Thumbnail, .entry = entry});
+  s_jobCv.notify_one();
+}
+
+void finish_full_load(uint64_t id) {
+  std::lock_guard lock{s_jobMutex};
+  s_pendingFullLoads.erase(id);
+}
+
+uint64_t pending_full_load_count() {
+  std::lock_guard lock{s_jobMutex};
+  return s_pendingFullLoads.size();
+}
+
+uint64_t converted_upload_bytes(const gfx::ConvertedTexture& texture) noexcept {
+  const auto info = gfx::format_info(texture.format);
+  uint64_t total = 0;
+  for (uint32_t mip = 0; mip < texture.mips; ++mip) {
+    const uint64_t width = std::max(texture.width >> mip, 1u);
+    const uint64_t height = std::max(texture.height >> mip, 1u);
+    const uint64_t widthBlocks = (width + info.blockWidth - 1) / info.blockWidth;
+    const uint64_t heightBlocks = (height + info.blockHeight - 1) / info.blockHeight;
+    const uint64_t bytesPerRow = widthBlocks * info.blockSize;
+    const uint64_t alignedBytesPerRow = AURORA_ALIGN(bytesPerRow, 256);
+    if (heightBlocks != 0 && alignedBytesPerRow > UINT64_MAX / heightBlocks) {
+      return UINT64_MAX;
+    }
+    const uint64_t mipBytes = alignedBytesPerRow * heightBlocks;
+    if (mipBytes > UINT64_MAX - total) {
+      return UINT64_MAX;
+    }
+    total += mipBytes;
+  }
+  return total;
+}
+
+bool publish_fits_budget(uint64_t publishedCount, uint64_t publishedBytes, uint64_t nextBytes) noexcept {
+  if (publishedCount == 0) {
+    return true;
+  }
+  return nextBytes <= gx::texture::ReplacementPublishBudgetBytes &&
+         publishedBytes <= gx::texture::ReplacementPublishBudgetBytes - nextBytes;
 }
 
 std::string entry_path_for_log(const ReplacementEntry& entry) {
   return entry.kind == EntryKind::Virtual ? entry.virtualPath : fs_path_to_string(entry.path);
 }
 
-gfx::TextureHandle create_converted_texture_handle(const ReplacementKey& key, const ReplacementEntry& entry,
+gfx::TextureHandle create_converted_texture_handle(const EntryLoadSnapshot& entry,
                                                    const gfx::ConvertedTexture& replacement) noexcept {
   const auto label = entry.label.empty() ? fmt::format("TextureReplacement {}", entry.id) : entry.label;
   const wgpu::Extent3D size{
@@ -712,8 +1031,33 @@ void touch_cached_replacement(decltype(s_cacheByKey)::iterator it) noexcept {
 void evict_replacement_cache_if_needed() noexcept {
   while (s_replacementCacheBytes > kReplacementCacheBudgetBytes && !s_replacementLru.empty()) {
     const auto key = s_replacementLru.back();
+    const auto cache = s_cacheByKey.find(key);
+    const uint64_t id = cache == s_cacheByKey.end() ? 0 : cache->second.id;
     erase_cache_locked(key);
+    if (id != 0) {
+      gx::texture::invalidate_replacement(id);
+      gx::texture::invalidate_bindings();
+    }
   }
+}
+
+void cache_replacement_locked(const ReplacementKey& key, uint64_t id, gfx::TextureHandle handle, Tier tier) noexcept {
+  erase_cache_locked(key);
+  if (!handle) {
+    return;
+  }
+  const uint64_t replacementBytes =
+      gfx::calc_texture_size(handle->format, handle->size.width, handle->size.height, handle->mipCount);
+  s_replacementLru.push_front(key);
+  s_cacheByKey.emplace(key, SelectedCache{
+                                .handle = std::move(handle),
+                                .id = id,
+                                .bytes = replacementBytes,
+                                .lruIt = s_replacementLru.begin(),
+                                .tier = tier,
+                            });
+  s_replacementCacheBytes += replacementBytes;
+  evict_replacement_cache_if_needed();
 }
 
 const ReplacementEntry* select_entry(const std::vector<ReplacementEntry>& entries) noexcept {
@@ -733,6 +1077,16 @@ const ReplacementEntry* find_selected_entry_locked(const ReplacementKey& key) no
     return nullptr;
   }
   return select_entry(it->second);
+}
+
+ReplacementEntry* find_entry_locked(const ReplacementKey& key, uint64_t id) noexcept {
+  const auto it = s_entriesByKey.find(key);
+  if (it == s_entriesByKey.end()) {
+    return nullptr;
+  }
+  const auto entry = std::find_if(it->second.begin(), it->second.end(),
+                                  [id](const ReplacementEntry& candidate) { return candidate.id == id; });
+  return entry == it->second.end() ? nullptr : &*entry;
 }
 
 std::optional<ReplacementKey> find_source_replacement_key_locked(const TextureSourceKey& key) noexcept {
@@ -767,13 +1121,14 @@ gfx::TextureHandle load_entry_handle(const ReplacementKey& key, const Replacemen
 
   gfx::TextureHandle handle;
   if (entry.kind == EntryKind::File || entry.kind == EntryKind::Virtual) {
+    const auto snapshot = snapshot_entry(key, entry);
     const auto replacement =
-        entry.kind == EntryKind::File ? load_file_replacement(entry) : load_virtual_replacement(entry);
+        entry.kind == EntryKind::File ? load_file_replacement(snapshot) : load_virtual_replacement(snapshot);
     if (!replacement.has_value()) {
       s_failedIds.insert(entry.id);
       return {};
     }
-    handle = create_converted_texture_handle(key, entry, *replacement);
+    handle = create_converted_texture_handle(snapshot, *replacement);
   } else {
     handle = create_raw_texture_handle(entry);
     if (!handle) {
@@ -784,7 +1139,8 @@ gfx::TextureHandle load_entry_handle(const ReplacementKey& key, const Replacemen
   return handle;
 }
 
-std::optional<gfx::TextureHandle> find_replacement_for_key_locked(const ReplacementKey& key) noexcept {
+std::optional<gfx::texture_replacement::ReplacementResult>
+find_replacement_for_key_locked(const ReplacementKey& key) noexcept {
   const auto* entry = find_selected_entry_locked(key);
   if (entry == nullptr) {
     return std::nullopt;
@@ -792,24 +1148,39 @@ std::optional<gfx::TextureHandle> find_replacement_for_key_locked(const Replacem
 
   if (const auto cache = s_cacheByKey.find(key); cache != s_cacheByKey.end() && cache->second.id == entry->id) {
     touch_cached_replacement(cache);
-    return cache->second.handle;
+    if (cache->second.tier == Tier::Thumbnail && !s_failedIds.contains(entry->id)) {
+      queue_full_load(snapshot_entry(key, *entry));
+    }
+    return gfx::texture_replacement::ReplacementResult{.handle = cache->second.handle, .id = entry->id};
   }
 
   erase_cache_locked(key);
-  auto handle = load_entry_handle(key, *entry);
-  if (!handle) {
-    return std::nullopt;
+  if constexpr (gx::texture::AsyncTextureReplacements) {
+    // Raw entry data is borrowed, so they must take the synchronous path.
+    if (entry->kind != EntryKind::Raw) {
+      gfx::TextureHandle thumbnailHandle;
+      Tier tier = Tier::Thumbnail;
+      if (entry->thumbnail.has_value() && !is_unsupported_texture_format(entry->thumbnail->format) &&
+          validate_texture_size(entry->thumbnail->format, entry->thumbnail->width, entry->thumbnail->height,
+                                entry->label)) {
+        const auto snapshot = snapshot_entry(key, *entry);
+        thumbnailHandle = create_converted_texture_handle(snapshot, *entry->thumbnail);
+        tier = entry->thumbnailIncludesBase ? Tier::Full : Tier::Thumbnail;
+        cache_replacement_locked(key, entry->id, thumbnailHandle, tier);
+      }
+      if (tier != Tier::Full && !s_failedIds.contains(entry->id)) {
+        queue_full_load(snapshot_entry(key, *entry));
+      }
+      return gfx::texture_replacement::ReplacementResult{.handle = std::move(thumbnailHandle), .id = entry->id};
+    }
   }
 
-  const uint64_t replacementBytes =
-      gfx::calc_texture_size(handle->format, handle->size.width, handle->size.height, handle->mipCount);
-  s_replacementLru.push_front(key);
-  s_cacheByKey.emplace(
-      key,
-      SelectedCache{.handle = handle, .id = entry->id, .bytes = replacementBytes, .lruIt = s_replacementLru.begin()});
-  s_replacementCacheBytes += replacementBytes;
-  evict_replacement_cache_if_needed();
-  return handle;
+  auto handle = load_entry_handle(key, *entry);
+  if (!handle) {
+    return gfx::texture_replacement::ReplacementResult{.id = entry->id};
+  }
+  cache_replacement_locked(key, entry->id, handle, Tier::Full);
+  return gfx::texture_replacement::ReplacementResult{.handle = std::move(handle), .id = entry->id};
 }
 
 bool dump_editable_texture_dds(const TextureSourceKey& key, const GXTexObj_& obj) noexcept {
@@ -890,7 +1261,79 @@ bool report_missing_key(const TextureSourceKey& key, const GXTexObj_& obj) noexc
   return true;
 }
 
-void clear_replacement_runtime_state_locked() noexcept {
+bool is_source_key(const ReplacementKey& key) noexcept;
+
+void cancel_virtual_entry_locked(const ReplacementEntry& entry,
+                                 std::vector<std::shared_ptr<VirtualReadState>>& waitStates) {
+  if (!entry.virtualReadState) {
+    return;
+  }
+  {
+    std::lock_guard lock{entry.virtualReadState->mutex};
+    entry.virtualReadState->cancelled = true;
+  }
+  entry.virtualReadState->cv.notify_all();
+  waitStates.push_back(entry.virtualReadState);
+}
+
+void wait_for_virtual_reads(const std::vector<std::shared_ptr<VirtualReadState>>& states) {
+  for (const auto& state : states) {
+    std::unique_lock lock{state->mutex};
+    state->cv.wait(lock, [&] { return state->inFlight == 0; });
+  }
+}
+
+void cancel_queued_jobs(uint64_t id) {
+  std::lock_guard lock{s_jobMutex};
+  const auto removeId = [id](const LoadJob& job) { return job.entry.id == id; };
+  const auto oldHighSize = s_highPriorityJobs.size();
+  const auto oldLowSize = s_lowPriorityJobs.size();
+  s_highPriorityJobs.erase(std::remove_if(s_highPriorityJobs.begin(), s_highPriorityJobs.end(), removeId),
+                           s_highPriorityJobs.end());
+  s_lowPriorityJobs.erase(std::remove_if(s_lowPriorityJobs.begin(), s_lowPriorityJobs.end(), removeId),
+                          s_lowPriorityJobs.end());
+  if (s_highPriorityJobs.size() != oldHighSize) {
+    s_pendingFullLoads.erase(id);
+  }
+  if (s_lowPriorityJobs.size() != oldLowSize) {
+    s_pendingThumbnailLoads.erase(id);
+  }
+}
+
+bool unregister_replacement_locked(const ReplacementRegistration& registration,
+                                   std::vector<std::shared_ptr<VirtualReadState>>& waitStates) {
+  const auto it = s_entriesByKey.find(registration.key);
+  if (it == s_entriesByKey.end()) {
+    return false;
+  }
+
+  auto& entries = it->second;
+  const auto entry = std::find_if(entries.begin(), entries.end(),
+                                  [&](const ReplacementEntry& candidate) { return candidate.id == registration.id; });
+  if (entry == entries.end()) {
+    return false;
+  }
+  cancel_virtual_entry_locked(*entry, waitStates);
+  cancel_queued_jobs(entry->id);
+  if (is_source_key(registration.key)) {
+    --s_sourceEntryCount;
+  }
+  s_failedIds.erase(registration.id);
+  erase_cache_locked(registration.key);
+  entries.erase(entry);
+  if (entries.empty()) {
+    s_entriesByKey.erase(it);
+  }
+  return true;
+}
+
+void clear_replacement_runtime_state_locked(std::vector<std::shared_ptr<VirtualReadState>>& waitStates) noexcept {
+  for (const auto& [_, entries] : s_entriesByKey) {
+    for (const auto& entry : entries) {
+      cancel_virtual_entry_locked(entry, waitStates);
+      cancel_queued_jobs(entry.id);
+    }
+  }
   s_entriesByKey.clear();
   s_cacheByKey.clear();
   s_failedIds.clear();
@@ -921,6 +1364,8 @@ ReplacementRegistration register_file_replacement(TextureSourceKey key, std::fil
       .path = std::move(path),
   });
   ++s_sourceEntryCount;
+  const auto snapshot = snapshot_entry(replacementKey, entries.back());
+  queue_thumbnail_load(snapshot);
   erase_cache_locked(replacementKey);
   gx::clear_static_texture_cache();
   return registration;
@@ -1062,58 +1507,71 @@ void unregister_replacement(const ReplacementRegistration& registration) {
     return;
   }
 
-  std::lock_guard lk(s_registryMutex);
-  const auto it = s_entriesByKey.find(registration.key);
-  if (it == s_entriesByKey.end()) {
-    return;
+  std::vector<std::shared_ptr<VirtualReadState>> waitStates;
+  bool removed = false;
+  {
+    std::lock_guard lk(s_registryMutex);
+    removed = unregister_replacement_locked(registration, waitStates);
+    if (removed) {
+      gx::clear_static_texture_cache();
+    }
   }
-
-  auto& entries = it->second;
-  const auto oldSize = entries.size();
-  entries.erase(std::remove_if(entries.begin(), entries.end(),
-                               [&](const ReplacementEntry& entry) { return entry.id == registration.id; }),
-                entries.end());
-  if (entries.size() != oldSize && is_source_key(registration.key)) {
-    --s_sourceEntryCount;
-  }
-  s_failedIds.erase(registration.id);
-  erase_cache_locked(registration.key);
-  if (entries.empty()) {
-    s_entriesByKey.erase(it);
-  }
-  gx::clear_static_texture_cache();
+  wait_for_virtual_reads(waitStates);
 }
 
 void unregister_replacements(std::span<const ReplacementRegistration> registrations) {
-  for (const auto& registration : registrations) {
-    unregister_replacement(registration);
+  std::vector<std::shared_ptr<VirtualReadState>> waitStates;
+  bool removed = false;
+  {
+    std::lock_guard lk(s_registryMutex);
+    for (const auto& registration : registrations) {
+      if (registration.id != 0) {
+        removed |= unregister_replacement_locked(registration, waitStates);
+      }
+    }
+    if (removed) {
+      gx::clear_static_texture_cache();
+    }
   }
+  wait_for_virtual_reads(waitStates);
 }
 
 void unregister_replacements(const ReplacementGroup& group) { unregister_replacements(group.registrations); }
 
 void unregister_replacements(const ReplacementKey& key) {
-  std::lock_guard lk(s_registryMutex);
-  const auto it = s_entriesByKey.find(key);
-  if (it == s_entriesByKey.end()) {
-    return;
+  std::vector<std::shared_ptr<VirtualReadState>> waitStates;
+  bool removed = false;
+  {
+    std::lock_guard lk(s_registryMutex);
+    const auto it = s_entriesByKey.find(key);
+    if (it != s_entriesByKey.end()) {
+      if (is_source_key(key)) {
+        s_sourceEntryCount -= std::min<uint32_t>(s_sourceEntryCount, static_cast<uint32_t>(it->second.size()));
+      }
+      for (const auto& entry : it->second) {
+        cancel_virtual_entry_locked(entry, waitStates);
+        cancel_queued_jobs(entry.id);
+        s_failedIds.erase(entry.id);
+      }
+      erase_cache_locked(key);
+      s_entriesByKey.erase(it);
+      gx::clear_static_texture_cache();
+      removed = true;
+    }
   }
-
-  if (is_source_key(key)) {
-    s_sourceEntryCount -= std::min<uint32_t>(s_sourceEntryCount, static_cast<uint32_t>(it->second.size()));
+  if (removed) {
+    wait_for_virtual_reads(waitStates);
   }
-  for (const auto& entry : it->second) {
-    s_failedIds.erase(entry.id);
-  }
-  erase_cache_locked(key);
-  s_entriesByKey.erase(it);
-  gx::clear_static_texture_cache();
 }
 
 void clear_replacements() {
-  std::lock_guard lk(s_registryMutex);
-  clear_replacement_runtime_state_locked();
-  gx::clear_static_texture_cache();
+  std::vector<std::shared_ptr<VirtualReadState>> waitStates;
+  {
+    std::lock_guard lk(s_registryMutex);
+    clear_replacement_runtime_state_locked(waitStates);
+    gx::clear_static_texture_cache();
+  }
+  wait_for_virtual_reads(waitStates);
 }
 
 ReplacementRegistration register_virtual_replacement(std::string_view path, VirtualFileSource source,
@@ -1145,8 +1603,11 @@ ReplacementRegistration register_virtual_replacement(std::string_view path, Virt
       .label = fmt::format("TextureReplacement {}", filename),
       .virtualPath = std::string{path},
       .source = source,
+      .virtualReadState = std::make_shared<VirtualReadState>(),
   });
   ++s_sourceEntryCount;
+  const auto snapshot = snapshot_entry(replacementKey, entries.back());
+  queue_thumbnail_load(snapshot);
   erase_cache_locked(replacementKey);
   gx::clear_static_texture_cache();
   return registration;
@@ -1234,12 +1695,114 @@ bool has_replacement(const GXTexObj* obj, const GXTlutObj* tlut) {
 namespace aurora::gfx::texture_replacement {
 using namespace aurora::texture;
 
-void initialize() noexcept {}
+void shutdown() noexcept {
+  clear_replacements();
+  stop_worker_pool();
+}
 
-void shutdown() noexcept { clear_replacements(); }
+StreamingStats process_streaming() noexcept {
+  if constexpr (!gx::texture::AsyncTextureReplacements) {
+    return {};
+  }
 
-std::optional<TextureHandle> find_source_replacement_locked(const GXTexObj_& obj,
-                                                            const TextureSourceKey& sourceKey) noexcept {
+  std::vector<LoadCompletion> thumbnails;
+  {
+    std::lock_guard lock{s_jobMutex};
+    while (!s_workerCompletions.empty()) {
+      auto completion = std::move(s_workerCompletions.front());
+      s_workerCompletions.pop_front();
+      if (completion.tier == Tier::Thumbnail) {
+        thumbnails.push_back(std::move(completion));
+      } else {
+        s_readyPublishes.push_back(std::move(completion));
+      }
+    }
+  }
+
+  for (auto& completion : thumbnails) {
+    if (!completion.thumbnailStored) {
+      continue;
+    }
+
+    bool invalidate = false;
+    {
+      std::lock_guard lock{s_registryMutex};
+      auto* entry = find_entry_locked(completion.entry.key, completion.entry.id);
+      if (entry == nullptr) {
+        continue;
+      }
+      const auto* selected = find_selected_entry_locked(completion.entry.key);
+      const auto cache = s_cacheByKey.find(completion.entry.key);
+      invalidate = selected != nullptr && selected->id == completion.entry.id &&
+                   (cache == s_cacheByKey.end() || cache->second.id != completion.entry.id);
+    }
+    if (invalidate) {
+      gx::texture::invalidate_replacement(completion.entry.id);
+      gx::texture::invalidate_bindings();
+    }
+  }
+
+  {
+    std::lock_guard lock{s_jobMutex};
+    const auto priority = [](uint64_t id) {
+      const auto it = s_pendingFullLoads.find(id);
+      return it == s_pendingFullLoads.end() ? 0 : it->second;
+    };
+    std::stable_sort(s_readyPublishes.begin(), s_readyPublishes.end(),
+                     [&](const auto& lhs, const auto& rhs) { return priority(lhs.entry.id) > priority(rhs.entry.id); });
+  }
+
+  StreamingStats stats;
+  std::vector<LoadCompletion> deferred;
+  for (auto& completion : s_readyPublishes) {
+    bool selected = false;
+    {
+      std::lock_guard lock{s_registryMutex};
+      const auto* entry = find_selected_entry_locked(completion.entry.key);
+      selected = entry != nullptr && entry->id == completion.entry.id;
+      if (selected && !completion.texture.has_value()) {
+        s_failedIds.insert(completion.entry.id);
+      }
+    }
+    if (!selected || !completion.texture.has_value()) {
+      finish_full_load(completion.entry.id);
+      continue;
+    }
+
+    const uint64_t bytes = converted_upload_bytes(*completion.texture);
+    if (!publish_fits_budget(stats.publishes, stats.publishBytes, bytes)) {
+      deferred.push_back(std::move(completion));
+      continue;
+    }
+
+    auto handle = create_converted_texture_handle(completion.entry, *completion.texture);
+    bool published = false;
+    {
+      std::lock_guard lock{s_registryMutex};
+      const auto* entry = find_selected_entry_locked(completion.entry.key);
+      if (entry != nullptr && entry->id == completion.entry.id) {
+        cache_replacement_locked(completion.entry.key, completion.entry.id, handle, Tier::Full);
+        s_failedIds.erase(completion.entry.id);
+        published = true;
+      }
+    }
+    finish_full_load(completion.entry.id);
+    if (!published) {
+      continue;
+    }
+
+    gx::texture::invalidate_replacement(completion.entry.id);
+    gx::texture::invalidate_bindings();
+    ++stats.publishes;
+    stats.publishBytes += bytes;
+  }
+  s_readyPublishes = std::move(deferred);
+  stats.pendingLoads = pending_full_load_count();
+  return stats;
+}
+
+std::optional<ReplacementResult> find_source_replacement_locked(const GXTexObj_& obj,
+                                                                const TextureSourceKey& sourceKey) noexcept {
   const auto replacementKey = find_source_replacement_key_locked(sourceKey);
   if (!replacementKey.has_value()) {
     const bool alwaysReportMissingKey = false; // Enable for debugging
@@ -1252,53 +1815,7 @@ std::optional<TextureHandle> find_source_replacement_locked(const GXTexObj_& obj
   return find_replacement_for_key_locked(*replacementKey);
 }
 
-std::optional<TextureHandle> find_replacement(const GXTexObj_& obj) noexcept {
-  ZoneScoped;
-
-  std::lock_guard lk(s_registryMutex);
-  if (s_entriesByKey.empty() && !g_config.allowTextureDumps) {
-    return std::nullopt;
-  }
-
-  if (obj.data != nullptr) {
-    ReplacementKey pointerKey{TexturePointerKey{.data = obj.data}};
-    if (s_entriesByKey.contains(pointerKey)) {
-      return find_replacement_for_key_locked(pointerKey);
-    }
-  }
-
-  if (s_sourceEntryCount == 0 && !g_config.allowTextureDumps) {
-    return std::nullopt;
-  }
-
-  const auto sourceKey = build_source_key(obj);
-  return find_source_replacement_locked(obj, sourceKey);
-}
-
-std::optional<TextureHandle> find_replacement(const GXTexObj_& obj, const GXTlutObj_& tlut) noexcept {
-  ZoneScoped;
-
-  std::lock_guard lk(s_registryMutex);
-  if (s_entriesByKey.empty() && !g_config.allowTextureDumps) {
-    return std::nullopt;
-  }
-
-  if (obj.data != nullptr) {
-    ReplacementKey pointerKey{TexturePointerKey{.data = obj.data}};
-    if (s_entriesByKey.contains(pointerKey)) {
-      return find_replacement_for_key_locked(pointerKey);
-    }
-  }
-
-  if (s_sourceEntryCount == 0 && !g_config.allowTextureDumps) {
-    return std::nullopt;
-  }
-
-  const auto sourceKey = build_source_key(obj, tlut);
-  return find_source_replacement_locked(obj, sourceKey);
-}
-
-std::optional<TextureHandle> find_pointer_replacement(const GXTexObj_& obj) noexcept {
+std::optional<ReplacementResult> find_pointer_replacement(const GXTexObj_& obj) noexcept {
   ZoneScoped;
   if (obj.data == nullptr) {
     return std::nullopt;
@@ -1312,7 +1829,8 @@ std::optional<TextureHandle> find_pointer_replacement(const GXTexObj_& obj) noex
   return find_replacement_for_key_locked(pointerKey);
 }
 
-std::optional<TextureHandle> find_source_replacement(const GXTexObj_& obj, const TextureSourceKey& sourceKey) noexcept {
+std::optional<ReplacementResult> find_source_replacement(const GXTexObj_& obj,
+                                                         const TextureSourceKey& sourceKey) noexcept {
   ZoneScoped;
   std::lock_guard lk(s_registryMutex);
   if (s_sourceEntryCount == 0 && !g_config.allowTextureDumps) {
@@ -1373,4 +1891,29 @@ std::string build_texture_replacement_name(const GXTexObj_& obj) noexcept {
 std::string build_texture_replacement_name(const TextureSourceKey& sourceKey) noexcept {
   return format_replacement_filename(sourceKey);
 }
+
+namespace testing {
+void set_workers_paused(bool paused) noexcept {
+  {
+    std::lock_guard lock{s_jobMutex};
+    s_workersPaused = paused;
+  }
+  s_jobCv.notify_all();
+}
+
+void set_worker_count(uint32_t count) noexcept {
+  std::lock_guard lock{s_jobMutex};
+  if (s_workers.empty()) {
+    s_workerCountOverride = count;
+  }
+}
+
+bool wait_for_completions(uint64_t id, uint32_t count, uint32_t timeoutMs) noexcept {
+  std::unique_lock lock{s_jobMutex};
+  return s_jobCv.wait_for(lock, std::chrono::milliseconds{timeoutMs}, [id, count] {
+    return std::count_if(s_workerCompletions.begin(), s_workerCompletions.end(),
+                         [id](const LoadCompletion& completion) { return completion.entry.id == id; }) >= count;
+  });
+}
+} // namespace testing
 } // namespace aurora::gfx::texture_replacement

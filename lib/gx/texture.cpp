@@ -46,6 +46,7 @@ struct CachedTextureEntry {
   u32 texDataVersion = 0;
   u32 tlutObjId = 0;
   u32 tlutDataVersion = 0;
+  uint64_t replacementId = 0;
   uint64_t lastUsedFrame = 0;
 };
 
@@ -94,6 +95,7 @@ struct ContentCacheEntry {
 absl::flat_hash_map<u32, CachedTextureEntry> s_textureObjectCaches;
 absl::flat_hash_map<u32, TlutObjectCache> s_tlutObjectCaches;
 absl::flat_hash_map<TextureContentKey, ContentCacheEntry> s_contentCache;
+absl::flat_hash_map<uint64_t, absl::flat_hash_set<u32>> s_replacementUsers;
 std::list<TextureContentKey> s_contentLru;
 uint64_t s_contentCacheBytes = 0;
 uint64_t s_contentCacheBudgetBytes = texture::ContentCacheBudgetBytes;
@@ -103,10 +105,17 @@ std::atomic<uint64_t> s_pendingInvalidations = 0;
 std::atomic<uint64_t> s_pendingCacheClears = 0;
 TextureStats s_stats;
 
+#if DEBUG
+constexpr bool BuildSourceKeyForDebug = true;
+#else
+constexpr bool BuildSourceKeyForDebug = false;
+#endif
+
 constexpr uint32_t div_ceil(uint32_t value, uint32_t divisor) noexcept { return (value + divisor - 1) / divisor; }
 
 void do_clear_static_texture_cache() noexcept {
   s_textureObjectCaches.clear();
+  s_replacementUsers.clear();
   for (auto& [_, cache] : s_tlutObjectCaches) {
     cache.staticTextureUsers.clear();
   }
@@ -133,39 +142,58 @@ DynamicPaletteKey make_dynamic_palette_key(const GXTexObj_& obj, const GXState::
   };
 }
 
-void clear_texture_dependency(u32 texObjId, u32 tlutObjId) {
-  if (texObjId == 0 || tlutObjId == 0) {
+void clear_texture_dependency(u32 texObjId, u32 tlutObjId, uint64_t replacementId) {
+  if (texObjId == 0) {
     return;
   }
-  if (auto it = s_tlutObjectCaches.find(tlutObjId); it != s_tlutObjectCaches.end()) {
-    it->second.staticTextureUsers.erase(texObjId);
-    if (!it->second.tlutTexture.handle && it->second.dynamicPaletteTextures.empty() &&
-        it->second.staticTextureUsers.empty()) {
-      s_tlutObjectCaches.erase(it);
+  if (tlutObjId != 0) {
+    if (auto it = s_tlutObjectCaches.find(tlutObjId); it != s_tlutObjectCaches.end()) {
+      it->second.staticTextureUsers.erase(texObjId);
+      if (!it->second.tlutTexture.handle && it->second.dynamicPaletteTextures.empty() &&
+          it->second.staticTextureUsers.empty()) {
+        s_tlutObjectCaches.erase(it);
+      }
+    }
+  }
+  if (replacementId != 0) {
+    if (auto it = s_replacementUsers.find(replacementId); it != s_replacementUsers.end()) {
+      it->second.erase(texObjId);
+      if (it->second.empty()) {
+        s_replacementUsers.erase(it);
+      }
     }
   }
 }
 
-void store_cached_texture(const GXTexObj_& obj, gfx::TextureHandle handle, u32 tlutObjId = 0, u32 tlutDataVersion = 0) {
+void clear_texture_dependency(u32 texObjId, const CachedTextureEntry& entry) {
+  clear_texture_dependency(texObjId, entry.tlutObjId, entry.replacementId);
+}
+
+void store_cached_texture(const GXTexObj_& obj, gfx::TextureHandle handle, u32 tlutObjId = 0, u32 tlutDataVersion = 0,
+                          uint64_t replacementId = 0) {
   if (obj.texObjId == 0) {
     return;
   }
 
   auto& entry = s_textureObjectCaches[obj.texObjId];
-  if (entry.tlutObjId != tlutObjId) {
-    clear_texture_dependency(obj.texObjId, entry.tlutObjId);
+  if (entry.tlutObjId != tlutObjId || entry.replacementId != replacementId) {
+    clear_texture_dependency(obj.texObjId, entry);
   }
 
   entry.handle = std::move(handle);
   entry.texDataVersion = obj.texDataVersion;
   entry.tlutObjId = tlutObjId;
   entry.tlutDataVersion = tlutDataVersion;
+  entry.replacementId = replacementId;
   entry.lastUsedFrame = s_frameCount;
 
   if (tlutObjId != 0) {
     auto& cache = s_tlutObjectCaches[tlutObjId];
     cache.staticTextureUsers.insert(obj.texObjId);
     cache.lastUsedFrame = s_frameCount;
+  }
+  if (replacementId != 0) {
+    s_replacementUsers[replacementId].insert(obj.texObjId);
   }
 }
 
@@ -310,7 +338,11 @@ gfx::TextureHandle get_tlut_texture(const GXTlutObj_& tlut) {
     }
     cache.dynamicPaletteTextures.clear();
     for (const u32 texObjId : cache.staticTextureUsers) {
-      s_textureObjectCaches.erase(texObjId);
+      if (const auto textureIt = s_textureObjectCaches.find(texObjId); textureIt != s_textureObjectCaches.end()) {
+        const uint64_t replacementId = textureIt->second.replacementId;
+        s_textureObjectCaches.erase(textureIt);
+        clear_texture_dependency(texObjId, 0, replacementId);
+      }
     }
     cache.staticTextureUsers.clear();
   }
@@ -400,9 +432,9 @@ void sweep_object_caches() {
   for (auto it = s_textureObjectCaches.begin(); it != s_textureObjectCaches.end();) {
     if (expired(it->second.lastUsedFrame)) {
       const u32 texObjId = it->first;
-      const u32 tlutObjId = it->second.tlutObjId;
+      const CachedTextureEntry entry = it->second;
       s_textureObjectCaches.erase(it++);
-      clear_texture_dependency(texObjId, tlutObjId);
+      clear_texture_dependency(texObjId, entry);
     } else {
       ++it;
     }
@@ -423,6 +455,19 @@ void sweep_object_caches() {
       ++cacheIt;
     }
   }
+}
+
+bool use_replacement(std::optional<gfx::texture_replacement::ReplacementResult> replacement, gfx::TextureHandle& handle,
+                     uint64_t& replacementId) noexcept {
+  if (!replacement.has_value()) {
+    return false;
+  }
+  handle = std::move(replacement->handle);
+  replacementId = replacement->id;
+  if (handle) {
+    ++s_stats.replacementHits;
+  }
+  return true;
 }
 } // namespace
 
@@ -482,6 +527,25 @@ size_t tlut_source_size(u16 numEntries) noexcept { return static_cast<size_t>(nu
 
 void invalidate_bindings() noexcept { s_pendingInvalidations.fetch_add(1, std::memory_order_release); }
 
+void invalidate_replacement(uint64_t replacementId) noexcept {
+  const auto users = s_replacementUsers.find(replacementId);
+  if (users == s_replacementUsers.end()) {
+    return;
+  }
+
+  auto texObjIds = std::move(users->second);
+  s_replacementUsers.erase(users);
+  for (const u32 texObjId : texObjIds) {
+    const auto it = s_textureObjectCaches.find(texObjId);
+    if (it == s_textureObjectCaches.end()) {
+      continue;
+    }
+    const CachedTextureEntry entry = it->second;
+    s_textureObjectCaches.erase(it);
+    clear_texture_dependency(texObjId, entry.tlutObjId, 0);
+  }
+}
+
 gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
   ZoneScoped;
 
@@ -497,28 +561,23 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
   }
 
   gfx::TextureHandle handle;
-  if (const auto replacement = gfx::texture_replacement::find_pointer_replacement(obj); replacement.has_value()) {
-    handle = *replacement;
-    ++s_stats.replacementHits;
-  } else {
-    bool buildSourceKey = gfx::texture_replacement::should_build_source_key();
-#if DEBUG
-    buildSourceKey = true;
-#endif
-    auto keys = hash_texture_source(obj, nullptr, buildSourceKey);
-    if (keys.sourceKey.has_value()) {
-      if (const auto replacement = gfx::texture_replacement::find_source_replacement(obj, *keys.sourceKey);
-          replacement.has_value()) {
-        handle = *replacement;
-        ++s_stats.replacementHits;
-      }
+  uint64_t replacementId = 0;
+  std::optional<TextureKeys> keys;
+  if (!use_replacement(gfx::texture_replacement::find_pointer_replacement(obj), handle, replacementId)) {
+    const bool buildSourceKey = gfx::texture_replacement::should_build_source_key() || BuildSourceKeyForDebug;
+    keys = hash_texture_source(obj, nullptr, buildSourceKey);
+    if (keys->sourceKey.has_value()) {
+      use_replacement(gfx::texture_replacement::find_source_replacement(obj, *keys->sourceKey), handle, replacementId);
     }
-    if (!handle) {
-      handle = find_content_texture(keys.contentKey);
+  }
+  if (!handle) {
+    if (!keys.has_value()) {
+      keys = hash_texture_source(obj, nullptr, BuildSourceKeyForDebug);
     }
+    handle = find_content_texture(keys->contentKey);
     if (!handle) {
 #if DEBUG
-      const auto name = gfx::texture_replacement::build_texture_replacement_name(*keys.sourceKey);
+      const auto name = gfx::texture_replacement::build_texture_replacement_name(*keys->sourceKey);
       const auto nameStr = name.c_str();
 #else
       const auto nameStr = "GX Static Texture";
@@ -528,11 +587,11 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
                                           {static_cast<const uint8_t*>(obj.data), sourceBytes}, false, nameStr);
       ++s_stats.misses;
       s_stats.uploadBytes += texture_handle_size(handle);
-      cache_content_texture(std::move(keys.contentKey), handle);
+      cache_content_texture(std::move(keys->contentKey), handle);
     }
   }
   if (!obj.no_cache()) {
-    store_cached_texture(obj, handle);
+    store_cached_texture(obj, handle, 0, 0, replacementId);
   }
   return handle;
 }
@@ -556,21 +615,19 @@ gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GX
   }
 
   gfx::TextureHandle handle;
-  if (const auto replacement = gfx::texture_replacement::find_pointer_replacement(obj); replacement.has_value()) {
-    handle = *replacement;
-    ++s_stats.replacementHits;
-  } else {
-    auto keys = hash_texture_source(obj, &tlut, gfx::texture_replacement::should_build_source_key());
-    if (keys.sourceKey.has_value()) {
-      if (const auto replacement = gfx::texture_replacement::find_source_replacement(obj, *keys.sourceKey);
-          replacement.has_value()) {
-        handle = *replacement;
-        ++s_stats.replacementHits;
-      }
+  uint64_t replacementId = 0;
+  std::optional<TextureKeys> keys;
+  if (!use_replacement(gfx::texture_replacement::find_pointer_replacement(obj), handle, replacementId)) {
+    keys = hash_texture_source(obj, &tlut, gfx::texture_replacement::should_build_source_key());
+    if (keys->sourceKey.has_value()) {
+      use_replacement(gfx::texture_replacement::find_source_replacement(obj, *keys->sourceKey), handle, replacementId);
     }
-    if (!handle) {
-      handle = find_content_texture(keys.contentKey);
+  }
+  if (!handle) {
+    if (!keys.has_value()) {
+      keys = hash_texture_source(obj, &tlut, false);
     }
+    handle = find_content_texture(keys->contentKey);
     if (!handle) {
       const size_t textureBytes = texture_source_size(obj.format(), obj.width(), obj.height(), obj.mip_count());
       const size_t tlutBytes = tlut_source_size(tlut.numEntries);
@@ -586,26 +643,36 @@ gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GX
       handle->hasArbitraryMips = converted.hasArbitraryMips;
       ++s_stats.misses;
       s_stats.uploadBytes += texture_handle_size(handle);
-      cache_content_texture(std::move(keys.contentKey), handle);
+      cache_content_texture(std::move(keys->contentKey), handle);
     }
   }
   if (!obj.no_cache() && !tlut.no_cache()) {
-    store_cached_texture(obj, handle, tlut.tlutObjId, tlut.tlutDataVersion);
+    store_cached_texture(obj, handle, tlut.tlutObjId, tlut.tlutDataVersion, replacementId);
   }
   return handle;
 }
 
 void end_frame() noexcept {
+  const auto streamingStats = gfx::texture_replacement::process_streaming();
+  s_stats.pendingLoads = streamingStats.pendingLoads;
+  s_stats.publishes = streamingStats.publishes;
+  s_stats.publishBytes = streamingStats.publishBytes;
   TracyPlot("aurora: textureUploadBytes", static_cast<int64_t>(s_stats.uploadBytes));
   TracyPlot("aurora: textureHashedBytes", static_cast<int64_t>(s_stats.hashedBytes));
   TracyPlot("aurora: textureObjectHits", static_cast<int64_t>(s_stats.objectHits));
   TracyPlot("aurora: textureContentHits", static_cast<int64_t>(s_stats.contentHits));
   TracyPlot("aurora: textureCacheBytes", static_cast<int64_t>(s_contentCacheBytes));
   TracyPlot("aurora: textureCacheEntries", static_cast<int64_t>(s_contentCache.size()));
+  TracyPlot("aurora: texturePendingReplacementLoads", static_cast<int64_t>(s_stats.pendingLoads));
+  TracyPlot("aurora: textureReplacementPublishes", static_cast<int64_t>(s_stats.publishes));
+  TracyPlot("aurora: textureReplacementPublishBytes", static_cast<int64_t>(s_stats.publishBytes));
 
   s_stats = {};
   s_stats.contentCacheBytes = s_contentCacheBytes;
   s_stats.contentCacheEntries = s_contentCache.size();
+  s_stats.pendingLoads = streamingStats.pendingLoads;
+  s_stats.publishes = streamingStats.publishes;
+  s_stats.publishBytes = streamingStats.publishBytes;
   ++s_frameCount;
   apply_pending_invalidations();
   sweep_object_caches();
@@ -614,6 +681,7 @@ void end_frame() noexcept {
 void shutdown() noexcept {
   s_textureObjectCaches.clear();
   s_tlutObjectCaches.clear();
+  s_replacementUsers.clear();
   s_contentCache.clear();
   s_contentLru.clear();
   s_contentCacheBytes = 0;
@@ -642,8 +710,9 @@ void set_content_cache_budget_for_testing(uint64_t bytes) noexcept {
 
 void evict_texture_object(u32 texObjId) noexcept {
   if (const auto it = s_textureObjectCaches.find(texObjId); it != s_textureObjectCaches.end()) {
-    clear_texture_dependency(texObjId, it->second.tlutObjId);
+    const CachedTextureEntry entry = it->second;
     s_textureObjectCaches.erase(it);
+    clear_texture_dependency(texObjId, entry);
   }
   // If there is a loaded slot with this ID, mark it as no_cache to avoid inserting it when it's resolved.
   // This also handles the case where the texture was created, loaded, and immediately destroyed before we resolved it.
@@ -657,7 +726,11 @@ void evict_texture_object(u32 texObjId) noexcept {
 void evict_tlut_object(u32 tlutObjId) noexcept {
   if (const auto it = s_tlutObjectCaches.find(tlutObjId); it != s_tlutObjectCaches.end()) {
     for (const u32 texObjId : it->second.staticTextureUsers) {
-      s_textureObjectCaches.erase(texObjId);
+      if (const auto textureIt = s_textureObjectCaches.find(texObjId); textureIt != s_textureObjectCaches.end()) {
+        const uint64_t replacementId = textureIt->second.replacementId;
+        s_textureObjectCaches.erase(textureIt);
+        clear_texture_dependency(texObjId, 0, replacementId);
+      }
     }
     s_tlutObjectCaches.erase(it);
   }

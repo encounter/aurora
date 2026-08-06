@@ -13,6 +13,14 @@ struct ParsedDDSLayout {
   size_t dataOffset = 0;
 };
 
+struct ParsedDDS {
+  wgpu::TextureFormat format = wgpu::TextureFormat::Undefined;
+  size_t dataOffset = 0;
+  uint32_t width = 0;
+  uint32_t height = 0;
+  uint32_t mips = 0;
+};
+
 struct DDSPixelFormat {
   uint32_t size;
   uint32_t flags;
@@ -230,12 +238,13 @@ std::optional<ParsedDDSLayout> resolve_dds_layout(ArrayRef<uint8_t> bytes, const
       if (bytes.size() < out.dataOffset + sizeof(DDSHeaderDX10)) {
         return std::nullopt;
       }
-      const auto* dx10 = reinterpret_cast<const DDSHeaderDX10*>(bytes.data() + out.dataOffset);
+      DDSHeaderDX10 dx10{};
+      std::memcpy(&dx10, bytes.data() + out.dataOffset, sizeof(dx10));
       out.dataOffset += sizeof(DDSHeaderDX10);
-      if (dx10->resourceDimension != 3 || dx10->arraySize != 1) {
+      if (dx10.resourceDimension != 3 || dx10.arraySize != 1) {
         return std::nullopt;
       }
-      const auto format = resolve_dx10_format(dx10->dxgiFormat);
+      const auto format = resolve_dx10_format(dx10.dxgiFormat);
       if (!format.has_value()) {
         return std::nullopt;
       }
@@ -263,43 +272,126 @@ std::optional<ParsedDDSLayout> resolve_dds_layout(ArrayRef<uint8_t> bytes, const
   return std::nullopt;
 }
 
-std::optional<ConvertedTexture> parse_dds_bytes(ArrayRef<uint8_t> bytes) noexcept {
+std::optional<ParsedDDS> parse_dds_header(ArrayRef<uint8_t> bytes) noexcept {
   if (bytes.size() < sizeof(uint32_t) + sizeof(DDSHeader)) {
     return std::nullopt;
   }
 
-  const uint32_t magic = *reinterpret_cast<const uint32_t*>(bytes.data());
+  uint32_t magic = 0;
+  std::memcpy(&magic, bytes.data(), sizeof(magic));
   if (magic != kDDSMagic) {
     return std::nullopt;
   }
 
-  const auto* header = reinterpret_cast<const DDSHeader*>(bytes.data() + sizeof(uint32_t));
-  if (!validate_dds_header(*header)) {
+  DDSHeader header{};
+  std::memcpy(&header, bytes.data() + sizeof(uint32_t), sizeof(header));
+  if (!validate_dds_header(header)) {
     return std::nullopt;
   }
 
-  const auto parsedLayout = resolve_dds_layout(bytes, *header);
-  if (!parsedLayout.has_value()) {
+  const auto layout = resolve_dds_layout(bytes, header);
+  const auto mipCount = resolve_mip_count(header);
+  if (!layout.has_value() || !mipCount.has_value()) {
     return std::nullopt;
   }
-
-  const auto mipCount = resolve_mip_count(*header);
-  if (!mipCount.has_value()) {
-    return std::nullopt;
-  }
-
-  const auto expectedSize = calc_texture_size(parsedLayout->format, header->width, header->height, *mipCount);
-  if (expectedSize == 0 || parsedLayout->dataOffset + expectedSize > bytes.size()) {
-    return std::nullopt;
-  }
-
-  ByteBuffer data{expectedSize};
-  std::memcpy(data.data(), bytes.data() + parsedLayout->dataOffset, expectedSize);
-  return ConvertedTexture{
-      .format = parsedLayout->format,
-      .width = header->width,
-      .height = header->height,
+  return ParsedDDS{
+      .format = layout->format,
+      .dataOffset = layout->dataOffset,
+      .width = header.width,
+      .height = header.height,
       .mips = *mipCount,
+  };
+}
+
+std::optional<uint32_t> mip_tail_start(const ParsedDDS& dds, uint32_t maxDimension) noexcept {
+  if (maxDimension == 0) {
+    return std::nullopt;
+  }
+  for (uint32_t mip = 0; mip < dds.mips; ++mip) {
+    const uint32_t width = std::max(dds.width >> mip, 1u);
+    const uint32_t height = std::max(dds.height >> mip, 1u);
+    if (width <= maxDimension && height <= maxDimension) {
+      return mip;
+    }
+  }
+  return std::nullopt;
+}
+
+struct MipTailLayout {
+  size_t dataOffset = 0;
+  size_t dataSize = 0;
+  uint32_t width = 0;
+  uint32_t height = 0;
+  uint32_t mips = 0;
+  bool includesBase = false;
+};
+
+std::optional<MipTailLayout> mip_tail_layout(const ParsedDDS& dds, uint32_t maxDimension) noexcept {
+  const auto startMip = mip_tail_start(dds, maxDimension);
+  if (!startMip.has_value()) {
+    return std::nullopt;
+  }
+
+  const uint64_t prefixSize = *startMip == 0 ? 0 : calc_texture_size(dds.format, dds.width, dds.height, *startMip);
+  const uint32_t width = std::max(dds.width >> *startMip, 1u);
+  const uint32_t height = std::max(dds.height >> *startMip, 1u);
+  const uint32_t mips = dds.mips - *startMip;
+  const uint64_t tailSize = calc_texture_size(dds.format, width, height, mips);
+  if (tailSize == 0 || prefixSize > SIZE_MAX || tailSize > SIZE_MAX || prefixSize > SIZE_MAX - dds.dataOffset) {
+    return std::nullopt;
+  }
+
+  return MipTailLayout{
+      .dataOffset = dds.dataOffset + static_cast<size_t>(prefixSize),
+      .dataSize = static_cast<size_t>(tailSize),
+      .width = width,
+      .height = height,
+      .mips = mips,
+      .includesBase = *startMip == 0,
+  };
+}
+
+std::optional<MipTail> slice_mip_tail(ArrayRef<uint8_t> bytes, const ParsedDDS& dds, uint32_t maxDimension) noexcept {
+  const auto layout = mip_tail_layout(dds, maxDimension);
+  if (!layout.has_value() || layout->dataOffset > bytes.size() ||
+      layout->dataSize > bytes.size() - layout->dataOffset) {
+    return std::nullopt;
+  }
+
+  ByteBuffer data{layout->dataSize};
+  std::memcpy(data.data(), bytes.data() + layout->dataOffset, data.size());
+  return MipTail{
+      .texture =
+          ConvertedTexture{
+              .format = dds.format,
+              .width = layout->width,
+              .height = layout->height,
+              .mips = layout->mips,
+              .data = std::move(data),
+          },
+      .includesBase = layout->includesBase,
+  };
+}
+
+std::optional<ConvertedTexture> parse_dds_bytes(ArrayRef<uint8_t> bytes) noexcept {
+  const auto dds = parse_dds_header(bytes);
+  if (!dds.has_value()) {
+    return std::nullopt;
+  }
+
+  const auto expectedSize = calc_texture_size(dds->format, dds->width, dds->height, dds->mips);
+  if (expectedSize == 0 || expectedSize > SIZE_MAX || dds->dataOffset > bytes.size() ||
+      static_cast<size_t>(expectedSize) > bytes.size() - dds->dataOffset) {
+    return std::nullopt;
+  }
+
+  ByteBuffer data{static_cast<size_t>(expectedSize)};
+  std::memcpy(data.data(), bytes.data() + dds->dataOffset, data.size());
+  return ConvertedTexture{
+      .format = dds->format,
+      .width = dds->width,
+      .height = dds->height,
+      .mips = dds->mips,
       .data = std::move(data),
   };
 }
@@ -310,6 +402,58 @@ std::optional<ConvertedTexture> load_dds_file(const std::filesystem::path& path)
     return std::nullopt;
   }
   return parse_dds_bytes(*bytes);
+}
+
+std::optional<MipTail> parse_dds_mip_tail(ArrayRef<uint8_t> bytes, uint32_t maxDimension) noexcept {
+  const auto dds = parse_dds_header(bytes);
+  return dds.has_value() ? slice_mip_tail(bytes, *dds, maxDimension) : std::nullopt;
+}
+
+std::optional<MipTail> load_dds_mip_tail(const std::filesystem::path& path, uint32_t maxDimension) noexcept {
+  constexpr size_t MaxHeaderSize = sizeof(uint32_t) + sizeof(DDSHeader) + sizeof(DDSHeaderDX10);
+  std::ifstream file(path, std::ios::binary | std::ios::ate);
+  if (!file) {
+    return std::nullopt;
+  }
+  const auto end = file.tellg();
+  if (end <= 0) {
+    return std::nullopt;
+  }
+  const size_t fileSize = static_cast<size_t>(end);
+  std::array<uint8_t, MaxHeaderSize> headerBytes{};
+  const size_t headerSize = std::min(fileSize, headerBytes.size());
+  file.seekg(0, std::ios::beg);
+  file.read(reinterpret_cast<char*>(headerBytes.data()), static_cast<std::streamsize>(headerSize));
+  if (!file) {
+    return std::nullopt;
+  }
+
+  const auto dds = parse_dds_header({headerBytes.data(), headerSize});
+  if (!dds.has_value()) {
+    return std::nullopt;
+  }
+  const auto layout = mip_tail_layout(*dds, maxDimension);
+  if (!layout.has_value() || layout->dataOffset > fileSize || layout->dataSize > fileSize - layout->dataOffset) {
+    return std::nullopt;
+  }
+
+  ByteBuffer data{layout->dataSize};
+  file.seekg(static_cast<std::streamoff>(layout->dataOffset), std::ios::beg);
+  file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(data.size()));
+  if (!file) {
+    return std::nullopt;
+  }
+  return MipTail{
+      .texture =
+          ConvertedTexture{
+              .format = dds->format,
+              .width = layout->width,
+              .height = layout->height,
+              .mips = layout->mips,
+              .data = std::move(data),
+          },
+      .includesBase = layout->includesBase,
+  };
 }
 
 ByteBuffer encode_rgba8_dds(uint32_t width, uint32_t height, ArrayRef<uint8_t> pixels) {

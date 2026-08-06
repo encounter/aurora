@@ -13,7 +13,7 @@ void reset_texture_stubs();
 uint64_t texture_allocations();
 uint64_t palette_conversions();
 gfx::TextureHandle make_texture_handle(uint32_t width, uint32_t height, u32 format = GX_TF_RGBA8_PC);
-void set_replacement(gfx::TextureHandle handle);
+void set_replacement(gfx::TextureHandle handle, uint64_t id = 1);
 void set_source_replacement(aurora::texture::TextureSourceKey key, gfx::TextureHandle handle);
 } // namespace aurora::gx::testing
 
@@ -172,6 +172,43 @@ TEST_F(GxTextureCacheTest, ReplacementAppearsOnAlreadyBoundTexture) {
   EXPECT_NE(raw, replacement);
   EXPECT_EQ(g_gxState.textures[0].ref, replacement);
   EXPECT_EQ(texture_stats().replacementHits, 1);
+}
+
+TEST_F(GxTextureCacheTest, PendingReplacementPublishEvictsItsVanillaObjectEntry) {
+  std::array<uint8_t, 16> pixels{};
+  const auto obj = make_texture(pixels.data(), 1);
+  testing::set_replacement({}, 77);
+  const auto vanilla = texture::resolve_static_texture(obj);
+  ASSERT_NE(vanilla, nullptr);
+
+  const auto replacement = testing::make_texture_handle(8, 8);
+  testing::set_replacement(replacement, 77);
+  texture::invalidate_replacement(77);
+  const auto resolved = texture::resolve_static_texture(obj);
+
+  EXPECT_NE(vanilla, replacement);
+  EXPECT_EQ(resolved, replacement);
+  EXPECT_EQ(texture_stats().objectHits, 0);
+}
+
+TEST_F(GxTextureCacheTest, PendingReplacementPublishRebindsLoadedSlot) {
+  std::array<uint8_t, 16> pixels{};
+  g_gxState.loadedTextures[0] = make_texture(pixels.data(), 1);
+  ShaderInfo info{};
+  info.sampledTextures.set(0);
+  testing::set_replacement({}, 91);
+  resolve_sampled_textures(info);
+  const auto vanilla = g_gxState.textures[0].ref;
+  ASSERT_NE(vanilla, nullptr);
+
+  const auto replacement = testing::make_texture_handle(8, 8);
+  testing::set_replacement(replacement, 91);
+  texture::invalidate_replacement(91);
+  texture::invalidate_bindings();
+  resolve_sampled_textures(info);
+
+  EXPECT_NE(vanilla, replacement);
+  EXPECT_EQ(g_gxState.textures[0].ref, replacement);
 }
 
 TEST_F(GxTextureCacheTest, SourceReplacementReusesContentHashPass) {
