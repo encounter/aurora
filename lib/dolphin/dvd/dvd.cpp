@@ -91,8 +91,10 @@ public:
 };
 
 CommandDataNod* s_disc;
+std::mutex s_discMutex;
+uint64_t s_discGeneration = 0;
 
-void clearState() {
+void clearStateLocked() {
   if (s_partition != nullptr) {
     nod_free(s_partition);
     s_partition = nullptr;
@@ -108,6 +110,88 @@ void clearState() {
   s_currentPath = "/";
   s_diskID = {};
   s_initialized = false;
+}
+
+bool advanceDiscGenerationLocked() {
+  if (s_discGeneration == std::numeric_limits<uint64_t>::max()) {
+    return false;
+  }
+  ++s_discGeneration;
+  return true;
+}
+
+bool validLogicalDiscSize(const uint64_t size) {
+  return size != 0 && size <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
+}
+
+s32 readFromHandle(CommandDataBase* handle, void* out, s32 length, s32 offset, u32* transferredOut);
+
+AuroraDiscResult getActiveDiscInfoLocked(AuroraDiscInfo* outInfo) {
+  if (s_disc == nullptr) {
+    return AURORA_DISC_UNAVAILABLE;
+  }
+
+  const uint64_t logicalSize = nod_disc_size(s_disc->handle);
+  NodDiscHeader header{};
+  if (!validLogicalDiscSize(logicalSize) ||
+      nod_disc_header(s_disc->handle, &header) != NOD_RESULT_OK)
+  {
+    return AURORA_DISC_IO_ERROR;
+  }
+
+  std::memcpy(outInfo->game_id, header.game_id, sizeof(header.game_id));
+  outInfo->game_id[sizeof(header.game_id)] = '\0';
+  outInfo->logical_size = logicalSize;
+  outInfo->generation = s_discGeneration;
+  return AURORA_DISC_OK;
+}
+
+AuroraDiscResult readActiveDiscLocked(
+    uint64_t expectedGeneration, uint64_t offset, void* buffer, size_t size) {
+  if (s_disc == nullptr) {
+    return AURORA_DISC_UNAVAILABLE;
+  }
+
+  const uint64_t logicalSize = nod_disc_size(s_disc->handle);
+  if (!validLogicalDiscSize(logicalSize)) {
+    return AURORA_DISC_IO_ERROR;
+  }
+  if (expectedGeneration != s_discGeneration) {
+    return AURORA_DISC_GENERATION_CHANGED;
+  }
+  if (offset > logicalSize || size > logicalSize - offset)
+  {
+    return AURORA_DISC_OUT_OF_RANGE;
+  }
+  if (size == 0) {
+    return AURORA_DISC_OK;
+  }
+  if (offset > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ||
+      s_disc->seek(static_cast<int64_t>(offset), 0) < 0)
+  {
+    return AURORA_DISC_IO_ERROR;
+  }
+
+  auto* writePtr = static_cast<uint8_t*>(buffer);
+  size_t totalRead = 0;
+  while (totalRead < size) {
+    const int64_t read = s_disc->read(writePtr + totalRead, size - totalRead);
+    if (read <= 0 || static_cast<uint64_t>(read) > size - totalRead) {
+      return AURORA_DISC_IO_ERROR;
+    }
+    totalRead += static_cast<size_t>(read);
+  }
+  return AURORA_DISC_OK;
+}
+
+s32 readActiveDisc(void* out, s32 length, s32 offset, u32* transferredOut) {
+  std::lock_guard lock{s_discMutex};
+  return readFromHandle(s_disc, out, length, offset, transferredOut);
+}
+
+int64_t seekActiveDisc(s32 offset) {
+  std::lock_guard lock{s_discMutex};
+  return s_disc != nullptr ? s_disc->seek(static_cast<int64_t>(offset), 0) : -1;
 }
 
 bool isValidEntryNum(s32 entry) {
@@ -317,11 +401,11 @@ bool isCommandBlockIdle(const DVDCommandBlock* block) {
   return state != DVD_STATE_BUSY && state != DVD_STATE_WAITING;
 }
 
-CommandDataBase* getCommandHandle(DVDCommandBlock* block) {
+CommandDataBase* getPerFileCommandHandle(DVDCommandBlock* block) {
   if (block != nullptr && block->userData != nullptr) {
     return static_cast<CommandDataBase*>(block->userData);
   }
-  return s_disc;
+  return nullptr;
 }
 
 void beginCommand(DVDCommandBlock* block, u32 command, void* addr, u32 length, u32 offset, DVDCBCallback callback) {
@@ -522,13 +606,17 @@ private:
   static std::pair<s32, u32> perform_command(DVDCommandBlock* block) {
     s32 result;
     u32 transferred = 0;
+    auto* handle = getPerFileCommandHandle(block);
     if (block->command == DVD_COMMAND_SEEK) {
-      auto* handle = getCommandHandle(block);
-      const int64_t seek = handle != nullptr ? handle->seek(block->offset, 0) : -1;
+      const int64_t seek =
+          handle != nullptr ? handle->seek(block->offset, 0) : seekActiveDisc(block->offset);
       result = seek < 0 ? DVD_RESULT_FATAL_ERROR : DVD_RESULT_GOOD;
     } else {
-      result = readFromHandle(getCommandHandle(block), block->addr, static_cast<s32>(block->length),
-                              static_cast<s32>(block->offset), &transferred);
+      result = handle != nullptr
+                   ? readFromHandle(handle, block->addr, static_cast<s32>(block->length),
+                         static_cast<s32>(block->offset), &transferred)
+                   : readActiveDisc(block->addr, static_cast<s32>(block->length),
+                         static_cast<s32>(block->offset), &transferred);
     }
     return {result, transferred};
   }
@@ -653,10 +741,15 @@ bool aurora_dvd_open(const char* disc_path) {
   }
 
   s_worker.stop();
-  clearState();
+  std::unique_lock lock{s_discMutex};
+  const bool removedActiveDisc = s_disc != nullptr;
+  clearStateLocked();
 
   SDL_IOStream* io = SDL_IOFromFile(disc_path, "rb");
   if (io == nullptr) {
+    if (removedActiveDisc) {
+      advanceDiscGenerationLocked();
+    }
     return false;
   }
 
@@ -673,7 +766,10 @@ bool aurora_dvd_open(const char* disc_path) {
   NodHandle* discHandle;
   NodResult result = nod_disc_open_stream(&stream, &options, &discHandle);
   if (result != NOD_RESULT_OK || discHandle == nullptr) {
-    clearState();
+    clearStateLocked();
+    if (removedActiveDisc) {
+      advanceDiscGenerationLocked();
+    }
     return false;
   }
 
@@ -681,7 +777,10 @@ bool aurora_dvd_open(const char* disc_path) {
 
   result = nod_disc_open_partition_kind(s_disc->handle, NOD_PARTITION_KIND_DATA, nullptr, &s_partition);
   if (result != NOD_RESULT_OK || s_partition == nullptr) {
-    clearState();
+    clearStateLocked();
+    if (removedActiveDisc) {
+      advanceDiscGenerationLocked();
+    }
     return false;
   }
 
@@ -698,20 +797,49 @@ bool aurora_dvd_open(const char* disc_path) {
   }
 
   if (!rebuildFST()) {
-    clearState();
+    clearStateLocked();
+    if (removedActiveDisc) {
+      advanceDiscGenerationLocked();
+    }
+    return false;
+  }
+  if (!advanceDiscGenerationLocked()) {
+    clearStateLocked();
     return false;
   }
 
   s_currentDir = 0;
   s_currentPath = "/";
   s_initialized = true;
+  lock.unlock();
   s_worker.start();
   return true;
 }
 
 void aurora_dvd_close(void) {
   s_worker.stop();
-  clearState();
+  std::lock_guard lock{s_discMutex};
+  if (s_disc != nullptr) {
+    clearStateLocked();
+    advanceDiscGenerationLocked();
+  }
+}
+
+AuroraDiscResult aurora_dvd_get_info(AuroraDiscInfo* outInfo) {
+  if (outInfo == nullptr) {
+    return AURORA_DISC_INVALID_ARGUMENT;
+  }
+  std::lock_guard lock{s_discMutex};
+  return getActiveDiscInfoLocked(outInfo);
+}
+
+AuroraDiscResult aurora_dvd_read_at(
+    uint64_t expectedGeneration, uint64_t offset, void* buffer, size_t size) {
+  if (buffer == nullptr && size != 0) {
+    return AURORA_DISC_INVALID_ARGUMENT;
+  }
+  std::lock_guard lock{s_discMutex};
+  return readActiveDiscLocked(expectedGeneration, offset, buffer, size);
 }
 
 void DVDInit(void) {}
@@ -1368,7 +1496,8 @@ DVDDiskID* DVDGenerateDiskID(DVDDiskID* id, const char* game, const char* compan
 
 BOOL DVDLowRead(void* addr, u32 length, u32 offset, DVDLowCallback callback) {
   u32 transferred = 0;
-  s32 result = readFromHandle(s_disc, addr, static_cast<s32>(length), static_cast<s32>(offset), &transferred);
+  s32 result =
+      readActiveDisc(addr, static_cast<s32>(length), static_cast<s32>(offset), &transferred);
   if (callback != nullptr) {
     callback(static_cast<u32>((result >= 0) ? DVD_RESULT_GOOD : DVD_RESULT_FATAL_ERROR));
   }
@@ -1376,7 +1505,7 @@ BOOL DVDLowRead(void* addr, u32 length, u32 offset, DVDLowCallback callback) {
 }
 
 BOOL DVDLowSeek(u32 offset, DVDLowCallback callback) {
-  const int64_t seek = s_disc != nullptr ? s_disc->seek(static_cast<int64_t>(offset), 0) : -1;
+  const int64_t seek = seekActiveDisc(static_cast<s32>(offset));
   if (callback != nullptr) {
     callback(static_cast<u32>((seek >= 0) ? DVD_RESULT_GOOD : DVD_RESULT_FATAL_ERROR));
   }

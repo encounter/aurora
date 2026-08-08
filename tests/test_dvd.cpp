@@ -3,9 +3,12 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <limits>
 #include <thread>
 #include <vector>
 
@@ -160,11 +163,27 @@ TEST(DVDNoDisc, GetCurrentDir) {
   EXPECT_STREQ(buf, "/");
 }
 
+TEST(DVDNoDisc, LogicalReadApi) {
+  aurora_dvd_close();
+  AuroraDiscInfo info{};
+  EXPECT_EQ(aurora_dvd_get_info(nullptr), AURORA_DISC_INVALID_ARGUMENT);
+  EXPECT_EQ(aurora_dvd_get_info(&info), AURORA_DISC_UNAVAILABLE);
+  EXPECT_EQ(aurora_dvd_read_at(1, 0, nullptr, 1), AURORA_DISC_INVALID_ARGUMENT);
+  EXPECT_EQ(aurora_dvd_read_at(1, 0, nullptr, 0), AURORA_DISC_UNAVAILABLE);
+}
+
 // =============================================================================
 // Tests that require a disc image (conditionally compiled)
 // =============================================================================
 
 #ifdef DVD_TEST_IMAGE
+
+std::atomic<AuroraDiscResult> s_lowReadInfoResult{AURORA_DISC_UNAVAILABLE};
+
+void lowReadReenterCallback(u32) {
+  AuroraDiscInfo info{};
+  s_lowReadInfoResult.store(aurora_dvd_get_info(&info), std::memory_order_release);
+}
 
 class DVDDiscTest : public ::testing::Test {
 protected:
@@ -352,6 +371,123 @@ TEST_F(DVDDiscTest, DiskID) {
     }
   }
   EXPECT_TRUE(hasGameName);
+}
+
+TEST(DVDDiscService, ContractAndTransitions) {
+  aurora_dvd_close();
+
+  AuroraDiscInfo info{};
+  EXPECT_EQ(aurora_dvd_get_info(nullptr), AURORA_DISC_INVALID_ARGUMENT);
+  EXPECT_EQ(aurora_dvd_get_info(&info), AURORA_DISC_UNAVAILABLE);
+
+  ASSERT_TRUE(aurora_dvd_open(DVD_TEST_IMAGE));
+  ASSERT_EQ(aurora_dvd_get_info(&info), AURORA_DISC_OK);
+  ASSERT_NE(info.generation, 0u);
+  ASSERT_NE(info.logical_size, 0u);
+  EXPECT_EQ(info.game_id[6], '\0');
+
+  constexpr uint64_t kOffset = 1;
+  constexpr size_t kReadSize = 31;
+  ASSERT_GT(info.logical_size, kOffset + kReadSize);
+  std::vector<uint8_t> expected(kReadSize);
+  std::ifstream image(DVD_TEST_IMAGE, std::ios::binary);
+  ASSERT_TRUE(image.good());
+  image.seekg(static_cast<std::streamoff>(kOffset));
+  image.read(reinterpret_cast<char*>(expected.data()), static_cast<std::streamsize>(expected.size()));
+  ASSERT_EQ(image.gcount(), static_cast<std::streamsize>(expected.size()));
+
+  std::vector<uint8_t> actual(kReadSize + 1);
+  EXPECT_EQ(aurora_dvd_read_at(
+                info.generation, kOffset, actual.data() + 1, kReadSize),
+      AURORA_DISC_OK);
+  EXPECT_EQ(0, std::memcmp(actual.data() + 1, expected.data(), expected.size()));
+  EXPECT_EQ(aurora_dvd_read_at(info.generation, info.logical_size, nullptr, 0), AURORA_DISC_OK);
+  EXPECT_EQ(aurora_dvd_read_at(info.generation, info.logical_size + 1, nullptr, 0),
+      AURORA_DISC_OUT_OF_RANGE);
+  EXPECT_EQ(aurora_dvd_read_at(info.generation, info.logical_size, actual.data(), 1),
+      AURORA_DISC_OUT_OF_RANGE);
+  EXPECT_EQ(aurora_dvd_read_at(info.generation, std::numeric_limits<uint64_t>::max(), nullptr, 0),
+      AURORA_DISC_OUT_OF_RANGE);
+  EXPECT_EQ(aurora_dvd_read_at(0, 0, nullptr, 0), AURORA_DISC_GENERATION_CHANGED);
+  EXPECT_EQ(aurora_dvd_read_at(info.generation, 0, nullptr, 1), AURORA_DISC_INVALID_ARGUMENT);
+
+  std::vector<uint8_t> expectedAt17(kReadSize);
+  image.clear();
+  image.seekg(17);
+  image.read(
+      reinterpret_cast<char*>(expectedAt17.data()), static_cast<std::streamsize>(expectedAt17.size()));
+  ASSERT_EQ(image.gcount(), static_cast<std::streamsize>(expectedAt17.size()));
+  std::atomic<bool> readsUntorn{true};
+  auto readAt = [&](uint64_t offset, const std::vector<uint8_t>& reference) {
+    for (int i = 0; i < 16; ++i) {
+      std::vector<uint8_t> bytes(reference.size());
+      if (aurora_dvd_read_at(info.generation, offset, bytes.data(), bytes.size()) !=
+              AURORA_DISC_OK ||
+          bytes != reference)
+      {
+        readsUntorn.store(false, std::memory_order_release);
+        return;
+      }
+    }
+  };
+  std::thread first(readAt, kOffset, std::cref(expected));
+  std::thread second(readAt, 17, std::cref(expectedAt17));
+  first.join();
+  second.join();
+  EXPECT_TRUE(readsUntorn.load(std::memory_order_acquire));
+
+  s_lowReadInfoResult.store(AURORA_DISC_UNAVAILABLE, std::memory_order_release);
+  std::vector<uint8_t> lowRead(32);
+  EXPECT_EQ(DVDLowRead(lowRead.data(), lowRead.size(), 0, lowReadReenterCallback), TRUE);
+  EXPECT_EQ(s_lowReadInfoResult.load(std::memory_order_acquire), AURORA_DISC_OK);
+
+  AuroraDiscInfo beforeRace{};
+  ASSERT_EQ(aurora_dvd_get_info(&beforeRace), AURORA_DISC_OK);
+  std::atomic<bool> started{false};
+  std::atomic<AuroraDiscResult> raceResult{AURORA_DISC_IO_ERROR};
+  std::thread racingRead([&] {
+    std::vector<uint8_t> bytes(32);
+    started.store(true, std::memory_order_release);
+    raceResult.store(
+        aurora_dvd_read_at(beforeRace.generation, 0, bytes.data(), bytes.size()),
+        std::memory_order_release);
+  });
+  while (!started.load(std::memory_order_acquire)) {
+    std::this_thread::yield();
+  }
+  aurora_dvd_close();
+  ASSERT_TRUE(aurora_dvd_open(DVD_TEST_IMAGE));
+  racingRead.join();
+  const AuroraDiscResult completedRace = raceResult.load(std::memory_order_acquire);
+  EXPECT_TRUE(completedRace == AURORA_DISC_OK || completedRace == AURORA_DISC_UNAVAILABLE ||
+      completedRace == AURORA_DISC_GENERATION_CHANGED);
+
+  AuroraDiscInfo afterReopen{};
+  ASSERT_EQ(aurora_dvd_get_info(&afterReopen), AURORA_DISC_OK);
+  EXPECT_EQ(afterReopen.generation, beforeRace.generation + 2);
+  EXPECT_EQ(aurora_dvd_read_at(beforeRace.generation, 0, actual.data(), 1),
+      AURORA_DISC_GENERATION_CHANGED);
+
+  ASSERT_FALSE(aurora_dvd_open("definitely-not-an-aurora-disc-image"));
+  EXPECT_EQ(aurora_dvd_get_info(&info), AURORA_DISC_UNAVAILABLE);
+  ASSERT_TRUE(aurora_dvd_open(DVD_TEST_IMAGE));
+  ASSERT_EQ(aurora_dvd_get_info(&info), AURORA_DISC_OK);
+  EXPECT_EQ(info.generation, afterReopen.generation + 2);
+
+  AuroraDiscInfo replacement{};
+  ASSERT_TRUE(aurora_dvd_open(DVD_TEST_IMAGE));
+  ASSERT_EQ(aurora_dvd_get_info(&replacement), AURORA_DISC_OK);
+  EXPECT_EQ(replacement.generation, info.generation + 1);
+  EXPECT_EQ(aurora_dvd_read_at(info.generation, 0, actual.data(), 1),
+      AURORA_DISC_GENERATION_CHANGED);
+
+  aurora_dvd_close();
+  aurora_dvd_close();
+  ASSERT_FALSE(aurora_dvd_open("definitely-not-an-aurora-disc-image"));
+  ASSERT_TRUE(aurora_dvd_open(DVD_TEST_IMAGE));
+  ASSERT_EQ(aurora_dvd_get_info(&info), AURORA_DISC_OK);
+  EXPECT_EQ(info.generation, replacement.generation + 2);
+  aurora_dvd_close();
 }
 
 #endif // DVD_TEST_IMAGE
