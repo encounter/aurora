@@ -6,7 +6,24 @@ extern "C" {
 #endif
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <dolphin/types.h>
+
+typedef enum AuroraDiscResult {
+  AURORA_DISC_OK = 0,
+  AURORA_DISC_UNAVAILABLE = 1,
+  AURORA_DISC_INVALID_ARGUMENT = 2,
+  AURORA_DISC_OUT_OF_RANGE = 3,
+  AURORA_DISC_GENERATION_CHANGED = 4,
+  AURORA_DISC_IO_ERROR = 5,
+} AuroraDiscResult;
+
+typedef struct AuroraDiscInfo {
+  char game_id[7];
+  uint64_t logical_size;
+  uint64_t generation;
+} AuroraDiscInfo;
 
 /**
  * Open a GC/Wii disc image for use by the DVD API.
@@ -19,6 +36,21 @@ bool aurora_dvd_open(const char* disc_path);
  * Close the disc image and free all resources.
  */
 void aurora_dvd_close(void);
+
+/**
+ * Return identity and logical size for the active disc.
+ *
+ * The generation is nonzero while a disc is active and becomes stale after a
+ * successful disc transition.
+ */
+AuroraDiscResult aurora_dvd_get_info(AuroraDiscInfo* out_info);
+
+/**
+ * Read exact logical disc bytes using a generation returned by
+ * aurora_dvd_get_info.
+ */
+AuroraDiscResult aurora_dvd_read_at(
+    uint64_t expected_generation, uint64_t offset, void* buffer, size_t size);
 
 /**
  * OVERLAY FILES!
