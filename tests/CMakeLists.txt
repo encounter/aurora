@@ -137,6 +137,7 @@ if (TARGET aurora::dvd)
     ../lib/logging.cpp
   )
   target_link_libraries(dvd_tests PRIVATE aurora::dvd gtest gtest_main)
+  aurora_copy_runtime_dlls(dvd_tests)
 
   # Pass disc image path as a compile definition if provided
   if (DEFINED DVD_TEST_IMAGE AND EXISTS "${DVD_TEST_IMAGE}")
