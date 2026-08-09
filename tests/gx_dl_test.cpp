@@ -284,3 +284,66 @@ TEST_F(GXFifoTest, DrawIndexed_RoundTripThroughProcessor) {
   EXPECT_EQ(aurora::gfx::g_testLastDraw.indexCount, 12u);
   EXPECT_EQ(aurora::gfx::g_testLastDraw.instanceCount, 1u);
 }
+
+TEST_F(GXFifoTest, BeginIndexed_RoundTripsThroughProcessor) {
+  GXClearVtxDesc();
+  GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
+  GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_U8, 0);
+  const auto state = flush_and_capture();
+
+  const u16 indices[] = {0, 1, 2, 2, 1, 3};
+  GXBeginIndexed(GX_VTXFMT0, 4, indices, 6);
+  GXPosition3u8(0, 1, 2);
+  GXPosition3u8(3, 4, 5);
+  GXPosition3u8(6, 7, 8);
+  GXPosition3u8(9, 10, 11);
+  GXEnd();
+  const auto draw = capture_fifo();
+
+  ASSERT_EQ(draw.size(), 10u + sizeof(indices) + 12u);
+  EXPECT_EQ(draw[0], GX_AURORA);
+  EXPECT_EQ((draw[1] << 8 | draw[2]), GX_AURORA_DRAW_INDEXED);
+  EXPECT_EQ(draw[3], op(GX_TRIANGLES, GX_VTXFMT0));
+  EXPECT_EQ((draw[4] << 8 | draw[5]), 4);
+  EXPECT_EQ((draw[6] << 24 | draw[7] << 16 | draw[8] << 8 | draw[9]), 6u);
+  for (u32 i = 0; i < 6; ++i) {
+    EXPECT_EQ(host_u16(draw.data() + 10 + i * sizeof(u16)), indices[i]);
+  }
+
+  reset_gx_state();
+  decode_fifo(state);
+  aurora::gfx::g_testDrawCount = 0;
+  decode_fifo(draw);
+  EXPECT_EQ(aurora::gfx::g_testDrawCount, 1u);
+  EXPECT_EQ(aurora::gfx::g_testLastDraw.vtxCount, 4u);
+  EXPECT_EQ(aurora::gfx::g_testLastDraw.indexCount, 6u);
+}
+
+TEST_F(GXFifoTest, BeginIndexed_RecordsDisplayList) {
+  GXClearVtxDesc();
+  GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
+  GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_U8, 0);
+  const auto state = flush_and_capture();
+
+  alignas(32) u8 storage[64]{};
+  const u16 indices[] = {0, 1, 2};
+  GXBeginDisplayList(storage, sizeof(storage));
+  GXBeginIndexed(GX_VTXFMT0, 3, indices, 3);
+  GXPosition3u8(0, 1, 2);
+  GXPosition3u8(3, 4, 5);
+  GXPosition3u8(6, 7, 8);
+  GXEnd();
+  const u32 size = GXEndDisplayList();
+
+  EXPECT_EQ(size, 32u);
+  EXPECT_EQ(storage[0], GX_AURORA);
+  EXPECT_EQ((storage[1] << 8 | storage[2]), GX_AURORA_DRAW_INDEXED);
+
+  reset_gx_state();
+  decode_fifo(state);
+  aurora::gfx::g_testDrawCount = 0;
+  aurora::gx::fifo::process(storage, size, true);
+  EXPECT_EQ(aurora::gfx::g_testDrawCount, 1u);
+  EXPECT_EQ(aurora::gfx::g_testLastDraw.vtxCount, 3u);
+  EXPECT_EQ(aurora::gfx::g_testLastDraw.indexCount, 3u);
+}
