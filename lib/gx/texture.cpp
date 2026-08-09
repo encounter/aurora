@@ -94,9 +94,31 @@ struct ContentCacheEntry {
   std::list<TextureContentKey>::iterator lruIt;
 };
 
+constexpr size_t SourceKeyCacheMaxEntries = 16384;
+
+struct SourceKeyCacheEntry {
+  aurora::texture::TextureSourceKey sourceKey;
+  uint32_t minTlutIndex = UINT32_MAX;
+  uint32_t maxTlutIndex = 0;
+};
+
+struct SourceKeyCacheKey {
+  XXH128_hash_t hash;
+
+  bool operator==(const SourceKeyCacheKey& rhs) const noexcept {
+    return hash.low64 == rhs.hash.low64 && hash.high64 == rhs.hash.high64;
+  }
+
+  template <typename H>
+  friend H AbslHashValue(H h, const SourceKeyCacheKey& key) {
+    return H::combine(std::move(h), key.hash.low64, key.hash.high64);
+  }
+};
+
 absl::flat_hash_map<u32, CachedTextureEntry> s_textureObjectCaches;
 absl::flat_hash_map<u32, TlutObjectCache> s_tlutObjectCaches;
 absl::flat_hash_map<TextureContentKey, ContentCacheEntry> s_contentCache;
+absl::flat_hash_map<SourceKeyCacheKey, SourceKeyCacheEntry> s_sourceKeyCache;
 absl::flat_hash_map<uint64_t, absl::flat_hash_set<u32>> s_replacementUsers;
 std::list<TextureContentKey> s_contentLru;
 uint64_t s_contentCacheBytes = 0;
@@ -256,6 +278,7 @@ struct TextureKeys {
 };
 
 TextureKeys hash_texture_source(const GXTexObj_& obj, const GXTlutObj_* tlut, bool buildSourceKey) {
+  ZoneScoped;
   const size_t textureBytes = texture::texture_source_size(obj.format(), obj.width(), obj.height(), obj.mip_count());
   CHECK(obj.has_data() && textureBytes != 0, "invalid texture source for content hash");
 
@@ -271,6 +294,15 @@ TextureKeys hash_texture_source(const GXTexObj_& obj, const GXTlutObj_* tlut, bo
 
   uint32_t minTlutIndex = UINT32_MAX;
   uint32_t maxTlutIndex = 0;
+  if (buildSourceKey) {
+    if (const auto it = s_sourceKeyCache.find(SourceKeyCacheKey{keys.contentKey.textureHash});
+        it != s_sourceKeyCache.end()) {
+      keys.sourceKey = it->second.sourceKey;
+      minTlutIndex = it->second.minTlutIndex;
+      maxTlutIndex = it->second.maxTlutIndex;
+      buildSourceKey = false;
+    }
+  }
   if (buildSourceKey) {
     const size_t baseBytes = texture::texture_source_size(obj.format(), obj.width(), obj.height(), 1);
     keys.sourceKey = aurora::texture::TextureSourceKey{
@@ -309,6 +341,12 @@ TextureKeys hash_texture_source(const GXTexObj_& obj, const GXTlutObj_* tlut, bo
     default:
       break;
     }
+
+    if (s_sourceKeyCache.size() >= SourceKeyCacheMaxEntries) {
+      s_sourceKeyCache.clear();
+    }
+    s_sourceKeyCache.emplace(SourceKeyCacheKey{keys.contentKey.textureHash},
+                             SourceKeyCacheEntry{*keys.sourceKey, minTlutIndex, maxTlutIndex});
   }
 
   if (tlut != nullptr) {
@@ -686,6 +724,7 @@ void shutdown() noexcept {
   s_replacementUsers.clear();
   s_contentCache.clear();
   s_contentLru.clear();
+  s_sourceKeyCache.clear();
   s_contentCacheBytes = 0;
   s_contentCacheBudgetBytes = ContentCacheBudgetBytes;
   s_frameCount = 0;
