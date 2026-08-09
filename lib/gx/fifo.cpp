@@ -72,7 +72,7 @@ void drain() {
   if (detail::sBufferSize == 0) {
     return;
   }
-  process(detail::sBufferData, detail::sBufferSize, true);
+  process(detail::sBufferData, detail::sBufferSize);
   detail::sBufferSize = 0;
 }
 

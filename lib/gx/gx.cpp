@@ -113,11 +113,19 @@ gfx::ClipRect map_logical_scissor(const gfx::ClipRect& logicalScissor) noexcept 
 }
 
 void set_logical_viewport(const gfx::Viewport& viewport) noexcept {
+  if (viewport.left != g_gxState.logicalViewport.left || viewport.width != g_gxState.logicalViewport.width ||
+      viewport.height != g_gxState.logicalViewport.height) {
+    g_gxState.dirty |= DirtyUniform;
+  }
   g_gxState.logicalViewport = viewport;
   set_render_viewport(map_logical_viewport(viewport));
 }
 
 void set_render_viewport(const gfx::Viewport& viewport) noexcept {
+  if (viewport.left != g_gxState.renderViewport.left || viewport.width != g_gxState.renderViewport.width ||
+      viewport.height != g_gxState.renderViewport.height) {
+    g_gxState.dirty |= DirtyUniform;
+  }
   g_gxState.renderViewport = viewport;
   gfx::set_viewport(viewport);
 }
@@ -339,7 +347,9 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
   ZoneScoped;
 
   const auto& vtxFmt = g_gxState.vtxFmts[fmt];
+  config.shaderConfig = {};
   config.shaderConfig.fogType = g_gxState.fog.type;
+  config.shaderConfig.fogRangeEnabled = g_gxState.fog.rangeEnabled;
   u8 vtxOffset = 0;
   for (int i = GX_VA_PNMTXIDX; i <= GX_VA_TEX7; ++i) {
     const auto attr = static_cast<GXAttr>(i);
@@ -544,6 +554,7 @@ void initialize() noexcept {
         .label = "GX Pipeline Layout",
         .bindGroupLayoutCount = layouts.size(),
         .bindGroupLayouts = layouts.data(),
+        .immediateSize = sizeof(DrawImmediateData),
     };
     sPipelineLayout = g_device.CreatePipelineLayout(&desc);
   }

@@ -567,6 +567,11 @@ size_t tlut_source_size(u16 numEntries) noexcept { return static_cast<size_t>(nu
 
 void invalidate_bindings() noexcept { s_pendingInvalidations.fetch_add(1, std::memory_order_release); }
 
+uint64_t current_bind_generation() noexcept {
+  apply_pending_invalidations();
+  return s_bindGeneration;
+}
+
 void invalidate_replacement(uint64_t replacementId) noexcept {
   const auto users = s_replacementUsers.find(replacementId);
   if (users == s_replacementUsers.end()) {

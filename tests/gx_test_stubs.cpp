@@ -66,6 +66,7 @@ namespace aurora::gx {
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[id]; }
 namespace texture {
 void invalidate_bindings() noexcept {}
+uint64_t current_bind_generation() noexcept { return 1; }
 } // namespace texture
 void evict_texture_object(u32 texObjId) noexcept {
   for (auto& obj : g_gxState.loadedTextures) {
@@ -114,9 +115,7 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
 }
 GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept { return {}; }
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept { return {}; }
-gfx::Range build_uniform(const ShaderInfo& info, uint32_t vtxStart, const BindGroupRanges& ranges) noexcept {
-  return {};
-}
+gfx::Range build_uniform(const ShaderInfo& info) noexcept { return {.size = 1}; }
 void resolve_sampled_textures(const ShaderInfo& info) noexcept {}
 u8 color_channel(GXChannelID id) noexcept { return 0; }
 } // namespace aurora::gx
@@ -131,6 +130,7 @@ Range push_storage(const uint8_t* data, size_t length) { return {}; }
 Vec2<uint32_t> get_render_target_size() noexcept { return {640, 480}; }
 void set_viewport(const Viewport& viewport) noexcept {}
 void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {}
+uint32_t get_sample_count() noexcept { return 1; }
 } // namespace aurora::gfx
 
 // --- Pipeline/draw command stubs ---

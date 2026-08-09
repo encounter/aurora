@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -16,6 +17,7 @@
 #include <magic_enum.hpp>
 #include <webgpu/webgpu_cpp.h>
 
+#include "../gx/gx.hpp"
 #include "../gfx/common.hpp"
 #include "../gfx/render_worker.hpp"
 #include "../internal.hpp"
@@ -869,6 +871,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
             supportedLimits.minUniformBufferOffsetAlignment < 64 ? 64 : supportedLimits.minUniformBufferOffsetAlignment,
         .minStorageBufferOffsetAlignment =
             supportedLimits.minStorageBufferOffsetAlignment < 16 ? 16 : supportedLimits.minStorageBufferOffsetAlignment,
+        .maxImmediateSize = sizeof(gx::DrawImmediateData),
     };
     Log.info(
         "Using limits:"
@@ -878,11 +881,12 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         "\n  maxTextureArrayLayers: {}"
         "\n  maxStorageBuffersPerShaderStage: {}"
         "\n  minUniformBufferOffsetAlignment: {}"
-        "\n  minStorageBufferOffsetAlignment: {}",
+        "\n  minStorageBufferOffsetAlignment: {}"
+        "\n  maxImmediateSize: {}",
         requiredLimits.maxTextureDimension1D, requiredLimits.maxTextureDimension2D,
         requiredLimits.maxTextureDimension3D, requiredLimits.maxTextureArrayLayers,
         requiredLimits.maxStorageBuffersPerShaderStage, requiredLimits.minUniformBufferOffsetAlignment,
-        requiredLimits.minStorageBufferOffsetAlignment);
+        requiredLimits.minStorageBufferOffsetAlignment, requiredLimits.maxImmediateSize);
     std::vector<wgpu::FeatureName> requiredFeatures;
     g_hasCoreFeatures = false;
     g_bcTexturesSupported = false;
@@ -919,12 +923,15 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     }
     Log.info("Enabling features: {}", featureList);
 #ifdef WEBGPU_DAWN
-    wgpu::DawnCacheDeviceDescriptor cacheDescriptor({
-        .isolationKey = nullptr,
-        .loadDataFunction = load_from_cache,
-        .storeDataFunction = store_to_cache,
-        .functionUserdata = nullptr,
-    });
+    wgpu::DawnCacheDeviceDescriptor cacheDescriptor({.nextInChain = nullptr});
+    cacheDescriptor.SetDawnLoadCacheDataCallback(
+        [](std::span<const std::byte> key, std::span<std::byte> value) noexcept -> size_t {
+          return load_from_cache(key.data(), key.size(), value.data(), value.size(), nullptr);
+        });
+    cacheDescriptor.SetDawnStoreCacheDataCallback(
+        [](std::span<const std::byte> key, std::span<const std::byte> value) noexcept {
+          store_to_cache(key.data(), key.size(), value.data(), value.size(), nullptr);
+        });
 
     constexpr std::array enableToggles{
 #if _WIN32

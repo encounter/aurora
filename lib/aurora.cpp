@@ -3,6 +3,7 @@
 #ifdef AURORA_ENABLE_GX
 #include "gfx/common.hpp"
 #include "gfx/render_worker.hpp"
+#include "gx/command_processor.hpp"
 #include "gx/fifo.hpp"
 #include "gx/texture.hpp"
 #include "imgui.hpp"
@@ -251,6 +252,7 @@ void end_frame() noexcept {
 #ifdef AURORA_ENABLE_GX
   gx::texture::end_frame();
   gx::fifo::drain();
+  gx::fifo::end_frame();
   gfx::finish();
   auto imguiDrawData = imgui::freeze();
 

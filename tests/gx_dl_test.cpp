@@ -342,7 +342,7 @@ TEST_F(GXFifoTest, BeginIndexed_RecordsDisplayList) {
   reset_gx_state();
   decode_fifo(state);
   aurora::gfx::g_testDrawCount = 0;
-  aurora::gx::fifo::process(storage, size, true);
+  aurora::gx::fifo::process(storage, size);
   EXPECT_EQ(aurora::gfx::g_testDrawCount, 1u);
   EXPECT_EQ(aurora::gfx::g_testLastDraw.vtxCount, 3u);
   EXPECT_EQ(aurora::gfx::g_testLastDraw.indexCount, 3u);

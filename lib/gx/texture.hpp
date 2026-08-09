@@ -34,6 +34,7 @@ size_t texture_source_size(u32 format, u32 width, u32 height, u32 mipCount) noex
 size_t tlut_source_size(u16 numEntries) noexcept;
 
 void invalidate_bindings() noexcept;
+uint64_t current_bind_generation() noexcept;
 void invalidate_replacement(uint64_t replacementId) noexcept;
 void end_frame() noexcept;
 void shutdown() noexcept;

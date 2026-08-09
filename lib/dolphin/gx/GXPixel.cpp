@@ -5,34 +5,52 @@
 
 extern "C" {
 void GXSetFog(GXFogType type, float startZ, float endZ, float nearZ, float farZ, GXColor color) {
-  // Compute fog coefficients matching SDK
-  f32 A, B, C;
-  if (farZ == nearZ || endZ == startZ) {
-    A = 0.0f;
-    B = 0.5f;
-    C = 0.0f;
+  const bool orthographic = (type & 0x08) != 0;
+  f32 a;
+  f32 c;
+  u32 bMantissaRaw = 0;
+  u32 bScale = 0;
+
+  if (orthographic) {
+    if (farZ == nearZ || endZ == startZ) {
+      a = 0.0f;
+      c = 0.0f;
+    } else {
+      const f32 scale = 1.0f / (endZ - startZ);
+      a = scale * (farZ - nearZ);
+      c = scale * (startZ - nearZ);
+    }
   } else {
-    A = (farZ * nearZ) / ((farZ - nearZ) * (endZ - startZ));
-    B = farZ / (farZ - nearZ);
-    C = startZ / (endZ - startZ);
-  }
+    f32 aCoeff;
+    f32 bCoeff;
+    f32 cCoeff;
+    if (farZ == nearZ || endZ == startZ) {
+      aCoeff = 0.0f;
+      bCoeff = 0.5f;
+      cCoeff = 0.0f;
+    } else {
+      aCoeff = (farZ * nearZ) / ((farZ - nearZ) * (endZ - startZ));
+      bCoeff = farZ / (farZ - nearZ);
+      cCoeff = startZ / (endZ - startZ);
+    }
 
-  // Normalize B mantissa
-  f32 B_mant = B;
-  u32 B_expn = 0;
-  while (B_mant > 1.0f) {
-    B_mant *= 0.5f;
-    B_expn++;
-  }
-  while (B_mant > 0.0f && B_mant < 0.5f) {
-    B_mant *= 2.0f;
-    B_expn--;
-  }
+    // Normalize B mantissa
+    f32 bMantissa = bCoeff;
+    u32 bExponent = 0;
+    while (bMantissa > 1.0f) {
+      bMantissa *= 0.5f;
+      bExponent++;
+    }
+    while (bMantissa > 0.0f && bMantissa < 0.5f) {
+      bMantissa *= 2.0f;
+      bExponent--;
+    }
 
-  f32 a = A / static_cast<f32>(1 << (B_expn + 1));
-  u32 b_m = static_cast<u32>(8.388638e6f * B_mant);
-  u32 b_s = B_expn + 1;
-  f32 c = C;
+    a = aCoeff / static_cast<f32>(1 << (bExponent + 1));
+    bMantissaRaw = static_cast<u32>(8.388638e6f * bMantissa);
+    bScale = bExponent + 1;
+    c = cCoeff;
+  }
 
   u32 a_hex, c_hex;
   std::memcpy(&a_hex, &a, sizeof(a_hex));
@@ -47,12 +65,12 @@ void GXSetFog(GXFogType type, float startZ, float endZ, float nearZ, float farZ,
 
   // BP FOG1 (0xEF) - B mantissa
   u32 fog1 = 0;
-  SET_REG_FIELD(0, fog1, 24, 0, b_m);
+  SET_REG_FIELD(0, fog1, 24, 0, bMantissaRaw);
   SET_REG_FIELD(0, fog1, 8, 24, 0xEF);
 
   // BP FOG2 (0xF0) - B scale
   u32 fog2 = 0;
-  SET_REG_FIELD(0, fog2, 5, 0, b_s);
+  SET_REG_FIELD(0, fog2, 5, 0, bScale);
   SET_REG_FIELD(0, fog2, 8, 24, 0xF0);
 
   // BP FOG3 (0xF1) - C parameter + type
@@ -60,7 +78,8 @@ void GXSetFog(GXFogType type, float startZ, float endZ, float nearZ, float farZ,
   SET_REG_FIELD(0, fog3, 11, 0, (c_hex >> 12) & 0x7FF);
   SET_REG_FIELD(0, fog3, 8, 11, (c_hex >> 23) & 0xFF);
   SET_REG_FIELD(0, fog3, 1, 19, (c_hex >> 31));
-  SET_REG_FIELD(0, fog3, 3, 21, type);
+  SET_REG_FIELD(0, fog3, 1, 20, orthographic);
+  SET_REG_FIELD(0, fog3, 3, 21, type & 0x07);
   SET_REG_FIELD(0, fog3, 8, 24, 0xF1);
 
   // BP FOGCLR (0xF2) - color

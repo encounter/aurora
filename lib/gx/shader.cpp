@@ -538,7 +538,7 @@ static inline std::string vtx_attr(const ShaderConfig& config, GXAttr attr) {
   const auto type = config.attrs[attr].attrType;
   if (type == GX_NONE) {
     if (attr == GX_VA_PNMTXIDX) {
-      return "ubuf.current_pnmtx";
+      return "imm.current_pnmtx";
     }
     if (attr == GX_VA_NRM) {
       // Default normal
@@ -581,7 +581,7 @@ constexpr std::array<std::string_view, GX_CA_ZERO + 1> TevAlphaArgNames{
     "APREV"sv, "A0"sv, "A1"sv, "A2"sv, "TEXA"sv, "RASA"sv, "KONST"sv, "ZERO"sv,
 };
 
-auto fetch_fixed16_attr(std::string_view fetchFn, const AttrConfig& mapping, std::string_view buf, 
+auto fetch_fixed16_attr(std::string_view fetchFn, const AttrConfig& mapping, std::string_view buf,
                         std::string_view offs, bool le) -> std::string {
   // Some Adreno drivers appear sensitive to generated shaders that route 2- and
   // 3-component fixed-16 vertex attributes through reusable vector fetch helpers.
@@ -644,21 +644,26 @@ struct AttrAddress {
   bool le;
 };
 
+// Immediates cannot contain arrays, so array_start is packed as three vec4u.
+static std::string imm_array_start(GXAttr attr) noexcept {
+  const u32 idx = attr - GX_VA_POS;
+  return fmt::format("imm.array_start{}.{}", idx / 4, "xyzw"[idx % 4]);
+}
+
 auto attr_address(const AttrConfig& mapping, GXAttr attr, std::string_view vidx, u32 vtxStride, u32 dlExtra, u32 within)
     -> AttrAddress {
   const u32 dlOffset = mapping.offset + dlExtra;
   if (mapping.attrType == GX_INDEX8) {
-    return {fmt::format("ubuf.array_start[{}] + raw_fetch_u8_1(&vbuf, ubuf.vtx_start + {} * {}u + {}u) * {}u + {}u",
-                        attr - GX_VA_POS, vidx, vtxStride, dlOffset, mapping.stride, within),
+    return {fmt::format("{} + raw_fetch_u8_1(&vbuf, imm.vtx_start + {} * {}u + {}u) * {}u + {}u", imm_array_start(attr),
+                        vidx, vtxStride, dlOffset, mapping.stride, within),
             "abuf"sv, mapping.le};
   }
   if (mapping.attrType == GX_INDEX16) {
-    return {
-        fmt::format("ubuf.array_start[{}] + raw_fetch_u16_1(&vbuf, ubuf.vtx_start + {} * {}u + {}u, false) * {}u + {}u",
-                    attr - GX_VA_POS, vidx, vtxStride, dlOffset, mapping.stride, within),
-        "abuf"sv, mapping.le};
+    return {fmt::format("{} + raw_fetch_u16_1(&vbuf, imm.vtx_start + {} * {}u + {}u, false) * {}u + {}u",
+                        imm_array_start(attr), vidx, vtxStride, dlOffset, mapping.stride, within),
+            "abuf"sv, mapping.le};
   }
-  return {fmt::format("ubuf.vtx_start + {} * {}u + {}u", vidx, vtxStride, dlOffset + within), "vbuf"sv, false};
+  return {fmt::format("imm.vtx_start + {} * {}u + {}u", vidx, vtxStride, dlOffset + within), "vbuf"sv, false};
 }
 
 auto attr_load(const ShaderConfig& config, GXAttr attr, std::string_view vidx) -> std::string {
@@ -911,6 +916,7 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
       Log.info("  alphaCompare: comp0 {} ref0 {} op {} comp1 {} ref1 {}", config.alphaCompare.comp0,
                config.alphaCompare.ref0, config.alphaCompare.op, config.alphaCompare.comp1, config.alphaCompare.ref1);
       Log.info("  fogType: {}", config.fogType);
+      Log.info("  fogRangeEnabled: {}", config.fogRangeEnabled);
     }
   }
 
@@ -962,7 +968,7 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     }
     vidxAttr = "in_vidx"sv;
   } else if (config.attrs[GX_VA_PNMTXIDX].attrType == GX_NONE) {
-    vtxXfrAttrsPre += "\n    let in_pnmtxidx = ubuf.current_pnmtx;";
+    vtxXfrAttrsPre += "\n    let in_pnmtxidx = imm.current_pnmtx;";
   }
 
   // Load vertex attributes
@@ -1287,8 +1293,8 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     // The shader carries normalized UVs, so convert that texel-space result back
     // into normalized coordinates for the indirect texture sample.
     const auto scaleExpr =
-        fmt::format("tex{0}_uv * ubuf.texcoord_scale[{0}].xy * vec2f({1}, {2}) / ubuf.tex{3}_size_bias.xy",
-                    texCoordId, ind_scale(indStage.scaleS), ind_scale(indStage.scaleT), texMapId);
+        fmt::format("tex{0}_uv * ubuf.texcoord_scale[{0}].xy * vec2f({1}, {2}) / ubuf.tex{3}_size_bias.xy", texCoordId,
+                    ind_scale(indStage.scaleS), ind_scale(indStage.scaleT), texMapId);
     fragmentFnPre += fmt::format(
         "\n    // Indirect stage {0}"
         "\n    var t_IndTexCoord{0} = 255.0 * textureSampleBias(tex{1}, tex{1}_samp, {2}, "
@@ -1474,8 +1480,9 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
         fmt::format("\n    var sampled{0} = textureSampleBias(tex{1}, tex{1}_samp, {2}, ubuf.tex{1}_size_bias.z);", i,
                     underlying(stage.texMapId), uvIn);
   }
-  if (info.usesPTTexMtx.any())
+  if (info.usesPTTexMtx.any()) {
     uniBufAttrs += fmt::format("\n    postmtx: array<mat3x4f, {}>,", MaxPTTexMtx);
+  }
   if (info.usesFog) {
     uniformPre +=
         "\n"
@@ -1484,13 +1491,31 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
         "    a: f32,\n"
         "    b: f32,\n"
         "    c: f32,\n"
-        "    pad: f32,\n"
+        "    range_center: f32,\n"
+        "    range_k: array<vec4f, 3>,\n"
         "}";
     uniBufAttrs += "\n    fog: Fog,";
 
-    fragmentFn +=
-        fmt::format("\n    // Fog\n    var fogF = clamp((ubuf.fog.a / (ubuf.fog.b - {})) - ubuf.fog.c, 0.0, 1.0);",
-                    UseReversedZ ? "(1.0 - in.pos.z)" : "in.pos.z");
+    const std::string_view fogDepth = UseReversedZ ? "(1.0 - in.pos.z)" : "in.pos.z";
+    if ((config.fogType & 0x08) != 0) {
+      fragmentFn += fmt::format("\n    // Orthographic fog\n    var fogBase = ubuf.fog.a * {};", fogDepth);
+    } else {
+      fragmentFn +=
+          fmt::format("\n    // Perspective fog\n    var fogBase = ubuf.fog.a / (ubuf.fog.b - {});", fogDepth);
+    }
+    if (config.fogRangeEnabled) {
+      fragmentFn +=
+          "\n        let fog_screen_x = (in.pos.x / max(ubuf.render_viewport_size.x, 1.0)) * 2.0 - 1.0;"
+          "\n        let fog_offset = fog_screen_x - ubuf.fog.range_center;"
+          "\n        let fog_range_index = clamp(9.0 - abs(fog_offset) * 9.0, 0.0, 9.0);"
+          "\n        let fog_range_lower = u32(fog_range_index);"
+          "\n        let fog_range_upper = min(fog_range_lower + 1u, 9u);"
+          "\n        let fog_k_lower = ubuf.fog.range_k[fog_range_lower / 4u][fog_range_lower % 4u];"
+          "\n        let fog_k_upper = ubuf.fog.range_k[fog_range_upper / 4u][fog_range_upper % 4u];"
+          "\n        let fog_k = max(mix(fog_k_lower, fog_k_upper, fract(fog_range_index)), 0.000001);"
+          "\n        fogBase *= sqrt(fog_offset * fog_offset + fog_k * fog_k) / fog_k;";
+    }
+    fragmentFn += "\n    var fogF = clamp(fogBase - ubuf.fog.c, 0.0, 1.0);";
     switch (config.fogType) {
       DEFAULT_FATAL("invalid fog type {}", config.fogType);
     case GX_FOG_PERSP_LIN:
@@ -1520,7 +1545,7 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
   }
   uniBufAttrs += fmt::format("\n    texcoord_scale: array<vec4f, {}>,", MaxTexCoord);
   if (info.usedIndTexMtxs.any()) {
-    uniBufAttrs += "\n    ind_mtx: array<mat2x4f, 3>,";
+    uniBufAttrs += fmt::format("\n    ind_mtx: array<mat2x4f, {}>,", MaxIndTexMtxs);
   }
   for (int i = 0; i < info.sampledTextures.size(); ++i) {
     if (!info.sampledTextures.test(i)) {
@@ -1897,13 +1922,18 @@ fn tev_overflow_vec4f(in: vec4f) -> vec4f {{
 
 {8}
 
-struct Uniform {{
+struct Immediate {{
     vtx_start: u32,
     current_pnmtx: u32,
+    array_start0: vec4u,
+    array_start1: vec4u,
+    array_start2: vec4u,
+}};
+var<immediate> imm: Immediate;
+
+struct Uniform {{
     render_viewport_size: vec2f,
-    logical_viewport_size: vec2f,
-    pad: vec2u,
-    array_start: array<u32, 12>,{0}
+    logical_viewport_size: vec2f,{0}
 }};
 @group(0) @binding(0)
 var<storage, read> vbuf: array<u32>;
