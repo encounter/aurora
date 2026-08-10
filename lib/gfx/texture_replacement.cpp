@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -1844,7 +1845,16 @@ std::optional<ReplacementResult> find_source_replacement(const GXTexObj_& obj,
   return find_source_replacement_locked(obj, sourceKey);
 }
 
+static std::atomic_bool s_forceSourceKeys = false;
+
+void set_force_source_keys_for_testing(bool force) noexcept {
+  s_forceSourceKeys.store(force, std::memory_order_relaxed);
+}
+
 bool should_build_source_key() noexcept {
+  if (s_forceSourceKeys.load(std::memory_order_relaxed)) {
+    return true;
+  }
   std::lock_guard lk(s_registryMutex);
   return s_sourceEntryCount != 0 || g_config.allowTextureDumps;
 }

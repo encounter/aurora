@@ -4,6 +4,7 @@
 #include "gfx/common.hpp"
 #include "gfx/render_worker.hpp"
 #include "gx/command_processor.hpp"
+#include "gx/fifo_capture.hpp"
 #include "gx/fifo.hpp"
 #include "gx/gx.hpp"
 #include "gx/texture.hpp"
@@ -261,6 +262,7 @@ bool begin_frame() noexcept {
 void end_frame() noexcept {
   ZoneScoped;
 #ifdef AURORA_ENABLE_GX
+  gx::fifo_capture::do_capture();
   gx::fifo::drain();
   gx::fifo::end_frame();
   gx::texture::end_frame();
@@ -450,6 +452,11 @@ void aurora_shutdown() { aurora::shutdown(); }
 const AuroraEvent* aurora_update() { return aurora::update(); }
 bool aurora_begin_frame() { return aurora::begin_frame(); }
 void aurora_end_frame() { aurora::end_frame(); }
+void aurora_fifo_capture() {
+#ifdef AURORA_ENABLE_GX
+  aurora::gx::fifo_capture::request();
+#endif
+}
 AuroraBackend aurora_get_backend() { return aurora::g_config.desiredBackend; }
 const AuroraBackend* aurora_get_available_backends(size_t* count) {
   if (count != nullptr) {

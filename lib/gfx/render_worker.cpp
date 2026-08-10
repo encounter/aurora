@@ -17,6 +17,8 @@ BoundedQueue g_queue{QueueCapacity};
 thread::Thread g_thread;
 std::atomic_bool g_running = false;
 std::atomic_size_t g_pendingItems = 0;
+std::atomic_int64_t g_busyNs = 0;
+std::atomic_int64_t g_busyEncodeNs = 0;
 std::thread::id g_workerThreadId;
 
 void complete_sync(const std::shared_ptr<SyncState>& sync) {
@@ -46,7 +48,14 @@ void worker_main(std::stop_token token) {
 
     if (item->work) {
       ZoneScopedN("QueueItem work");
+      const auto workStart = std::chrono::steady_clock::now();
       item->work();
+      const auto workNs =
+          std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - workStart).count();
+      g_busyNs.fetch_add(workNs, std::memory_order_relaxed);
+      if (item->type == ItemType::EncodePass) {
+        g_busyEncodeNs.fetch_add(workNs, std::memory_order_relaxed);
+      }
     }
     complete_sync(item->sync);
     g_pendingItems.fetch_sub(1, std::memory_order_acq_rel);
@@ -269,5 +278,9 @@ void synchronize() {
 bool is_worker_thread() noexcept { return g_workerThreadId == std::this_thread::get_id(); }
 
 bool is_idle() noexcept { return g_pendingItems.load(std::memory_order_acquire) == 0; }
+
+int64_t busy_ns() noexcept { return g_busyNs.load(std::memory_order_relaxed); }
+
+int64_t busy_encode_ns() noexcept { return g_busyEncodeNs.load(std::memory_order_relaxed); }
 
 } // namespace aurora::gfx::render_worker

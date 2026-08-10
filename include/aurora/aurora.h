@@ -131,6 +131,7 @@ void aurora_shutdown();
 const AuroraEvent* aurora_update();
 bool aurora_begin_frame();
 void aurora_end_frame();
+void aurora_fifo_capture();
 
 void aurora_set_log_level(AuroraLogLevel level);
 void aurora_set_pause_on_focus_lost(bool value);

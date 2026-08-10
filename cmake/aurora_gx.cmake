@@ -15,6 +15,7 @@ add_library(aurora_gx STATIC
         lib/gx/command_processor.cpp
         lib/gx/regs.cpp
         lib/gx/dl.cpp
+        lib/gx/fifo_capture.cpp
         lib/gx/fifo.cpp
         lib/gx/gx.cpp
         lib/gx/texture.cpp
@@ -55,4 +56,11 @@ if (AURORA_ENABLE_RMLUI)
         lib/rmlui/pipeline.cpp
         lib/rmlui/pipeline.hpp
     )
+endif ()
+
+if (NOT CMAKE_CROSSCOMPILING)
+    add_executable(fifo_player tools/fifo_player.cpp)
+    target_include_directories(fifo_player PRIVATE lib)
+    target_link_libraries(fifo_player PRIVATE aurora::core aurora::gx aurora::main aurora::vi absl::btree absl::flat_hash_map)
+    set_target_properties(fifo_player PROPERTIES FOLDER "aurora/tools")
 endif ()
