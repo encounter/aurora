@@ -3,9 +3,10 @@
 #include "../internal.hpp"
 #include "gx_fmt.hpp"
 
-static aurora::Module Log("aurora::gx");
-
 namespace aurora::gx {
+namespace {
+constexpr Module Log{"aurora::gx"};
+}
 
 u8 comp_type_size(GXAttr attr, GXCompType type) noexcept {
   switch (attr) {
@@ -105,6 +106,20 @@ u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept {
     break;
   }
   Log.fatal("comp_cnt_count: Unsupported attr/cnt {} {}", attr, cnt);
+}
+
+u8 color_channel(GXChannelID id) noexcept {
+  switch (id) {
+    DEFAULT_FATAL("unimplemented color channel {}", id);
+  case GX_COLOR0:
+  case GX_ALPHA0:
+  case GX_COLOR0A0:
+    return 0;
+  case GX_COLOR1:
+  case GX_ALPHA1:
+  case GX_COLOR1A1:
+    return 1;
+  }
 }
 
 } // namespace aurora::gx

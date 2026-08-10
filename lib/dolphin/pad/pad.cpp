@@ -11,6 +11,8 @@
 #include <ranges>
 
 namespace {
+constexpr aurora::Module Log{"aurora::input"};
+
 constexpr int32_t k_mappingsFileVersion = 4;
 constexpr int32_t k_minMappingsFileVersion = 3;
 
@@ -526,15 +528,15 @@ void __PADLoadMapping(aurora::input::GameController* controller) /*  NOLINT(*-re
   uint32_t magic = 0;
   SDL_ReadU32LE(file, &magic);
   if (magic != SBIG('CTRL')) {
-    aurora::input::Log.warn("Invalid controller mapping magic!");
+    Log.warn("Invalid controller mapping magic!");
     return;
   }
 
   uint32_t version = 0;
   SDL_ReadU32LE(file, &version);
   if (version < k_minMappingsFileVersion || version > k_mappingsFileVersion) {
-    aurora::input::Log.warn("Invalid controller mapping version! (Expected {0}..{1}, found {2})",
-                            k_minMappingsFileVersion, k_mappingsFileVersion, version);
+    Log.warn("Invalid controller mapping version! (Expected {0}..{1}, found {2})", k_minMappingsFileVersion,
+             k_mappingsFileVersion, version);
     return;
   }
 
@@ -543,7 +545,7 @@ void __PADLoadMapping(aurora::input::GameController* controller) /*  NOLINT(*-re
   SDL_SeekIO(file, SDL_TellIO(file) + 31 & ~31, SDL_IO_SEEK_SET);
   const auto dataStart = SDL_TellIO(file);
   if (dataStart == -1) {
-    aurora::input::Log.warn("Unable to seek in controller bindings! Path: \"{}\"", path);
+    Log.warn("Unable to seek in controller bindings! Path: \"{}\"", path);
     return;
   }
   if (isGameCube) {
@@ -573,8 +575,7 @@ void __PADLoadMapping(aurora::input::GameController* controller) /*  NOLINT(*-re
     }
   }
   if (axisCorrupt) {
-    aurora::input::Log.warn("__PADLoadMapping port={}: corrupt axis data in file, resetting axes to defaults",
-                            playerIndex);
+    Log.warn("__PADLoadMapping port={}: corrupt axis data in file, resetting axes to defaults", playerIndex);
     controller->m_axisMapping = g_defaultAxes;
   }
 
@@ -586,8 +587,7 @@ void __PADLoadMapping(aurora::input::GameController* controller) /*  NOLINT(*-re
     }
   }
   if (buttonCorrupt) {
-    aurora::input::Log.warn("__PADLoadMapping port={}: corrupt button data in file, resetting buttons to defaults",
-                            playerIndex);
+    Log.warn("__PADLoadMapping port={}: corrupt button data in file, resetting buttons to defaults", playerIndex);
     __PADSetDefaultMapping(controller);
   }
 }
@@ -679,7 +679,7 @@ static void merge_virtual_status(PADStatus& status, const PADStatus& virtualStat
 
 u32 PADRead(PADStatus* status) {
   if (!g_initialized) {
-    aurora::input::Log.fatal("PADRead called before PADInit()!");
+    Log.fatal("PADRead called before PADInit()!");
   }
 
   int numKeys = 0;
@@ -1297,7 +1297,7 @@ static void load_keyboard_bindings() {
   uint32_t magic = 0;
   SDL_ReadU32LE(file, &magic);
   if (magic != k_keyboardMagic) {
-    aurora::input::Log.warn("keyboard_bindings.dat: invalid magic");
+    Log.warn("keyboard_bindings.dat: invalid magic");
     SDL_CloseIO(file);
     return;
   }
@@ -1305,8 +1305,7 @@ static void load_keyboard_bindings() {
   uint32_t version = 0;
   SDL_ReadU32LE(file, &version);
   if (version != k_keyboardVersion) {
-    aurora::input::Log.warn("keyboard_bindings.dat: version mismatch (expected {}, got {})", k_keyboardVersion,
-                            version);
+    Log.warn("keyboard_bindings.dat: version mismatch (expected {}, got {})", k_keyboardVersion, version);
     SDL_CloseIO(file);
     return;
   }
@@ -1328,7 +1327,7 @@ static void load_keyboard_bindings() {
       }
     }
     if (kbButtonCorrupt) {
-      aurora::input::Log.warn("keyboard_bindings.dat port={}: corrupt button identifiers, resetting to defaults", port);
+      Log.warn("keyboard_bindings.dat port={}: corrupt button identifiers, resetting to defaults", port);
       buttonMapping = g_defaultKeys;
     }
 
@@ -1340,7 +1339,7 @@ static void load_keyboard_bindings() {
       }
     }
     if (kbAxisCorrupt) {
-      aurora::input::Log.warn("keyboard_bindings.dat port={}: corrupt axis identifiers, resetting to defaults", port);
+      Log.warn("keyboard_bindings.dat port={}: corrupt axis identifiers, resetting to defaults", port);
       axisMapping = g_defaultKeyAxis;
     }
 
@@ -1362,7 +1361,7 @@ static void save_keyboard_bindings() {
   const auto pathString = fs_path_to_string(filePath);
   SDL_IOStream* file = SDL_IOFromFile(pathString.c_str(), "wb");
   if (file == nullptr) {
-    aurora::input::Log.warn("save_keyboard_bindings: failed to open {} for writing", pathString);
+    Log.warn("save_keyboard_bindings: failed to open {} for writing", pathString);
     return;
   }
 
@@ -1412,7 +1411,7 @@ void PADSerializeMappings() {
     // start writing data at next 32-byte aligned offset
     const int64_t dataStart = SDL_TellIO(file) + 31 & ~31;
     if (dataStart == -1) {
-      aurora::input::Log.warn("Unable to seek in controller bindings! Path: \"{}\"", filePathStr);
+      Log.warn("Unable to seek in controller bindings! Path: \"{}\"", filePathStr);
       return;
     }
     SDL_SeekIO(file, dataStart, SDL_IO_SEEK_SET);
@@ -1590,7 +1589,7 @@ SDL_Gamepad* PADGetSDLGamepadForIndex(const u32 index) {
 
 void PADSetDefaultMapping(const PADDefaultMapping* mapping, const PADControllerType type) {
   if (g_initialized) {
-    aurora::input::Log.fatal("PADSetDefaultMapping called after PADInit()!");
+    Log.fatal("PADSetDefaultMapping called after PADInit()!");
   }
 
   switch (type) {

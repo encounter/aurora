@@ -10,7 +10,7 @@
 #include <dxgi.h>
 #include <wrl/client.h>
 
-template<typename T>
+template <typename T>
 using ComPtr = Microsoft::WRL::ComPtr<T>;
 typedef LONG NTSTATUS, *PNTSTATUS;
 extern "C" NTSYSAPI NTSTATUS NTAPI RtlGetVersion(PRTL_OSVERSIONINFOEXW lpVersionInformation);
@@ -23,14 +23,13 @@ extern "C" NTSYSAPI NTSTATUS NTAPI RtlGetVersion(PRTL_OSVERSIONINFOEXW lpVersion
 #include <sys/sysinfo.h>
 #endif
 
-
 using namespace std::string_literals;
 
 namespace aurora {
-
-static constexpr auto Unknown = "Unknown";
-
-static Module Log("aurora::system_info");
+namespace {
+constexpr Module Log{"aurora::system_info"};
+constexpr auto Unknown = "Unknown";
+} // namespace
 
 static std::string GetOSVersion();
 static std::string GetCpuModel();
@@ -60,30 +59,14 @@ struct ComGuard {
 };
 
 static std::string wideStringToUtf8(std::wstring_view str) {
-  const auto size = WideCharToMultiByte(
-    CP_UTF8,
-    0,
-    str.data(),
-    static_cast<int>(str.size()),
-    nullptr,
-    0,
-    nullptr,
-    nullptr
-    );
+  const auto size =
+      WideCharToMultiByte(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), nullptr, 0, nullptr, nullptr);
 
   std::string result{};
   result.resize(size);
 
-  WideCharToMultiByte(
-    CP_UTF8,
-    0,
-    str.data(),
-    static_cast<int>(str.size()),
-    result.data(),
-    static_cast<int>(result.size()),
-    nullptr,
-    nullptr
-    );
+  WideCharToMultiByte(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), result.data(),
+                      static_cast<int>(result.size()), nullptr, nullptr);
 
   return result;
 }
@@ -207,11 +190,7 @@ std::string GetOSVersion() {
     return Unknown;
   }
 
-  return fmt::format(
-    "Microsoft Windows {}.{} build {}",
-    info.dwMajorVersion,
-    info.dwMinorVersion,
-    info.dwBuildNumber);
+  return fmt::format("Microsoft Windows {}.{} build {}", info.dwMajorVersion, info.dwMinorVersion, info.dwBuildNumber);
 }
 
 static void LogGpus() {
@@ -222,7 +201,7 @@ static void LogGpus() {
     return;
   }
 
-  for (UINT i = 0;;i++) {
+  for (UINT i = 0;; i++) {
     ComPtr<IDXGIAdapter1> adapter;
     result = factory->EnumAdapters1(i, &adapter);
     if (result == DXGI_ERROR_NOT_FOUND)
@@ -236,9 +215,7 @@ static void LogGpus() {
   }
 }
 
-void LogMisc() {
-  LogGpus();
-}
+void LogMisc() { LogGpus(); }
 
 #elif __APPLE__
 
@@ -264,9 +241,7 @@ static std::string sysCtlToString(const char* name) {
   return value;
 }
 
-std::string GetCpuModel() {
-  return sysCtlToString("machdep.cpu.brand_string");
-}
+std::string GetCpuModel() { return sysCtlToString("machdep.cpu.brand_string"); }
 
 uint64_t GetMemoryAmount() {
   uint64_t result;
@@ -291,7 +266,7 @@ std::string GetOSVersion() {
   constexpr auto name = Unknown;
 #endif
 
-  return fmt::format("{} {}", name, system_info::getSystemVersionString());
+  return fmt::format("{} {}", name, detail::system_version_string());
 }
 
 void LogMisc() {
@@ -300,15 +275,12 @@ void LogMisc() {
 #elif linux
 
 // https://stackoverflow.com/questions/216823/how-can-i-trim-a-stdstring
-static void ltrim(std::string &s) {
-  s.erase(s.begin(), std::ranges::find_if(s.begin(), s.end(), [](unsigned char ch) {
-    return !std::isspace(ch);
-  }));
+static void ltrim(std::string& s) {
+  s.erase(s.begin(), std::ranges::find_if(s.begin(), s.end(), [](unsigned char ch) { return !std::isspace(ch); }));
 }
-static void rtrim(std::string &s) {
-    s.erase(std::ranges::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
-        return !std::isspace(ch);
-    }).base(), s.end());
+static void rtrim(std::string& s) {
+  s.erase(std::ranges::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(),
+          s.end());
 }
 inline std::string trim(std::string str) {
   ltrim(str);
@@ -318,8 +290,7 @@ inline std::string trim(std::string str) {
 
 std::string GetCpuModel() {
   std::ifstream cpuInfo("/proc/cpuinfo");
-  if (!cpuInfo)
-  {
+  if (!cpuInfo) {
     Log.error("Failed to open /proc/cpuinfo");
     return Unknown;
   }
@@ -358,8 +329,7 @@ std::string GetOSVersion() {
   }
 
   std::ifstream releaseInfo(path);
-  if (!releaseInfo)
-  {
+  if (!releaseInfo) {
     Log.error("Failed to open /etc/os-release or /usr/lib/os-release");
     return Unknown;
   }
@@ -378,8 +348,8 @@ std::string GetOSVersion() {
     auto left = trim(line.substr(0, split));
     auto right = trim(line.substr(split + 1));
 
-    if (right[0] == '"' && right[right.size()-1] == '"') {
-      right = right.substr(1, right.size()-2);
+    if (right[0] == '"' && right[right.size() - 1] == '"') {
+      right = right.substr(1, right.size() - 2);
     }
 
     if (left == "NAME") {
@@ -396,25 +366,15 @@ std::string GetOSVersion() {
   return fmt::format("{} {}", name, version);
 }
 
-void LogMisc() {
-
-}
+void LogMisc() {}
 #else
-std::string GetCpuModel() {
-  return Unknown;
-}
+std::string GetCpuModel() { return Unknown; }
 
-uint64_t GetMemoryAmount() {
-  return 0;
-}
+uint64_t GetMemoryAmount() { return 0; }
 
-std::string GetOSVersion() {
-  return Unknown;
-}
+std::string GetOSVersion() { return Unknown; }
 
-void LogMisc() {
-
-}
+void LogMisc() {}
 #endif
 
 } // namespace aurora

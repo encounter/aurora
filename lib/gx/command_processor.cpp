@@ -314,20 +314,20 @@ static u32 calc_vtx_size(GXVtxFmt fmt) noexcept {
   u32 vtxSize = 0;
   const auto& vtxFmt = g_gxState.vtxFmts[fmt];
   for (int i = GX_VA_PNMTXIDX; i <= GX_VA_TEX7; ++i) {
+    const auto& attrFmt = vtxFmt.attrs[i];
     switch (g_gxState.vtxDesc[i]) {
     case GX_NONE:
       break;
     case GX_DIRECT: {
       const auto attr = static_cast<GXAttr>(i);
-      const auto& attrFmt = vtxFmt.attrs[i];
       vtxSize += comp_type_size(attr, attrFmt.type) * comp_cnt_count(attr, attrFmt.cnt);
       break;
     }
     case GX_INDEX8:
-      vtxSize += (i == GX_VA_NRM && vtxFmt.attrs[i].cnt == GX_NRM_NBT3) ? 3 : 1;
+      vtxSize += i == GX_VA_NRM && attrFmt.cnt == GX_NRM_NBT3 ? 3 : 1;
       break;
     case GX_INDEX16:
-      vtxSize += (i == GX_VA_NRM && vtxFmt.attrs[i].cnt == GX_NRM_NBT3) ? 6 : 2;
+      vtxSize += i == GX_VA_NRM && attrFmt.cnt == GX_NRM_NBT3 ? 6 : 2;
       break;
     }
   }

@@ -67,10 +67,10 @@ void GXBeginIndexed(GXVtxFmt vtxFmt, u16 nVerts, const u16* indices, u32 nIndice
   GX_WRITE_U16(nVerts);
   GX_WRITE_U32(nIndices);
 
-  post_begin(nVerts);
-
   // Indices are host-endian even in a big-endian FIFO
   aurora::gx::fifo::write_data(indices, nIndices * sizeof(u16));
+
+  post_begin(nVerts);
 }
 
 void GXEnd() {
@@ -80,16 +80,11 @@ void GXEnd() {
       aurora::gx::fifo::patch_u32(sBeginSizeOffset, bytesWritten);
       sBeginAuto = false;
     } else if (sBeginNVerts > 0 && bytesWritten > 0) {
-      u32 vtxSize = bytesWritten / sBeginNVerts;
-      u32 remainder = bytesWritten % sBeginNVerts;
-      if (remainder != 0) {
+      // We don't know the vertex size without processing the FIFO for vtxFmt changes
+      // so this is just a best-effort check to find obvious issues
+      if (bytesWritten % sBeginNVerts != 0) {
         Log.warn("GXEnd: vertex data not evenly divisible: {} bytes for {} vertices", bytesWritten, sBeginNVerts);
       }
-      u32 actualVerts = (vtxSize > 0) ? bytesWritten / vtxSize : 0;
-      CHECK(actualVerts == sBeginNVerts,
-            "GXEnd: vertex count mismatch: GXBegin declared {} vertices ({}B each, {}B total) "
-            "but {} bytes were written ({} vertices)",
-            sBeginNVerts, vtxSize, sBeginNVerts * vtxSize, bytesWritten, actualVerts);
     }
     sInBegin = false;
     aurora::gx::fifo::finish_draw();

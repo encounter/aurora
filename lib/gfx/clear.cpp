@@ -3,6 +3,10 @@
 #include "../webgpu/gpu.hpp"
 #include "tracy/Tracy.hpp"
 
+namespace aurora::gfx::clear {
+using webgpu::g_device;
+using webgpu::g_graphicsConfig;
+
 namespace {
 wgpu::ColorWriteMask clear_write_mask(bool clearColor, bool clearAlpha) {
   auto writeMask = wgpu::ColorWriteMask::None;
@@ -15,11 +19,6 @@ wgpu::ColorWriteMask clear_write_mask(bool clearColor, bool clearAlpha) {
   return writeMask;
 }
 } // namespace
-
-namespace aurora::gfx::clear {
-
-using webgpu::g_device;
-using webgpu::g_graphicsConfig;
 
 wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
   ZoneScoped;

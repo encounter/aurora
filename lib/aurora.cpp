@@ -34,7 +34,7 @@ uint32_t g_sdlCustomEventsStart;
 char g_gameName[4];
 
 namespace {
-Module Log("aurora");
+constexpr Module Log{"aurora"};
 
 #ifdef AURORA_ENABLE_GX
 // GPU
@@ -176,7 +176,7 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
 
 #ifdef AURORA_ENABLE_GX
   gfx::initialize();
-
+  gx::fifo::init();
   imgui::create_context();
 #endif
   const auto size = window::get_window_size();

@@ -18,10 +18,11 @@
 using namespace std::string_view_literals;
 
 namespace aurora::input {
-Module Log("aurora::input");
 absl::flat_hash_map<Uint32, GameController> g_GameControllers;
 
 namespace {
+constexpr Module Log{"aurora::input"};
+
 constexpr uint32_t kPortPreferencesMagic = SBIG('CPRT');
 constexpr uint32_t kPortPreferencesVersion = 3;
 constexpr uint32_t kMaxPersistedStringLength = 256;

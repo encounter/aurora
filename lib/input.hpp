@@ -11,8 +11,6 @@
 #include <absl/container/flat_hash_map.h>
 
 namespace aurora::input {
-extern Module Log;
-
 struct GameController {
   SDL_Gamepad* m_controller = nullptr;
   bool m_isGameCube = false;

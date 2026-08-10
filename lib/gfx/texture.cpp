@@ -21,7 +21,7 @@ using webgpu::g_device;
 using webgpu::g_queue;
 
 namespace {
-Module Log("aurora::gfx");
+constexpr Module Log{"aurora::gfx"};
 
 wgpu::Extent3D physical_size(wgpu::Extent3D size, TextureFormatInfo info) {
   const uint32_t width = ((size.width + info.blockWidth - 1) / info.blockWidth) * info.blockWidth;
@@ -49,6 +49,49 @@ bool setup_swizzle(wgpu::TextureComponentSwizzleDescriptor& swizzle, u32 format)
     return true;
   default:
     return false;
+  }
+}
+
+wgpu::AddressMode wgpu_address_mode(GXTexWrapMode mode) {
+  switch (mode) {
+    DEFAULT_FATAL("invalid wrap mode {}", underlying(mode));
+  case GX_CLAMP:
+    return wgpu::AddressMode::ClampToEdge;
+  case GX_REPEAT:
+    return wgpu::AddressMode::Repeat;
+  case GX_MIRROR:
+    return wgpu::AddressMode::MirrorRepeat;
+  }
+}
+
+std::pair<wgpu::FilterMode, wgpu::MipmapFilterMode> wgpu_filter_mode(GXTexFilter filter) {
+  switch (filter) {
+    DEFAULT_FATAL("invalid filter mode {}", static_cast<int>(filter));
+  case GX_NEAR:
+    return {wgpu::FilterMode::Nearest, wgpu::MipmapFilterMode::Undefined};
+  case GX_LINEAR:
+    return {wgpu::FilterMode::Linear, wgpu::MipmapFilterMode::Undefined};
+  case GX_NEAR_MIP_NEAR:
+    return {wgpu::FilterMode::Nearest, wgpu::MipmapFilterMode::Nearest};
+  case GX_LIN_MIP_NEAR:
+    return {wgpu::FilterMode::Linear, wgpu::MipmapFilterMode::Nearest};
+  case GX_NEAR_MIP_LIN:
+    return {wgpu::FilterMode::Nearest, wgpu::MipmapFilterMode::Linear};
+  case GX_LIN_MIP_LIN:
+    return {wgpu::FilterMode::Linear, wgpu::MipmapFilterMode::Linear};
+  }
+}
+
+u16 wgpu_aniso(GXAnisotropy aniso) {
+  switch (aniso) {
+    DEFAULT_FATAL("invalid aniso {}", static_cast<int>(aniso));
+  case GX_ANISO_1:
+  case GX_MAX_ANISOTROPY:
+    return 1;
+  case GX_ANISO_2:
+    return std::max<u16>(webgpu::g_graphicsConfig.textureAnisotropy / 2, 1);
+  case GX_ANISO_4:
+    return std::max<u16>(webgpu::g_graphicsConfig.textureAnisotropy, 1);
   }
 }
 } // namespace
@@ -257,5 +300,43 @@ void write_texture(TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
   if (data.size() != UINT32_MAX && offset < data.size()) {
     Log.warn("write_texture: texture used {} bytes, but given {} bytes", offset, data.size());
   }
+}
+
+wgpu::SamplerDescriptor TextureBind::get_descriptor() const noexcept {
+  auto [minFilter, mipFilter] = wgpu_filter_mode(texObj.min_filter());
+  auto [magFilter, _] = wgpu_filter_mode(texObj.mag_filter());
+  const bool mipsEnabled = mipFilter != wgpu::MipmapFilterMode::Undefined;
+  float minLod = texObj.min_lod();
+  float maxLod = texObj.max_lod();
+  u16 maxAnisotropy = wgpu_aniso(texObj.max_aniso());
+  if (ref && ref->isReplacement) {
+    minLod = 0.f;
+    maxLod = 1000.f;
+    if (!mipsEnabled) {
+      mipFilter = wgpu::MipmapFilterMode::Nearest;
+    }
+  } else if (mipFilter == wgpu::MipmapFilterMode::Undefined) {
+    minLod = 0.f;
+    maxLod = 0.f;
+  }
+  if ((ref && ref->hasArbitraryMips) || !mipsEnabled) {
+    maxAnisotropy = 1;
+  } else if (maxAnisotropy > 1) {
+    magFilter = wgpu::FilterMode::Linear;
+    minFilter = wgpu::FilterMode::Linear;
+    mipFilter = wgpu::MipmapFilterMode::Linear;
+  }
+  return {
+      .label = "Generated Filtering Sampler",
+      .addressModeU = wgpu_address_mode(texObj.wrap_s()),
+      .addressModeV = wgpu_address_mode(texObj.wrap_t()),
+      .addressModeW = wgpu::AddressMode::Repeat,
+      .magFilter = magFilter,
+      .minFilter = minFilter,
+      .mipmapFilter = mipFilter,
+      .lodMinClamp = minLod,
+      .lodMaxClamp = maxLod,
+      .maxAnisotropy = maxAnisotropy,
+  };
 }
 } // namespace aurora::gfx

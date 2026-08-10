@@ -8,8 +8,6 @@
 #include <string_view>
 
 namespace aurora {
-extern AuroraConfig g_config;
-
 void log_internal(const AuroraLogLevel level, const char* module, const char* message,
                   const unsigned int len) noexcept {
   if (module == nullptr) {

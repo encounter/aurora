@@ -5,11 +5,8 @@
 #include <tracy/Tracy.hpp>
 
 namespace aurora::gx {
-// TODO: remove, just for testing
-bool enableLodBias = true;
-
 namespace {
-Module Log("aurora::gx");
+constexpr Module Log{"aurora::gx"};
 
 bool is_alpha_bump_channel(GXChannelID id) { return id == GX_ALPHA_BUMP || id == GX_ALPHA_BUMPN; }
 
@@ -17,7 +14,7 @@ Vec4<float> texture_size_bias(const gfx::TextureBind& tex) {
   auto width = static_cast<float>(tex.texObj.width());
   auto height = static_cast<float>(tex.texObj.height());
   float vpBias = 0.f;
-  if (enableLodBias && tex.ref && tex.ref->hasArbitraryMips) {
+  if (tex.ref && tex.ref->hasArbitraryMips) {
     const float viewportScale =
         std::min(g_gxState.renderViewport.width / std::max(g_gxState.logicalViewport.width, 1.f),
                  g_gxState.renderViewport.height / std::max(g_gxState.logicalViewport.height, 1.f));
@@ -176,6 +173,44 @@ void alpha_arg_reg_info(GXTevAlphaArg arg, const TevStage& stage, ShaderInfo& in
     break;
   }
 }
+
+f32 tex_offset(GXTexOffset offs) noexcept {
+  switch (offs) {
+  default:
+  case GX_TO_ZERO:
+    return 0.f;
+  case GX_TO_SIXTEENTH:
+    return 1.f / 16.f;
+  case GX_TO_EIGHTH:
+    return 1.f / 8.f;
+  case GX_TO_FOURTH:
+    return 1.f / 4.f;
+  case GX_TO_HALF:
+    return 1.f / 2.f;
+  case GX_TO_ONE:
+    return 1.f;
+  }
+}
+
+u32 point_texcoord_mask() noexcept {
+  u32 mask = 0;
+  for (int i = 0; i < MaxTexCoord; ++i) {
+    if (g_gxState.texCoordScales[i].pointOffset) {
+      mask |= 1 << i;
+    }
+  }
+  return mask;
+}
+
+u32 line_texcoord_mask() noexcept {
+  u32 mask = 0;
+  for (int i = 0; i < MaxTexCoord; ++i) {
+    if (g_gxState.texCoordScales[i].lineOffset) {
+      mask |= 1 << i;
+    }
+  }
+  return mask;
+}
 } // namespace
 
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
@@ -330,44 +365,6 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
     Log.fatal("Uniform size exceeds maximum: {} > {}", info.uniformSize, MaxUniformSize);
   }
   return info;
-}
-
-static f32 tex_offset(GXTexOffset offs) noexcept {
-  switch (offs) {
-  default:
-  case GX_TO_ZERO:
-    return 0.f;
-  case GX_TO_SIXTEENTH:
-    return 1.f / 16.f;
-  case GX_TO_EIGHTH:
-    return 1.f / 8.f;
-  case GX_TO_FOURTH:
-    return 1.f / 4.f;
-  case GX_TO_HALF:
-    return 1.f / 2.f;
-  case GX_TO_ONE:
-    return 1.f;
-  }
-}
-
-static u32 point_texcoord_mask() noexcept {
-  u32 mask = 0;
-  for (int i = 0; i < MaxTexCoord; ++i) {
-    if (g_gxState.texCoordScales[i].pointOffset) {
-      mask |= 1 << i;
-    }
-  }
-  return mask;
-}
-
-static u32 line_texcoord_mask() noexcept {
-  u32 mask = 0;
-  for (int i = 0; i < MaxTexCoord; ++i) {
-    if (g_gxState.texCoordScales[i].lineOffset) {
-      mask |= 1 << i;
-    }
-  }
-  return mask;
 }
 
 static void fill_uniform(ByteBuffer& buf, const ShaderInfo& info) noexcept {

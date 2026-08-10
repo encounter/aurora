@@ -33,19 +33,39 @@
 
 #include "tracy/Tracy.hpp"
 
-namespace aurora::gfx {
-static Module Log("aurora::gfx");
+namespace aurora {
+// For types that we can't ensure are safe to hash with has_unique_object_representations,
+// we create specialized methods to handle them. Note that these are highly dependent on
+// the structure definition, which could easily change with Dawn updates.
+template <>
+inline HashType xxh3_hash(const WGPUBindGroupDescriptor& input, HashType seed) {
+  constexpr auto offset = offsetof(WGPUBindGroupDescriptor, layout); // skip nextInChain, label
+  const auto hash = xxh3_hash_s(reinterpret_cast<const u8*>(&input) + offset,
+                                sizeof(WGPUBindGroupDescriptor) - offset - sizeof(void*) /* skip entries */, seed);
+  return xxh3_hash_s(input.entries, sizeof(WGPUBindGroupEntry) * input.entryCount, hash);
+}
+template <>
+inline HashType xxh3_hash(const wgpu::SamplerDescriptor& input, HashType seed) {
+  constexpr auto offset = offsetof(wgpu::SamplerDescriptor, addressModeU); // skip nextInChain, label
+  return xxh3_hash_s(reinterpret_cast<const u8*>(&input) + offset,
+                     sizeof(wgpu::SamplerDescriptor) - offset - 2 /* skip padding */, seed);
+}
+} // namespace aurora
 
+namespace aurora::gfx {
 using webgpu::g_device;
 using webgpu::g_instance;
 using webgpu::g_queue;
+
+namespace {
+constexpr Module Log{"aurora::gfx"};
 
 #ifdef AURORA_GFX_DEBUG_GROUPS
 std::vector<std::string> g_debugGroupStack;
 std::vector<std::string> g_debugMarkers;
 #endif
 
-static std::string pass_label(std::string_view kind) {
+std::string pass_label(std::string_view kind) {
 #ifdef AURORA_GFX_DEBUG_GROUPS
   if (!g_debugGroupStack.empty()) {
     return fmt::format("{} ({})", kind, g_debugGroupStack.back());
@@ -104,29 +124,7 @@ struct Command {
     size_t debugMarkerIndex;
   } data;
 };
-} // namespace aurora::gfx
 
-namespace aurora {
-// For types that we can't ensure are safe to hash with has_unique_object_representations,
-// we create specialized methods to handle them. Note that these are highly dependent on
-// the structure definition, which could easily change with Dawn updates.
-template <>
-inline HashType xxh3_hash(const WGPUBindGroupDescriptor& input, HashType seed) {
-  constexpr auto offset = offsetof(WGPUBindGroupDescriptor, layout); // skip nextInChain, label
-  const auto hash = xxh3_hash_s(reinterpret_cast<const u8*>(&input) + offset,
-                                sizeof(WGPUBindGroupDescriptor) - offset - sizeof(void*) /* skip entries */, seed);
-  return xxh3_hash_s(input.entries, sizeof(WGPUBindGroupEntry) * input.entryCount, hash);
-}
-template <>
-inline HashType xxh3_hash(const wgpu::SamplerDescriptor& input, HashType seed) {
-  constexpr auto offset = offsetof(wgpu::SamplerDescriptor, addressModeU); // skip nextInChain, label
-  return xxh3_hash_s(reinterpret_cast<const u8*>(&input) + offset,
-                     sizeof(wgpu::SamplerDescriptor) - offset - 2 /* skip padding */, seed);
-}
-} // namespace aurora
-
-namespace aurora::gfx {
-namespace {
 struct CachedBindGroup {
   wgpu::BindGroup bindGroup;
   uint32_t lastUsedFrame = 0;
@@ -155,7 +153,6 @@ constexpr DrawTypeId make_draw_type_id(uint32_t index, uint32_t generation) {
 
 constexpr uint32_t BindGroupCacheRetainFrames = 32;
 constexpr uint32_t BindGroupCacheSweepPeriod = 16;
-} // namespace
 
 static absl::flat_hash_map<BindGroupRef, CachedBindGroup> g_cachedBindGroups;
 static absl::flat_hash_map<SamplerRef, wgpu::Sampler> g_cachedSamplers;
@@ -192,6 +189,7 @@ static const RuntimeEncoderTaskType* find_runtime_encoder_task_type(EncoderTaskI
   }
   return &slot;
 }
+} // namespace
 
 wgpu::Buffer g_vertexBuffer;
 wgpu::Buffer g_uniformBuffer;
@@ -449,8 +447,8 @@ static void map_staging_buffer(size_t slot, bool releaseSlotOnCompletion = false
           }
           return;
         }
-        AURORA_ASSERT(status == wgpu::MapAsyncStatus::Success, "Buffer mapping failed: {} {}", magic_enum::enum_name(status),
-               message);
+        AURORA_ASSERT(status == wgpu::MapAsyncStatus::Success, "Buffer mapping failed: {} {}",
+                      magic_enum::enum_name(status), message);
         s_mappingStates[slot].store(BufferMapState::Mapped, std::memory_order_release);
         if (releaseSlotOnCompletion) {
           g_stagingSlots.release(slot);
@@ -636,7 +634,7 @@ static void enqueue_pass(FramePacket& frame, size_t frameSlot, uint32_t passInde
 void queue_texture_upload(TextureUpload upload) {
   if (g_currentRenderPass != UINT32_MAX) {
     AURORA_ASSERT(!current_render_passes()[g_currentRenderPass].sealed,
-           "Attempted to append texture upload to sealed render pass {}", g_currentRenderPass);
+                  "Attempted to append texture upload to sealed render pass {}", g_currentRenderPass);
   }
   current_frame_packet().textureUploads.emplace_back(std::move(upload));
 }
@@ -760,8 +758,8 @@ static void push_command(CommandType type, const Command::Data& data) {
       return;
     }
   auto& renderPass = current_render_passes()[g_currentRenderPass];
-  AURORA_ASSERT(!renderPass.sealed, "Attempted to append command {} to sealed render pass {}", magic_enum::enum_name(type),
-         g_currentRenderPass);
+  AURORA_ASSERT(!renderPass.sealed, "Attempted to append command {} to sealed render pass {}",
+                magic_enum::enum_name(type), g_currentRenderPass);
   if (type == CommandType::Draw || type == CommandType::CustomDraw) {
     renderPass.hasDraws = true;
   }
@@ -890,7 +888,8 @@ void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bo
 
 void queue_palette_conv(tex_palette_conv::ConvRequest req) {
   auto& renderPass = current_render_passes()[g_currentRenderPass];
-  AURORA_ASSERT(!renderPass.sealed, "Attempted to append palette conversion to sealed render pass {}", g_currentRenderPass);
+  AURORA_ASSERT(!renderPass.sealed, "Attempted to append palette conversion to sealed render pass {}",
+                g_currentRenderPass);
   renderPass.paletteConvs.push_back(std::move(req));
 }
 

@@ -88,6 +88,25 @@ TEST(GXDlReader, WalksLeafStripDl) {
   EXPECT_FALSE(reader.failed());
 }
 
+TEST(GXDlReader, UsesCanonicalAttributeOrder) {
+  const GXVtxDescList desc[] = {
+      {GX_VA_CLR0, GX_INDEX8},
+      {GX_VA_POS, GX_INDEX8},
+      {GX_VA_NULL, GX_NONE},
+  };
+  std::vector<u8> dl;
+  draw_cmd(dl, op(GX_TRIANGLES, GX_VTXFMT0), 3, {10, 20, 11, 21, 12, 22});
+
+  Reader reader{dl.data(), static_cast<u32>(dl.size()), desc};
+  const auto cmd = reader.next();
+
+  ASSERT_TRUE(cmd.has_value());
+  ASSERT_EQ(cmd->kind, Command::Kind::Draw);
+  EXPECT_EQ(cmd->draw.attr_idx(1, GX_VA_POS), 11);
+  EXPECT_EQ(cmd->draw.attr_idx(1, GX_VA_CLR0), 21);
+  EXPECT_FALSE(reader.failed());
+}
+
 TEST(GXDlReader, FailsOnUnknownOpcode) {
   const std::vector<u8> dl{0x70, 0x00, 0x00};
   Reader reader{dl.data(), static_cast<u32>(dl.size()), kPosClrDesc};

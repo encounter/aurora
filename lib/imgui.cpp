@@ -24,13 +24,56 @@
 #include "tracy/Tracy.hpp"
 
 namespace aurora::imgui {
-static float g_scale;
-static std::string g_imguiSettings{};
-static std::string g_imguiLog{};
-static bool g_useSdlRenderer = false;
+namespace {
+float g_scale;
+std::string g_imguiSettings{};
+std::string g_imguiLog{};
+bool g_useSdlRenderer = false;
 
-static std::vector<SDL_Texture*> g_sdlTextures;
-static std::vector<wgpu::Texture> g_wgpuTextures;
+std::vector<SDL_Texture*> g_sdlTextures;
+std::vector<wgpu::Texture> g_wgpuTextures;
+
+wgpu::Buffer create_texture_upload_buffer(uint32_t width, uint32_t height, const uint8_t* data,
+                                          uint32_t copyBytesPerRow) {
+  const uint32_t rowBytes = width * 4;
+  const uint64_t uploadSize = static_cast<uint64_t>(copyBytesPerRow) * height;
+  const wgpu::BufferDescriptor desc{
+      .label = "imgui texture upload buffer",
+      .usage = wgpu::BufferUsage::CopySrc,
+      .size = uploadSize,
+      .mappedAtCreation = true,
+  };
+  auto buffer = webgpu::g_device.CreateBuffer(&desc);
+  auto* dst = static_cast<uint8_t*>(buffer.GetMappedRange(0, uploadSize));
+  for (uint32_t row = 0; row < height; ++row) {
+    std::memcpy(dst, data, rowBytes);
+    dst += copyBytesPerRow;
+    data += rowBytes;
+  }
+  buffer.Unmap();
+  return buffer;
+}
+
+void enqueue_texture_upload(wgpu::Buffer buffer, wgpu::TexelCopyTextureInfo dst, wgpu::TexelCopyBufferLayout layout,
+                            wgpu::Extent3D size) {
+  gfx::render_worker::enqueue_work([buffer = std::move(buffer), dst = std::move(dst), layout, size] {
+    const wgpu::CommandEncoderDescriptor encoderDesc{
+        .label = "imgui texture upload encoder",
+    };
+    auto encoder = webgpu::g_device.CreateCommandEncoder(&encoderDesc);
+    const wgpu::TexelCopyBufferInfo src{
+        .layout = layout,
+        .buffer = buffer,
+    };
+    encoder.CopyBufferToTexture(&src, &dst, &size);
+    constexpr wgpu::CommandBufferDescriptor commandBufferDesc{
+        .label = "imgui texture upload command buffer",
+    };
+    auto commandBuffer = encoder.Finish(&commandBufferDesc);
+    webgpu::g_queue.Submit(1, &commandBuffer);
+  });
+}
+} // namespace
 
 struct DrawData::Impl {
   ImDrawData drawData;
@@ -199,47 +242,6 @@ void render(const wgpu::RenderPassEncoder& pass, const DrawData& drawData) noexc
   }
 }
 
-static wgpu::Buffer create_texture_upload_buffer(uint32_t width, uint32_t height, const uint8_t* data,
-                                                 uint32_t copyBytesPerRow) {
-  const uint32_t rowBytes = width * 4;
-  const uint64_t uploadSize = static_cast<uint64_t>(copyBytesPerRow) * height;
-  const wgpu::BufferDescriptor desc{
-      .label = "imgui texture upload buffer",
-      .usage = wgpu::BufferUsage::CopySrc,
-      .size = uploadSize,
-      .mappedAtCreation = true,
-  };
-  auto buffer = webgpu::g_device.CreateBuffer(&desc);
-  auto* dst = static_cast<uint8_t*>(buffer.GetMappedRange(0, uploadSize));
-  for (uint32_t row = 0; row < height; ++row) {
-    std::memcpy(dst, data, rowBytes);
-    dst += copyBytesPerRow;
-    data += rowBytes;
-  }
-  buffer.Unmap();
-  return buffer;
-}
-
-static void enqueue_texture_upload(wgpu::Buffer buffer, wgpu::TexelCopyTextureInfo dst,
-                                   wgpu::TexelCopyBufferLayout layout, wgpu::Extent3D size) {
-  gfx::render_worker::enqueue_work([buffer = std::move(buffer), dst = std::move(dst), layout, size] {
-    const wgpu::CommandEncoderDescriptor encoderDesc{
-        .label = "imgui texture upload encoder",
-    };
-    auto encoder = webgpu::g_device.CreateCommandEncoder(&encoderDesc);
-    const wgpu::TexelCopyBufferInfo src{
-        .layout = layout,
-        .buffer = buffer,
-    };
-    encoder.CopyBufferToTexture(&src, &dst, &size);
-    const wgpu::CommandBufferDescriptor commandBufferDesc{
-        .label = "imgui texture upload command buffer",
-    };
-    auto commandBuffer = encoder.Finish(&commandBufferDesc);
-    webgpu::g_queue.Submit(1, &commandBuffer);
-  });
-}
-
 ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) noexcept {
   if (SDL_Renderer* renderer = window::get_sdl_renderer()) {
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, width, height);
@@ -280,7 +282,8 @@ ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) no
         .bytesPerRow = copyBytesPerRow,
         .rowsPerImage = height,
     };
-    enqueue_texture_upload(create_texture_upload_buffer(width, height, data, copyBytesPerRow), dstView, dataLayout, size);
+    enqueue_texture_upload(create_texture_upload_buffer(width, height, data, copyBytesPerRow), dstView, dataLayout,
+                           size);
   }
   g_wgpuTextures.push_back(texture);
   return reinterpret_cast<ImTextureID>(textureView.MoveToCHandle());

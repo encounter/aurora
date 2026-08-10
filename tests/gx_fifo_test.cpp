@@ -36,6 +36,7 @@ TEST_F(GXFifoTest, FifoPublishesOnlyAtExplicitBoundary) {
   const std::vector<u8> nops(largeCommandPrefixSize, GX_NOP);
   const std::array<u8, 4> bpPayload{0x41, 0x12, 0x34, 0x56};
 
+  aurora::gx::fifo::init();
   aurora::gx::fifo::begin_frame();
   aurora::gx::fifo::write_data(nops.data(), static_cast<u32>(nops.size()));
   aurora::gx::fifo::write_u8(GX_LOAD_BP_REG);
@@ -44,11 +45,13 @@ TEST_F(GXFifoTest, FifoPublishesOnlyAtExplicitBoundary) {
   aurora::gx::fifo::publish();
   aurora::gx::fifo::drain();
   aurora::gx::fifo::end_frame();
+  aurora::gx::fifo::shutdown();
 
   EXPECT_EQ(g_gxState.bpRegCache[0x41], 0x41123456u);
 }
 
 TEST_F(GXFifoTest, AutoSizedDrawPublishesAfterLengthPatch) {
+  aurora::gx::fifo::init();
   aurora::gx::fifo::begin_frame();
   GXClearVtxDesc();
   GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
@@ -62,6 +65,7 @@ TEST_F(GXFifoTest, AutoSizedDrawPublishesAfterLengthPatch) {
   GXEnd();
   aurora::gx::fifo::drain();
   aurora::gx::fifo::end_frame();
+  aurora::gx::fifo::shutdown();
 
   EXPECT_EQ(aurora::gfx::g_testDrawCount, 1u);
 }
@@ -69,10 +73,12 @@ TEST_F(GXFifoTest, AutoSizedDrawPublishesAfterLengthPatch) {
 TEST_F(GXFifoTest, DisplayListCallPublishesAtCompleteBoundary) {
   const std::array<u8, 5> displayList{GX_LOAD_BP_REG, 0x41, 0x12, 0x34, 0x56};
 
+  aurora::gx::fifo::init();
   aurora::gx::fifo::begin_frame();
   GXCallDisplayList(displayList.data(), static_cast<u32>(displayList.size()));
   aurora::gx::fifo::drain();
   aurora::gx::fifo::end_frame();
+  aurora::gx::fifo::shutdown();
 
   EXPECT_EQ(g_gxState.bpRegCache[0x41], 0x41123456u);
 }

@@ -36,7 +36,7 @@ extern "C" void Android_UnlockActivityMutex(void);
 
 namespace aurora::window {
 namespace {
-Module Log("aurora::window");
+constexpr Module Log{"aurora::window"};
 
 SDL_Window* g_window;
 SDL_Renderer* g_renderer;

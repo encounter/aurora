@@ -29,7 +29,6 @@ GXFifoObj* GXInit(void* base, u32 size) {
   __gx->vNum = 0;
 
   // Initialize FIFO subsystem
-  aurora::gx::fifo::init();
   GXInitFifoBase(&sFifoObj, base, size);
   GXSetCPUFifo(&sFifoObj);
   GXSetGPFifo(&sFifoObj);
