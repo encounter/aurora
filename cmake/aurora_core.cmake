@@ -3,10 +3,12 @@ add_library(aurora_core STATIC
         lib/device.cpp
         lib/device.hpp
         lib/input.cpp
-        lib/window.cpp
         lib/logging.cpp
         lib/system_info.cpp
         lib/system_info.hpp
+        lib/thread.cpp
+        lib/thread.hpp
+        lib/window.cpp
 )
 add_library(aurora::core ALIAS aurora_core)
 set_target_properties(aurora_core PROPERTIES FOLDER "aurora")

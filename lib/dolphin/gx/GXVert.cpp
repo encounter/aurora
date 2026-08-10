@@ -92,11 +92,8 @@ void GXEnd() {
             sBeginNVerts, vtxSize, sBeginNVerts * vtxSize, bytesWritten, actualVerts);
     }
     sInBegin = false;
+    aurora::gx::fifo::finish_draw();
   }
-  // TEMP: debugging aid
-  // if (!aurora::gx::fifo::in_display_list()) {
-  //   aurora::gx::fifo::drain();
-  // }
 }
 
 void GXPosition3f32(f32 x, f32 y, f32 z) {

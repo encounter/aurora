@@ -5,6 +5,7 @@
 #include "../dolphin/vi/vi_internal.hpp"
 #include "../webgpu/gpu.hpp"
 #include "../internal.hpp"
+#include "../window.hpp"
 #include "../gfx/common.hpp"
 #include "../gfx/texture.hpp"
 #include "gx_fmt.hpp"
@@ -12,6 +13,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <tracy/Tracy.hpp>
 
+#include <atomic>
 #include <bit>
 #include <cfloat>
 #include <cmath>
@@ -38,6 +40,8 @@ static wgpu::PipelineLayout sPipelineLayout;
 wgpu::BindGroup g_emptyTextureBindGroup;
 
 namespace {
+std::atomic<int> sPendingViewportPolicy{-1};
+
 template <typename T>
 T round_away_from_zero(float value) noexcept {
   return static_cast<T>(value < 0.0f ? std::floor(value) : std::ceil(value));
@@ -50,6 +54,18 @@ std::pair<f32, f32> polygon_offset_for_cull_mode(GXCullMode cullMode) noexcept {
   return {g_gxState.frontOffset, g_gxState.frontScale};
 }
 } // namespace
+
+void set_viewport_policy(AuroraViewportPolicy policy) noexcept {
+  sPendingViewportPolicy.store(policy, std::memory_order_release);
+}
+
+void update() noexcept {
+  if (const int pending = sPendingViewportPolicy.exchange(-1, std::memory_order_acq_rel); pending != -1) {
+    const auto policy = static_cast<AuroraViewportPolicy>(pending);
+    g_gxState.viewportPolicy = policy;
+    window::set_frame_buffer_aspect_fit(policy == AURORA_VIEWPORT_FIT);
+  }
+}
 
 Vec2<uint32_t> logical_fb_size() noexcept {
   return gfx::is_offscreen() ? gfx::get_render_target_size() : vi::configured_fb_size();

@@ -12,6 +12,10 @@
 
 using aurora::gx::g_gxState;
 
+namespace aurora::gfx {
+extern uint32_t g_testDrawCount;
+}
+
 static bool has_bp_write(const std::vector<u8>& bytes, u8 reg) {
   const std::array<u8, 2> pattern{0x61, reg};
   return std::search(bytes.begin(), bytes.end(), pattern.begin(), pattern.end()) != bytes.end();
@@ -25,6 +29,52 @@ static bool has_aurora_cmd(const std::vector<u8>& bytes, u16 cmd) {
 static u32 read_fifo_u32(const std::vector<u8>& bytes, size_t offset) {
   return (static_cast<u32>(bytes[offset]) << 24) | (static_cast<u32>(bytes[offset + 1]) << 16) |
          (static_cast<u32>(bytes[offset + 2]) << 8) | static_cast<u32>(bytes[offset + 3]);
+}
+
+TEST_F(GXFifoTest, FifoPublishesOnlyAtExplicitBoundary) {
+  constexpr size_t largeCommandPrefixSize = 64 * 1024;
+  const std::vector<u8> nops(largeCommandPrefixSize, GX_NOP);
+  const std::array<u8, 4> bpPayload{0x41, 0x12, 0x34, 0x56};
+
+  aurora::gx::fifo::begin_frame();
+  aurora::gx::fifo::write_data(nops.data(), static_cast<u32>(nops.size()));
+  aurora::gx::fifo::write_u8(GX_LOAD_BP_REG);
+  aurora::gx::fifo::write_data(bpPayload.data(), static_cast<u32>(bpPayload.size()));
+  EXPECT_FALSE(g_gxState.bpRegValid.test(0x41));
+  aurora::gx::fifo::publish();
+  aurora::gx::fifo::drain();
+  aurora::gx::fifo::end_frame();
+
+  EXPECT_EQ(g_gxState.bpRegCache[0x41], 0x41123456u);
+}
+
+TEST_F(GXFifoTest, AutoSizedDrawPublishesAfterLengthPatch) {
+  aurora::gx::fifo::begin_frame();
+  GXClearVtxDesc();
+  GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
+  GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_U8, 0);
+  aurora::gfx::g_testDrawCount = 0;
+
+  GXBegin(GX_TRIANGLES, GX_VTXFMT0, GX_AUTO);
+  GXPosition3u8(0, 1, 2);
+  GXPosition3u8(3, 4, 5);
+  GXPosition3u8(6, 7, 8);
+  GXEnd();
+  aurora::gx::fifo::drain();
+  aurora::gx::fifo::end_frame();
+
+  EXPECT_EQ(aurora::gfx::g_testDrawCount, 1u);
+}
+
+TEST_F(GXFifoTest, DisplayListCallPublishesAtCompleteBoundary) {
+  const std::array<u8, 5> displayList{GX_LOAD_BP_REG, 0x41, 0x12, 0x34, 0x56};
+
+  aurora::gx::fifo::begin_frame();
+  GXCallDisplayList(displayList.data(), static_cast<u32>(displayList.size()));
+  aurora::gx::fifo::drain();
+  aurora::gx::fifo::end_frame();
+
+  EXPECT_EQ(g_gxState.bpRegCache[0x41], 0x41123456u);
 }
 
 // ============================================================================

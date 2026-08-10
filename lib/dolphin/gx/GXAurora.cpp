@@ -34,8 +34,7 @@ void GXInsertDebugMarker(const char* label) {
 }
 
 void AuroraSetViewportPolicy(AuroraViewportPolicy policy) {
-  g_gxState.viewportPolicy = policy;
-  aurora::window::set_frame_buffer_aspect_fit(policy == AURORA_VIEWPORT_FIT);
+  aurora::gx::set_viewport_policy(policy);
 }
 
 void AuroraGetRenderSize(u32* width, u32* height) {

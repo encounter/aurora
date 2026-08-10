@@ -4,6 +4,7 @@
 #include "../gx/gx.hpp"
 #include "../gx/texture.hpp"
 #include "../internal.hpp"
+#include "../thread.hpp"
 #include "../webgpu/gpu.hpp"
 #include "dds_io.hpp"
 #include "png_io.hpp"
@@ -11,7 +12,6 @@
 
 #include <aurora/texture.hpp>
 #include <fmt/format.h>
-#include <SDL3/SDL_thread.h>
 #include <tracy/Tracy.hpp>
 
 #include <absl/container/flat_hash_map.h>
@@ -150,9 +150,8 @@ std::deque<LoadCompletion> s_workerCompletions;
 std::vector<LoadCompletion> s_readyPublishes;
 std::unordered_map<uint64_t, uint64_t> s_pendingFullLoads;
 std::unordered_set<uint64_t> s_pendingThumbnailLoads;
-std::vector<std::thread> s_workers;
+std::vector<thread::Thread> s_workers;
 uint64_t s_requestSequence = 0;
-bool s_workersStopping = false;
 bool s_workersPaused = false;
 uint32_t s_workerCountOverride = 0;
 
@@ -768,16 +767,17 @@ std::optional<gfx::dds::MipTail> load_thumbnail(const EntryLoadSnapshot& entry) 
   return gfx::dds::parse_dds_mip_tail({bytes.data(), bytes.size()}, gx::texture::ReplacementThumbnailDim);
 }
 
-void worker_main() {
-  SDL_SetCurrentThreadPriority(SDL_THREAD_PRIORITY_LOW);
+void worker_main(std::stop_token token) {
+  std::stop_callback notifyOnStop{token, [] { s_jobCv.notify_all(); }};
   while (true) {
     LoadJob job;
     {
       std::unique_lock lock{s_jobMutex};
-      s_jobCv.wait(lock, [] {
-        return s_workersStopping || (!s_workersPaused && (!s_highPriorityJobs.empty() || !s_lowPriorityJobs.empty()));
+      s_jobCv.wait(lock, [&] {
+        return token.stop_requested() ||
+               (!s_workersPaused && (!s_highPriorityJobs.empty() || !s_lowPriorityJobs.empty()));
       });
-      if (s_workersStopping) {
+      if (token.stop_requested()) {
         return;
       }
       if (!s_highPriorityJobs.empty()) {
@@ -815,7 +815,7 @@ void worker_main() {
 
     {
       std::lock_guard lock{s_jobMutex};
-      if (!s_workersStopping) {
+      if (!token.stop_requested()) {
         if (job.tier == Tier::Thumbnail) {
           s_pendingThumbnailLoads.erase(job.entry.id);
         }
@@ -839,12 +839,16 @@ void start_worker_pool() {
   if (!s_workers.empty()) {
     return;
   }
-  s_workersStopping = false;
   const uint32_t hardwareThreads = std::max(std::thread::hardware_concurrency(), 1u);
   const uint32_t workerCount =
-      s_workerCountOverride != 0 ? s_workerCountOverride : std::clamp(hardwareThreads / 2, 2u, 4u);
+      s_workerCountOverride != 0 ? s_workerCountOverride : std::clamp(hardwareThreads / 2, 1u, 4u);
   for (uint32_t i = 0; i < workerCount; ++i) {
-    s_workers.emplace_back(worker_main);
+    s_workers.emplace_back(
+        thread::Options{
+            .name = fmt::format("Aurora texture worker {}", i),
+            .priority = thread::Priority::Low,
+        },
+        worker_main);
   }
 }
 
@@ -854,9 +858,11 @@ void stop_worker_pool() {
   }
   {
     std::lock_guard lock{s_jobMutex};
-    s_workersStopping = true;
     s_highPriorityJobs.clear();
     s_lowPriorityJobs.clear();
+  }
+  for (auto& worker : s_workers) {
+    worker.request_stop();
   }
   s_jobCv.notify_all();
   for (auto& worker : s_workers) {
@@ -872,7 +878,6 @@ void stop_worker_pool() {
     s_pendingThumbnailLoads.clear();
     s_requestSequence = 0;
     s_workersPaused = false;
-    s_workersStopping = false;
   }
   s_readyPublishes.clear();
 }

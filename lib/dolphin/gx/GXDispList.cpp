@@ -59,10 +59,7 @@ void GXCallDisplayList(const void* data, u32 nbytes) {
 
   // Write display list contents to the FIFO
   aurora::gx::fifo::write_data(data, nbytes);
-
-  // TEMP: debugging aid
-  // aurora::gx::fifo::drain();
-  // aurora::gx::fifo::process(static_cast<const u8*>(data), nbytes, true);
+  aurora::gx::fifo::publish();
 }
 
 }

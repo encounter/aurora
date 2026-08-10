@@ -5,6 +5,7 @@
 #include "gfx/render_worker.hpp"
 #include "gx/command_processor.hpp"
 #include "gx/fifo.hpp"
+#include "gx/gx.hpp"
 #include "gx/texture.hpp"
 #include "imgui.hpp"
 #include "webgpu/gpu.hpp"
@@ -18,6 +19,7 @@
 
 #include "input.hpp"
 #include "internal.hpp"
+#include "thread.hpp"
 #include "window.hpp"
 
 #include <SDL3/SDL_filesystem.h>
@@ -167,6 +169,10 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
 #endif
 
   window::show_window();
+  thread::set_current({
+      .name = "Main thread",
+      .affinity = thread::Affinity::SharedCache,
+  });
 
 #ifdef AURORA_ENABLE_GX
   gfx::initialize();
@@ -199,6 +205,7 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
 
 void shutdown() noexcept {
 #ifdef AURORA_ENABLE_GX
+  gx::fifo::shutdown();
   gfx::render_worker::synchronize();
 #ifdef AURORA_ENABLE_RMLUI
   rmlui::shutdown();
@@ -217,6 +224,9 @@ const AuroraEvent* update() noexcept {
     g_initialFrame = false;
     input::initialize();
   }
+#ifdef AURORA_ENABLE_GX
+  gx::update();
+#endif
   return window::poll_events();
 }
 
@@ -243,6 +253,7 @@ bool begin_frame() noexcept {
   if (!gfx::begin_frame()) {
     return false;
   }
+  gx::fifo::begin_frame();
 #endif
   return true;
 }
@@ -250,9 +261,9 @@ bool begin_frame() noexcept {
 void end_frame() noexcept {
   ZoneScoped;
 #ifdef AURORA_ENABLE_GX
-  gx::texture::end_frame();
   gx::fifo::drain();
   gx::fifo::end_frame();
+  gx::texture::end_frame();
   gfx::finish();
   auto imguiDrawData = imgui::freeze();
 

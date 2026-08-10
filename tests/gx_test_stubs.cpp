@@ -51,9 +51,10 @@ namespace aurora::webgpu {
 GraphicsConfig g_graphicsConfig{};
 } // namespace aurora::webgpu
 
-// --- GXState (the real instance -- tests validate this) ---
+// --- GXState ---
 namespace aurora::gx {
 GXState g_gxState{};
+void set_viewport_policy(AuroraViewportPolicy policy) noexcept {}
 } // namespace aurora::gx
 
 namespace aurora::vi {

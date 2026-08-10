@@ -7,9 +7,8 @@
 #include <cmath>
 
 namespace aurora::gx::fifo {
-static Module Log("aurora::gx::fifo");
-
 namespace {
+constexpr Module Log{"aurora::gx::fifo"};
 
 struct RegHandler {
   using Fn = void (*)(u8 reg, u32 value) noexcept;

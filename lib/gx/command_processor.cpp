@@ -17,7 +17,7 @@
 
 namespace aurora::gx::fifo {
 namespace {
-Module Log("aurora::gx::fifo");
+constexpr Module Log{"aurora::gx::fifo"};
 
 class Reader {
 public:
@@ -709,7 +709,7 @@ void handle_aurora(Reader& reader) noexcept {
   }
 }
 
-void end_frame() noexcept {
+void clear_draw_cache() noexcept {
   sDrawCache.bindGeneration = 0;
   sDrawCache.uniformRange = {};
 }

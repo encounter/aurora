@@ -44,6 +44,7 @@ if (AURORA_ENABLE_GX)
     ../lib/gx/fifo.cpp
     ../lib/gx/command_processor.cpp
     ../lib/gx/regs.cpp
+    ../lib/thread.cpp
     # Display list reader/optimizer
     ../lib/gx/attr_fmt.cpp
     ../lib/gx/dl.cpp
@@ -114,7 +115,9 @@ if (AURORA_ENABLE_GX)
 
   add_executable(render_worker_tests
     render_worker_test.cpp
+    thread_test.cpp
     ../lib/gfx/render_worker.cpp
+    ../lib/thread.cpp
   )
   target_include_directories(render_worker_tests PRIVATE
     ../include
@@ -125,6 +128,7 @@ if (AURORA_ENABLE_GX)
     gtest
     gtest_main
     TracyClient
+    ${AURORA_SDL3_TARGET}
   )
   gtest_discover_tests(render_worker_tests)
 endif () # AURORA_ENABLE_GX

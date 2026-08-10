@@ -1,5 +1,7 @@
 #include "render_worker.hpp"
 
+#include "../thread.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -12,7 +14,7 @@ constexpr size_t QueueCapacity = 256;
 constexpr auto IdlePumpInterval = std::chrono::milliseconds{1};
 
 BoundedQueue g_queue{QueueCapacity};
-std::thread g_thread;
+thread::Thread g_thread;
 std::atomic_bool g_running = false;
 std::atomic_size_t g_pendingItems = 0;
 std::thread::id g_workerThreadId;
@@ -29,17 +31,14 @@ void complete_sync(const std::shared_ptr<SyncState>& sync) {
   sync->cv.notify_all();
 }
 
-void worker_main() {
-#ifdef TRACY_ENABLE
-  tracy::SetThreadName("Aurora render worker");
-#endif
+void worker_main(std::stop_token token) {
   g_workerThreadId = std::this_thread::get_id();
 
   while (true) {
     bool closed = false;
     auto item = g_queue.pop_for(IdlePumpInterval, closed);
     if (!item) {
-      if (closed) {
+      if (closed || token.stop_requested()) {
         break;
       }
       continue;
@@ -197,7 +196,11 @@ void initialize() {
   }
   g_queue.reset();
   g_pendingItems.store(0, std::memory_order_release);
-  g_thread = std::thread(worker_main);
+  g_thread = thread::Thread{{
+                                .name = "Aurora render worker",
+                                .affinity = thread::Affinity::SharedCache,
+                            },
+                            worker_main};
 }
 
 void shutdown() {

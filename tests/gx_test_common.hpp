@@ -24,6 +24,8 @@ protected:
     aurora::gfx::depth_peek::testing::reset();
   }
 
+  void TearDown() override { aurora::gx::fifo::shutdown(); }
+
   // Copy the internal FIFO buffer contents and clear it
   std::vector<u8> capture_fifo() {
     auto size = aurora::gx::fifo::get_buffer_size();
