@@ -1,10 +1,9 @@
 #include "png_io.hpp"
 
-#include <cstring>
-
-#include "dds_io.hpp"
+#include "../io.hpp"
 #include "png.h"
-#include "../fs_helper.hpp"
+
+#include <cstring>
 
 static aurora::Module Log("aurora::gfx::png");
 
@@ -100,9 +99,9 @@ std::optional<ConvertedTexture> parse_png_bytes(ArrayRef<uint8_t> bytes) noexcep
 
 std::optional<ConvertedTexture>
 load_png_file(const std::filesystem::path& path) noexcept {
-  const auto bytes = dds::read_binary_file(path);
+  const auto bytes = io::read_file(path);
   if (!bytes.has_value()) {
-    Log.error("failed to open file: {}", fs_path_to_string(path));
+    Log.error("failed to open file: {}", io::fs_path_to_string(path));
     return std::nullopt;
   }
   return parse_png_bytes(*bytes);

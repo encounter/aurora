@@ -1,15 +1,13 @@
 #pragma once
 
 #include <cstddef>
-#include <string>
 #include <filesystem>
-
-#include <SDL3/SDL_iostream.h>
+#include <sys/types.h>
 
 namespace aurora::card {
 
 class FileIO {
-  std::string m_path;
+  std::filesystem::path m_path;
   bool m_ready = false;
 
   bool isReady() const { return m_ready && !m_path.empty(); };
@@ -24,7 +22,6 @@ public:
   FileIO(const FileIO& other) = delete;
   FileIO& operator=(const FileIO& other) = delete;
 
-  static SDL_IOStream* fileOpen(const std::string& path, const char* mode) {return path.empty() ? nullptr : SDL_IOFromFile(path.c_str(), mode);}
   bool fileRead(void* buf, size_t length, off_t offset);
   bool fileWrite(const void* buf, size_t length, off_t offset);
   size_t fileSize() const;

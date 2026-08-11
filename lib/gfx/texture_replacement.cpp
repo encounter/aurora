@@ -1,6 +1,6 @@
 #include "texture_replacement.hpp"
 
-#include "../fs_helper.hpp"
+#include "../io.hpp"
 #include "../gx/gx.hpp"
 #include "../gx/texture.hpp"
 #include "../internal.hpp"
@@ -205,7 +205,7 @@ std::vector<std::string> path_components(const std::filesystem::path& root, cons
     relative = path.filename();
   }
   for (const auto& component : relative) {
-    components.push_back(fs_path_to_string(component));
+    components.push_back(io::fs_path_to_string(component));
   }
   return components;
 }
@@ -236,7 +236,8 @@ bool is_relative_to(const std::filesystem::path& path, const std::filesystem::pa
   auto pathIt = path.begin();
   auto rootIt = root.begin();
   for (; rootIt != root.end(); ++rootIt, ++pathIt) {
-    if (pathIt == path.end() || !iequals_ascii(fs_path_to_string(*pathIt), fs_path_to_string(*rootIt))) {
+    if (pathIt == path.end() ||
+        !iequals_ascii(io::fs_path_to_string(*pathIt), io::fs_path_to_string(*rootIt))) {
       return false;
     }
   }
@@ -393,12 +394,6 @@ const GXTlutObj_* get_loaded_tlut(const GXTexObj_& obj) noexcept {
   return tlut.data != nullptr ? &tlut : nullptr;
 }
 
-bool ensure_directory(const std::filesystem::path& dir) noexcept {
-  std::error_code ec;
-  std::filesystem::create_directories(dir, ec);
-  return !ec;
-}
-
 TextureSourceKey build_source_key_base(const GXTexObj_& obj) noexcept {
   TextureSourceKey key{
       .width = obj.width(),
@@ -451,7 +446,7 @@ std::string format_source_key_for_log(const TextureSourceKey& key) {
 }
 
 std::optional<gfx::ConvertedTexture> load_texture_file(const std::filesystem::path& path) {
-  if (iequals_ascii(fs_path_to_string(path.extension()), ".png")) {
+  if (iequals_ascii(io::fs_path_to_string(path.extension()), ".png")) {
     return gfx::png::load_png_file(path);
   }
   return gfx::dds::load_dds_file(path);
@@ -543,15 +538,16 @@ struct FileTextureSource {
   const std::filesystem::path& path;
   std::filesystem::path mipPath;
 
-  std::string name() const { return fs_path_to_string(path); }
+  std::string name() const { return io::fs_path_to_string(path); }
   std::optional<gfx::ConvertedTexture> load_base() { return load_texture_file(path); }
   bool open_mip(uint32_t mipLevel) {
     mipPath = path.parent_path() /
-              fmt::format("{}_mip{}{}", fs_path_to_string(path.stem()), mipLevel, fs_path_to_string(path.extension()));
+              fmt::format("{}_mip{}{}", io::fs_path_to_string(path.stem()), mipLevel,
+                          io::fs_path_to_string(path.extension()));
     std::error_code ec;
     return std::filesystem::is_regular_file(mipPath, ec);
   }
-  std::string mip_name() const { return fs_path_to_string(mipPath); }
+  std::string mip_name() const { return io::fs_path_to_string(mipPath); }
   std::optional<gfx::ConvertedTexture> load_mip() { return load_texture_file(mipPath); }
 };
 
@@ -744,8 +740,8 @@ EntryLoadSnapshot snapshot_entry(const ReplacementKey& key, const ReplacementEnt
 
 bool is_dds_entry(const EntryLoadSnapshot& entry) {
   const std::string extension = entry.kind == EntryKind::File
-                                    ? fs_path_to_string(entry.path.extension())
-                                    : fs_path_to_string(std::filesystem::path{entry.virtualPath}.extension());
+                                    ? io::fs_path_to_string(entry.path.extension())
+                                    : io::fs_path_to_string(std::filesystem::path{entry.virtualPath}.extension());
   return iequals_ascii(extension, ".dds");
 }
 
@@ -955,7 +951,7 @@ bool publish_fits_budget(uint64_t publishedCount, uint64_t publishedBytes, uint6
 }
 
 std::string entry_path_for_log(const ReplacementEntry& entry) {
-  return entry.kind == EntryKind::Virtual ? entry.virtualPath : fs_path_to_string(entry.path);
+  return entry.kind == EntryKind::Virtual ? entry.virtualPath : io::fs_path_to_string(entry.path);
 }
 
 gfx::TextureHandle create_converted_texture_handle(const EntryLoadSnapshot& entry,
@@ -1210,7 +1206,7 @@ bool dump_editable_texture_dds(const TextureSourceKey& key, const GXTexObj_& obj
     return false;
   }
 
-  const auto dumpRoot = std::filesystem::path{reinterpret_cast<const char8_t*>(g_config.cachePath)} / "texture_dumps";
+  const auto dumpRoot = io::fs_path_from_string(g_config.cachePath) / "texture_dumps";
   const auto path = dumpRoot / format_replacement_filename(key);
   return gfx::dds::write_rgba8_dds(path, texWidth, texHeight, pixels.data);
 }
@@ -1365,7 +1361,7 @@ ReplacementRegistration register_file_replacement(TextureSourceKey key, std::fil
       .priority = options.priority,
       .sequence = s_nextSequence++,
       .kind = EntryKind::File,
-      .label = fmt::format("TextureReplacement {}", fs_path_to_string(path.filename())),
+      .label = fmt::format("TextureReplacement {}", io::fs_path_to_string(path.filename())),
       .path = std::move(path),
   });
   ++s_sourceEntryCount;
@@ -1620,12 +1616,12 @@ ReplacementRegistration register_virtual_replacement(std::string_view path, Virt
 
 ReplacementGroup load_replacement_directory(const std::filesystem::path& root, ReplacementOptions options) {
   ReplacementGroup group;
-  if (root.empty() || !ensure_directory(root)) {
+  if (root.empty() || !io::create_directories(root)) {
     return group;
   }
 
-  const auto dumpRoot = std::filesystem::path{reinterpret_cast<const char8_t*>(g_config.cachePath)} / "texture_dumps";
-  if (g_config.allowTextureDumps && !ensure_directory(dumpRoot)) {
+  const auto dumpRoot = io::fs_path_from_string(g_config.cachePath) / "texture_dumps";
+  if (g_config.allowTextureDumps && !io::create_directories(dumpRoot)) {
     return group;
   }
 
@@ -1650,12 +1646,12 @@ ReplacementGroup load_replacement_directory(const std::filesystem::path& root, R
       continue;
     }
 
-    const auto extension = fs_path_to_string(path.extension());
+    const auto extension = io::fs_path_to_string(path.extension());
     if (!iequals_ascii(extension, ".dds") && !iequals_ascii(extension, ".png")) {
       continue;
     }
 
-    if (is_sidecar_mip(fs_path_to_string(path.stem()))) {
+    if (is_sidecar_mip(io::fs_path_to_string(path.stem()))) {
       continue;
     }
 
@@ -1669,7 +1665,7 @@ ReplacementGroup load_replacement_directory(const std::filesystem::path& root, R
 
   absl::flat_hash_set<TextureSourceKey, SourceKeyHash> registeredKeys;
   for (const auto& candidate : candidates) {
-    const auto parsed = parse_replacement_filename(fs_path_to_string(candidate.path.filename()));
+    const auto parsed = parse_replacement_filename(io::fs_path_to_string(candidate.path.filename()));
     if (!parsed.has_value() || registeredKeys.contains(*parsed)) {
       continue;
     }
@@ -1677,7 +1673,8 @@ ReplacementGroup load_replacement_directory(const std::filesystem::path& root, R
     group.registrations.push_back(register_file_replacement(*parsed, candidate.path, options));
   }
 
-  Log.info("Loaded {} texture replacement registrations from {}", group.registrations.size(), fs_path_to_string(root));
+  Log.info("Loaded {} texture replacement registrations from {}", group.registrations.size(),
+           io::fs_path_to_string(root));
   return group;
 }
 

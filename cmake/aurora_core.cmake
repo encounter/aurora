@@ -3,6 +3,8 @@ add_library(aurora_core STATIC
         lib/device.cpp
         lib/device.hpp
         lib/input.cpp
+        lib/io.cpp
+        lib/io.hpp
         lib/logging.cpp
         lib/system_info.cpp
         lib/system_info.hpp

@@ -3,7 +3,7 @@
 #include <cstring>
 
 #include <filesystem>
-#include "../fs_helper.hpp"
+#include "../io.hpp"
 
 #include "Directory.hpp"
 #include "FileIO.hpp"
@@ -336,8 +336,8 @@ void CardGciFolder::getEncoding(uint16_t& encoding) const { encoding = (uint16_t
 void CardGciFolder::format(ECardSlot deviceId, ECardSize size, EEncoding encoding) {
   m_encoding = encoding;
 
-  if (!std::filesystem::create_directories(m_folderPath)) {
-    Log.error("Failed to create directory: {}", fs_path_to_string(m_folderPath));
+  if (!io::create_directories(m_folderPath)) {
+    Log.error("Failed to create directory {}: {}", io::fs_path_to_string(m_folderPath), SDL_GetError());
   }
 }
 
@@ -357,14 +357,14 @@ bool CardGciFolder::open(const std::filesystem::path& filepath) {
   std::error_code ec;
   if (!std::filesystem::exists(filepath, ec) || !std::filesystem::is_directory(filepath, ec)) {
     if (ec) {
-      Log.warn("Failed to inspect GCI folder '{}': {}", fs_path_to_string(filepath), ec.message());
+      Log.warn("Failed to inspect GCI folder '{}': {}", io::fs_path_to_string(filepath), ec.message());
     }
     return false;
   }
 
   std::filesystem::directory_iterator it(filepath, std::filesystem::directory_options::skip_permission_denied, ec);
   if (ec) {
-    Log.warn("Failed to enumerate GCI folder '{}': {}", fs_path_to_string(filepath), ec.message());
+    Log.warn("Failed to enumerate GCI folder '{}': {}", io::fs_path_to_string(filepath), ec.message());
     return false;
   }
 
@@ -373,13 +373,13 @@ bool CardGciFolder::open(const std::filesystem::path& filepath) {
     const auto path = it->path();
     const auto status = it->status(ec);
     if (ec) {
-      Log.warn("Failed to inspect GCI folder entry '{}': {}", fs_path_to_string(path), ec.message());
+      Log.warn("Failed to inspect GCI folder entry '{}': {}", io::fs_path_to_string(path), ec.message());
       return false;
     }
     if (!std::filesystem::is_regular_file(status)) {
       it.increment(ec);
       if (ec) {
-        Log.warn("Failed to continue enumerating GCI folder '{}': {}", fs_path_to_string(filepath), ec.message());
+        Log.warn("Failed to continue enumerating GCI folder '{}': {}", io::fs_path_to_string(filepath), ec.message());
         return false;
       }
       continue;
@@ -388,7 +388,7 @@ bool CardGciFolder::open(const std::filesystem::path& filepath) {
     if (path.extension() != ".gci") {
       it.increment(ec);
       if (ec) {
-        Log.warn("Failed to continue enumerating GCI folder '{}': {}", fs_path_to_string(filepath), ec.message());
+        Log.warn("Failed to continue enumerating GCI folder '{}': {}", io::fs_path_to_string(filepath), ec.message());
         return false;
       }
       continue;
@@ -396,13 +396,13 @@ bool CardGciFolder::open(const std::filesystem::path& filepath) {
 
     FileIO file(path);
     if (!file) {
-      Log.warn("Failed to open GCI file '{}'", fs_path_to_string(path));
+      Log.warn("Failed to open GCI file '{}'", io::fs_path_to_string(path));
       return false;
     }
 
     File fileData;
     if (!file.fileRead(&fileData, sizeof(File), 0)) {
-      Log.warn("Failed to read GCI file '{}'", fs_path_to_string(path));
+      Log.warn("Failed to read GCI file '{}'", io::fs_path_to_string(path));
       return false;
     }
     fileData.swapEndian();
@@ -411,7 +411,7 @@ bool CardGciFolder::open(const std::filesystem::path& filepath) {
 
     it.increment(ec);
     if (ec) {
-      Log.warn("Failed to continue enumerating GCI folder '{}': {}", fs_path_to_string(filepath), ec.message());
+      Log.warn("Failed to continue enumerating GCI folder '{}': {}", io::fs_path_to_string(filepath), ec.message());
       return false;
     }
   }

@@ -9,7 +9,7 @@
 #include "../card/DolphinCardPath.hpp"
 #include "../logging.hpp"
 #include "../card/CardGciFolder.hpp"
-#include "../fs_helper.hpp"
+#include "../io.hpp"
 
 namespace {
 aurora::Module Log("aurora::card");
@@ -56,7 +56,8 @@ std::filesystem::path GetCardFullPath(const std::filesystem::path& path, const a
   if (CARD_USE_GCI_FOLDER) {
     return path / GetCardRegion() / (slot == aurora::card::ECardSlot::SlotA ? "Card A" : "Card B");
   } else {
-    return path / fmt::format("MemoryCard{}.{}.raw", slot == aurora::card::ECardSlot::SlotA ? "A" : "B", GetCardRegion());
+    return path /
+           fmt::format("MemoryCard{}.{}.raw", slot == aurora::card::ECardSlot::SlotA ? "A" : "B", GetCardRegion());
   }
 }
 } // namespace
@@ -107,26 +108,26 @@ void CARDDetectDolphin(const s32 chan) {
   }
 
   if (chan == 0 || chan == 1) {
-    cardPaths[chan] =
-        aurora::card::ResolveDolphinCardPath(static_cast<aurora::card::ECardSlot>(chan), GetCardRegion(), CARD_USE_GCI_FOLDER);
+    cardPaths[chan] = aurora::card::ResolveDolphinCardPath(static_cast<aurora::card::ECardSlot>(chan), GetCardRegion(),
+                                                           CARD_USE_GCI_FOLDER);
     if (cardPaths[chan].empty()) {
       Log.error("Failed to detect Dolphin Card!");
       return;
     }
-    Log.info("Detected Dolphin Card at: {}", fs_path_to_string(cardPaths[chan]));
+    Log.info("Detected Dolphin Card at: {}", aurora::io::fs_path_to_string(cardPaths[chan]));
   } else {
-    cardPaths[0] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotA, GetCardRegion(), CARD_USE_GCI_FOLDER);
-    cardPaths[1] = aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotB, GetCardRegion(), CARD_USE_GCI_FOLDER);
+    cardPaths[0] =
+        aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotA, GetCardRegion(), CARD_USE_GCI_FOLDER);
+    cardPaths[1] =
+        aurora::card::ResolveDolphinCardPath(aurora::card::ECardSlot::SlotB, GetCardRegion(), CARD_USE_GCI_FOLDER);
 
     if (cardPaths[0].empty() && cardPaths[1].empty()) {
       Log.error("Failed to detect Dolphin Card!");
       return;
     }
 
-    Log.info(
-      "Detected Dolphin Card at: {} and {}",
-      fs_path_to_string(cardPaths[0]),
-      fs_path_to_string(cardPaths[1]));
+    Log.info("Detected Dolphin Card at: {} and {}", aurora::io::fs_path_to_string(cardPaths[0]),
+             aurora::io::fs_path_to_string(cardPaths[1]));
   }
 }
 
@@ -139,7 +140,7 @@ void CARDSetBasePath(const char* path, const s32 chan) {
 
   if (filePath.has_filename() && !std::filesystem::is_directory(filePath)) {
     filePath = filePath.remove_filename();
-    Log.warn("Path supplied a filename, discarding. New Path: {}", fs_path_to_string(filePath));
+    Log.warn("Path supplied a filename, discarding. New Path: {}", aurora::io::fs_path_to_string(filePath));
   }
 
   if (chan == 0 || chan == 1) {
@@ -150,9 +151,7 @@ void CARDSetBasePath(const char* path, const s32 chan) {
   }
 }
 
-void CARDSetLoadType(CARDFileType type) {
-  SelectedFileType = type;
-}
+void CARDSetLoadType(CARDFileType type) { SelectedFileType = type; }
 
 void CARDInit(const char* game, const char* maker) {
   if (Initialized) {
@@ -175,7 +174,7 @@ void CARDInit(const char* game, const char* maker) {
 
   std::filesystem::path cardWorkingDir;
   if (aurora::g_config.userPath != nullptr)
-    cardWorkingDir = reinterpret_cast<const char8_t*>(aurora::g_config.userPath);
+    cardWorkingDir = aurora::io::fs_path_from_string(aurora::g_config.userPath);
   else
     cardWorkingDir = std::filesystem::current_path();
 
@@ -192,11 +191,11 @@ void CARDInit(const char* game, const char* maker) {
     std::error_code ec;
     if (std::filesystem::exists(curPath, ec) && CardChannels[i]->open(curPath)) {
       loadedCard = true;
-      Log.info("Loaded GC Card Image: {}", fs_path_to_string(curPath));
+      Log.info("Loaded GC Card Image: {}", aurora::io::fs_path_to_string(curPath));
     } else if (ec) {
-      Log.warn("Failed to inspect GC Card path '{}': {}", fs_path_to_string(curPath), ec.message());
+      Log.warn("Failed to inspect GC Card path '{}': {}", aurora::io::fs_path_to_string(curPath), ec.message());
     } else if (std::filesystem::exists(curPath, ec)) {
-      Log.warn("Failed to load GC Card Image: {}", fs_path_to_string(curPath));
+      Log.warn("Failed to load GC Card Image: {}", aurora::io::fs_path_to_string(curPath));
     }
   }
 
@@ -205,7 +204,7 @@ void CARDInit(const char* game, const char* maker) {
     CardChannels[0]->open(cardPaths[0]);
     CardChannels[0]->format(aurora::card::ECardSlot::SlotA);
     CardChannels[0]->close();
-	CardChannels[0]->open(cardPaths[0]);
+    CardChannels[0]->open(cardPaths[0]);
   }
 }
 
@@ -517,7 +516,7 @@ s32 CARDMount(const s32 chan, void* workArea [[maybe_unused]], CARDCallback deta
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
-  
+
   return CARD_RESULT_READY;
 }
 s32 CARDMountAsync(const s32 chan, void* workArea [[maybe_unused]], const CARDCallback detachCallback [[maybe_unused]],

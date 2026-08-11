@@ -1,8 +1,8 @@
 #include "pipeline_cache.hpp"
 
 #include "clear.hpp"
-#include "../fs_helper.hpp"
 #include "../gx/pipeline.hpp"
+#include "../io.hpp"
 #ifdef AURORA_ENABLE_RMLUI
 #include "../rmlui/pipeline.hpp"
 #endif
@@ -725,7 +725,7 @@ static bool prepare_pipeline_cache_db() {
     return true;
   }
 
-  const auto path = fs_path_to_string(std::filesystem::path{g_config.cachePath} / "pipeline_cache.db");
+  const auto path = io::fs_path_to_string(io::fs_path_from_string(g_config.cachePath) / "pipeline_cache.db");
   auto ret = sqlite3_open(path.c_str(), &g_pipelineCacheDb);
   if (ret != SQLITE_OK) {
     Log.error("Failed to open pipeline cache database: {}", sqlite3_errmsg(g_pipelineCacheDb));

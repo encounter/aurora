@@ -14,6 +14,16 @@ if (NOT TARGET gtest)
   FetchContent_MakeAvailable(googletest)
 endif ()
 
+add_executable(io_tests
+  io_test.cpp
+  ../lib/card/FileIO.cpp
+  ../lib/io.cpp
+)
+target_include_directories(io_tests PRIVATE ../lib)
+target_link_libraries(io_tests PRIVATE gtest gtest_main ${AURORA_SDL3_TARGET})
+aurora_copy_runtime_dlls(io_tests)
+gtest_discover_tests(io_tests)
+
 if (AURORA_ENABLE_GX)
   # GX FIFO round-trip tests
   # Compile GX sources directly to avoid pulling in the full renderer/WebGPU runtime

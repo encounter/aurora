@@ -1,11 +1,11 @@
 #include "dds_io.hpp"
 
+#include "../io.hpp"
+#include "texture.hpp"
+
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
-
-#include "texture.hpp"
 
 namespace aurora::gfx::dds {
 struct ParsedDDSLayout {
@@ -66,47 +66,6 @@ constexpr uint32_t kDDSCapsComplex = 0x00000008;
 constexpr uint32_t kDDSCapsMipmap = 0x00400000;
 constexpr uint32_t kDDSCaps2Cubemap = 0x00000200;
 constexpr uint32_t kDDSCaps2Volume = 0x00200000;
-
-bool ensure_directory(const std::filesystem::path& dir) noexcept {
-  std::error_code ec;
-  std::filesystem::create_directories(dir, ec);
-  return !ec;
-}
-
-bool write_binary_file(const std::filesystem::path& path, ArrayRef<uint8_t> data) noexcept {
-  if (!ensure_directory(path.parent_path())) {
-    return false;
-  }
-
-  std::ofstream out(path, std::ios::binary | std::ios::trunc);
-  if (!out) {
-    return false;
-  }
-
-  out.write(reinterpret_cast<const char*>(data.data()), data.size());
-  return static_cast<bool>(out);
-}
-
-std::optional<ByteBuffer> read_binary_file(const std::filesystem::path& path) noexcept {
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file) {
-    return std::nullopt;
-  }
-
-  const auto size = static_cast<size_t>(file.tellg());
-  if (size == 0) {
-    return std::nullopt;
-  }
-
-  ByteBuffer bytes{size};
-  file.seekg(0, std::ios::beg);
-  file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-  if (!file) {
-    return std::nullopt;
-  }
-
-  return bytes;
-}
 
 bool validate_dds_header(const DDSHeader& header) noexcept {
   if (header.size != sizeof(DDSHeader) || header.ddspf.size != sizeof(DDSPixelFormat)) {
@@ -397,7 +356,7 @@ std::optional<ConvertedTexture> parse_dds_bytes(ArrayRef<uint8_t> bytes) noexcep
 }
 
 std::optional<ConvertedTexture> load_dds_file(const std::filesystem::path& path) noexcept {
-  const auto bytes = read_binary_file(path);
+  const auto bytes = io::read_file(path);
   if (!bytes.has_value()) {
     return std::nullopt;
   }
@@ -411,20 +370,18 @@ std::optional<MipTail> parse_dds_mip_tail(ArrayRef<uint8_t> bytes, uint32_t maxD
 
 std::optional<MipTail> load_dds_mip_tail(const std::filesystem::path& path, uint32_t maxDimension) noexcept {
   constexpr size_t MaxHeaderSize = sizeof(uint32_t) + sizeof(DDSHeader) + sizeof(DDSHeaderDX10);
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
+  auto file = io::open_file(path, "rb");
   if (!file) {
     return std::nullopt;
   }
-  const auto end = file.tellg();
-  if (end <= 0) {
+  const Sint64 end = SDL_GetIOSize(file.get());
+  if (end <= 0 || static_cast<uint64_t>(end) > SIZE_MAX) {
     return std::nullopt;
   }
   const size_t fileSize = static_cast<size_t>(end);
   std::array<uint8_t, MaxHeaderSize> headerBytes{};
   const size_t headerSize = std::min(fileSize, headerBytes.size());
-  file.seekg(0, std::ios::beg);
-  file.read(reinterpret_cast<char*>(headerBytes.data()), static_cast<std::streamsize>(headerSize));
-  if (!file) {
+  if (!io::read_at(file.get(), 0, headerBytes.data(), headerSize)) {
     return std::nullopt;
   }
 
@@ -438,9 +395,7 @@ std::optional<MipTail> load_dds_mip_tail(const std::filesystem::path& path, uint
   }
 
   ByteBuffer data{layout->dataSize};
-  file.seekg(static_cast<std::streamoff>(layout->dataOffset), std::ios::beg);
-  file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(data.size()));
-  if (!file) {
+  if (!io::read_at(file.get(), layout->dataOffset, data.data(), data.size())) {
     return std::nullopt;
   }
   return MipTail{
@@ -485,6 +440,7 @@ ByteBuffer encode_rgba8_dds(uint32_t width, uint32_t height, ArrayRef<uint8_t> p
 
 bool write_rgba8_dds(const std::filesystem::path& path, uint32_t width, uint32_t height,
                      ArrayRef<uint8_t> pixels) noexcept {
-  return write_binary_file(path, encode_rgba8_dds(width, height, pixels));
+  const auto encoded = encode_rgba8_dds(width, height, pixels);
+  return io::write_file(path, {encoded.data(), encoded.size()});
 }
 } // namespace aurora::gfx::dds

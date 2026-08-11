@@ -1,17 +1,16 @@
 #include "input.hpp"
 #include "device.hpp"
 #include "internal.hpp"
+#include "io.hpp"
 
 #include "magic_enum.hpp"
 
 #include <SDL3/SDL_haptic.h>
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_filesystem.h>
-#include <SDL3/SDL_iostream.h>
-
 #include <absl/container/flat_hash_map.h>
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <string>
 #include <utility>
 
@@ -54,17 +53,11 @@ std::array<PortPreference, PAD_MAX_CONTROLLERS> g_portPreferences;
 DevicePreference g_devicePreference;
 bool g_portPreferencesLoaded = false;
 
-std::string port_preferences_path() {
+std::filesystem::path port_preferences_path() {
   if (g_config.userPath == nullptr) {
     return {};
   }
-
-  std::string path{g_config.userPath};
-  if (!path.empty() && path.back() != '/' && path.back() != '\\') {
-    path += '/';
-  }
-  path += "controller_ports.dat";
-  return path;
+  return io::fs_path_from_string(g_config.userPath) / "controller_ports.dat";
 }
 
 std::string normalize_serial(const char* serial) {
@@ -95,40 +88,14 @@ ControllerIdentity controller_identity(const GameController& controller) {
   return identity;
 }
 
-bool read_exact(SDL_IOStream* file, void* dst, size_t size) {
-  auto* bytes = static_cast<uint8_t*>(dst);
-  size_t total = 0;
-  while (total < size) {
-    const size_t read = SDL_ReadIO(file, bytes + total, size - total);
-    if (read == 0) {
-      return false;
-    }
-    total += read;
-  }
-  return true;
-}
-
-bool write_exact(SDL_IOStream* file, const void* src, size_t size) {
-  auto* bytes = static_cast<const uint8_t*>(src);
-  size_t total = 0;
-  while (total < size) {
-    const size_t written = SDL_WriteIO(file, bytes + total, size - total);
-    if (written == 0) {
-      return false;
-    }
-    total += written;
-  }
-  return true;
-}
-
 template <typename T>
 bool read_value(SDL_IOStream* file, T& value) {
-  return read_exact(file, &value, sizeof(value));
+  return io::read_exact(file, &value, sizeof(value));
 }
 
 template <typename T>
 bool write_value(SDL_IOStream* file, const T& value) {
-  return write_exact(file, &value, sizeof(value));
+  return io::write_exact(file, &value, sizeof(value));
 }
 
 bool read_string(SDL_IOStream* file, std::string& value) {
@@ -138,12 +105,12 @@ bool read_string(SDL_IOStream* file, std::string& value) {
   }
 
   value.resize(size);
-  return size == 0 || read_exact(file, value.data(), size);
+  return size == 0 || io::read_exact(file, value.data(), size);
 }
 
 bool write_string(SDL_IOStream* file, const std::string& value) {
   const uint32_t size = static_cast<uint32_t>(std::min<size_t>(value.size(), kMaxPersistedStringLength));
-  return write_value(file, size) && (size == 0 || write_exact(file, value.data(), size));
+  return write_value(file, size) && (size == 0 || io::write_exact(file, value.data(), size));
 }
 
 bool read_identity(SDL_IOStream* file, ControllerIdentity& identity) {
@@ -160,34 +127,36 @@ bool read_port_preferences_file(std::array<PortPreference, PAD_MAX_CONTROLLERS>&
     return true;
   }
 
-  SDL_IOStream* file = SDL_IOFromFile(path.c_str(), "rb");
-  if (file == nullptr) {
+  auto file = io::open_file(path, "rb");
+  if (!file) {
     return true;
   }
 
   uint32_t magic = 0;
   uint32_t version = 0;
-  bool ok = read_value(file, magic) && read_value(file, version) && magic == kPortPreferencesMagic &&
+  auto devicePreference = g_devicePreference;
+  bool ok = read_value(file.get(), magic) && read_value(file.get(), version) && magic == kPortPreferencesMagic &&
             (version == 2 || version == kPortPreferencesVersion);
 
   for (auto& preference : preferences) {
     uint8_t state = 0;
     ControllerIdentity identity;
-    ok = ok && read_value(file, state) && state <= static_cast<uint8_t>(PortPreferenceState::Controller) &&
-         read_identity(file, identity);
+    ok = ok && read_value(file.get(), state) && state <= static_cast<uint8_t>(PortPreferenceState::Controller) &&
+         read_identity(file.get(), identity);
     if (ok) {
       preference.state = static_cast<PortPreferenceState>(state);
       preference.identity = std::move(identity);
     }
   }
   if (ok && version >= 3) {
-    ok = read_value(file, g_devicePreference.rumbleIntensityLow) &&
-         read_value(file, g_devicePreference.rumbleIntensityHigh);
+    ok = read_value(file.get(), devicePreference.rumbleIntensityLow) &&
+         read_value(file.get(), devicePreference.rumbleIntensityHigh);
   }
 
-  SDL_CloseIO(file);
   if (!ok) {
-    Log.warn("Ignoring invalid controller port preference file '{}'", path);
+    Log.warn("Ignoring invalid controller port preference file '{}'", io::fs_path_to_string(path));
+  } else {
+    g_devicePreference = devicePreference;
   }
   return ok;
 }
@@ -210,33 +179,22 @@ void save_port_preferences() {
     return;
   }
 
-  if (!SDL_CreateDirectory(g_config.userPath)) {
-    Log.warn("Failed to create controller port preference directory '{}': {}", g_config.userPath, SDL_GetError());
+  const auto pathString = io::fs_path_to_string(path);
+  auto file = io::open_atomic_file(path);
+  if (!file) {
+    Log.warn("Failed to open controller port preference file '{}': {}", pathString, SDL_GetError());
     return;
   }
 
-  SDL_IOStream* file = SDL_IOFromFile(path.c_str(), "wb");
-  if (file == nullptr) {
-    Log.warn("Failed to open controller port preference file '{}': {}", path, SDL_GetError());
-    return;
-  }
-
-  bool ok = write_value(file, kPortPreferencesMagic) && write_value(file, kPortPreferencesVersion);
+  bool ok = write_value(file.get(), kPortPreferencesMagic) && write_value(file.get(), kPortPreferencesVersion);
   for (const auto& preference : g_portPreferences) {
     const auto state = static_cast<uint8_t>(preference.state);
-    ok = ok && write_value(file, state) && write_identity(file, preference.identity);
+    ok = ok && write_value(file.get(), state) && write_identity(file.get(), preference.identity);
   }
-  ok = ok && write_value(file, g_devicePreference.rumbleIntensityLow) &&
-       write_value(file, g_devicePreference.rumbleIntensityHigh);
-
-  if (!SDL_FlushIO(file)) {
-    ok = false;
-  }
-  if (!SDL_CloseIO(file)) {
-    ok = false;
-  }
-  if (!ok) {
-    Log.warn("Failed to write controller port preference file '{}': {}", path, SDL_GetError());
+  ok = ok && write_value(file.get(), g_devicePreference.rumbleIntensityLow) &&
+       write_value(file.get(), g_devicePreference.rumbleIntensityHigh);
+  if (!ok || !file.commit()) {
+    Log.warn("Failed to write controller port preference file '{}': {}", pathString, SDL_GetError());
   }
 }
 
@@ -495,7 +453,7 @@ void initialize() noexcept {
   /* Make sure we initialize everything input related now, this will automatically add all of the connected controllers
    * as expected */
   AURORA_ASSERT(SDL_Init(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_SENSOR),
-         "Failed to initialize SDL subsystems: {}", SDL_GetError());
+                "Failed to initialize SDL subsystems: {}", SDL_GetError());
 }
 
 struct MouseScrollStatus {

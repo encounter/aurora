@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <memory>
 
-#include "../fs_helper.hpp"
+#include "../io.hpp"
 #include "../internal.hpp"
 #include "SRAM.hpp"
 
@@ -132,7 +132,7 @@ void CardRawFile::_repair_card() {
     return;
 
   if (_pumpOpen() != ECardResult::READY || getError() != ECardResult::READY) {
-    Log.warn("Not repairing legacy raw card image with invalid metadata: {}", fs_path_to_string(m_filename));
+    Log.warn("Not repairing legacy raw card image with invalid metadata: {}", io::fs_path_to_string(m_filename));
     return;
   }
 
@@ -140,7 +140,7 @@ void CardRawFile::_repair_card() {
   for (uint32_t block = expectedBlocks - MissingBlocks; block < expectedBlocks; ++block) {
     if (bat.getNextBlock(static_cast<uint16_t>(block)) != 0) {
       Log.warn("Not repairing legacy raw card image because missing block {} is allocated: {}", block,
-               fs_path_to_string(m_filename));
+               io::fs_path_to_string(m_filename));
       return;
     }
   }
@@ -148,11 +148,11 @@ void CardRawFile::_repair_card() {
   std::array<uint8_t, MissingBlocks * BlockSize> missingBlocks;
   missingBlocks.fill(0xFF);
   if (!m_fileHandle.fileWrite(missingBlocks.data(), missingBlocks.size(), legacySize)) {
-    Log.error("Failed to repair legacy raw card image: {}", fs_path_to_string(m_filename));
+    Log.error("Failed to repair legacy raw card image: {}", io::fs_path_to_string(m_filename));
     return;
   }
 
-  Log.info("Repaired legacy raw card image: {}", fs_path_to_string(m_filename));
+  Log.info("Repaired legacy raw card image: {}", io::fs_path_to_string(m_filename));
 }
 
 void CardRawFile::InitCard(const char* game, const char* maker) {
