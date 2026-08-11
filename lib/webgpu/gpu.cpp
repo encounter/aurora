@@ -18,7 +18,8 @@
 #include <webgpu/webgpu_cpp.h>
 
 #include "../gx/gx.hpp"
-#include "../gfx/common.hpp"
+#include "../gfx/frame.hpp"
+#include "../gfx/recording.hpp"
 #include "../gfx/render_worker.hpp"
 #include "../internal.hpp"
 #include "../window.hpp"

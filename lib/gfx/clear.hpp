@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common.hpp"
+#include "types.hpp"
 
 #include <webgpu/webgpu_cpp.h>
 

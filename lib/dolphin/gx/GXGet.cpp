@@ -1,7 +1,6 @@
 #include "gx.hpp"
 #include "__gx.h"
 
-#include "../../gfx/common.hpp"
 #include "../../gfx/texture.hpp"
 
 extern "C" {

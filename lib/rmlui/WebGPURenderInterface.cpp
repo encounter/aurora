@@ -18,9 +18,10 @@
 #include <utility>
 #include <vector>
 
+#include "../gfx/recording.hpp"
+#include "../gfx/texture.hpp"
 #include "../logging.hpp"
 #include "../webgpu/gpu.hpp"
-#include "../gfx/texture.hpp"
 
 namespace aurora::rmlui {
 namespace {

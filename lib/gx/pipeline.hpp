@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../gfx/common.hpp"
+#include "../gfx/types.hpp"
 #include "gx.hpp"
 
 namespace aurora::gx {

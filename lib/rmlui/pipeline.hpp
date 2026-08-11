@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../gfx/common.hpp"
+#include "../gfx/types.hpp"
 #include "WebGPURenderInterface.hpp"
 
 #include <array>

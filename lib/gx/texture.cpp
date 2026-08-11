@@ -1,9 +1,10 @@
 #include "texture.hpp"
 
-#include "shader_info.hpp"
+#include "../gfx/recording.hpp"
 #include "../gfx/tex_palette_conv.hpp"
 #include "../gfx/texture_convert.hpp"
 #include "../gfx/texture_replacement.hpp"
+#include "shader_info.hpp"
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>

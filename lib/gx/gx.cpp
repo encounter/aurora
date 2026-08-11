@@ -6,7 +6,9 @@
 #include "../webgpu/gpu.hpp"
 #include "../internal.hpp"
 #include "../window.hpp"
-#include "../gfx/common.hpp"
+#include "../gfx/resources.hpp"
+#include "../gfx/recording.hpp"
+#include "../gfx/resource_cache.hpp"
 #include "../gfx/texture.hpp"
 #include "gx_fmt.hpp"
 
@@ -562,8 +564,8 @@ void initialize() noexcept {
   }
   {
     const std::array layouts{
-        gfx::g_staticBindGroupLayout,
-        gfx::g_uniformBindGroupLayout,
+        gfx::detail::resources().staticBindGroupLayout,
+        gfx::detail::resources().uniformBindGroupLayout,
         sTextureBindGroupLayout,
     };
     const wgpu::PipelineLayoutDescriptor desc{

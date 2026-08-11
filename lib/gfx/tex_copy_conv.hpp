@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common.hpp"
+#include "types.hpp"
 
 #include <dolphin/gx/GXEnum.h>
 

@@ -1,4 +1,5 @@
-#include "common.hpp"
+#include "resources.hpp"
+#include "recording.hpp"
 
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"

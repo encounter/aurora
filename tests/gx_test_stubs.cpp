@@ -1,11 +1,12 @@
 // Stub implementations for renderer symbols that the GX/FIFO/command_processor code
-// references but that live in the full renderer (common.cpp, gx.cpp, model/shader.cpp, etc.).
+// references but that live in the full renderer (gfx, gx.cpp, model/shader.cpp, etc.).
 // These allow the test binary to link without pulling in WebGPU runtime.
 
 #include "gx/gx.hpp"
 #include "gfx/clear.hpp"
-#include "gfx/common.hpp"
+#include "gfx/resources.hpp"
 #include "gfx/depth_peek.hpp"
+#include "gfx/recording.hpp"
 #include "gfx/tex_copy_conv.hpp"
 #include "gfx/tex_palette_conv.hpp"
 #include "gfx/texture.hpp"
@@ -36,16 +37,15 @@ auto fmt::formatter<AuroraLogLevel>::format(AuroraLogLevel level, format_context
   return fmt::format_to(ctx.out(), "{}", static_cast<int>(level));
 }
 
-// --- GPU buffers (default-constructed, not used in tests) ---
-namespace aurora::gfx {
-AuroraStats g_stats;
-wgpu::Buffer g_vertexBuffer;
-wgpu::Buffer g_uniformBuffer;
-wgpu::Buffer g_indexBuffer;
-wgpu::Buffer g_storageBuffer;
-uint32_t g_drawCallCount = 0;
-uint32_t g_mergedDrawCallCount = 0;
-} // namespace aurora::gfx
+// --- GPU resources (default-constructed, not used in tests) ---
+namespace aurora::gfx::detail {
+Resources& resources() noexcept {
+  static Resources resources;
+  return resources;
+}
+
+void increment_merged_draw_count() noexcept {}
+} // namespace aurora::gfx::detail
 
 namespace aurora::webgpu {
 GraphicsConfig g_graphicsConfig{};
@@ -118,7 +118,6 @@ GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept { return {}; }
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept { return {}; }
 gfx::Range build_uniform(const ShaderInfo& info) noexcept { return {.size = 1}; }
 void resolve_sampled_textures(const ShaderInfo& info) noexcept {}
-u8 color_channel(GXChannelID id) noexcept { return 0; }
 } // namespace aurora::gx
 
 // --- Buffer push stubs ---

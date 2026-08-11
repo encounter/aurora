@@ -1,7 +1,9 @@
 #include <aurora/aurora.h>
 
 #ifdef AURORA_ENABLE_GX
-#include "gfx/common.hpp"
+#include "gfx/resources.hpp"
+#include "gfx/frame.hpp"
+#include "gfx/recording.hpp"
 #include "gfx/render_worker.hpp"
 #include "gx/command_processor.hpp"
 #include "gx/fifo.hpp"
@@ -426,15 +428,16 @@ void end_frame() noexcept {
     TracyPlotConfig("aurora: lastStorageSize", tracy::PlotFormatType::Memory, false, true, 0);
     TracyPlotConfig("aurora: lastTextureUploadSize", tracy::PlotFormatType::Memory, false, true, 0);
 
-    TracyPlot("aurora: queuedPipelines", static_cast<int64_t>(gfx::g_stats.queuedPipelines));
-    TracyPlot("aurora: createdPipelines", static_cast<int64_t>(gfx::g_stats.createdPipelines));
-    TracyPlot("aurora: drawCallCount", static_cast<int64_t>(gfx::g_stats.drawCallCount));
-    TracyPlot("aurora: mergedDrawCallCount", static_cast<int64_t>(gfx::g_stats.mergedDrawCallCount));
-    TracyPlot("aurora: lastVertSize", static_cast<int64_t>(gfx::g_stats.lastVertSize));
-    TracyPlot("aurora: lastUniformSize", static_cast<int64_t>(gfx::g_stats.lastUniformSize));
-    TracyPlot("aurora: lastIndexSize", static_cast<int64_t>(gfx::g_stats.lastIndexSize));
-    TracyPlot("aurora: lastStorageSize", static_cast<int64_t>(gfx::g_stats.lastStorageSize));
-    TracyPlot("aurora: lastTextureUploadSize", static_cast<int64_t>(gfx::g_stats.lastTextureUploadSize));
+    const auto& stats = gfx::detail::resources().stats;
+    TracyPlot("aurora: queuedPipelines", static_cast<int64_t>(stats.queuedPipelines));
+    TracyPlot("aurora: createdPipelines", static_cast<int64_t>(stats.createdPipelines));
+    TracyPlot("aurora: drawCallCount", static_cast<int64_t>(stats.drawCallCount));
+    TracyPlot("aurora: mergedDrawCallCount", static_cast<int64_t>(stats.mergedDrawCallCount));
+    TracyPlot("aurora: lastVertSize", static_cast<int64_t>(stats.lastVertSize));
+    TracyPlot("aurora: lastUniformSize", static_cast<int64_t>(stats.lastUniformSize));
+    TracyPlot("aurora: lastIndexSize", static_cast<int64_t>(stats.lastIndexSize));
+    TracyPlot("aurora: lastStorageSize", static_cast<int64_t>(stats.lastStorageSize));
+    TracyPlot("aurora: lastTextureUploadSize", static_cast<int64_t>(stats.lastTextureUploadSize));
   });
 
 #endif

@@ -3,7 +3,7 @@
 
 #include <utility>
 
-#include "common.hpp"
+#include "types.hpp"
 
 namespace aurora::gfx {
 struct TextureUpload {

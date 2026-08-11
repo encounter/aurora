@@ -1,9 +1,12 @@
 add_library(aurora_gx STATIC
         lib/gfx/clear.cpp
-        lib/gfx/common.cpp
         lib/gfx/depth_peek.cpp
+        lib/gfx/encoding.cpp
+        lib/gfx/frame.cpp
         lib/gfx/pipeline_cache.cpp
+        lib/gfx/recording.cpp
         lib/gfx/render_worker.cpp
+        lib/gfx/resource_cache.cpp
         lib/gfx/dds_io.cpp
         lib/gfx/tex_copy_conv.cpp
         lib/gfx/tex_palette_conv.cpp

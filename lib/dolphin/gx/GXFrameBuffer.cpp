@@ -3,6 +3,7 @@
 
 #include "../../gfx/tex_copy_conv.hpp"
 #include "../../gfx/texture.hpp"
+#include "../../gfx/recording.hpp"
 #include "../../window.hpp"
 #include "../../gfx/clear.hpp"
 #include "../../webgpu/gpu.hpp"

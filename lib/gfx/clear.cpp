@@ -1,5 +1,6 @@
 #include "clear.hpp"
 
+#include "encoding.hpp"
 #include "../webgpu/gpu.hpp"
 #include "tracy/Tracy.hpp"
 

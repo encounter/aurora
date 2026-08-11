@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common.hpp"
 #include "texture.hpp"
 #include "../webgpu/gpu.hpp"
 

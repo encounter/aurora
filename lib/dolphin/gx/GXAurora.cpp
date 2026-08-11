@@ -6,7 +6,6 @@
 #include "gx.hpp"
 #include "../../window.hpp"
 
-#include "../../gfx/common.hpp"
 #include "../../gx/fifo.hpp"
 
 static void GXWriteString(const char* label) {

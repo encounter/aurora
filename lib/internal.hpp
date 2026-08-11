@@ -239,4 +239,110 @@ private:
   const T* ptr = nullptr;
   size_t length = 0;
 };
+
+class ByteBuffer {
+public:
+  constexpr ByteBuffer() noexcept = default;
+  explicit ByteBuffer(size_t size) noexcept
+  : m_data(static_cast<uint8_t*>(calloc(1, size))), m_length(size), m_capacity(size) {}
+  explicit ByteBuffer(uint8_t* data, size_t size) noexcept : m_data(data), m_capacity(size), m_owned(false) {}
+  ~ByteBuffer() noexcept { release(); }
+
+  ByteBuffer(ByteBuffer&& rhs) noexcept
+  : m_data(rhs.m_data), m_length(rhs.m_length), m_capacity(rhs.m_capacity), m_owned(rhs.m_owned) {
+    rhs.m_data = nullptr;
+    rhs.m_length = 0;
+    rhs.m_capacity = 0;
+    rhs.m_owned = true;
+  }
+
+  ByteBuffer& operator=(ByteBuffer&& rhs) noexcept {
+    if (this == &rhs) {
+      return *this;
+    }
+    release();
+    m_data = rhs.m_data;
+    m_length = rhs.m_length;
+    m_capacity = rhs.m_capacity;
+    m_owned = rhs.m_owned;
+    rhs.m_data = nullptr;
+    rhs.m_length = 0;
+    rhs.m_capacity = 0;
+    rhs.m_owned = true;
+    return *this;
+  }
+
+  ByteBuffer(const ByteBuffer&) = delete;
+  ByteBuffer& operator=(const ByteBuffer&) = delete;
+  operator ArrayRef<uint8_t>() const noexcept { return {m_data, m_length}; }
+
+  [[nodiscard]] uint8_t* data() noexcept { return m_data; }
+  [[nodiscard]] const uint8_t* data() const noexcept { return m_data; }
+  [[nodiscard]] size_t size() const noexcept { return m_length; }
+  [[nodiscard]] bool empty() const noexcept { return m_length == 0; }
+
+  void append(const void* data, size_t size) {
+    resize(m_length + size, false);
+    memcpy(m_data + m_length, data, size);
+    m_length += size;
+  }
+
+  template <typename T>
+  void append(const T& obj) {
+    append(&obj, sizeof(T));
+  }
+
+  void append_zeroes(size_t size) {
+    resize(m_length + size, true);
+    m_length += size;
+  }
+
+  void release() {
+    if (m_data != nullptr && m_owned) {
+      free(m_data);
+    }
+    m_data = nullptr;
+    m_length = 0;
+    m_capacity = 0;
+    m_owned = true;
+  }
+
+  void clear() { m_length = 0; }
+  void reserve_extra(size_t size) { resize(m_length + size, true); }
+
+  ByteBuffer clone() const {
+    ByteBuffer clone{m_length};
+    std::memcpy(clone.data(), m_data, m_length);
+    return clone;
+  }
+
+private:
+  uint8_t* m_data = nullptr;
+  size_t m_length = 0;
+  size_t m_capacity = 0;
+  bool m_owned = true;
+
+  void resize(size_t size, bool zeroed) {
+    if (size == 0) {
+      clear();
+    } else if (m_data == nullptr) {
+      m_data = static_cast<uint8_t*>(zeroed ? calloc(1, size) : malloc(size));
+      m_owned = true;
+    } else if (size > m_capacity) {
+      if (!m_owned) {
+        abort();
+      }
+      if (size < m_capacity * 2) {
+        size = m_capacity * 2;
+      }
+      m_data = static_cast<uint8_t*>(realloc(m_data, size));
+      if (zeroed) {
+        memset(m_data + m_capacity, 0, size - m_capacity);
+      }
+    } else {
+      return;
+    }
+    m_capacity = size;
+  }
+};
 } // namespace aurora

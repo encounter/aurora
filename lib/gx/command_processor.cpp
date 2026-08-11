@@ -1,7 +1,7 @@
 #include "command_processor.hpp"
 
-#include "../gfx/common.hpp"
 #include "../gfx/depth_peek.hpp"
+#include "../gfx/recording.hpp"
 #include "../internal.hpp"
 #include "dolphin/gx/GXAurora.h"
 #include "gx.hpp"
@@ -486,7 +486,7 @@ static void draw_prim(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, Reader& read
     }
     lastDraw->vtxCount += vtxCount;
     lastDraw->indexCount += numIndices;
-    ++gfx::g_mergedDrawCallCount;
+    gfx::detail::increment_merged_draw_count();
     return;
   }
 

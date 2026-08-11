@@ -3,7 +3,7 @@
 #include <aurora/math.hpp>
 
 #include "../internal.hpp"
-#include "../gfx/common.hpp"
+#include "../gfx/types.hpp"
 #include "../gfx/texture.hpp"
 
 #include <absl/container/flat_hash_map.h>

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common.hpp"
 #include "texture_convert.hpp"
 
 #include <filesystem>

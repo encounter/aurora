@@ -1,6 +1,8 @@
 #include "pipeline_cache.hpp"
 
 #include "clear.hpp"
+#include "resources.hpp"
+#include "hash.hpp"
 #include "../gx/pipeline.hpp"
 #include "../io.hpp"
 #ifdef AURORA_ENABLE_RMLUI
@@ -314,8 +316,8 @@ static bool register_sdl_vfs() {
 }
 
 #if defined(__cpp_lib_atomic_ref)
-static std::atomic_ref queuedPipelines{g_stats.queuedPipelines};
-static std::atomic_ref createdPipelines{g_stats.createdPipelines};
+static std::atomic_ref queuedPipelines{detail::resources().stats.queuedPipelines};
+static std::atomic_ref createdPipelines{detail::resources().stats.createdPipelines};
 #else
 struct AtomicStatRef {
   uint32_t& ref;
@@ -328,8 +330,8 @@ struct AtomicStatRef {
     return val;
   }
 };
-static AtomicStatRef queuedPipelines{g_stats.queuedPipelines};
-static AtomicStatRef createdPipelines{g_stats.createdPipelines};
+static AtomicStatRef queuedPipelines{detail::resources().stats.queuedPipelines};
+static AtomicStatRef createdPipelines{detail::resources().stats.createdPipelines};
 #endif
 
 template <typename PipelineConfig>

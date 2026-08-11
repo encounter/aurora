@@ -1,4 +1,5 @@
-#include "../gfx/common.hpp"
+#include "../gfx/hash.hpp"
+#include "../gfx/types.hpp"
 
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"

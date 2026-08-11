@@ -1,5 +1,7 @@
 #include "shader_info.hpp"
 
+#include "../gfx/recording.hpp"
+
 #include <cmath>
 
 #include <tracy/Tracy.hpp>

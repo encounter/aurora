@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common.hpp"
+#include "types.hpp"
 
 #include <functional>
 
@@ -17,6 +17,12 @@ struct PipelineConfig;
 } // namespace aurora::rmlui
 
 namespace aurora::gfx {
+
+enum class ShaderType : uint8_t {
+  Clear = 0,
+  GX = 1,
+  Rml = 2,
+};
 
 using NewPipelineCallback = std::function<wgpu::RenderPipeline()>;
 

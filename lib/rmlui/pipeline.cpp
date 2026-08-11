@@ -1,5 +1,8 @@
 #include "pipeline.hpp"
 
+#include "../gfx/encoding.hpp"
+#include "../gfx/resources.hpp"
+#include "../gfx/resource_cache.hpp"
 #include "../internal.hpp"
 #include "../webgpu/gpu.hpp"
 
@@ -804,7 +807,7 @@ gfx::BindGroupRef common_bind_group_ref() {
   const std::array entries{
       wgpu::BindGroupEntry{
           .binding = 0,
-          .buffer = gfx::g_uniformBuffer,
+          .buffer = gfx::detail::resources().uniformBuffer,
           .offset = 0,
           .size = CommonUniformBindingSize,
       },
@@ -825,7 +828,7 @@ gfx::BindGroupRef uniform_bind_group_ref() {
   const std::array entries{
       wgpu::BindGroupEntry{
           .binding = 0,
-          .buffer = gfx::g_uniformBuffer,
+          .buffer = gfx::detail::resources().uniformBuffer,
           .offset = 0,
           .size = ExtraUniformBindingSize,
       },
@@ -992,8 +995,9 @@ void render(const DrawData& data, const wgpu::RenderPassEncoder& pass) {
   pass.SetStencilReference(data.stencilRef);
 
   if (static_cast<DrawKind>(data.drawKind) == DrawKind::Geometry) {
-    pass.SetVertexBuffer(0, gfx::g_vertexBuffer, data.vertexRange.offset, data.vertexRange.size);
-    pass.SetIndexBuffer(gfx::g_indexBuffer, wgpu::IndexFormat::Uint32, data.indexRange.offset, data.indexRange.size);
+    auto& resources = gfx::detail::resources();
+    pass.SetVertexBuffer(0, resources.vertexBuffer, data.vertexRange.offset, data.vertexRange.size);
+    pass.SetIndexBuffer(resources.indexBuffer, wgpu::IndexFormat::Uint32, data.indexRange.offset, data.indexRange.size);
     pass.DrawIndexed(data.indexCount);
   } else {
     pass.Draw(data.vertexCount);
