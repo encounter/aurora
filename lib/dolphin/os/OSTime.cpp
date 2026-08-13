@@ -31,10 +31,10 @@ static LocalTime SystemTimeToLocalTime(SystemTime time) {
 
 #if defined(_WIN32)
     const errno_t result = localtime_s(&localTm, &wallClock);
-    ASSERT(result == 0);
+    AURORA_ASSERT(result == 0, "localtime_s failed in SystemTimeToLocalTime");
 #else
     const std::tm* result = localtime_r(&wallClock, &localTm);
-    ASSERT(result != nullptr);
+    AURORA_ASSERT(result != nullptr, "localtime_r failed in SystemTimeToLocalTime");
 #endif
 
     const auto localDate = chrono::local_days{
@@ -70,7 +70,7 @@ static SystemTime LocalTimeToSystemTime(LocalTime time) {
 
     const std::time_t utcTime = mktime(&localTm);
 
-    ASSERT(utcTime != -1);
+    AURORA_ASSERT(utcTime != -1, "mktime failed in LocalTimeToSystemTime");
     static_assert(std::is_same_v<std::chrono::microseconds, decltype(hms)::precision>, "hms precision must be in microseconds");
 
     return chrono::system_clock::from_time_t(utcTime) + hms.subseconds();
@@ -83,7 +83,6 @@ OSTick OSGetTick() {
 
 OSTime OSGetTime() {
     // System time is provided in the number of timer ticks since 2000-01-01 00:00:00
-    // Use time_t arithmetic to avoid chrono duration_cast overflow issues on some platforms.
 
     // Get current wall-clock time
     const auto elapsed = chrono::steady_clock::now() - startupSteadyTime;
@@ -126,9 +125,9 @@ void OSTicksToCalendarTime(OSTime ticks, OSCalendarTime* td) {
     td->msec = std::chrono::duration_cast<chrono::milliseconds>(hms.subseconds()).count();
     td->usec = std::chrono::duration_cast<chrono::microseconds>(hms.subseconds() - chrono::milliseconds{td->msec}).count();
 
-    ASSERT(0 <= td->usec);
-    ASSERT(0 <= td->msec);
-    ASSERT(0 <= td->sec);
+    AURORA_ASSERT(0 <= td->usec, "0 <= td->usec");
+    AURORA_ASSERT(0 <= td->msec, "0 <= td->msec");
+    AURORA_ASSERT(0 <= td->sec, "0 <= td->sec");
 }
 
 OSTime OSCalendarTimeToTicks(OSCalendarTime* td) {
