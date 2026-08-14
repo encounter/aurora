@@ -85,11 +85,11 @@ void set_efb_targets(RenderPass& pass) {
       webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.texture : webgpu::g_frameBuffer.texture;
   pass.copySourceView =
       webgpu::g_graphicsConfig.msaaSamples > 1 ? webgpu::g_frameBufferResolved.view : webgpu::g_frameBuffer.view;
-  pass.copySourceDepthView = webgpu::g_depthBuffer.view;
+  pass.copySourceDepthView = webgpu::g_depthBuffer.sampleView;
   pass.targetSize = webgpu::g_frameBuffer.size;
   pass.msaaSamples = webgpu::g_graphicsConfig.msaaSamples;
   pass.hasDepth = true;
-  pass.hasStencil = false;
+  pass.hasStencil = webgpu::g_graphicsConfig.depthStencilSupported;
 }
 
 struct OffscreenCacheKey {

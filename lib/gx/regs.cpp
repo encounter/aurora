@@ -216,6 +216,8 @@ void bp_z_mode(u8, u32 value) noexcept {
   g_gxState.depthCompare = reg_get(value, 1, 0) != 0;
   g_gxState.depthFunc = static_cast<GXCompare>(reg_get(value, 3, 1));
   g_gxState.depthUpdate = reg_get(value, 1, 4) != 0;
+  // GX2 matches this behavior: writing Z mode disables stencil testing.
+  g_gxState.stencilEnable = false;
 }
 
 // Blend mode / cmode0 (0x41)

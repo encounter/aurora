@@ -38,6 +38,7 @@ void render(const DrawData& data, const wgpu::RenderPassEncoder& pass) {
     const wgpu::Color color{0.f, 0.f, 0.f, data.dstAlpha / 255.f};
     pass.SetBlendConstant(&color);
   }
+  pass.SetStencilReference(data.stencilRef);
   if (data.indexCount == 0) {
     pass.Draw(data.vtxCount, data.instanceCount);
   } else {
