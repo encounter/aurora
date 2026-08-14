@@ -1,4 +1,5 @@
 #include <aurora/aurora.h>
+#include <dolphin/os.h>
 
 #include <cstdint>
 
