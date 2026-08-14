@@ -119,7 +119,7 @@ void OSTicksToCalendarTime(OSTime ticks, OSCalendarTime* td) {
     td->mon = static_cast<unsigned int>(ymd.month()) - 1;
     td->year = static_cast<int>(ymd.year());
     td->wday = ymwd.weekday().c_encoding();
-    td->yday = (chrono::local_days{ymd} - chrono::local_days{ymd.year() / 1 / 0}).count();
+    td->yday = (chrono::local_days{ymd} - chrono::local_days{ymd.year() / 1 / 1}).count();
 
     static_assert(std::is_same_v<std::chrono::microseconds, decltype(hms)::precision>, "hms precision must be in microseconds");
     td->msec = std::chrono::duration_cast<chrono::milliseconds>(hms.subseconds()).count();
