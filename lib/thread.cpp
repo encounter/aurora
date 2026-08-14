@@ -42,6 +42,22 @@ std::optional<CacheDomain> sDomain;
 bool sDomainConfigured = false;
 
 #if defined(__linux__)
+bool get_current_thread_affinity(cpu_set_t& set) noexcept {
+#if defined(__ANDROID__)
+  return sched_getaffinity(pid_t{0}, sizeof(set), &set) == 0;
+#else
+  return pthread_getaffinity_np(pthread_self(), sizeof(set), &set) == 0;
+#endif
+}
+
+bool set_current_thread_affinity(const cpu_set_t& set) noexcept {
+#if defined(__ANDROID__)
+  return sched_setaffinity(pid_t{0}, sizeof(set), &set) == 0;
+#else
+  return pthread_setaffinity_np(pthread_self(), sizeof(set), &set) == 0;
+#endif
+}
+
 std::optional<std::string> read_line(const std::string& path) {
   std::ifstream input{path};
   std::string value;
@@ -116,7 +132,7 @@ std::optional<CacheDomain> find_cache_domain() {
 
     cpu_set_t allowed;
     CPU_ZERO(&allowed);
-    if (pthread_getaffinity_np(pthread_self(), sizeof(allowed), &allowed) != 0) {
+    if (!get_current_thread_affinity(allowed)) {
       continue;
     }
 
@@ -146,7 +162,7 @@ bool apply_cache_domain(const CacheDomain& domain) noexcept {
       CPU_SET(static_cast<int>(processor.number), &set);
     }
   }
-  return pthread_setaffinity_np(pthread_self(), sizeof(set), &set) == 0;
+  return set_current_thread_affinity(set);
 }
 #elif defined(_WIN32)
 std::optional<CacheDomain> find_cache_domain() {
