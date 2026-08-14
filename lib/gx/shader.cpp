@@ -1542,16 +1542,7 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
           fmt::format("\n    // Perspective fog\n    var fogBase = ubuf.fog.a / (ubuf.fog.b - {});", fogDepth);
     }
     if (config.fogRangeEnabled) {
-      fragmentFn +=
-          "\n        let fog_screen_x = (in.pos.x / max(ubuf.render_viewport_size.x, 1.0)) * 2.0 - 1.0;"
-          "\n        let fog_offset = fog_screen_x - ubuf.fog.range_center;"
-          "\n        let fog_range_index = clamp(9.0 - abs(fog_offset) * 9.0, 0.0, 9.0);"
-          "\n        let fog_range_lower = u32(fog_range_index);"
-          "\n        let fog_range_upper = min(fog_range_lower + 1u, 9u);"
-          "\n        let fog_k_lower = ubuf.fog.range_k[fog_range_lower / 4u][fog_range_lower % 4u];"
-          "\n        let fog_k_upper = ubuf.fog.range_k[fog_range_upper / 4u][fog_range_upper % 4u];"
-          "\n        let fog_k = max(mix(fog_k_lower, fog_k_upper, fract(fog_range_index)), 0.000001);"
-          "\n        fogBase *= sqrt(fog_offset * fog_offset + fog_k * fog_k) / fog_k;";
+      fragmentFn += "\n        fogBase *= bitcast<f32>(abuf[imm.fog_range_base + u32(in.pos.x)]);";
     }
     fragmentFn += "\n    var fogF = clamp(fogBase - ubuf.fog.c, 0.0, 1.0);";
     switch (config.fogType) {
@@ -1969,6 +1960,8 @@ fn tev_overflow_vec4f(in: vec4f) -> vec4f {{
 struct Immediate {{
     vtx_start: u32,
     current_pnmtx: u32,
+    fog_range_base: u32,
+    _pad: u32,
     array_start0: vec4u,
     array_start1: vec4u,
     array_start2: vec4u,

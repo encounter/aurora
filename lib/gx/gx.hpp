@@ -80,7 +80,8 @@ enum DirtyFlag : u8 {
 struct DrawImmediateData {
   u32 vtxStart = 0;
   u32 currentPnMtx = 0;
-  std::array<u32, 2> _pad{};
+  u32 fogRangeBase = 0;
+  u32 _pad = 0;
   std::array<u32, MaxIndexAttr> arrayStart{};
 };
 static_assert(std::has_unique_object_representations_v<DrawImmediateData>);

@@ -12,8 +12,11 @@
 
 #include <tracy/Tracy.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 namespace aurora::gx::fifo {
 namespace {
@@ -147,6 +150,23 @@ constexpr u8 CP_CMD_LOAD_BP_REG = GX_LOAD_BP_REG & GX_OPCODE_MASK;
 constexpr u8 CP_OPCODE_MASK = GX_OPCODE_MASK;
 constexpr u8 CP_VAT_MASK = GX_VAT_MASK;
 
+struct FogRangeLutKey {
+  std::array<u16, 10> rangeK;
+  f32 rangeCenter;
+  f32 renderWidth;
+  u32 targetWidth;
+
+  bool operator==(const FogRangeLutKey&) const = default;
+};
+
+struct FogRangeLutEntry {
+  FogRangeLutKey key;
+  std::vector<f32> factors;
+};
+
+constexpr size_t MaxFogRangeLuts = 32;
+std::vector<FogRangeLutEntry> sFogRangeLuts;
+
 struct DrawCache {
   PipelineConfig config{};
   ShaderInfo shaderInfo{};
@@ -157,9 +177,64 @@ struct DrawCache {
   u8 lineMode = 0;
   bool hasPipeline = false;
   gfx::Range uniformRange{};
+  gfx::Range fogRange{};
+  FogRangeLutKey fogRangeKey{};
+  bool hasFogRange = false;
   GXVtxFmt lastDrawFmt = GX_MAX_VTXFMT;
 };
 DrawCache sDrawCache;
+
+FogRangeLutKey fog_range_lut_key() noexcept {
+  const auto& state = g_gxState.fog;
+  const f32 logicalWidth = std::max(g_gxState.logicalViewport.width, 1.f);
+  const f32 renderWidth = std::max(g_gxState.renderViewport.width, 1.f);
+  return {
+      .rangeK = state.rangeK,
+      .rangeCenter = ((static_cast<f32>(state.rangeCenter) - g_gxState.logicalViewport.left) / logicalWidth) * 2.f -
+                     1.f + (g_gxState.renderViewport.left / renderWidth) * 2.f,
+      .renderWidth = renderWidth,
+      .targetWidth = gfx::get_render_target_size().x,
+  };
+}
+
+std::vector<f32> build_fog_range_lut(const FogRangeLutKey& key) {
+  std::array<f32, 10> rangeK;
+  for (u32 i = 0; i < rangeK.size(); ++i) {
+    const u32 source = (i & ~1u) | (1u - (i & 1u));
+    rangeK[i] = static_cast<f32>(key.rangeK[source]) / 64.f;
+  }
+
+  std::vector<f32> lut(key.targetWidth);
+  for (u32 x = 0; x < key.targetWidth; ++x) {
+    const f32 screenX = ((static_cast<f32>(x) + 0.5f) / key.renderWidth) * 2.f - 1.f;
+    const f32 offset = screenX - key.rangeCenter;
+    const f32 rangeIndex = std::clamp(9.f - std::abs(offset) * 9.f, 0.f, 9.f);
+    const u32 lower = static_cast<u32>(rangeIndex);
+    const u32 upper = std::min(lower + 1, 9u);
+    const f32 fraction = rangeIndex - static_cast<f32>(lower);
+    const f32 k = std::max(rangeK[lower] * (1.f - fraction) + rangeK[upper] * fraction, 0.000001f);
+    lut[x] = std::sqrt(offset * offset + k * k) / k;
+  }
+  return lut;
+}
+
+const std::vector<f32>& resolve_fog_range_lut(const FogRangeLutKey& key) {
+  for (const auto& entry : sFogRangeLuts) {
+    if (entry.key == key) {
+      return entry.factors;
+    }
+  }
+  if (sFogRangeLuts.size() == MaxFogRangeLuts) {
+    sFogRangeLuts.erase(sFogRangeLuts.begin());
+  }
+  sFogRangeLuts.emplace_back(FogRangeLutEntry{key, build_fog_range_lut(key)});
+  return sFogRangeLuts.back().factors;
+}
+
+gfx::Range push_fog_range_lut(const FogRangeLutKey& key) {
+  const auto& lut = resolve_fog_range_lut(key);
+  return gfx::push_storage(reinterpret_cast<const u8*>(lut.data()), lut.size() * sizeof(f32));
+}
 
 u8 line_mode_for_prim(GXPrimitive prim) noexcept {
   switch (prim) {
@@ -392,6 +467,15 @@ static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Rang
     cache.uniformRange = build_uniform(cache.shaderInfo);
     state.dirty &= ~DirtyUniform;
   }
+  if (cache.config.shaderConfig.fogRangeEnabled) {
+    const auto key = fog_range_lut_key();
+    if (!cache.hasFogRange || cache.fogRangeKey != key) {
+      cache.fogRange = push_fog_range_lut(key);
+      cache.fogRangeKey = key;
+      cache.hasFogRange = true;
+    }
+  }
+  immediates.fogRangeBase = cache.fogRange.offset / sizeof(u32);
 
   state.dirty &= ~DirtyImmediates;
 
@@ -712,6 +796,8 @@ void handle_aurora(Reader& reader) noexcept {
 void clear_draw_cache() noexcept {
   sDrawCache.bindGeneration = 0;
   sDrawCache.uniformRange = {};
+  sDrawCache.fogRange = {};
+  sDrawCache.hasFogRange = false;
 }
 
 } // namespace aurora::gx::fifo
