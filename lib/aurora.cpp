@@ -1,4 +1,5 @@
 #include <aurora/aurora.h>
+#include <aurora/time.hpp>
 
 #ifdef AURORA_ENABLE_GX
 #include "gfx/resources.hpp"
@@ -473,3 +474,5 @@ void aurora_set_resampler(AuroraSampler sampler) {
   (void)sampler;
 #endif
 }
+void aurora_set_timescale(float scale) { aurora::time::set_scale(scale); }
+float aurora_get_timescale() { return aurora::time::scale(); }

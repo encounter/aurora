@@ -10,6 +10,8 @@ add_library(aurora_core STATIC
         lib/system_info.hpp
         lib/thread.cpp
         lib/thread.hpp
+        lib/time.cpp
+        lib/time_internal.hpp
         lib/window.cpp
 )
 add_library(aurora::core ALIAS aurora_core)

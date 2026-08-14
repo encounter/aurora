@@ -24,6 +24,31 @@ target_link_libraries(io_tests PRIVATE gtest gtest_main ${AURORA_SDL3_TARGET})
 aurora_copy_runtime_dlls(io_tests)
 gtest_discover_tests(io_tests)
 
+add_executable(time_tests
+  time_test.cpp
+  ../lib/time.cpp
+)
+target_include_directories(time_tests PRIVATE
+  ../include
+  ../lib
+)
+target_link_libraries(time_tests PRIVATE gtest gtest_main)
+gtest_discover_tests(time_tests)
+
+add_executable(os_time_tests
+  os_time_test.cpp
+  os_time_test_stubs.cpp
+  ../lib/time.cpp
+  ../lib/dolphin/os/OSTime.cpp
+)
+target_include_directories(os_time_tests PRIVATE
+  ../include
+  ../lib
+)
+target_compile_definitions(os_time_tests PRIVATE AURORA TARGET_PC)
+target_link_libraries(os_time_tests PRIVATE fmt::fmt gtest gtest_main)
+gtest_discover_tests(os_time_tests)
+
 if (AURORA_ENABLE_GX)
   # GX FIFO round-trip tests
   # Compile GX sources directly to avoid pulling in the full renderer/WebGPU runtime

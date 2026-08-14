@@ -175,6 +175,10 @@ void OSResetStopwatch(OSStopwatch* sw);
 void OSDumpStopwatch(OSStopwatch* sw);
 
 OSTick OSGetTick(void);
+/**
+ * Get the current time, in ticks since GCN epoch (2000-01-01 00:00:00 UTC).
+ * Monotonic, scaled by aurora_set_timescale, and pauses when backgrounded.
+ */
 OSTime OSGetTime(void);
 void OSTicksToCalendarTime(OSTime ticks, OSCalendarTime* td);
 OSTime OSCalendarTimeToTicks(OSCalendarTime* td);
@@ -183,10 +187,15 @@ BOOL OSDisableInterrupts(void);
 BOOL OSRestoreInterrupts(BOOL level);
 
 /**
- * Aurora extension: get the system time, in ticks since GCN epoch (2000-01-01 00:00:00 UTC)
- * Not guaranteed to increase monotonically and not converted to the local time zone
+ * Aurora extension: get the system time, in ticks since GCN epoch (2000-01-01 00:00:00 UTC).
+ * Not guaranteed to increase monotonically and not converted to the local time zone.
  */
 OSTime OSGetSystemTime(void);
+/**
+ * Aurora extension: get the unscaled monotonic time, in ticks since GCN epoch (2000-01-01 00:00:00 UTC).
+ * Use only for elapsed-time measurements.
+ */
+OSTime OSGetNativeTime(void);
 
 #define OS_CONSOLE_MASK        0xF0000000
 #define OS_CONSOLE_RETAIL      0x00000000
