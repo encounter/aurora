@@ -21,7 +21,7 @@ std::atomic<internal::NowFunction> s_nativeNow{default_native_now};
 struct ClockState {
   std::shared_mutex mutex;
   native_clock::time_point nativeAnchor = default_native_now();
-  guest_clock::time_point guestAnchor;
+  game_clock::time_point gameAnchor;
   double requestedScale = 1.0;
   uint32_t pauseReasons = 0;
 };
@@ -33,19 +33,19 @@ ClockState& state() {
 
 native_clock::time_point get_native_now() noexcept { return s_nativeNow.load(std::memory_order_acquire)(); }
 
-guest_clock::time_point guest_now_locked(const ClockState& clockState,
-                                         const native_clock::time_point nativeNow) noexcept {
+game_clock::time_point game_now_locked(const ClockState& clockState,
+                                       const native_clock::time_point nativeNow) noexcept {
   if (clockState.pauseReasons != 0 || clockState.requestedScale == 0.0) {
-    return clockState.guestAnchor;
+    return clockState.gameAnchor;
   }
 
-  return clockState.guestAnchor +
-         std::chrono::duration_cast<guest_clock::duration>(std::chrono::duration<double, std::nano>{
+  return clockState.gameAnchor +
+         std::chrono::duration_cast<game_clock::duration>(std::chrono::duration<double, std::nano>{
              (nativeNow - clockState.nativeAnchor).count() * clockState.requestedScale});
 }
 
 void rebase_locked(ClockState& clockState, const native_clock::time_point nativeNow) noexcept {
-  clockState.guestAnchor = guest_now_locked(clockState, nativeNow);
+  clockState.gameAnchor = game_now_locked(clockState, nativeNow);
   clockState.nativeAnchor = nativeNow;
 }
 
@@ -53,10 +53,10 @@ void rebase_locked(ClockState& clockState, const native_clock::time_point native
 
 native_clock::time_point native_clock::now() noexcept { return get_native_now(); }
 
-guest_clock::time_point guest_clock::now() noexcept {
+game_clock::time_point game_clock::now() noexcept {
   auto& clockState = state();
   std::shared_lock lock{clockState.mutex};
-  return guest_now_locked(clockState, get_native_now());
+  return game_now_locked(clockState, get_native_now());
 }
 
 void set_scale(const float scale) noexcept {
@@ -109,7 +109,7 @@ void reset() noexcept {
   auto& clockState = state();
   std::unique_lock lock{clockState.mutex};
   clockState.nativeAnchor = get_native_now();
-  clockState.guestAnchor = {};
+  clockState.gameAnchor = {};
   clockState.requestedScale = 1.0;
   clockState.pauseReasons = 0;
 }

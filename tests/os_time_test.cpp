@@ -14,7 +14,7 @@ aurora::time::native_clock::time_point s_now{};
 
 aurora::time::native_clock::time_point fake_now() noexcept { return s_now; }
 
-class GuestOSTimeTest : public testing::Test {
+class GameOSTimeTest : public testing::Test {
 protected:
   void SetUp() override {
     s_now = {};
@@ -59,7 +59,7 @@ TEST(OSTimeTest, CalendarConversionRoundTripsLocalTime) {
   EXPECT_EQ(output.yday, 59);
 }
 
-TEST_F(GuestOSTimeTest, StopsWhilePausedAndRespectsScale) {
+TEST_F(GameOSTimeTest, StopsWhilePausedAndRespectsScale) {
   const OSTime start = OSGetTime();
 
   s_now += 1s;

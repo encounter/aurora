@@ -19,12 +19,12 @@ public:
   static time_point now() noexcept;
 };
 
-class guest_clock {
+class game_clock {
 public:
   using rep = int64_t;
   using period = std::nano;
   using duration = std::chrono::duration<rep, period>;
-  using time_point = std::chrono::time_point<guest_clock>;
+  using time_point = std::chrono::time_point<game_clock>;
 
   static constexpr bool is_steady = false;
 

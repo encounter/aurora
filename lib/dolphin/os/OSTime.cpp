@@ -16,8 +16,8 @@ using LocalTime = chrono::local_time<SystemDuration>;
 namespace {
 // GCN epoch: 2000-01-01 00:00:00 UTC = 946684800 seconds after Unix epoch
 constexpr SystemTime kGcnEpochUnix{946684800s};
-std::once_flag s_guestEpochOnce;
-OSTime s_guestEpochOffset;
+std::once_flag s_gameEpochOnce;
+OSTime s_gameEpochOffset;
 
 LocalTime system_time_to_local_time(SystemTime time) {
 #if defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L
@@ -85,22 +85,22 @@ OSTime duration_to_ticks(const Duration duration) {
          nanoseconds.count() * static_cast<OSTime>(OS_TIMER_CLOCK) / 1000000000LL;
 }
 
-void initialize_guest_epoch() {
-  s_guestEpochOffset = OSGetSystemTime() - duration_to_ticks(aurora::time::guest_clock::now().time_since_epoch());
+void initialize_game_epoch() {
+  s_gameEpochOffset = OSGetSystemTime() - duration_to_ticks(aurora::time::game_clock::now().time_since_epoch());
 }
 } // namespace
 
 OSTick OSGetTick() { return OSGetTime() & 0xFFFFFFFF; }
 
 OSTime OSGetTime() {
-  std::call_once(s_guestEpochOnce, initialize_guest_epoch);
-  return s_guestEpochOffset + duration_to_ticks(aurora::time::guest_clock::now().time_since_epoch());
+  std::call_once(s_gameEpochOnce, initialize_game_epoch);
+  return s_gameEpochOffset + duration_to_ticks(aurora::time::game_clock::now().time_since_epoch());
 }
 
 OSTime OSGetNativeTime() { return duration_to_ticks(aurora::time::native_clock::now().time_since_epoch()); }
 
 void AuroraInitClock() {
-  std::call_once(s_guestEpochOnce, initialize_guest_epoch);
+  std::call_once(s_gameEpochOnce, initialize_game_epoch);
   if (OSBaseAddress == 0) {
     return;
   }
