@@ -16,6 +16,7 @@
 #include "internal.hpp"
 #include "webgpu/gpu.hpp"
 
+#include <atomic>
 #include <cstdio>
 #include <fmt/format.h>
 
@@ -131,10 +132,33 @@ Vec2<uint32_t> get_render_target_size() noexcept { return {640, 480}; }
 void set_viewport(const Viewport& viewport) noexcept {}
 void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {}
 uint32_t get_sample_count() noexcept { return 1; }
+RenderTargetLayout get_render_target_layout() noexcept {
+  return {
+      .colorAttachmentCount = 1,
+      .colorAttachments = {{{ColorAttachmentSemantic::SceneColor, wgpu::TextureFormat::RGBA8Unorm}}},
+      .depthStencilFormat = wgpu::TextureFormat::Depth24Plus,
+      .sampleCount = 1,
+  };
+}
 } // namespace aurora::gfx
 
 // --- Pipeline/draw command stubs ---
 namespace aurora::gfx {
+namespace clear {
+PipelineConfig make_pipeline_config(const RenderTargetLayout& layout, bool clearColor, bool clearAlpha,
+                                    bool clearDepth) noexcept {
+  return {
+      .targetLayoutKey = layout.key,
+      .depthStencilFormat = layout.depthStencilFormat,
+      .colorAttachmentCount = layout.colorAttachmentCount,
+      .msaaSamples = layout.sampleCount,
+      .clearColor = clearColor,
+      .clearAlpha = clearAlpha,
+      .clearDepth = clearDepth,
+  };
+}
+} // namespace clear
+
 template <>
 PipelineRef pipeline_ref<clear::PipelineConfig>(const clear::PipelineConfig& config) {
   return 0;
@@ -149,11 +173,13 @@ PipelineRef pipeline_ref<gx::PipelineConfig>(const gx::PipelineConfig& config) {
 }
 gx::DrawData g_testLastDraw{};
 uint32_t g_testDrawCount = 0;
+std::atomic<uint32_t> g_testProcessedDrawCount{0};
 
 template <>
 void push_draw_command<gx::DrawData>(gx::DrawData data) {
   g_testLastDraw = data;
   ++g_testDrawCount;
+  g_testProcessedDrawCount.fetch_add(1, std::memory_order_release);
 }
 template <>
 gx::DrawData* get_last_draw_command() {
@@ -184,11 +210,25 @@ void write_texture(TextureRef& ref, ArrayRef<uint8_t> data) noexcept {}
 void queue_texture_upload(TextureUpload upload) {}
 void queue_texture_upload_data(const uint8_t* data, size_t length, uint32_t bytesPerRow, uint32_t rowsPerImage,
                                wgpu::TexelCopyTextureInfo tex, wgpu::Extent3D size) {}
-void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
-                       Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat) {}
 void queue_palette_conv(tex_palette_conv::ConvRequest req) {}
-void begin_offscreen(uint32_t width, uint32_t height) {}
-void end_offscreen() {}
+namespace testing {
+std::atomic<uint32_t> beginOffscreenCount{0};
+std::atomic<uint32_t> endOffscreenCount{0};
+std::atomic<uint32_t> resolvePassCount{0};
+std::atomic<uint32_t> offscreenWidth{0};
+std::atomic<uint32_t> offscreenHeight{0};
+} // namespace testing
+
+void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
+                       Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat) {
+  testing::resolvePassCount.fetch_add(1, std::memory_order_release);
+}
+void begin_offscreen(uint32_t width, uint32_t height) {
+  testing::offscreenWidth.store(width, std::memory_order_relaxed);
+  testing::offscreenHeight.store(height, std::memory_order_relaxed);
+  testing::beginOffscreenCount.fetch_add(1, std::memory_order_release);
+}
+void end_offscreen() { testing::endOffscreenCount.fetch_add(1, std::memory_order_release); }
 bool is_offscreen() noexcept { return false; }
 } // namespace aurora::gfx
 

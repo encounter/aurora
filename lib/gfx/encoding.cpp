@@ -57,11 +57,7 @@ DrawContext make_draw_context(const RenderPass& passInfo) {
       .indexBuffer = res.indexBuffer,
       .uniformBuffer = res.uniformBuffer,
       .storageBuffer = res.storageBuffer,
-      .colorFormat = webgpu::g_graphicsConfig.surfaceConfiguration.format,
-      .depthFormat = webgpu::g_graphicsConfig.depthFormat,
-      .sampleCount = passInfo.msaaSamples,
-      .targetWidth = passInfo.targetSize.width,
-      .targetHeight = passInfo.targetSize.height,
+      .layout = passInfo.target_layout(),
   };
 }
 
@@ -152,7 +148,7 @@ void render_pass(const wgpu::RenderPassEncoder& pass, FramePacket& frame, Render
     } break;
     case CommandType::SetScissor: {
       const auto& sc = cmd.data.setScissor;
-      apply_scissor(pass, sc, passInfo.targetSize);
+      apply_scissor(pass, sc, passInfo.colorAttachments[SceneColorAttachmentIndex].size);
       currentScissor = sc;
       hasScissor = true;
     } break;
@@ -171,7 +167,7 @@ void render_pass(const wgpu::RenderPassEncoder& pass, FramePacket& frame, Render
         apply_viewport(pass, currentViewport);
       }
       if (hasScissor) {
-        apply_scissor(pass, currentScissor, passInfo.targetSize);
+        apply_scissor(pass, currentScissor, passInfo.colorAttachments[SceneColorAttachmentIndex].size);
       }
     } break;
     case CommandType::DebugMarker: {
@@ -204,23 +200,24 @@ void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo,
     return;
   }
 
-  const std::array attachments{
-      wgpu::RenderPassColorAttachment{
-          .view = passInfo.colorView,
-          .resolveTarget = passInfo.resolveView,
-          .loadOp = passInfo.colorLoadOp != wgpu::LoadOp::Undefined
-                        ? passInfo.colorLoadOp
-                        : (passInfo.clearColor ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load),
-          .storeOp = passInfo.colorStoreOp,
-          .clearValue =
-              {
-                  .r = passInfo.clearColorValue.x(),
-                  .g = passInfo.clearColorValue.y(),
-                  .b = passInfo.clearColorValue.z(),
-                  .a = passInfo.clearColorValue.w(),
-              },
-      },
-  };
+  std::array<wgpu::RenderPassColorAttachment, MaxColorAttachments> attachments{};
+  for (uint32_t i = 0; i < passInfo.colorAttachmentCount; ++i) {
+    const auto& source = passInfo.colorAttachments[i];
+    attachments[i] = {
+        .view = source.view,
+        .resolveTarget = source.resolveView,
+        .loadOp = source.loadOp != wgpu::LoadOp::Undefined ? source.loadOp
+                                                           : (source.clear ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load),
+        .storeOp = source.storeOp,
+        .clearValue =
+            {
+                .r = source.clearValue.x(),
+                .g = source.clearValue.y(),
+                .b = source.clearValue.z(),
+                .a = source.clearValue.w(),
+            },
+    };
+  }
   wgpu::RenderPassDepthStencilAttachment depthStencilAttachment{};
   const wgpu::RenderPassDepthStencilAttachment* depthStencilAttachmentPtr = nullptr;
   if (passInfo.depthStencilView) {
@@ -242,7 +239,7 @@ void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo,
                                             : fmt::format("{} {}", passInfo.label, passIndex);
   const wgpu::RenderPassDescriptor renderPassDescriptor{
       .label = label.c_str(),
-      .colorAttachmentCount = attachments.size(),
+      .colorAttachmentCount = passInfo.colorAttachmentCount,
       .colorAttachments = attachments.data(),
       .depthStencilAttachment = depthStencilAttachmentPtr,
       .timestampWrites = webgpu::gpu_prof::pass_writes(label),
@@ -253,7 +250,8 @@ void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo,
   pass.End();
 
   if (passInfo.captureDepthSnapshot) {
-    depth_peek::encode_frame_snapshot(cmd, passInfo.copySourceDepthView, passInfo.targetSize, passInfo.msaaSamples);
+    depth_peek::encode_frame_snapshot(cmd, passInfo.copySourceDepthView,
+                                      passInfo.colorAttachments[SceneColorAttachmentIndex].size, passInfo.msaaSamples);
   }
 
   if (passInfo.resolveTarget) {
@@ -307,8 +305,8 @@ void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo,
         .texture = passInfo.snapshotColorDst,
     };
     const wgpu::Extent3D size{
-        .width = passInfo.targetSize.width,
-        .height = passInfo.targetSize.height,
+        .width = passInfo.colorAttachments[SceneColorAttachmentIndex].size.width,
+        .height = passInfo.colorAttachments[SceneColorAttachmentIndex].size.height,
         .depthOrArrayLayers = 1,
     };
     cmd.CopyTextureToTexture(&src, &dst, &size);

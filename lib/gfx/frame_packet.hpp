@@ -62,14 +62,26 @@ struct Command {
 using CommandList = std::vector<Command>;
 
 struct RenderPass {
+  struct ColorAttachment {
+    ColorAttachmentSemantic semantic = ColorAttachmentSemantic::Auxiliary;
+    wgpu::TextureFormat format = wgpu::TextureFormat::Undefined;
+    wgpu::Extent3D size;
+    wgpu::TextureView view;
+    wgpu::TextureView resolveView;
+    Vec4<float> clearValue{0.f, 0.f, 0.f, 0.f};
+    wgpu::LoadOp loadOp = wgpu::LoadOp::Undefined;
+    wgpu::StoreOp storeOp = wgpu::StoreOp::Store;
+    bool clear = true;
+  };
+
   std::string label;
-  wgpu::TextureView colorView;
-  wgpu::TextureView resolveView;
+  std::array<ColorAttachment, MaxColorAttachments> colorAttachments;
+  uint32_t colorAttachmentCount = 0;
   wgpu::TextureView depthStencilView;
+  wgpu::TextureFormat depthStencilFormat = wgpu::TextureFormat::Undefined;
   wgpu::Texture copySourceTexture;
   wgpu::TextureView copySourceView;
   wgpu::TextureView copySourceDepthView;
-  wgpu::Extent3D targetSize;
   uint32_t msaaSamples = 1;
 
   TextureHandle resolveTarget;
@@ -78,17 +90,13 @@ struct RenderPass {
   Range resolveUniformRange;
   wgpu::Texture snapshotColorDst;
   wgpu::TextureView snapshotDepthDst;
-  Vec4<float> clearColorValue{0.f, 0.f, 0.f, 0.f};
   float clearDepthValue = 1.f;
-  wgpu::LoadOp colorLoadOp = wgpu::LoadOp::Undefined;
-  wgpu::StoreOp colorStoreOp = wgpu::StoreOp::Store;
   wgpu::LoadOp depthLoadOp = wgpu::LoadOp::Undefined;
   wgpu::StoreOp depthStoreOp = wgpu::StoreOp::Store;
   wgpu::LoadOp stencilLoadOp = wgpu::LoadOp::Undefined;
   wgpu::StoreOp stencilStoreOp = wgpu::StoreOp::Undefined;
   uint32_t stencilClearValue = 0;
   CommandList commands;
-  bool clearColor = true;
   bool clearDepth = true;
   bool hasDepth = true;
   bool hasStencil = false;
@@ -98,9 +106,50 @@ struct RenderPass {
   bool sealed = false;
   std::vector<tex_palette_conv::ConvRequest> paletteConvs;
 
+  RenderTargetLayout target_layout() const noexcept;
   bool has_consumer() const { return resolveTarget || snapshotColorDst || snapshotDepthDst; }
-  bool has_content() const { return hasDraws || clearColor || clearDepth; }
+  bool has_content() const {
+    if (hasDraws || clearDepth) {
+      return true;
+    }
+    for (uint32_t i = 0; i < colorAttachmentCount; ++i) {
+      if (colorAttachments[i].clear) {
+        return true;
+      }
+    }
+    return false;
+  }
 };
+
+inline void finalize_render_target_layout(RenderTargetLayout& layout) noexcept {
+  Hasher hasher{};
+  hasher.update(layout.colorAttachmentCount);
+  for (uint32_t i = 0; i < layout.colorAttachmentCount; ++i) {
+    hasher.update(layout.colorAttachments[i].semantic);
+    hasher.update(layout.colorAttachments[i].format);
+  }
+  hasher.update(static_cast<uint32_t>(layout.depthStencilFormat));
+  hasher.update(layout.sampleCount);
+  layout.key = hasher.digest();
+}
+
+inline RenderTargetLayout RenderPass::target_layout() const noexcept {
+  RenderTargetLayout layout{
+      .colorAttachmentCount = colorAttachmentCount,
+      .depthStencilFormat = hasDepth || hasStencil ? depthStencilFormat : wgpu::TextureFormat::Undefined,
+      .sampleCount = msaaSamples,
+  };
+  for (uint32_t i = 0; i < colorAttachmentCount; ++i) {
+    layout.colorAttachments[i] = {
+        .semantic = colorAttachments[i].semantic,
+        .format = colorAttachments[i].format,
+        .width = colorAttachments[i].size.width,
+        .height = colorAttachments[i].size.height,
+    };
+  }
+  finalize_render_target_layout(layout);
+  return layout;
+}
 
 struct TextureCopy {
   wgpu::TexelCopyTextureInfo src;

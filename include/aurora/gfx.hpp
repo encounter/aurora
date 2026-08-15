@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -8,6 +9,29 @@
 namespace aurora::gfx {
 
 inline constexpr size_t InlineDrawPayloadSize = 128;
+inline constexpr size_t MaxColorAttachments = 8;
+inline constexpr uint32_t SceneColorAttachmentIndex = 0;
+
+enum class ColorAttachmentSemantic : uint8_t {
+  SceneColor,
+  Normal,
+  Auxiliary,
+};
+
+struct ColorAttachmentLayout {
+  ColorAttachmentSemantic semantic = ColorAttachmentSemantic::Auxiliary;
+  wgpu::TextureFormat format = wgpu::TextureFormat::Undefined;
+  uint32_t width = 0;
+  uint32_t height = 0;
+};
+
+struct RenderTargetLayout {
+  uint64_t key = 0;
+  uint32_t colorAttachmentCount = 0;
+  std::array<ColorAttachmentLayout, MaxColorAttachments> colorAttachments{};
+  wgpu::TextureFormat depthStencilFormat = wgpu::TextureFormat::Undefined;
+  uint32_t sampleCount = 1;
+};
 
 /// Generational handle: 0 is never valid, and IDs are not reused after unregister_draw_type.
 using DrawTypeId = uint64_t;
@@ -28,20 +52,16 @@ struct DrawContext {
   wgpu::Buffer indexBuffer;
   wgpu::Buffer uniformBuffer;
   wgpu::Buffer storageBuffer;
-  wgpu::TextureFormat colorFormat;
-  wgpu::TextureFormat depthFormat;
-  uint32_t sampleCount = 1;
-  uint32_t targetWidth = 0;
-  uint32_t targetHeight = 0;
+  RenderTargetLayout layout;
 };
 
 /// Invoked on the render worker thread while replaying the pass the draw was
 /// recorded into. The encoder's pipeline/bind-group/viewport/scissor state is
 /// restored after the callback returns. Handles in the context are borrowed and
-/// valid only for the duration of the call. sampleCount/target dimensions are
-/// those of the containing pass (offscreen passes are always single-sample).
-using DrawCallback = void (*)(const DrawContext& ctx, const wgpu::RenderPassEncoder& pass,
-                              const void* payload, size_t payloadSize, void* userdata);
+/// valid only for the duration of the call. targetLayout and target dimensions
+/// describe the containing pass.
+using DrawCallback = void (*)(const DrawContext& ctx, const wgpu::RenderPassEncoder& pass, const void* payload,
+                              size_t payloadSize, void* userdata);
 
 struct DrawTypeDescriptor {
   const char* label = nullptr;
@@ -54,6 +74,7 @@ wgpu::Queue queue() noexcept;
 wgpu::TextureFormat color_format() noexcept;
 wgpu::TextureFormat depth_format() noexcept;
 uint32_t sample_count() noexcept;
+RenderTargetLayout scene_render_target_layout() noexcept;
 bool uses_reversed_z() noexcept;
 
 DrawTypeId register_draw_type(const DrawTypeDescriptor& desc);
@@ -126,8 +147,8 @@ struct ResolveDesc {
 };
 
 struct ResolvedTargets {
-  wgpu::TextureView color;  // single-sample snapshot; null if not requested
-  wgpu::TextureView depth;  // single-sample R32Float depth snapshot; null if not requested
+  wgpu::TextureView color; // single-sample snapshot; null if not requested
+  wgpu::TextureView depth; // single-sample R32Float depth snapshot; null if not requested
   wgpu::TextureFormat colorFormat = wgpu::TextureFormat::Undefined;
   uint32_t width = 0;
   uint32_t height = 0;

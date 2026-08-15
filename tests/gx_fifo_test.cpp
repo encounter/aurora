@@ -5,16 +5,71 @@
 // validate the decoded state matches expected values.
 
 #include "gx_test_common.hpp"
+#include "__gx.h"
 
 #include <algorithm>
+#include <atomic>
 #include <bit>
+#include <chrono>
 #include <cmath>
+#include <thread>
 
 using aurora::gx::g_gxState;
 
 namespace aurora::gfx {
 extern uint32_t g_testDrawCount;
+extern std::atomic<uint32_t> g_testProcessedDrawCount;
+namespace testing {
+extern std::atomic<uint32_t> beginOffscreenCount;
+extern std::atomic<uint32_t> endOffscreenCount;
+extern std::atomic<uint32_t> resolvePassCount;
+extern std::atomic<uint32_t> offscreenWidth;
+extern std::atomic<uint32_t> offscreenHeight;
+} // namespace testing
+} // namespace aurora::gfx
+
+namespace {
+bool wait_for(const std::atomic<uint32_t>& value, uint32_t expected) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+  while (value.load(std::memory_order_acquire) != expected) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return false;
+    }
+    std::this_thread::yield();
+  }
+  return true;
 }
+
+bool wait_for(const std::atomic<bool>& value, bool expected) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+  while (value.load(std::memory_order_acquire) != expected) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return false;
+    }
+    std::this_thread::yield();
+  }
+  return true;
+}
+
+std::atomic<bool> sDrawDoneCallbackCalled{false};
+std::atomic<bool> sDrawDoneCallbackSawProcessedCommand{false};
+std::atomic<bool> sBlockingCallbackEntered{false};
+std::atomic<bool> sBlockingCallbackMayReturn{false};
+std::atomic<bool> sBlockingCallbackReturned{false};
+
+void draw_done_callback() {
+  sDrawDoneCallbackSawProcessedCommand.store(g_gxState.bpRegValid.test(0x41), std::memory_order_relaxed);
+  sDrawDoneCallbackCalled.store(true, std::memory_order_release);
+}
+
+void blocking_draw_done_callback() {
+  sBlockingCallbackEntered.store(true, std::memory_order_release);
+  while (!sBlockingCallbackMayReturn.load(std::memory_order_acquire)) {
+    std::this_thread::yield();
+  }
+  sBlockingCallbackReturned.store(true, std::memory_order_release);
+}
+} // namespace
 
 static bool has_bp_write(const std::vector<u8>& bytes, u8 reg) {
   const std::array<u8, 2> pattern{0x61, reg};
@@ -57,6 +112,7 @@ TEST_F(GXFifoTest, AutoSizedDrawPublishesAfterLengthPatch) {
   GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
   GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_U8, 0);
   aurora::gfx::g_testDrawCount = 0;
+  aurora::gfx::g_testProcessedDrawCount.store(0, std::memory_order_relaxed);
 
   GXBegin(GX_TRIANGLES, GX_VTXFMT0, GX_AUTO);
   GXPosition3u8(0, 1, 2);
@@ -68,6 +124,178 @@ TEST_F(GXFifoTest, AutoSizedDrawPublishesAfterLengthPatch) {
   aurora::gx::fifo::shutdown();
 
   EXPECT_EQ(aurora::gfx::g_testDrawCount, 1u);
+}
+
+TEST_F(GXFifoTest, CommandsAfterFinalDrawRemainPendingUntilDrain) {
+  aurora::gx::fifo::init();
+  aurora::gx::fifo::begin_frame();
+  GXClearVtxDesc();
+  GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
+  GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_U8, 0);
+  aurora::gfx::g_testDrawCount = 0;
+  aurora::gfx::g_testProcessedDrawCount.store(0, std::memory_order_relaxed);
+
+  GXBegin(GX_TRIANGLES, GX_VTXFMT0, 3);
+  GXPosition3u8(0, 1, 2);
+  GXPosition3u8(3, 4, 5);
+  GXPosition3u8(6, 7, 8);
+  GXEnd();
+
+  const std::array<u8, 5> trailingBpWrite{GX_LOAD_BP_REG, 0x41, 0x12, 0x34, 0x56};
+  aurora::gx::fifo::write_data(trailingBpWrite.data(), trailingBpWrite.size());
+  ASSERT_TRUE(wait_for(aurora::gfx::g_testProcessedDrawCount, 1));
+  EXPECT_FALSE(g_gxState.bpRegValid.test(0x41));
+
+  aurora::gx::fifo::drain();
+  aurora::gx::fifo::end_frame();
+  EXPECT_EQ(g_gxState.bpRegCache[0x41], 0x41123456u);
+}
+
+TEST_F(GXFifoTest, FrameBufferCommandsPublishAfterTheirCompletePayload) {
+  using namespace aurora::gfx::testing;
+  beginOffscreenCount.store(0, std::memory_order_relaxed);
+  endOffscreenCount.store(0, std::memory_order_relaxed);
+  resolvePassCount.store(0, std::memory_order_relaxed);
+
+  aurora::gx::fifo::init();
+  aurora::gx::fifo::begin_frame();
+  GXCreateFrameBuffer(320, 180);
+  ASSERT_TRUE(wait_for(beginOffscreenCount, 1));
+  EXPECT_EQ(offscreenWidth.load(std::memory_order_relaxed), 320u);
+  EXPECT_EQ(offscreenHeight.load(std::memory_order_relaxed), 180u);
+
+  GXCopyTex(reinterpret_cast<void*>(0x1234), GX_FALSE);
+  ASSERT_TRUE(wait_for(resolvePassCount, 1));
+
+  GXRestoreFrameBuffer();
+  ASSERT_TRUE(wait_for(endOffscreenCount, 1));
+  aurora::gx::fifo::drain();
+  aurora::gx::fifo::end_frame();
+}
+
+TEST_F(GXFifoTest, DrawDoneProcessesPublishedAndUnpublishedTailBeforeCallback) {
+  using namespace aurora::gfx::testing;
+  beginOffscreenCount.store(0, std::memory_order_relaxed);
+  sDrawDoneCallbackCalled.store(false, std::memory_order_relaxed);
+  sDrawDoneCallbackSawProcessedCommand.store(false, std::memory_order_relaxed);
+
+  aurora::gx::fifo::init();
+  aurora::gx::fifo::begin_frame();
+  GXCreateFrameBuffer(160, 90);
+  const std::array<u8, 5> trailingBpWrite{GX_LOAD_BP_REG, 0x41, 0x65, 0x43, 0x21};
+  aurora::gx::fifo::write_data(trailingBpWrite.data(), trailingBpWrite.size());
+  GXSetDrawDoneCallback(draw_done_callback);
+
+  GXDrawDone();
+
+  EXPECT_EQ(beginOffscreenCount.load(std::memory_order_acquire), 1u);
+  EXPECT_EQ(g_gxState.bpRegCache[0x41], 0x41654321u);
+  EXPECT_TRUE(sDrawDoneCallbackCalled.load(std::memory_order_acquire));
+  EXPECT_TRUE(sDrawDoneCallbackSawProcessedCommand.load(std::memory_order_relaxed));
+  GXSetDrawDoneCallback(nullptr);
+  aurora::gx::fifo::end_frame();
+}
+
+TEST_F(GXFifoTest, SetDrawDonePublishesTailWithoutDraining) {
+  sDrawDoneCallbackCalled.store(false, std::memory_order_relaxed);
+  sDrawDoneCallbackSawProcessedCommand.store(false, std::memory_order_relaxed);
+
+  aurora::gx::fifo::init();
+  aurora::gx::fifo::begin_frame();
+  GXSetNumTevStages(2);
+  ASSERT_NE(__gx->dirtyState, 0u);
+  const std::array<u8, 5> trailingBpWrite{GX_LOAD_BP_REG, 0x41, 0x01, 0x02, 0x03};
+  aurora::gx::fifo::write_data(trailingBpWrite.data(), trailingBpWrite.size());
+  GXSetDrawDoneCallback(draw_done_callback);
+
+  GXSetDrawDone();
+
+  EXPECT_EQ(__gx->dirtyState, 0u);
+  EXPECT_GT(aurora::gx::fifo::get_buffer_size(), 0u);
+  ASSERT_TRUE(wait_for(sDrawDoneCallbackCalled, true));
+  EXPECT_EQ(g_gxState.bpRegCache[0x41], 0x41010203u);
+  EXPECT_TRUE(sDrawDoneCallbackSawProcessedCommand.load(std::memory_order_relaxed));
+  GXSetDrawDoneCallback(nullptr);
+  aurora::gx::fifo::drain();
+  aurora::gx::fifo::end_frame();
+}
+
+TEST_F(GXFifoTest, SetDrawDoneInDisplayListDispatchesWhenCalled) {
+  std::array<u8, 64> displayList{};
+  sDrawDoneCallbackCalled.store(false, std::memory_order_relaxed);
+  sDrawDoneCallbackSawProcessedCommand.store(false, std::memory_order_relaxed);
+
+  aurora::gx::fifo::init();
+  aurora::gx::fifo::begin_frame();
+  GXSetDrawDoneCallback(draw_done_callback);
+
+  GXBeginDisplayList(displayList.data(), static_cast<u32>(displayList.size()));
+  GXSetColorUpdate(GX_ENABLE);
+  GXSetDrawDone();
+  const u32 size = GXEndDisplayList();
+
+  EXPECT_FALSE(sDrawDoneCallbackCalled.load(std::memory_order_acquire));
+  GXCallDisplayList(displayList.data(), size);
+  ASSERT_TRUE(wait_for(sDrawDoneCallbackCalled, true));
+  EXPECT_TRUE(sDrawDoneCallbackSawProcessedCommand.load(std::memory_order_relaxed));
+
+  GXSetDrawDoneCallback(nullptr);
+  aurora::gx::fifo::drain();
+  aurora::gx::fifo::end_frame();
+}
+
+TEST_F(GXFifoTest, DrainWaitsForDrawDoneCallbackToReturn) {
+  sBlockingCallbackEntered.store(false, std::memory_order_relaxed);
+  sBlockingCallbackMayReturn.store(false, std::memory_order_relaxed);
+  sBlockingCallbackReturned.store(false, std::memory_order_relaxed);
+  std::atomic<bool> drainStarted{false};
+  std::atomic<bool> drainReturned{false};
+
+  aurora::gx::fifo::init();
+  aurora::gx::fifo::begin_frame();
+  GXSetDrawDoneCallback(blocking_draw_done_callback);
+  GXSetDrawDone();
+  if (!wait_for(sBlockingCallbackEntered, true)) {
+    sBlockingCallbackMayReturn.store(true, std::memory_order_release);
+    GXSetDrawDoneCallback(nullptr);
+    aurora::gx::fifo::drain();
+    aurora::gx::fifo::end_frame();
+    FAIL() << "draw-done callback did not begin";
+  }
+
+  std::thread drainThread{[&] {
+    drainStarted.store(true, std::memory_order_release);
+    aurora::gx::fifo::drain();
+    drainReturned.store(true, std::memory_order_release);
+  }};
+  EXPECT_TRUE(wait_for(drainStarted, true));
+  std::this_thread::sleep_for(std::chrono::milliseconds{10});
+  EXPECT_FALSE(drainReturned.load(std::memory_order_acquire));
+
+  sBlockingCallbackMayReturn.store(true, std::memory_order_release);
+  EXPECT_TRUE(wait_for(drainReturned, true));
+  drainThread.join();
+  EXPECT_TRUE(sBlockingCallbackReturned.load(std::memory_order_acquire));
+
+  GXSetDrawDoneCallback(nullptr);
+  aurora::gx::fifo::end_frame();
+}
+
+TEST_F(GXFifoTest, AuroraSyncGXProcessesTailWithoutDrawDoneCallback) {
+  sDrawDoneCallbackCalled.store(false, std::memory_order_relaxed);
+
+  aurora::gx::fifo::init();
+  aurora::gx::fifo::begin_frame();
+  const std::array<u8, 5> trailingBpWrite{GX_LOAD_BP_REG, 0x41, 0x0A, 0x0B, 0x0C};
+  aurora::gx::fifo::write_data(trailingBpWrite.data(), trailingBpWrite.size());
+  GXSetDrawDoneCallback(draw_done_callback);
+
+  AuroraGXSync();
+
+  EXPECT_EQ(g_gxState.bpRegCache[0x41], 0x410A0B0Cu);
+  EXPECT_FALSE(sDrawDoneCallbackCalled.load(std::memory_order_acquire));
+  GXSetDrawDoneCallback(nullptr);
+  aurora::gx::fifo::end_frame();
 }
 
 TEST_F(GXFifoTest, DisplayListCallPublishesAtCompleteBoundary) {

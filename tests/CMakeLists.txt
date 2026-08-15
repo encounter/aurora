@@ -166,6 +166,24 @@ if (AURORA_ENABLE_GX)
     ${AURORA_SDL3_TARGET}
   )
   gtest_discover_tests(render_worker_tests)
+
+  add_executable(gfx_recording_tests
+    gfx_recording_test.cpp
+    render_target_layout_test.cpp
+  )
+  target_include_directories(gfx_recording_tests PRIVATE
+    ../include
+    ../lib
+  )
+  target_compile_definitions(gfx_recording_tests PRIVATE AURORA TARGET_PC)
+  target_link_libraries(gfx_recording_tests PRIVATE
+    aurora::gx
+    aurora::vi
+    gtest
+    gtest_main
+  )
+  aurora_copy_runtime_dlls(gfx_recording_tests)
+  gtest_discover_tests(gfx_recording_tests)
 endif () # AURORA_ENABLE_GX
 
 # DVD API tests

@@ -19,6 +19,12 @@ RecordedFrame end_recording();
 void shutdown_recording();
 void increment_merged_draw_count() noexcept;
 
+namespace testing {
+void suppress_render_worker(bool suppress) noexcept;
+void seed_offscreen_cache(uint32_t width, uint32_t height, wgpu::TextureFormat colorFormat,
+                          wgpu::TextureFormat depthFormat);
+}
+
 } // namespace aurora::gfx::detail
 
 namespace aurora::gfx {
@@ -26,7 +32,9 @@ struct ColorPassDescriptor {
   const char* label = nullptr;
   wgpu::TextureView colorView;
   wgpu::TextureView resolveView;
+  wgpu::TextureFormat colorFormat = wgpu::TextureFormat::Undefined;
   wgpu::TextureView depthStencilView;
+  wgpu::TextureFormat depthStencilFormat = wgpu::TextureFormat::Undefined;
   wgpu::Extent3D targetSize;
   uint32_t sampleCount = 1;
   wgpu::LoadOp colorLoadOp = wgpu::LoadOp::Clear;
@@ -49,6 +57,7 @@ void queue_texture_copy(wgpu::TexelCopyTextureInfo src, wgpu::TexelCopyTextureIn
 void begin_offscreen(uint32_t width, uint32_t height);
 void end_offscreen();
 uint32_t get_sample_count() noexcept;
+RenderTargetLayout get_render_target_layout() noexcept;
 void clear_caches() noexcept;
 
 namespace tex_palette_conv {

@@ -52,10 +52,10 @@ void copy_tex(const void* dest, GXBool clear) noexcept {
       handle = gfx::new_conv_texture(dstWidth, dstHeight, texCopyFmt, "Copy Conv Texture");
     } else {
       // Configure the texture swizzle to use alpha 1.0 if targeting RGB565 or EFB doesn't have alpha
-      const auto fmt = texCopyFmt == GX_TF_RGB565 || g_gxState.pixelFmt == GX_PF_RGB8_Z24 ||
-                               g_gxState.pixelFmt == GX_PF_RGB565_Z16
-                           ? GX_TF_RGB565
-                           : GX_TF_RGBA8;
+      const auto fmt =
+          texCopyFmt == GX_TF_RGB565 || g_gxState.pixelFmt == GX_PF_RGB8_Z24 || g_gxState.pixelFmt == GX_PF_RGB565_Z16
+              ? GX_TF_RGB565
+              : GX_TF_RGBA8;
       handle = gfx::new_render_texture(dstWidth, dstHeight, fmt, "Resolved Texture");
     }
     it = g_gxState.copyTextureCache.emplace(key, GXState::CopyTextureRef{.handle = handle, .revision = 0}).first;
@@ -69,11 +69,8 @@ void copy_tex(const void* dest, GXBool clear) noexcept {
     }
     // Overwrite alpha before resolving
     gfx::push_draw_command(gfx::clear::DrawData{
-        .pipeline = gfx::pipeline_ref(gfx::clear::PipelineConfig{
-            .clearColor = false,
-            .clearAlpha = true,
-            .clearDepth = false,
-        }),
+        .pipeline =
+            gfx::pipeline_ref(gfx::clear::make_pipeline_config(gfx::get_render_target_layout(), false, true, false)),
         .color = wgpu::Color{0.f, 0.f, 0.f, g_gxState.dstAlpha / 255.f},
     });
   }
@@ -220,6 +217,7 @@ void GXCopyTex(void* dest, GXBool clear) {
   SET_REG_FIELD(0, __gx->cpTex, 1, 14, 0);
   SET_REG_FIELD(0, __gx->cpTex, 8, 24, 0x52);
   GX_WRITE_RAS_REG(__gx->cpTex);
+  aurora::gx::fifo::publish();
 }
 
 // TODO GXGetYScaleFactor

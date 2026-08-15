@@ -96,6 +96,9 @@ void finish_draw() noexcept;
 // Makes commands written so far available to the FIFO processor.
 void publish() noexcept;
 
+using DrawDoneCallback = void (*)();
+DrawDoneCallback set_draw_done_callback(DrawDoneCallback callback) noexcept;
+
 // Display list recording
 void begin_display_list(uint8_t* buf, uint32_t size);
 uint32_t end_display_list();

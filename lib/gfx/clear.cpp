@@ -6,7 +6,6 @@
 
 namespace aurora::gfx::clear {
 using webgpu::g_device;
-using webgpu::g_graphicsConfig;
 
 namespace {
 wgpu::ColorWriteMask clear_write_mask(bool clearColor, bool clearAlpha) {
@@ -19,12 +18,9 @@ wgpu::ColorWriteMask clear_write_mask(bool clearColor, bool clearAlpha) {
   }
   return writeMask;
 }
-} // namespace
 
-wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
-  ZoneScoped;
-  wgpu::ShaderSourceWGSL sourceDescriptor{};
-  sourceDescriptor.code = R"""(
+std::string shader_source(bool writesSceneColor) {
+  std::string source{R"""(
 struct VertexOutput {
     @builtin(position) pos: vec4<f32>,
 };
@@ -41,12 +37,50 @@ fn vs_main(@builtin(vertex_index) vtxIdx: u32) -> VertexOutput {
     out.pos = vec4<f32>(pos[vtxIdx], 0.0, 1.0);
     return out;
 }
+)"""};
 
+  if (writesSceneColor) {
+    source += fmt::format(R"""(
 @fragment
-fn fs_main() -> @location(0) vec4<f32> {
+fn fs_main() -> @location({}) vec4<f32> {{
     return vec4<f32>(1.0);
+}}
+)""",
+                          SceneColorAttachmentIndex);
+  } else {
+    source += R"""(
+@fragment
+fn fs_main() {
 }
 )""";
+  }
+  return source;
+}
+} // namespace
+
+PipelineConfig make_pipeline_config(const RenderTargetLayout& layout, bool clearColor, bool clearAlpha,
+                                    bool clearDepth) noexcept {
+  PipelineConfig config{
+      .targetLayoutKey = layout.key,
+      .depthStencilFormat = layout.depthStencilFormat,
+      .colorAttachmentCount = layout.colorAttachmentCount,
+      .msaaSamples = layout.sampleCount,
+      .clearColor = clearColor,
+      .clearAlpha = clearAlpha,
+      .clearDepth = clearDepth,
+  };
+  for (uint32_t i = 0; i < layout.colorAttachmentCount; ++i) {
+    config.colorFormats[i] = layout.colorAttachments[i].format;
+  }
+  return config;
+}
+
+wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
+  ZoneScoped;
+  const bool writesSceneColor = config.clearColor || config.clearAlpha;
+  const auto source = shader_source(writesSceneColor);
+  wgpu::ShaderSourceWGSL sourceDescriptor{};
+  sourceDescriptor.code = source.c_str();
   const wgpu::ShaderModuleDescriptor moduleDescriptor{
       .nextInChain = &sourceDescriptor,
       .label = "EFB Clear Module",
@@ -71,19 +105,23 @@ fn fs_main() -> @location(0) vec4<f32> {
               .dstFactor = wgpu::BlendFactor::Zero,
           },
   };
-  const wgpu::ColorTargetState colorTarget{
-      .format = g_graphicsConfig.surfaceConfiguration.format,
-      .blend = &blendState,
-      .writeMask = clear_write_mask(config.clearColor, config.clearAlpha),
-  };
+  std::array<wgpu::ColorTargetState, MaxColorAttachments> colorTargets{};
+  for (uint32_t i = 0; i < config.colorAttachmentCount; ++i) {
+    colorTargets[i] = {
+        .format = config.colorFormats[i],
+        .writeMask = wgpu::ColorWriteMask::None,
+    };
+  }
+  colorTargets[SceneColorAttachmentIndex].blend = &blendState;
+  colorTargets[SceneColorAttachmentIndex].writeMask = clear_write_mask(config.clearColor, config.clearAlpha);
   const wgpu::FragmentState fragmentState{
       .module = module,
       .entryPoint = "fs_main",
-      .targetCount = 1,
-      .targets = &colorTarget,
+      .targetCount = config.colorAttachmentCount,
+      .targets = colorTargets.data(),
   };
   const wgpu::DepthStencilState depthStencil{
-      .format = g_graphicsConfig.depthFormat,
+      .format = config.depthStencilFormat,
       .depthWriteEnabled = config.clearDepth,
       .depthCompare = wgpu::CompareFunction::Always,
   };
@@ -101,7 +139,7 @@ fn fs_main() -> @location(0) vec4<f32> {
           wgpu::PrimitiveState{
               .topology = wgpu::PrimitiveTopology::TriangleList,
           },
-      .depthStencil = &depthStencil,
+      .depthStencil = config.depthStencilFormat != wgpu::TextureFormat::Undefined ? &depthStencil : nullptr,
       .multisample =
           wgpu::MultisampleState{
               .count = config.msaaSamples,

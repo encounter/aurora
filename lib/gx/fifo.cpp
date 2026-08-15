@@ -35,40 +35,52 @@ uint64_t sStreamBase = 0;
 std::mutex sBufferMutex;
 std::atomic<uint32_t> sWorkerWake{0};
 thread::Thread sWorkerThread;
+std::atomic<DrawDoneCallback> sDrawDoneCallback{nullptr};
+
+void dispatch_draw_done() noexcept {
+  if (const auto callback = sDrawDoneCallback.load(std::memory_order_acquire); callback != nullptr) {
+    callback();
+  }
+}
 
 void wake_worker() noexcept {
   sWorkerWake.fetch_add(1, std::memory_order_release);
   sWorkerWake.notify_all();
 }
 
-void process_inline(uint64_t target) noexcept {
-  const uint64_t processed = sProcessed.load(std::memory_order_relaxed);
-  if (processed >= target) {
-    return;
+void process_to(uint64_t target, std::memory_order order) noexcept {
+  uint64_t processed = sProcessed.load(std::memory_order_relaxed);
+  while (processed < target) {
+    ProcessResult result{};
+    {
+      std::lock_guard lock{sBufferMutex};
+      AURORA_ASSERT(processed >= sStreamBase && target <= sStreamBase + detail::sBufferSize,
+                    "FIFO processing range [{}, {}) is outside buffered range [{}, {})", processed, target, sStreamBase,
+                    sStreamBase + detail::sBufferSize);
+      const auto start = static_cast<uint32_t>(processed - sStreamBase);
+      const auto size = static_cast<uint32_t>(target - processed);
+      result = process(detail::sBufferData + start, size);
+    }
+    AURORA_ASSERT(result.bytesProcessed > 0 && result.bytesProcessed <= target - processed,
+                  "FIFO processor made invalid progress: processed {} of {} remaining bytes", result.bytesProcessed,
+                  target - processed);
+    if (result.drawDone) {
+      dispatch_draw_done();
+    }
+    processed += result.bytesProcessed;
+    sProcessed.store(processed, order);
+    sProcessed.notify_all();
   }
-
-  const auto start = static_cast<uint32_t>(processed - sStreamBase);
-  const auto size = static_cast<uint32_t>(target - processed);
-  process(detail::sBufferData + start, size);
-  sProcessed.store(target, std::memory_order_relaxed);
 }
 
 void worker_main(std::stop_token token) noexcept {
   std::stop_callback wakeOnStop{token, wake_worker};
-  uint64_t processed = sProcessed.load(std::memory_order_relaxed);
   while (true) {
     const uint32_t event = sWorkerWake.load(std::memory_order_acquire);
+    const uint64_t processed = sProcessed.load(std::memory_order_relaxed);
     const uint64_t published = sPublished.load(std::memory_order_acquire);
     if (published != processed) {
-      {
-        std::lock_guard lock{sBufferMutex};
-        const auto start = static_cast<uint32_t>(processed - sStreamBase);
-        const auto size = static_cast<uint32_t>(published - processed);
-        process(detail::sBufferData + start, size);
-        processed = published;
-        sProcessed.store(processed, std::memory_order_release);
-      }
-      sProcessed.notify_all();
+      process_to(published, std::memory_order_release);
       continue;
     }
 
@@ -169,9 +181,13 @@ void publish() noexcept {
     if (kProcessingMode == ProcessingMode::Thread) {
       wake_worker();
     } else {
-      process_inline(target);
+      process_to(target, std::memory_order_relaxed);
     }
   }
+}
+
+DrawDoneCallback set_draw_done_callback(DrawDoneCallback callback) noexcept {
+  return sDrawDoneCallback.exchange(callback, std::memory_order_acq_rel);
 }
 
 void finish_draw() noexcept {
@@ -225,24 +241,20 @@ void drain() {
 
   switch (kProcessingMode) {
   case ProcessingMode::Drain:
-    process(detail::sBufferData, detail::sBufferSize);
-    sPublished.store(target, std::memory_order_relaxed);
-    sProcessed.store(target, std::memory_order_relaxed);
-    break;
   case ProcessingMode::Inline:
     sPublished.store(target, std::memory_order_relaxed);
-    process_inline(target);
+    process_to(target, std::memory_order_relaxed);
     break;
   case ProcessingMode::Thread: {
     sPublished.store(target, std::memory_order_release);
     wake_worker();
 
     uint64_t processed = sProcessed.load(std::memory_order_acquire);
-    if (processed != target) {
+    if (processed < target) {
       do {
         sProcessed.wait(processed, std::memory_order_acquire);
         processed = sProcessed.load(std::memory_order_acquire);
-      } while (processed != target);
+      } while (processed < target);
     }
     break;
   }

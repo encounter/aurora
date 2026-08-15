@@ -281,6 +281,22 @@ wgpu::TextureFormat depth_format() noexcept { return webgpu::g_graphicsConfig.de
 
 uint32_t sample_count() noexcept { return webgpu::g_graphicsConfig.msaaSamples; }
 
+RenderTargetLayout scene_render_target_layout() noexcept {
+  RenderTargetLayout layout{
+      .colorAttachmentCount = 1,
+      .colorAttachments = {{{
+          .semantic = ColorAttachmentSemantic::SceneColor,
+          .format = webgpu::g_frameBuffer.format,
+          .width = webgpu::g_frameBuffer.size.width,
+          .height = webgpu::g_frameBuffer.size.height,
+      }}},
+      .depthStencilFormat = webgpu::g_graphicsConfig.depthFormat,
+      .sampleCount = webgpu::g_graphicsConfig.msaaSamples,
+  };
+  finalize_render_target_layout(layout);
+  return layout;
+}
+
 bool uses_reversed_z() noexcept { return gx::UseReversedZ; }
 
 DrawTypeId register_draw_type(const DrawTypeDescriptor& desc) {
@@ -393,15 +409,15 @@ void initialize() {
     };
     out = g_device.CreateBuffer(&descriptor);
   };
-  createBuffer(g_resources.uniformBuffer, wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-               UniformBufferSize, "Shared Uniform Buffer");
+  createBuffer(g_resources.uniformBuffer, wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst, UniformBufferSize,
+               "Shared Uniform Buffer");
   createBuffer(g_resources.vertexBuffer,
                wgpu::BufferUsage::Storage | wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst, VertexBufferSize,
                "Shared Vertex Buffer");
   createBuffer(g_resources.indexBuffer, wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst, IndexBufferSize,
                "Shared Index Buffer");
-  createBuffer(g_resources.storageBuffer, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
-               StorageBufferSize, "Shared Storage Buffer");
+  createBuffer(g_resources.storageBuffer, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst, StorageBufferSize,
+               "Shared Storage Buffer");
   for (size_t i = 0; i < g_stagingBuffers.size(); ++i) {
     const auto label = fmt::format("Staging Buffer {}", i);
     createBuffer(g_stagingBuffers[i], wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc, StagingBufferSize,

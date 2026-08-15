@@ -3,6 +3,7 @@
 #include "../gfx/depth_peek.hpp"
 #include "../gfx/recording.hpp"
 #include "../internal.hpp"
+#include "dolphin/gd/GDGeometry.h"
 #include "dolphin/gx/GXAurora.h"
 #include "gx.hpp"
 #include "pipeline.hpp"
@@ -253,7 +254,7 @@ u8 line_mode_for_prim(GXPrimitive prim) noexcept {
 static void handle_draw(u8 cmd, Reader& reader) noexcept;
 static void handle_aurora(Reader& reader) noexcept;
 
-void process(const u8* data, u32 size) noexcept {
+ProcessResult process(const u8* data, u32 size) noexcept {
   ZoneScoped;
   Reader reader{{data, size}};
 
@@ -266,7 +267,11 @@ void process(const u8* data, u32 size) noexcept {
       continue;
 
     case CP_CMD_LOAD_BP_REG: {
-      handle_bp(reader.read<u32>());
+      const u32 value = reader.read<u32>();
+      handle_bp(value);
+      if (reg_get(value, 8, 24) == GX_BP_REG_DRAWDONE) {
+        return {static_cast<u32>(reader.offset()), true};
+      }
       break;
     }
 
@@ -364,6 +369,7 @@ void process(const u8* data, u32 size) noexcept {
       break;
     }
   }
+  return {size, false};
 }
 
 [[noreturn]] static void handle_draw_overrun(size_t totalVtxBytes, const Reader& reader) noexcept {
