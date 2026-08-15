@@ -76,6 +76,8 @@ std::array<Slot, SlotCount> g_slots;
 size_t g_nextSlot = 0;
 wgpu::BindGroupLayout g_bindGroupLayout;
 wgpu::ComputePipeline g_pipeline;
+wgpu::BindGroupLayout g_bindGroupLayoutMS;
+wgpu::ComputePipeline g_pipelineMS;
 bool g_snapshotRequested = false;
 Clock::time_point g_nextSnapshotTime;
 LatestSnapshot g_latest;
@@ -126,17 +128,41 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
 }
 )"sv;
 
-std::string build_shader_source() {
+// Multisampled variant: reads the multisampled EFB depth buffer at sample index 0.
+constexpr std::string_view ShaderMainMS = R"(
+@group(0) @binding(0) var src: texture_depth_multisampled_2d;
+
+fn load_depth(coord: vec2i) -> f32 {
+    return textureLoad(src, coord, 0);
+}
+
+@compute @workgroup_size(8, 8, 1)
+fn cs_main(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x >= params.dstSize.x || id.y >= params.dstSize.y) {
+        return;
+    }
+
+    let dstCenter = vec2f(vec2u(id.xy)) + vec2f(0.5, 0.5);
+    let srcPixel = clamp(vec2i(floor(params.offset + dstCenter * params.scale)), vec2i(0, 0),
+                         vec2i(params.srcSize) - vec2i(1, 1));
+    let depth = load_depth(srcPixel);
+    out_z[id.y * params.dstSize.x + id.x] = gx_z24(depth);
+}
+)"sv;
+
+std::string build_shader_source(bool multisampled) {
+  const auto& main = multisampled ? ShaderMainMS : ShaderMain;
   std::string source;
-  source.reserve(ShaderPreamble.size() + ReversedZBody.size() + ShaderMain.size());
+  source.reserve(ShaderPreamble.size() + ReversedZBody.size() + main.size());
   source += ShaderPreamble;
   source += gx::UseReversedZ ? ReversedZBody : ForwardZBody;
-  source += ShaderMain;
+  source += main;
   return source;
 }
 
-wgpu::ComputePipeline create_pipeline(const wgpu::BindGroupLayout& bindGroupLayout, const char* label) {
-  const auto shaderSource = build_shader_source();
+wgpu::ComputePipeline create_pipeline(
+    const wgpu::BindGroupLayout& bindGroupLayout, const char* label, bool multisampled) {
+  const auto shaderSource = build_shader_source(multisampled);
   const wgpu::ShaderSourceWGSL wgslSource{wgpu::ShaderSourceWGSL::Init{
       .code = shaderSource.c_str(),
   }};
@@ -163,8 +189,8 @@ wgpu::ComputePipeline create_pipeline(const wgpu::BindGroupLayout& bindGroupLayo
   return g_device.CreateComputePipeline(&pipelineDescriptor);
 }
 
-wgpu::BindGroupLayout create_bind_group_layout(const char* label) {
-  constexpr std::array entries{
+wgpu::BindGroupLayout create_bind_group_layout(const char* label, bool multisampled) {
+  const std::array entries{
       wgpu::BindGroupLayoutEntry{
           .binding = 0,
           .visibility = wgpu::ShaderStage::Compute,
@@ -172,6 +198,7 @@ wgpu::BindGroupLayout create_bind_group_layout(const char* label) {
               wgpu::TextureBindingLayout{
                   .sampleType = wgpu::TextureSampleType::Depth,
                   .viewDimension = wgpu::TextureViewDimension::e2D,
+                  .multisampled = multisampled,
               },
       },
       wgpu::BindGroupLayoutEntry{
@@ -309,8 +336,10 @@ void initialize() {
   if (!webgpu::g_hasCoreFeatures) {
     return;
   }
-  g_bindGroupLayout = create_bind_group_layout("Depth Peek Bind Group Layout");
-  g_pipeline = create_pipeline(g_bindGroupLayout, "Depth Peek Pipeline");
+  g_bindGroupLayout = create_bind_group_layout("Depth Peek Bind Group Layout", false);
+  g_pipeline = create_pipeline(g_bindGroupLayout, "Depth Peek Pipeline", false);
+  g_bindGroupLayoutMS = create_bind_group_layout("Depth Peek Bind Group Layout MS", true);
+  g_pipelineMS = create_pipeline(g_bindGroupLayoutMS, "Depth Peek Pipeline MS", true);
   g_enabled = true;
 }
 
@@ -318,6 +347,8 @@ void shutdown() {
   testing::reset();
   g_pipeline = {};
   g_bindGroupLayout = {};
+  g_pipelineMS = {};
+  g_bindGroupLayoutMS = {};
   for (auto& slot : g_slots) {
     slot = {};
   }
@@ -361,9 +392,7 @@ void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureV
   if (!depthView || dstSize.x == 0 || dstSize.y == 0 || sourceSize.width == 0 || sourceSize.height == 0) {
     return;
   }
-  if (msaaSamples > 1) {
-    Log.fatal("Depth Peek from multisampled EFB targets is not supported");
-  }
+  const bool multisampled = msaaSamples > 1;
 
   const Params params = make_params(sourceSize, dstSize);
   wgpu::Buffer storageBuffer;
@@ -404,7 +433,7 @@ void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureV
   };
   const wgpu::BindGroupDescriptor bindGroupDescriptor{
       .label = "Depth Peek Bind Group",
-      .layout = g_bindGroupLayout,
+      .layout = multisampled ? g_bindGroupLayoutMS : g_bindGroupLayout,
       .entryCount = bindGroupEntries.size(),
       .entries = bindGroupEntries.data(),
   };
@@ -415,7 +444,7 @@ void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureV
       .timestampWrites = webgpu::gpu_prof::pass_writes("Depth peek"),
   };
   const auto pass = cmd.BeginComputePass(&passDescriptor);
-  pass.SetPipeline(g_pipeline);
+  pass.SetPipeline(multisampled ? g_pipelineMS : g_pipeline);
   pass.SetBindGroup(0, bindGroup);
   pass.DispatchWorkgroups((dstSize.x + WorkgroupSizeX - 1) / WorkgroupSizeX,
                           (dstSize.y + WorkgroupSizeY - 1) / WorkgroupSizeY);
