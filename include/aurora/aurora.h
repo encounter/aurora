@@ -138,6 +138,13 @@ void aurora_set_background_input(bool value);
 void aurora_set_resampler(AuroraSampler sampler);
 /** Sets the clock timescale. Default 1.0f. 0.0f is paused. Range 0.0f-16.0f. */
 void aurora_set_timescale(float scale);
+void aurora_set_fxaa_enabled(bool enabled);
+// Must be called once per rendered frame, after the frame's HUD has been drawn (same point mods'
+// GFX_STAGE_FRAME_AFTER_HUD hook runs from) and before aurora_end_frame(). No-ops if FXAA is
+// disabled. FXAA needs to sample the finished frame, and by the time aurora_end_frame() runs, RmlUI
+// has already composited its own backdrop (blurred menus, popups) from the frame as it stood before
+// this call -- queuing any later would make FXAA invisible behind that UI.
+void aurora_queue_fxaa_pass();
 
 AuroraBackend aurora_get_backend();
 const AuroraBackend* aurora_get_available_backends(size_t* count);

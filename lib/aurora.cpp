@@ -270,7 +270,7 @@ void end_frame() noexcept {
   gfx::finish();
   auto imguiDrawData = imgui::freeze();
 
-  const auto& presentSource = webgpu::present_source();
+  const auto& presentSource = webgpu::aa_present_source();
   const auto viewport = webgpu::calculate_present_viewport(webgpu::g_graphicsConfig.surfaceConfiguration.width,
                                                            webgpu::g_graphicsConfig.surfaceConfiguration.height,
                                                            presentSource.size.width, presentSource.size.height);
@@ -476,3 +476,15 @@ void aurora_set_resampler(AuroraSampler sampler) {
 }
 void aurora_set_timescale(float scale) { aurora::time::set_scale(scale); }
 float aurora_get_timescale() { return aurora::time::scale(); }
+void aurora_set_fxaa_enabled(bool enabled) {
+#ifdef AURORA_ENABLE_GX
+  aurora::webgpu::set_fxaa_enabled(enabled);
+#else
+  (void)enabled;
+#endif
+}
+void aurora_queue_fxaa_pass() {
+#ifdef AURORA_ENABLE_GX
+  aurora::webgpu::queue_fxaa_pass();
+#endif
+}

@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <string>
 #include <string_view>
@@ -59,6 +60,22 @@ static wgpu::BindGroupLayout g_ResampleBindGroupLayout;
 static wgpu::RenderPipeline g_ResamplePipeline;
 static wgpu::Buffer g_ResampleUniformBuffer;
 static TextureWithSampler g_resampledFrameBuffer;
+
+// FXAA post-process pass. Queued as a gfx encoder task from the game's FRAME_AFTER_HUD hook (the
+// only point in the frame with an active EFB pass to snapshot -- see aurora_queue_fxaa_pass's doc
+// comment), rather than appended to the tail-end present blit: RmlUI composites its own backdrop
+// (blurred menus, popups) from present_source() *before* that tail-end blit ever runs, so an FXAA
+// pass placed there would never be visible behind such UI. g_fxaaQueued is main-thread-only (set in
+// queue_fxaa_pass(), read by aa_present_source(), both called in frame order from the main thread)
+// so it doesn't need atomic access, unlike g_fxaaEnabled which is also flipped from the UI thread.
+static std::atomic_bool g_fxaaEnabled = false;
+static bool g_fxaaQueued = false;
+static gfx::EncoderTaskId g_FxaaTaskId = gfx::InvalidEncoderTask;
+static wgpu::BindGroupLayout g_FxaaBindGroupLayout;
+static wgpu::RenderPipeline g_FxaaPipeline;
+static wgpu::Buffer g_FxaaUniformBuffer;
+static wgpu::Sampler g_FxaaSourceSampler;
+static TextureWithSampler g_fxaaFrameBuffer;
 
 static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
@@ -192,6 +209,105 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 )"sv;
 
+struct FxaaUniformBlock {
+  float texelWidth = 0.f;
+  float texelHeight = 0.f;
+};
+
+constexpr std::string_view fxaaShaderSource = R"(
+struct Uniforms {
+    texel_size: vec2<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var s: sampler;
+@group(0) @binding(2) var t: texture_2d<f32>;
+
+var<private> pos: array<vec2<f32>, 3> = array<vec2<f32>, 3>(
+    vec2(-1.0, 1.0),
+    vec2(-1.0, -3.0),
+    vec2(3.0, 1.0),
+);
+var<private> uvs: array<vec2<f32>, 3> = array<vec2<f32>, 3>(
+    vec2(0.0, 0.0),
+    vec2(0.0, 2.0),
+    vec2(2.0, 0.0),
+);
+
+@vertex
+fn vs_main(@builtin(vertex_index) vtxIdx: u32) -> VertexOutput {
+    var out: VertexOutput;
+    out.position = vec4<f32>(pos[vtxIdx], 0.0, 1.0);
+    out.uv = uvs[vtxIdx];
+    return out;
+}
+
+// Timothy Lottes' widely-deployed reduced FXAA (the "FXAA Console" shader behind e.g. three.js's
+// FXAA pass and most glsl-fxaa ports): unlike a threshold-gated blur that only fires above a
+// fixed contrast cutoff (which either blurs everywhere at a low threshold or barely touches real
+// edges at a properly-conservative one), this computes a continuous 2D gradient direction from
+// the 4 diagonal neighbors and walks the sample point along *that* direction. A diagonal
+// stair-step edge gets a diagonal sample direction and is actually smoothed; a flat region has
+// ~zero gradient, so the walk collapses to sampling the same texel twice and the pixel is
+// untouched -- self-limiting without a separate edge/no-edge gate.
+// Deliberately branchless (all textureSample() calls unconditional, `select()` instead of `if`):
+// WGSL requires textureSample() to run in uniform control flow, so gating one behind a
+// data-dependent branch is a validation error.
+const FXAA_REDUCE_MIN: f32 = 1.0 / 128.0;
+const FXAA_REDUCE_MUL: f32 = 1.0 / 8.0;
+const FXAA_SPAN_MAX: f32 = 8.0;
+
+fn fxaa_luma(c: vec3<f32>) -> f32 {
+    return dot(c, vec3<f32>(0.299, 0.587, 0.114));
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let texel = uniforms.texel_size;
+    let uv = in.uv;
+
+    let rgbNW = textureSample(t, s, uv + vec2<f32>(-texel.x, -texel.y)).rgb;
+    let rgbNE = textureSample(t, s, uv + vec2<f32>(texel.x, -texel.y)).rgb;
+    let rgbSW = textureSample(t, s, uv + vec2<f32>(-texel.x, texel.y)).rgb;
+    let rgbSE = textureSample(t, s, uv + vec2<f32>(texel.x, texel.y)).rgb;
+    let rgbM = textureSample(t, s, uv).rgb;
+
+    let lumaNW = fxaa_luma(rgbNW);
+    let lumaNE = fxaa_luma(rgbNE);
+    let lumaSW = fxaa_luma(rgbSW);
+    let lumaSE = fxaa_luma(rgbSE);
+    let lumaM = fxaa_luma(rgbM);
+
+    let lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
+    let lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
+
+    var dir = vec2<f32>(
+        -((lumaNW + lumaNE) - (lumaSW + lumaSE)),
+        ((lumaNW + lumaSW) - (lumaNE + lumaSE)));
+
+    let dirReduce = max((lumaNW + lumaNE + lumaSW + lumaSE) * (0.25 * FXAA_REDUCE_MUL), FXAA_REDUCE_MIN);
+    let rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+    dir = clamp(dir * rcpDirMin, vec2<f32>(-FXAA_SPAN_MAX), vec2<f32>(FXAA_SPAN_MAX)) * texel;
+
+    let rgbA = 0.5 * (
+        textureSample(t, s, uv + dir * (1.0 / 3.0 - 0.5)).rgb +
+        textureSample(t, s, uv + dir * (2.0 / 3.0 - 0.5)).rgb);
+    let rgbB = rgbA * 0.5 + 0.25 * (
+        textureSample(t, s, uv + dir * -0.5).rgb +
+        textureSample(t, s, uv + dir * 0.5).rgb);
+
+    let lumaB = fxaa_luma(rgbB);
+    let outOfRange = lumaB < lumaMin || lumaB > lumaMax;
+    let finalColor = select(rgbB, rgbA, outOfRange);
+    return vec4<f32>(finalColor, 1.0);
+}
+)"sv;
+
 wgpu::TextureFormat to_linear(wgpu::TextureFormat format) {
   if (format == wgpu::TextureFormat::RGBA8UnormSrgb) {
     return wgpu::TextureFormat::RGBA8Unorm;
@@ -318,6 +434,13 @@ const TextureWithSampler& present_source() noexcept {
   return g_graphicsConfig.msaaSamples > 1 ? g_frameBufferResolved : g_frameBuffer;
 }
 
+const TextureWithSampler& aa_present_source() noexcept {
+  if (g_fxaaQueued) {
+    return g_fxaaFrameBuffer;
+  }
+  return present_source();
+}
+
 void set_resampler(AuroraSampler sampler) noexcept {
   switch (sampler) {
   case SAMPLER_AREA:
@@ -331,6 +454,8 @@ void set_resampler(AuroraSampler sampler) noexcept {
 }
 
 AuroraSampler get_resampler() noexcept { return g_Resampler; }
+
+void set_fxaa_enabled(bool enabled) noexcept { g_fxaaEnabled.store(enabled, std::memory_order_relaxed); }
 
 Viewport calculate_present_viewport(uint32_t surface_width, uint32_t surface_height, uint32_t content_width,
                                     uint32_t content_height) noexcept {
@@ -623,6 +748,102 @@ void create_resample_pipeline() {
   g_ResampleUniformBuffer = g_device.CreateBuffer(&uniformBufferDescriptor);
 }
 
+void create_fxaa_pipeline() {
+  wgpu::ShaderSourceWGSL sourceDescriptor{};
+  sourceDescriptor.code = fxaaShaderSource;
+  const wgpu::ShaderModuleDescriptor moduleDescriptor{
+      .nextInChain = &sourceDescriptor,
+      .label = "FXAA Module",
+  };
+  auto module = g_device.CreateShaderModule(&moduleDescriptor);
+  const std::array colorTargets{wgpu::ColorTargetState{
+      .format = g_graphicsConfig.surfaceConfiguration.format,
+      .writeMask = wgpu::ColorWriteMask::All,
+  }};
+  const wgpu::FragmentState fragmentState{
+      .module = module,
+      .entryPoint = "fs_main",
+      .targetCount = colorTargets.size(),
+      .targets = colorTargets.data(),
+  };
+  const std::array bindGroupLayoutEntries{
+      wgpu::BindGroupLayoutEntry{
+          .binding = 0,
+          .visibility = wgpu::ShaderStage::Fragment,
+          .buffer =
+              wgpu::BufferBindingLayout{
+                  .type = wgpu::BufferBindingType::Uniform,
+              },
+      },
+      wgpu::BindGroupLayoutEntry{
+          .binding = 1,
+          .visibility = wgpu::ShaderStage::Fragment,
+          .sampler =
+              wgpu::SamplerBindingLayout{
+                  .type = wgpu::SamplerBindingType::Filtering,
+              },
+      },
+      wgpu::BindGroupLayoutEntry{
+          .binding = 2,
+          .visibility = wgpu::ShaderStage::Fragment,
+          .texture =
+              wgpu::TextureBindingLayout{
+                  .sampleType = wgpu::TextureSampleType::Float,
+                  .viewDimension = wgpu::TextureViewDimension::e2D,
+              },
+      },
+  };
+  const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
+      .entryCount = bindGroupLayoutEntries.size(),
+      .entries = bindGroupLayoutEntries.data(),
+  };
+  g_FxaaBindGroupLayout = g_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
+  const wgpu::PipelineLayoutDescriptor layoutDescriptor{
+      .bindGroupLayoutCount = 1,
+      .bindGroupLayouts = &g_FxaaBindGroupLayout,
+  };
+  auto pipelineLayout = g_device.CreatePipelineLayout(&layoutDescriptor);
+  const wgpu::RenderPipelineDescriptor pipelineDescriptor{
+      .label = "FXAA Pipeline",
+      .layout = pipelineLayout,
+      .vertex =
+          wgpu::VertexState{
+              .module = module,
+              .entryPoint = "vs_main",
+          },
+      .primitive =
+          wgpu::PrimitiveState{
+              .topology = wgpu::PrimitiveTopology::TriangleList,
+          },
+      .multisample =
+          wgpu::MultisampleState{
+              .count = 1,
+              .mask = UINT32_MAX,
+          },
+      .fragment = &fragmentState,
+  };
+  g_FxaaPipeline = g_device.CreateRenderPipeline(&pipelineDescriptor);
+
+  const wgpu::BufferDescriptor uniformBufferDescriptor{
+      .label = "FXAA Uniform Buffer",
+      .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Uniform,
+      .size = AURORA_ALIGN(sizeof(FxaaUniformBlock), 16),
+  };
+  g_FxaaUniformBuffer = g_device.CreateBuffer(&uniformBufferDescriptor);
+
+  // Source view comes from gfx::resolve_pass(), a bare wgpu::TextureView with no paired sampler
+  // (unlike the TextureWithSampler sources resample/copy sample from), so FXAA needs its own.
+  constexpr wgpu::SamplerDescriptor samplerDescriptor{
+      .label = "FXAA Source Sampler",
+      .addressModeU = wgpu::AddressMode::ClampToEdge,
+      .addressModeV = wgpu::AddressMode::ClampToEdge,
+      .addressModeW = wgpu::AddressMode::ClampToEdge,
+      .magFilter = wgpu::FilterMode::Linear,
+      .minFilter = wgpu::FilterMode::Linear,
+  };
+  g_FxaaSourceSampler = g_device.CreateSampler(&samplerDescriptor);
+}
+
 wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source) {
   const std::array bindGroupEntries{
       wgpu::BindGroupEntry{
@@ -643,7 +864,7 @@ wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source) {
 }
 
 const TextureWithSampler& resample_present_source(const wgpu::CommandEncoder& encoder, const Viewport& viewport) {
-  const auto& source = present_source();
+  const auto& source = aa_present_source();
   const uint32_t width = viewport_extent(viewport.width);
   const uint32_t height = viewport_extent(viewport.height);
   if (!g_resampledFrameBuffer.view || g_resampledFrameBuffer.size.width != width ||
@@ -704,6 +925,127 @@ const TextureWithSampler& resample_present_source(const wgpu::CommandEncoder& en
   return g_resampledFrameBuffer;
 }
 
+namespace {
+
+// Carries the resolve_pass() snapshot from queue_fxaa_pass() (main thread, called from the game's
+// FRAME_AFTER_HUD hook, while the EFB pass is still open) across to fxaa_encoder_task_callback()
+// (render worker, fires once this frame's ops reach this point). colorView holds the one extra ref
+// AddRef'd in queue_fxaa_pass(); the callback consumes it via wgpu::TextureView::Acquire(), mirroring
+// save_state::thumbnail_capture's CapturePayload pattern for the same reason (Dawn's C++ callback
+// wrapper only supports trivial captures, not a refcounted wgpu::TextureView).
+struct FxaaTaskPayload {
+  WGPUTextureView colorView = nullptr;
+  uint32_t width = 0;
+  uint32_t height = 0;
+};
+
+void fxaa_encoder_task_callback(const gfx::EncoderTaskContext& ctx, const wgpu::CommandEncoder& cmd,
+    const void* payload, size_t payloadSize, void*) {
+  if (payloadSize != sizeof(FxaaTaskPayload)) {
+    return;
+  }
+  FxaaTaskPayload task;
+  std::memcpy(&task, payload, sizeof(task));
+  auto sourceView = wgpu::TextureView::Acquire(task.colorView);
+  if (!sourceView || task.width == 0 || task.height == 0) {
+    return;
+  }
+
+  if (!g_fxaaFrameBuffer.view || g_fxaaFrameBuffer.size.width != task.width ||
+      g_fxaaFrameBuffer.size.height != task.height) {
+    g_fxaaFrameBuffer = create_render_texture(task.width, task.height, false);
+  }
+
+  const FxaaUniformBlock uniform{
+      .texelWidth = 1.f / static_cast<float>(task.width),
+      .texelHeight = 1.f / static_cast<float>(task.height),
+  };
+  ctx.queue.WriteBuffer(g_FxaaUniformBuffer, 0, &uniform, sizeof(uniform));
+
+  const std::array bindGroupEntries{
+      wgpu::BindGroupEntry{
+          .binding = 0,
+          .buffer = g_FxaaUniformBuffer,
+          .size = AURORA_ALIGN(sizeof(FxaaUniformBlock), 16),
+      },
+      wgpu::BindGroupEntry{
+          .binding = 1,
+          .sampler = g_FxaaSourceSampler,
+      },
+      wgpu::BindGroupEntry{
+          .binding = 2,
+          .textureView = sourceView,
+      },
+  };
+  const wgpu::BindGroupDescriptor bindGroupDescriptor{
+      .layout = g_FxaaBindGroupLayout,
+      .entryCount = bindGroupEntries.size(),
+      .entries = bindGroupEntries.data(),
+  };
+  const auto bindGroup = ctx.device.CreateBindGroup(&bindGroupDescriptor);
+
+  const std::array attachments{
+      wgpu::RenderPassColorAttachment{
+          .view = g_fxaaFrameBuffer.view,
+          .loadOp = wgpu::LoadOp::Clear,
+          .storeOp = wgpu::StoreOp::Store,
+      },
+  };
+  const wgpu::RenderPassDescriptor renderPassDescriptor{
+      .label = "FXAA render pass",
+      .colorAttachmentCount = attachments.size(),
+      .colorAttachments = attachments.data(),
+      .timestampWrites = gpu_prof::pass_writes("FXAA"),
+  };
+  const auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
+  pass.SetPipeline(g_FxaaPipeline);
+  pass.SetBindGroup(0, bindGroup, 0, nullptr);
+  pass.SetViewport(0.f, 0.f, static_cast<float>(task.width), static_cast<float>(task.height), 0.f, 1.f);
+  pass.Draw(3);
+  pass.End();
+}
+
+bool ensure_fxaa_task_registered() {
+  if (g_FxaaTaskId != gfx::InvalidEncoderTask) {
+    return true;
+  }
+  g_FxaaTaskId = gfx::register_encoder_task_type(gfx::EncoderTaskDescriptor{
+      .label = "FXAA",
+      .callback = fxaa_encoder_task_callback,
+  });
+  return g_FxaaTaskId != gfx::InvalidEncoderTask;
+}
+
+} // namespace
+
+void queue_fxaa_pass() noexcept {
+  g_fxaaQueued = false;
+  if (!g_fxaaEnabled.load(std::memory_order_relaxed) || !ensure_fxaa_task_registered()) {
+    return;
+  }
+
+  gfx::ResolvedTargets resolved;
+  if (!gfx::resolve_pass(gfx::ResolveDesc{.color = true}, resolved) || !resolved.color) {
+    return;
+  }
+  // resolve_pass()'s pooled view is owned by `resolved`, which goes out of scope at the end of
+  // this function -- long before fxaa_encoder_task_callback() actually runs (it fires later, from
+  // the render worker, once this frame is being encoded). AddRef an extra reference for the
+  // payload to carry across that gap; the callback wraps it with wgpu::TextureView::Acquire(),
+  // whose destructor releases exactly that extra reference.
+  wgpuTextureViewAddRef(resolved.color.Get());
+  const FxaaTaskPayload payload{
+      .colorView = resolved.color.Get(),
+      .width = resolved.width,
+      .height = resolved.height,
+  };
+  if (!gfx::push_encoder_task(g_FxaaTaskId, &payload, sizeof(payload))) {
+    wgpuTextureViewRelease(payload.colorView);
+    return;
+  }
+  g_fxaaQueued = true;
+}
+
 static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
   switch (backend) {
   case BACKEND_WEBGPU:
@@ -746,6 +1088,51 @@ static bool create_surface() {
     return false;
   }
   return true;
+}
+
+// WebGPU only guarantees 1x and 4x sample counts across all backends/adapters; other counts
+// (2x, 8x, ...) are backend- and adapter-dependent, so probe before committing to one.
+static bool msaa_sample_count_supported(uint32_t count, wgpu::TextureFormat format) {
+  const wgpu::Extent3D size{.width = 4, .height = 4, .depthOrArrayLayers = 1};
+  const wgpu::TextureDescriptor textureDescriptor{
+      .label = "MSAA capability probe",
+      .usage = wgpu::TextureUsage::RenderAttachment,
+      .dimension = wgpu::TextureDimension::e2D,
+      .size = size,
+      .format = format,
+      .mipLevelCount = 1,
+      .sampleCount = count,
+  };
+  g_device.PushErrorScope(wgpu::ErrorFilter::Validation);
+  auto texture = g_device.CreateTexture(&textureDescriptor);
+  bool supported = false;
+  const auto future = g_device.PopErrorScope(wgpu::CallbackMode::WaitAnyOnly,
+      [&](wgpu::PopErrorScopeStatus status, wgpu::ErrorType type, wgpu::StringView message) {
+        supported = status == wgpu::PopErrorScopeStatus::Success && type == wgpu::ErrorType::NoError;
+        if (!supported) {
+          Log.warn("{}x MSAA not supported by this adapter: {}", count, message);
+        }
+      });
+  g_instance.WaitAny(future, 5000000000);
+  if (texture) {
+    texture.Destroy();
+  }
+  return supported;
+}
+
+static uint32_t probe_msaa_sample_count(uint32_t requested, wgpu::TextureFormat format) {
+  if (requested <= 1) {
+    return 1;
+  }
+  if (msaa_sample_count_supported(requested, format)) {
+    return requested;
+  }
+  if (requested != 4 && msaa_sample_count_supported(4, format)) {
+    Log.warn("Falling back to 4x MSAA (requested {}x is not supported)", requested);
+    return 4;
+  }
+  Log.warn("Falling back to no MSAA (multisampling is not supported by this adapter)");
+  return 1;
 }
 
 bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
@@ -1039,11 +1426,12 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
               .presentMode = presentMode,
           },
       .depthFormat = wgpu::TextureFormat::Depth32Float,
-      .msaaSamples = g_config.msaa,
+      .msaaSamples = probe_msaa_sample_count(g_config.msaa, surfaceFormat),
       .textureAnisotropy = g_config.maxTextureAnisotropy,
   };
   create_copy_pipeline();
   create_resample_pipeline();
+  create_fxaa_pipeline();
   gpu_prof::initialize();
   resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height, true);
   g_initialized = true;
