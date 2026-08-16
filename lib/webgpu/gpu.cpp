@@ -435,7 +435,15 @@ const TextureWithSampler& present_source() noexcept {
 }
 
 const TextureWithSampler& aa_present_source() noexcept {
-  if (g_fxaaQueued) {
+  // g_fxaaQueued only means the encoder task was successfully enqueued this frame -- its
+  // callback (which actually creates g_fxaaFrameBuffer via create_render_texture) hasn't run
+  // yet, since it's deferred to the render worker. On the first frame FXAA is ever enabled,
+  // g_fxaaFrameBuffer.view is still null at this point: rmlui.cpp reads this synchronously on
+  // the main thread to seed its backdrop, so returning it here would hand RmlUI a null texture
+  // view and crash when it builds a bind group from it. Fall back to present_source() until the
+  // texture actually exists; every later frame it does, since the write always lands before the
+  // ops queue reaches this frame's consumers.
+  if (g_fxaaQueued && g_fxaaFrameBuffer.view) {
     return g_fxaaFrameBuffer;
   }
   return present_source();
