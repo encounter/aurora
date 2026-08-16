@@ -139,11 +139,12 @@ void aurora_set_resampler(AuroraSampler sampler);
 /** Sets the clock timescale. Default 1.0f. 0.0f is paused. Range 0.0f-16.0f. */
 void aurora_set_timescale(float scale);
 void aurora_set_fxaa_enabled(bool enabled);
-// Must be called once per rendered frame, after the frame's HUD has been drawn (same point mods'
-// GFX_STAGE_FRAME_AFTER_HUD hook runs from) and before aurora_end_frame(). No-ops if FXAA is
-// disabled. FXAA needs to sample the finished frame, and by the time aurora_end_frame() runs, RmlUI
-// has already composited its own backdrop (blurred menus, popups) from the frame as it stood before
-// this call -- queuing any later would make FXAA invisible behind that UI.
+// Must be called once per rendered frame, before the frame's HUD is drawn (same point mods'
+// GFX_STAGE_FRAME_BEFORE_HUD hook runs from) and while the EFB render pass is still open. No-ops
+// if FXAA is disabled. FXAA draws its smoothed result back into the EFB in place, so it must run
+// before the HUD (hearts, text, menu icons) so the HUD layers on top of it untouched afterward --
+// running it after the HUD would smooth HUD edges/text along with real geometry, and running it
+// outside an active render pass is a no-op (see gfx::push_custom_draw's doc comment).
 void aurora_queue_fxaa_pass();
 
 AuroraBackend aurora_get_backend();

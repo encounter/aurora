@@ -68,14 +68,12 @@ wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source);
 void set_resampler(AuroraSampler sampler) noexcept;
 AuroraSampler get_resampler() noexcept;
 void set_fxaa_enabled(bool enabled) noexcept;
-// Queues FXAA as an encoder task against the still-open EFB pass; must be called once per frame,
-// after the frame's HUD has been drawn and before gfx::finish() (see aurora_queue_fxaa_pass's doc
-// comment for why). No-op if FXAA is disabled.
+// Injects FXAA as a custom draw directly into the still-open EFB pass; must be called once per
+// frame, before the frame's HUD is drawn and while that pass is still open (see
+// aurora_queue_fxaa_pass's doc comment for why). No-op if FXAA is disabled. Draws in place, so
+// present_source() reflects the antialiased result on its own -- nothing else needs to know FXAA
+// ran.
 void queue_fxaa_pass() noexcept;
-// present_source(), or the FXAA'd copy of it if queue_fxaa_pass() ran successfully this frame.
-// Everything that composites the final displayed frame (RmlUI's backdrop seed, the present blit)
-// should read from this instead of present_source() directly, or it'll see the un-antialiased image.
-const TextureWithSampler& aa_present_source() noexcept;
 Viewport calculate_present_viewport(uint32_t surface_width, uint32_t surface_height, uint32_t content_width,
                                     uint32_t content_height) noexcept;
 const TextureWithSampler& resample_present_source(const wgpu::CommandEncoder& encoder, const Viewport& viewport);

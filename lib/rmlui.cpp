@@ -465,7 +465,7 @@ RecordedFrame record_frame(const webgpu::Viewport& presentViewport) noexcept {
 
   auto* renderInterface = get_render_interface();
   renderInterface->SetWindowSize(g_context->GetDimensions());
-  renderInterface->BeginFrame(s_renderTarget, webgpu::aa_present_source(),
+  renderInterface->BeginFrame(s_renderTarget, webgpu::present_source(),
                               needsBackdrop ? BaseLayerContent::Scene : BaseLayerContent::Transparent);
 
   Backend::BeginFrame();

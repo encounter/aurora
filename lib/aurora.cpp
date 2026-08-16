@@ -270,7 +270,7 @@ void end_frame() noexcept {
   gfx::finish();
   auto imguiDrawData = imgui::freeze();
 
-  const auto& presentSource = webgpu::aa_present_source();
+  const auto& presentSource = webgpu::present_source();
   const auto viewport = webgpu::calculate_present_viewport(webgpu::g_graphicsConfig.surfaceConfiguration.width,
                                                            webgpu::g_graphicsConfig.surfaceConfiguration.height,
                                                            presentSource.size.width, presentSource.size.height);

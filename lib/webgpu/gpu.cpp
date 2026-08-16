@@ -61,21 +61,22 @@ static wgpu::RenderPipeline g_ResamplePipeline;
 static wgpu::Buffer g_ResampleUniformBuffer;
 static TextureWithSampler g_resampledFrameBuffer;
 
-// FXAA post-process pass. Queued as a gfx encoder task from the game's FRAME_AFTER_HUD hook (the
-// only point in the frame with an active EFB pass to snapshot -- see aurora_queue_fxaa_pass's doc
-// comment), rather than appended to the tail-end present blit: RmlUI composites its own backdrop
-// (blurred menus, popups) from present_source() *before* that tail-end blit ever runs, so an FXAA
-// pass placed there would never be visible behind such UI. g_fxaaQueued is main-thread-only (set in
-// queue_fxaa_pass(), read by aa_present_source(), both called in frame order from the main thread)
-// so it doesn't need atomic access, unlike g_fxaaEnabled which is also flipped from the UI thread.
+// FXAA post-process pass. Injected as a custom draw directly into the EFB pass from the game's
+// FRAME_BEFORE_HUD hook -- i.e. before the 2D HUD (hearts, text, menu icons) is drawn -- so it
+// smooths only the 3D scene in place and the HUD layers on top of it afterward, untouched. This
+// used to run after the HUD instead (as an encoder task swapped in at present time), which (a)
+// blurred HUD text/icons along with real geometry edges, especially visible at 1x internal
+// resolution, and (b) needed a separate aa_present_source() consumers had to remember to call
+// instead of present_source(), which was itself the root of an earlier bug (FXAA invisible behind
+// any backdrop-blurred UI, since RmlUI composited from present_source() before that swap ever
+// ran). Drawing straight into the live EFB pass sidesteps both: present_source() already reflects
+// the antialiased result by the time anything else reads it, so there's nothing to swap.
 static std::atomic_bool g_fxaaEnabled = false;
-static bool g_fxaaQueued = false;
-static gfx::EncoderTaskId g_FxaaTaskId = gfx::InvalidEncoderTask;
+static gfx::DrawTypeId g_FxaaDrawTypeId = gfx::InvalidDrawType;
 static wgpu::BindGroupLayout g_FxaaBindGroupLayout;
 static wgpu::RenderPipeline g_FxaaPipeline;
 static wgpu::Buffer g_FxaaUniformBuffer;
 static wgpu::Sampler g_FxaaSourceSampler;
-static TextureWithSampler g_fxaaFrameBuffer;
 
 static wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
@@ -432,21 +433,6 @@ TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool m
 
 const TextureWithSampler& present_source() noexcept {
   return g_graphicsConfig.msaaSamples > 1 ? g_frameBufferResolved : g_frameBuffer;
-}
-
-const TextureWithSampler& aa_present_source() noexcept {
-  // g_fxaaQueued only means the encoder task was successfully enqueued this frame -- its
-  // callback (which actually creates g_fxaaFrameBuffer via create_render_texture) hasn't run
-  // yet, since it's deferred to the render worker. On the first frame FXAA is ever enabled,
-  // g_fxaaFrameBuffer.view is still null at this point: rmlui.cpp reads this synchronously on
-  // the main thread to seed its backdrop, so returning it here would hand RmlUI a null texture
-  // view and crash when it builds a bind group from it. Fall back to present_source() until the
-  // texture actually exists; every later frame it does, since the write always lands before the
-  // ops queue reaches this frame's consumers.
-  if (g_fxaaQueued && g_fxaaFrameBuffer.view) {
-    return g_fxaaFrameBuffer;
-  }
-  return present_source();
 }
 
 void set_resampler(AuroraSampler sampler) noexcept {
@@ -872,7 +858,7 @@ wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source) {
 }
 
 const TextureWithSampler& resample_present_source(const wgpu::CommandEncoder& encoder, const Viewport& viewport) {
-  const auto& source = aa_present_source();
+  const auto& source = present_source();
   const uint32_t width = viewport_extent(viewport.width);
   const uint32_t height = viewport_extent(viewport.height);
   if (!g_resampledFrameBuffer.view || g_resampledFrameBuffer.size.width != width ||
@@ -936,32 +922,27 @@ const TextureWithSampler& resample_present_source(const wgpu::CommandEncoder& en
 namespace {
 
 // Carries the resolve_pass() snapshot from queue_fxaa_pass() (main thread, called from the game's
-// FRAME_AFTER_HUD hook, while the EFB pass is still open) across to fxaa_encoder_task_callback()
-// (render worker, fires once this frame's ops reach this point). colorView holds the one extra ref
-// AddRef'd in queue_fxaa_pass(); the callback consumes it via wgpu::TextureView::Acquire(), mirroring
+// FRAME_BEFORE_HUD hook, while the EFB pass is still open) across to fxaa_draw_callback() (render
+// worker, fires once this frame's ops reach this point). colorView holds the one extra ref AddRef'd
+// in queue_fxaa_pass(); the callback consumes it via wgpu::TextureView::Acquire(), mirroring
 // save_state::thumbnail_capture's CapturePayload pattern for the same reason (Dawn's C++ callback
 // wrapper only supports trivial captures, not a refcounted wgpu::TextureView).
-struct FxaaTaskPayload {
+struct FxaaDrawPayload {
   WGPUTextureView colorView = nullptr;
   uint32_t width = 0;
   uint32_t height = 0;
 };
 
-void fxaa_encoder_task_callback(const gfx::EncoderTaskContext& ctx, const wgpu::CommandEncoder& cmd,
+void fxaa_draw_callback(const gfx::DrawContext& ctx, const wgpu::RenderPassEncoder& pass,
     const void* payload, size_t payloadSize, void*) {
-  if (payloadSize != sizeof(FxaaTaskPayload)) {
+  if (payloadSize != sizeof(FxaaDrawPayload)) {
     return;
   }
-  FxaaTaskPayload task;
+  FxaaDrawPayload task;
   std::memcpy(&task, payload, sizeof(task));
   auto sourceView = wgpu::TextureView::Acquire(task.colorView);
   if (!sourceView || task.width == 0 || task.height == 0) {
     return;
-  }
-
-  if (!g_fxaaFrameBuffer.view || g_fxaaFrameBuffer.size.width != task.width ||
-      g_fxaaFrameBuffer.size.height != task.height) {
-    g_fxaaFrameBuffer = create_render_texture(task.width, task.height, false);
   }
 
   const FxaaUniformBlock uniform{
@@ -992,43 +973,34 @@ void fxaa_encoder_task_callback(const gfx::EncoderTaskContext& ctx, const wgpu::
   };
   const auto bindGroup = ctx.device.CreateBindGroup(&bindGroupDescriptor);
 
-  const std::array attachments{
-      wgpu::RenderPassColorAttachment{
-          .view = g_fxaaFrameBuffer.view,
-          .loadOp = wgpu::LoadOp::Clear,
-          .storeOp = wgpu::StoreOp::Store,
-      },
-  };
-  const wgpu::RenderPassDescriptor renderPassDescriptor{
-      .label = "FXAA render pass",
-      .colorAttachmentCount = attachments.size(),
-      .colorAttachments = attachments.data(),
-      .timestampWrites = gpu_prof::pass_writes("FXAA"),
-  };
-  const auto pass = cmd.BeginRenderPass(&renderPassDescriptor);
+  // Draws straight into the pass already open at this point in the EFB's command stream -- the
+  // live game framebuffer, still holding only the 3D scene since this fires before the HUD draws
+  // that follow it. No BeginRenderPass/End here: we don't own this pass, we're just injecting a
+  // full-screen opaque triangle that overwrites every covered pixel with the antialiased result.
+  // The caller restores pipeline/bind-group/viewport/scissor state once this returns, so the GX
+  // draws right after (the HUD) aren't affected by any of this.
   pass.SetPipeline(g_FxaaPipeline);
   pass.SetBindGroup(0, bindGroup, 0, nullptr);
   pass.SetViewport(0.f, 0.f, static_cast<float>(task.width), static_cast<float>(task.height), 0.f, 1.f);
+  pass.SetScissorRect(0, 0, task.width, task.height);
   pass.Draw(3);
-  pass.End();
 }
 
-bool ensure_fxaa_task_registered() {
-  if (g_FxaaTaskId != gfx::InvalidEncoderTask) {
+bool ensure_fxaa_draw_registered() {
+  if (g_FxaaDrawTypeId != gfx::InvalidDrawType) {
     return true;
   }
-  g_FxaaTaskId = gfx::register_encoder_task_type(gfx::EncoderTaskDescriptor{
+  g_FxaaDrawTypeId = gfx::register_draw_type(gfx::DrawTypeDescriptor{
       .label = "FXAA",
-      .callback = fxaa_encoder_task_callback,
+      .draw = fxaa_draw_callback,
   });
-  return g_FxaaTaskId != gfx::InvalidEncoderTask;
+  return g_FxaaDrawTypeId != gfx::InvalidDrawType;
 }
 
 } // namespace
 
 void queue_fxaa_pass() noexcept {
-  g_fxaaQueued = false;
-  if (!g_fxaaEnabled.load(std::memory_order_relaxed) || !ensure_fxaa_task_registered()) {
+  if (!g_fxaaEnabled.load(std::memory_order_relaxed) || !ensure_fxaa_draw_registered()) {
     return;
   }
 
@@ -1037,21 +1009,19 @@ void queue_fxaa_pass() noexcept {
     return;
   }
   // resolve_pass()'s pooled view is owned by `resolved`, which goes out of scope at the end of
-  // this function -- long before fxaa_encoder_task_callback() actually runs (it fires later, from
-  // the render worker, once this frame is being encoded). AddRef an extra reference for the
+  // this function -- long before fxaa_draw_callback() actually runs (it fires later, from the
+  // render worker, once this frame's ops reach this point). AddRef an extra reference for the
   // payload to carry across that gap; the callback wraps it with wgpu::TextureView::Acquire(),
   // whose destructor releases exactly that extra reference.
   wgpuTextureViewAddRef(resolved.color.Get());
-  const FxaaTaskPayload payload{
+  const FxaaDrawPayload payload{
       .colorView = resolved.color.Get(),
       .width = resolved.width,
       .height = resolved.height,
   };
-  if (!gfx::push_encoder_task(g_FxaaTaskId, &payload, sizeof(payload))) {
+  if (!gfx::push_custom_draw(g_FxaaDrawTypeId, &payload, sizeof(payload))) {
     wgpuTextureViewRelease(payload.colorView);
-    return;
   }
-  g_fxaaQueued = true;
 }
 
 static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
