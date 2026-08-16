@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <type_traits>
 #include <vector>
+#include <cstring>
 
 using namespace std::string_view_literals;
 
