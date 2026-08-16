@@ -249,19 +249,19 @@ fn vs_main(@builtin(vertex_index) vtxIdx: u32) -> VertexOutput {
 }
 
 // Timothy Lottes' widely-deployed reduced FXAA (the "FXAA Console" shader behind e.g. three.js's
-// FXAA pass and most glsl-fxaa ports): unlike a threshold-gated blur that only fires above a
-// fixed contrast cutoff (which either blurs everywhere at a low threshold or barely touches real
-// edges at a properly-conservative one), this computes a continuous 2D gradient direction from
-// the 4 diagonal neighbors and walks the sample point along *that* direction. A diagonal
-// stair-step edge gets a diagonal sample direction and is actually smoothed; a flat region has
-// ~zero gradient, so the walk collapses to sampling the same texel twice and the pixel is
-// untouched -- self-limiting without a separate edge/no-edge gate.
-// Deliberately branchless (all textureSample() calls unconditional, `select()` instead of `if`):
-// WGSL requires textureSample() to run in uniform control flow, so gating one behind a
-// data-dependent branch is a validation error.
+// FXAA pass and most glsl-fxaa ports), with the edge-threshold early-out from full FXAA 3.11
+// restored below: without it, FXAA_REDUCE_MIN keeps `dir` nonzero for *any* nonzero luma delta
+// among the 4 diagonal samples, and real textures (grass, rock, wood grain) have that virtually
+// everywhere, not just on geometry silhouettes -- so the tent-filter blend below fired on ~every
+// pixel and softened the whole frame instead of just stairstepped edges. The lumaRange check
+// gates the *output* (via select on the fully-computed finalColor), not the sampling, so it stays
+// branchless: WGSL requires textureSample() to run in uniform control flow, so gating one behind
+// a data-dependent branch is a validation error, but `select()` on already-computed values is not.
 const FXAA_REDUCE_MIN: f32 = 1.0 / 128.0;
 const FXAA_REDUCE_MUL: f32 = 1.0 / 8.0;
 const FXAA_SPAN_MAX: f32 = 8.0;
+const FXAA_EDGE_THRESHOLD_MIN: f32 = 0.0312;
+const FXAA_EDGE_THRESHOLD_MAX: f32 = 0.125;
 
 fn fxaa_luma(c: vec3<f32>) -> f32 {
     return dot(c, vec3<f32>(0.299, 0.587, 0.114));
@@ -304,7 +304,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let lumaB = fxaa_luma(rgbB);
     let outOfRange = lumaB < lumaMin || lumaB > lumaMax;
-    let finalColor = select(rgbB, rgbA, outOfRange);
+    let blended = select(rgbB, rgbA, outOfRange);
+
+    let lumaRange = lumaMax - lumaMin;
+    let isEdge = lumaRange >= max(FXAA_EDGE_THRESHOLD_MIN, lumaMax * FXAA_EDGE_THRESHOLD_MAX);
+    let finalColor = select(rgbM, blended, isEdge);
     return vec4<f32>(finalColor, 1.0);
 }
 )"sv;
