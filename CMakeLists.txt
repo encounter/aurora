@@ -13,6 +13,10 @@ option(AURORA_ENABLE_CARD "Enable CARD implementation based on kabufuda" ON)
 option(AURORA_ENABLE_RMLUI "Enable HTML/CSS Based UI Library for use in end-user UI development." OFF)
 option(AURORA_CACHE_USE_ZSTD "Compress WebGPU cache entries with zstd" ON)
 
+include(CMakeDependentOption)
+cmake_dependent_option(AURORA_ENABLE_EXAMPLES "Enable examples" ON "CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR" OFF)
+cmake_dependent_option(AURORA_ENABLE_TESTS "Enable tests" ON "NOT CMAKE_CROSSCOMPILING" OFF)
+
 # Dependency versions
 include(cmake/AuroraDependencyVersions.cmake)
 
@@ -66,11 +70,11 @@ if (AURORA_ENABLE_DVD)
   include(cmake/aurora_dvd.cmake)
 endif ()
 
-if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+if (AURORA_ENABLE_EXAMPLES)
   add_subdirectory(examples)
 endif ()
 
-if (NOT CMAKE_CROSSCOMPILING)
+if (AURORA_ENABLE_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif ()
