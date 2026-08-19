@@ -351,7 +351,7 @@ if (AURORA_ENABLE_GX)
 endif ()
 
 if (NOT TARGET Tracy::TracyClient)
-  aurora_find_package_global(Tracy CONFIG REQUIRED)
+  aurora_find_package_global(Tracy CONFIG)
 endif ()
 if (NOT TARGET Tracy::TracyClient)
   message(STATUS "aurora: Fetching Tracy")
