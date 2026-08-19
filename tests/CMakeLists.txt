@@ -98,7 +98,7 @@ if (AURORA_ENABLE_GX)
     gtest
     gtest_main
     fmt::fmt
-    xxhash
+    xxHash::xxhash
     absl::flat_hash_map
     absl::btree
     dawn::dawncpp_headers
@@ -122,7 +122,7 @@ if (AURORA_ENABLE_GX)
     gtest
     gtest_main
     fmt::fmt
-    xxhash
+    xxHash::xxhash
     absl::flat_hash_map
     dawn::webgpu_dawn
     Tracy::TracyClient
