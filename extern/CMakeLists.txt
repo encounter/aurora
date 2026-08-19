@@ -10,10 +10,7 @@ else ()
 endif ()
 
 function(aurora_find_package_global)
-  set(_PREV_FIND_PACKAGE_TARGETS_GLOBAL ${CMAKE_FIND_PACKAGE_TARGETS_GLOBAL})
-  set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
-  find_package(${ARGV})
-  set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ${_PREV_FIND_PACKAGE_TARGETS_GLOBAL})
+  find_package(${ARGV} CONFIG GLOBAL)
 endfunction()
 
 if (AURORA_ENABLE_GX)
