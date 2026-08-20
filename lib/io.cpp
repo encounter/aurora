@@ -105,7 +105,9 @@ bool write_at(SDL_IOStream* stream, uint64_t offset, const void* src, size_t siz
 }
 
 std::optional<std::vector<uint8_t>> read_file(const std::filesystem::path& path) noexcept {
-  try {
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+   try {
+#endif
     auto stream = open_file(path, "rb");
     if (!stream) {
       return std::nullopt;
@@ -124,24 +126,32 @@ std::optional<std::vector<uint8_t>> read_file(const std::filesystem::path& path)
       return std::nullopt;
     }
     return data;
-  } catch (const std::exception& error) {
-    SDL_SetError("Failed to read file: %s", error.what());
-    return std::nullopt;
-  }
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+   } catch (const std::exception& error) {
+     SDL_SetError("Failed to read file: %s", error.what());
+     return std::nullopt;
+   }
+#endif
 }
 
 bool create_directories(const std::filesystem::path& path) noexcept {
   if (path.empty()) {
     return true;
   }
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
   try {
+#endif
     const auto pathString = fs_path_to_string(path);
     return SDL_CreateDirectory(pathString.c_str());
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
   } catch (const std::exception& error) { return SDL_SetError("Failed to encode directory path: %s", error.what()); }
+#endif
 }
 
 bool write_file(const std::filesystem::path& path, std::span<const uint8_t> data) noexcept {
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
   try {
+#endif
     if (!io::create_directories(path.parent_path())) {
       return false;
     }
@@ -157,7 +167,9 @@ bool write_file(const std::filesystem::path& path, std::span<const uint8_t> data
       restore_error(writeError);
     }
     return written && closed;
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
   } catch (const std::exception& error) { return SDL_SetError("Failed to write file: %s", error.what()); }
+#endif
 }
 
 AtomicFileWriter::AtomicFileWriter(Stream stream, std::string temporaryPath, std::string targetPath) noexcept
@@ -224,7 +236,9 @@ bool AtomicFileWriter::commit() noexcept {
 }
 
 AtomicFileWriter open_atomic_file(const std::filesystem::path& path, AtomicFileMode mode) noexcept {
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
   try {
+#endif
     if (!io::create_directories(path.parent_path())) {
       return {};
     }
@@ -265,10 +279,12 @@ AtomicFileWriter open_atomic_file(const std::filesystem::path& path, AtomicFileM
     }
 
     return AtomicFileWriter{std::move(stream), std::move(temporaryPath), targetPath};
-  } catch (const std::exception& error) {
-    SDL_SetError("Failed to open atomic file: %s", error.what());
-    return {};
-  }
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+   } catch (const std::exception& error) {
+     SDL_SetError("Failed to open atomic file: %s", error.what());
+     return {};
+   }
+#endif
 }
 
 bool write_file_atomic(const std::filesystem::path& path, std::span<const uint8_t> data) noexcept {
