@@ -11,11 +11,16 @@
 struct SDL_Window;
 
 namespace aurora::webgpu {
+// Ten bits per axis keeps low-curvature surfaces free of the banding an 8-bit encoding produces, for the same four
+// bytes; the remaining two carry the validity flag.
+inline constexpr wgpu::TextureFormat NormalBufferFormat = wgpu::TextureFormat::RGB10A2Unorm;
+
 struct GraphicsConfig {
   wgpu::SurfaceConfiguration surfaceConfiguration;
   wgpu::TextureFormat depthFormat;
   uint32_t msaaSamples;
   uint16_t textureAnisotropy;
+  bool normalBuffer;
 };
 struct TextureWithSampler {
   wgpu::Texture texture;
@@ -47,6 +52,8 @@ extern GraphicsConfig g_graphicsConfig;
 extern TextureWithSampler g_frameBuffer;
 extern TextureWithSampler g_frameBufferResolved;
 extern TextureWithSampler g_depthBuffer;
+extern TextureWithSampler g_normalBuffer;
+extern TextureWithSampler g_normalBufferResolved;
 extern wgpu::RenderPipeline g_CopyPipeline;
 extern wgpu::RenderPipeline g_CopyPremultipliedAlphaPipeline;
 extern wgpu::BindGroup g_CopyBindGroup;
