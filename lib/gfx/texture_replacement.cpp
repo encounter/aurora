@@ -567,9 +567,13 @@ bool guarded_virtual_read(const std::shared_ptr<VirtualReadState>& state, const 
   }
 
   bool read = false;
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
   try {
+#endif
     read = source.read(source.userData, path, outBytes);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
   } catch (...) { Log.warn("texture_replacement: virtual read callback threw for {}", path); }
+#endif
   bool cancelled = false;
   {
     std::lock_guard lock{state->mutex};
