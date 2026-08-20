@@ -1064,6 +1064,12 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     vtxOutAttrs += fmt::format("\n    @location({}) nrm: vec3f,", vtxOutIdx++);
     vtxXfrAttrsPre += "\n    out.nrm = mv_nrm;";
   }
+  const bool hasAuthoredNormal = config.attrs[GX_VA_NRM].attrType != GX_NONE;
+  const bool emitNormalTarget = config.normalTarget && hasAuthoredNormal;
+  if (emitNormalTarget && !(UsePerPixelLighting && info.lightingEnabled)) {
+    vtxOutAttrs += fmt::format("\n    @location({}) mv_nrm: vec3f,", vtxOutIdx++);
+    vtxXfrAttrsPre += "\n    out.mv_nrm = mv_nrm;";
+  }
 
   uniBufAttrs += "\n    proj: mat4x4f,";
   uniBufAttrs += fmt::format("\n    postex_mtx: array<mat3x4f, {}>,", MaxPnMtx + MaxTexMtx);
@@ -1628,6 +1634,30 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     fragmentFn += "\n    prev = vec4f(in.nrm, prev.a);";
   }
 
+  std::string fragmentOutput;
+  std::string_view fragmentOutputType = "@location(0) vec4f"sv;
+  std::string fragmentReturn = "\n    return prev;"s;
+  if (config.normalTarget) {
+    fragmentOutput =
+        "\nstruct FragmentOutput {\n"
+        "    @location(0) color: vec4f,\n"
+        "    @location(1) normal: vec4f,\n"
+        "};\n";
+    fragmentOutputType = "FragmentOutput"sv;
+    fragmentReturn = "\n    var out: FragmentOutput;\n    out.color = prev;";
+    if (emitNormalTarget) {
+      // Interpolation denormalizes, and can cancel opposed vertex normals outright; alpha reports whether what came
+      // out is usable, so a consumer never normalizes a zero vector.
+      fragmentReturn +=
+          "\n    let nrm_len_sq = dot(in.mv_nrm, in.mv_nrm);"
+          "\n    let unit_nrm = select(vec3f(0.0), normalize(in.mv_nrm), nrm_len_sq > 1e-10);"
+          "\n    out.normal = vec4f(unit_nrm * 0.5 + 0.5, select(0.0, 1.0, nrm_len_sq > 1e-10));";
+    } else {
+      fragmentReturn += "\n    out.normal = vec4f(0.5, 0.5, 0.5, 0.0);";
+    }
+    fragmentReturn += "\n    return out;";
+  }
+
   const auto shaderSource = fmt::format(R"""(
 fn bswap32(v: u32, le: bool) -> u32 {{
   if (le) {{
@@ -1991,13 +2021,14 @@ fn vs_main(
     return out;
 }}
 
+{9}
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4f {{{6}{5}
-    return prev;
+fn fs_main(in: VertexOutput) -> {10} {{{6}{5}{11}
 }}
 )""",
                                         uniBufAttrs, texBindings, vtxOutAttrs, vtxInAttrs, vtxXfrAttrs, fragmentFn,
-                                        fragmentFnPre, vtxXfrAttrsPre, uniformPre);
+                                        fragmentFnPre, vtxXfrAttrsPre, uniformPre, fragmentOutput, fragmentOutputType,
+                                        fragmentReturn);
   if (EnableDebugPrints) {
     Log.info("Generated shader (hash {:x}): {}", hash, shaderSource);
   }

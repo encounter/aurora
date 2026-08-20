@@ -48,6 +48,8 @@ GraphicsConfig g_graphicsConfig;
 TextureWithSampler g_frameBuffer;
 TextureWithSampler g_frameBufferResolved;
 TextureWithSampler g_depthBuffer;
+TextureWithSampler g_normalBuffer;
+TextureWithSampler g_normalBufferResolved;
 
 // EFB -> XFB copy pipeline
 static wgpu::BindGroupLayout g_CopyBindGroupLayout;
@@ -404,6 +406,37 @@ static TextureWithSampler create_depth_texture(uint32_t width, uint32_t height) 
       .size = size,
       .format = format,
       .sampler = std::move(sampler),
+  };
+}
+
+static TextureWithSampler create_normal_texture(uint32_t width, uint32_t height, bool multisampled) {
+  const wgpu::Extent3D size{
+      .width = width,
+      .height = height,
+      .depthOrArrayLayers = 1,
+  };
+  const wgpu::TextureDescriptor textureDescriptor{
+      .label = "Normal texture",
+      .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc,
+      .dimension = wgpu::TextureDimension::e2D,
+      .size = size,
+      .format = NormalBufferFormat,
+      .mipLevelCount = 1,
+      .sampleCount = multisampled ? g_graphicsConfig.msaaSamples : 1,
+  };
+  auto texture = g_device.CreateTexture(&textureDescriptor);
+
+  const wgpu::TextureViewDescriptor viewDescriptor{
+      .label = "Normal texture view",
+      .dimension = wgpu::TextureViewDimension::e2D,
+  };
+  auto view = texture.CreateView(&viewDescriptor);
+
+  return {
+      .texture = std::move(texture),
+      .view = std::move(view),
+      .size = size,
+      .format = NormalBufferFormat,
   };
 }
 
@@ -1029,6 +1062,9 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
   Log.info("Using surface format {}, present mode {}", magic_enum::enum_name(surfaceFormat),
            magic_enum::enum_name(presentMode));
   const auto size = window::get_window_size();
+  // Compatibility mode requires every color target of a pipeline to share one write mask and blend state, which the
+  // normal attachment cannot do: it is unblended and written only by depth-writing draws.
+  const bool normalBuffer = g_config.normalBuffer && g_hasCoreFeatures;
   g_graphicsConfig = GraphicsConfig{
       .surfaceConfiguration =
           wgpu::SurfaceConfiguration{
@@ -1041,6 +1077,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
       .depthFormat = wgpu::TextureFormat::Depth32Float,
       .msaaSamples = g_config.msaa,
       .textureAnisotropy = g_config.maxTextureAnisotropy,
+      .normalBuffer = normalBuffer,
   };
   create_copy_pipeline();
   create_resample_pipeline();
@@ -1107,6 +1144,12 @@ static void resize_swapchain_internal(uint32_t width, uint32_t height, uint32_t 
   g_frameBuffer = create_render_texture(width, height, true);
   g_frameBufferResolved = create_render_texture(width, height, false);
   g_depthBuffer = create_depth_texture(width, height);
+  if (g_graphicsConfig.normalBuffer) {
+    g_normalBuffer = create_normal_texture(width, height, true);
+    if (g_graphicsConfig.msaaSamples > 1) {
+      g_normalBufferResolved = create_normal_texture(width, height, false);
+    }
+  }
   g_CopyBindGroup = create_copy_bind_group(present_source());
 }
 

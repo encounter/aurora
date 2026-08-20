@@ -293,6 +293,14 @@ RenderTargetLayout scene_render_target_layout() noexcept {
       .depthStencilFormat = webgpu::g_graphicsConfig.depthFormat,
       .sampleCount = webgpu::g_graphicsConfig.msaaSamples,
   };
+  if (webgpu::g_graphicsConfig.normalBuffer) {
+    layout.colorAttachments[layout.colorAttachmentCount++] = {
+        .semantic = ColorAttachmentSemantic::Normal,
+        .format = webgpu::g_normalBuffer.format,
+        .width = webgpu::g_normalBuffer.size.width,
+        .height = webgpu::g_normalBuffer.size.height,
+    };
+  }
   finalize_render_target_layout(layout);
   return layout;
 }

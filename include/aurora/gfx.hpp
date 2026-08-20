@@ -14,6 +14,9 @@ inline constexpr uint32_t SceneColorAttachmentIndex = 0;
 
 enum class ColorAttachmentSemantic : uint8_t {
   SceneColor,
+  /// View-space vertex normal of whichever draw established the depth at each pixel, encoded xyz * 0.5 + 0.5, with
+  /// alpha 1 where it is usable and 0 otherwise. Its coverage is the depth buffer's, and the sign is the game's:
+  /// consumers must not reorient it against the view.
   Normal,
   Auxiliary,
 };
@@ -144,11 +147,13 @@ Range push_storage(const uint8_t* data, size_t length);
 struct ResolveDesc {
   bool color = true;
   bool depth = false;
+  bool normal = false;
 };
 
 struct ResolvedTargets {
-  wgpu::TextureView color; // single-sample snapshot; null if not requested
-  wgpu::TextureView depth; // single-sample R32Float depth snapshot; null if not requested
+  wgpu::TextureView color;  // single-sample snapshot; null if not requested
+  wgpu::TextureView depth;  // single-sample R32Float depth snapshot; null if not requested
+  wgpu::TextureView normal; // single-sample snapshot of the Normal attachment; null if not requested
   wgpu::TextureFormat colorFormat = wgpu::TextureFormat::Undefined;
   uint32_t width = 0;
   uint32_t height = 0;
