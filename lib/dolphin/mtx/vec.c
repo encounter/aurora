@@ -70,8 +70,16 @@ f32 C_VECSquareMag(const Vec* v) {
 }
 
 f32 PSVECSquareMag(const Vec* v) {
+  f32 xx;
+  f32 yy;
+  f32 xx_zz;
+
   assert(v && "VECMag():  NULL VecPtr 'v' ");
-  return (v->z * v->z + v->x * v->x) + v->y * v->y;
+
+  xx = v->x * v->x;
+  yy = v->y * v->y;
+  xx_zz = fmaf(v->z, v->z, xx);
+  return fmaf(xx_zz, 1.0f, yy);
 }
 
 f32 C_VECMag(const Vec* v) {
