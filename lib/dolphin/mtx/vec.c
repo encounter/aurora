@@ -79,7 +79,7 @@ f32 PSVECSquareMag(const Vec* v) {
   xx = v->x * v->x;
   yy = v->y * v->y;
   xx_zz = fmaf(v->z, v->z, xx);
-  return xx_zz + yy;
+  return fmaf(xx_zz, 1.0f, yy);
 }
 
 f32 C_VECMag(const Vec* v) {
