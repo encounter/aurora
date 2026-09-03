@@ -190,6 +190,7 @@ public:
   void ReleaseGeometry(Rml::CompiledGeometryHandle geometry) override;
   Rml::TextureHandle LoadTexture(Rml::Vector2i& dimensions, const Rml::String& source) override;
   Rml::TextureHandle GenerateTexture(Rml::Span<const Rml::byte> source, Rml::Vector2i source_dimensions) override;
+  Rml::TextureHandle GenerateTexture(Rml::Span<const Rml::byte> source, Rml::Vector2i source_dimensions, uint32_t mipmapLevels);
   void ReleaseTexture(Rml::TextureHandle texture) override;
   void EnableScissorRegion(bool enable) override;
   void SetScissorRegion(Rml::Rectanglei region) override;

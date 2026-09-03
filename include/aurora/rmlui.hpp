@@ -36,6 +36,7 @@ struct RuntimeTexture {
   uint32_t height = 0;
   std::span<const std::byte> rgba8;
   bool premultipliedAlpha = false;
+  bool generateMipmaps = false;
 };
 
 using TextureProvider = std::function<std::optional<RuntimeTexture>(std::string_view)>;

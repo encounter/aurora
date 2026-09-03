@@ -30,6 +30,8 @@ Module Log("aurora::rmlui::RenderInterface");
 constexpr size_t rmlBufferOffsetAlignment = 4;
 constexpr float FilterEpsilon = 0.0001f;
 
+constexpr size_t rmlBytesPerPixel = 4;
+
 struct Image {
   std::unique_ptr<uint8_t[]> data;
   size_t size;
@@ -47,7 +49,8 @@ struct ShaderTextureData {
   wgpu::TextureView m_textureView;
   std::vector<Rml::byte> m_pendingUpload;
   wgpu::Extent3D m_size{};
-  uint32_t m_rowBytes = 0;
+  uint32_t m_mipLevels;
+  uint32_t m_bytesPerPixel;
   bool m_uploaded = false;
 };
 
@@ -352,12 +355,29 @@ void queue_texture_upload_if_needed(ShaderTextureData& texture) {
   if (texture.m_uploaded || texture.m_pendingUpload.empty()) {
     return;
   }
-  const wgpu::TexelCopyTextureInfo dst{
+
+  auto const* texPtr = texture.m_pendingUpload.data();
+  auto width = texture.m_size.width;
+  auto height = texture.m_size.height;
+
+  assert(texture.m_mipLevels == 1 || texture.m_size.depthOrArrayLayers == 1);
+
+  for (uint32_t mipLevel = 0; mipLevel < texture.m_mipLevels; ++mipLevel) {
+    auto layer_size = static_cast<size_t>(width) * height * texture.m_bytesPerPixel;
+
+    const wgpu::TexelCopyTextureInfo dst{
       .texture = texture.m_texture,
+      .mipLevel = mipLevel,
       .aspect = wgpu::TextureAspect::All,
-  };
-  gfx::queue_texture_upload_data(texture.m_pendingUpload.data(), texture.m_rowBytes, texture.m_size.height, dst,
-                                 texture.m_size);
+    };
+    gfx::queue_texture_upload_data(texPtr, texture.m_bytesPerPixel * width, height, dst,
+                                   {width, height, texture.m_size.depthOrArrayLayers});
+
+    texPtr += layer_size;
+
+    width /= 2;
+    height /= 2;
+  }
   texture.m_pendingUpload.clear();
   texture.m_pendingUpload.shrink_to_fit();
   texture.m_uploaded = true;
@@ -422,9 +442,67 @@ void WebGPURenderInterface::ReleaseGeometry(Rml::CompiledGeometryHandle geometry
   delete reinterpret_cast<ShaderGeometryData*>(geometry);
 }
 
+static Rml::byte mipmap_sample(Rml::byte const* source, uint32_t source_width, uint32_t mip_x, uint32_t mip_y, uint32_t offset) {
+  auto x = mip_x * 2;
+  auto y = mip_y * 2;
+
+  auto const s1 = source[((y + 0) * source_width + (x + 0)) * rmlBytesPerPixel + offset];
+  auto const s2 = source[((y + 1) * source_width + (x + 0)) * rmlBytesPerPixel + offset];
+  auto const s3 = source[((y + 0) * source_width + (x + 1)) * rmlBytesPerPixel + offset];
+  auto const s4 = source[((y + 1) * source_width + (x + 1)) * rmlBytesPerPixel + offset];
+
+  return (s1 + s2 + s3 + s4) / 4;
+}
+
+static std::vector<Rml::byte> generate_mips(std::span<Rml::byte const> source, uint32_t width, uint32_t height, uint32_t& out_levels) {
+  out_levels = 1;
+
+  assert(source.size() == width * height * rmlBytesPerPixel);
+
+  std::vector<Rml::byte> mipmapped;
+  mipmapped.assign(source.begin(), source.end());
+
+  uint32_t mipWidth = width;
+  uint32_t mipHeight = height;
+  size_t prevTexelsOffset = 0;
+  uint32_t prevWidth = width;
+
+  while (true) {
+    if (mipHeight % 2 != 0 || mipWidth % 2 != 0) {
+      break;
+    }
+
+    out_levels += 1;
+    mipWidth /= 2;
+    mipHeight /= 2;
+
+    auto const layerSize = mipWidth * mipHeight * rmlBytesPerPixel;
+    auto prevSize = mipmapped.size();
+
+    mipmapped.resize(mipmapped.size() + layerSize, 0);
+
+    auto level = &mipmapped[prevSize];
+    auto prevLevel = &mipmapped[prevTexelsOffset];
+    for (uint32_t y = 0; y < mipHeight; ++y) {
+      for (uint32_t x = 0; x < mipWidth; ++x) {
+        level[(y * mipWidth + x) * rmlBytesPerPixel + 0] = mipmap_sample(prevLevel, prevWidth, x, y, 0);
+        level[(y * mipWidth + x) * rmlBytesPerPixel + 1] = mipmap_sample(prevLevel, prevWidth, x, y, 1);
+        level[(y * mipWidth + x) * rmlBytesPerPixel + 2] = mipmap_sample(prevLevel, prevWidth, x, y, 2);
+        level[(y * mipWidth + x) * rmlBytesPerPixel + 3] = mipmap_sample(prevLevel, prevWidth, x, y, 3);
+      }
+    }
+
+    prevTexelsOffset = prevSize;
+    prevWidth = mipWidth;
+  }
+
+  return mipmapped;
+}
+
 Rml::TextureHandle WebGPURenderInterface::LoadTexture(Rml::Vector2i& dimensions, const Rml::String& source) {
   if (const auto runtimeTexture = load_runtime_texture(source)) {
-    const size_t size = static_cast<size_t>(runtimeTexture->width) * static_cast<size_t>(runtimeTexture->height) * 4;
+    constexpr size_t texelSize = 4;
+    size_t size = static_cast<size_t>(runtimeTexture->width) * static_cast<size_t>(runtimeTexture->height) * texelSize;
     if (runtimeTexture->width == 0 || runtimeTexture->height == 0 || runtimeTexture->rgba8.size() < size) {
       Log.error("Runtime texture provider returned invalid texture! Path: {}", source);
       return 0;
@@ -434,7 +512,7 @@ Rml::TextureHandle WebGPURenderInterface::LoadTexture(Rml::Vector2i& dimensions,
     std::vector<Rml::byte> premultiplied;
     if (!runtimeTexture->premultipliedAlpha) {
       premultiplied.assign(texels, texels + size);
-      for (size_t offset = 0; offset < premultiplied.size(); offset += 4) {
+      for (size_t offset = 0; offset < premultiplied.size(); offset += texelSize) {
         const uint8_t alpha = premultiplied[offset + 3];
         for (size_t channel = 0; channel < 3; ++channel) {
           premultiplied[offset + channel] = static_cast<uint8_t>(
@@ -444,9 +522,18 @@ Rml::TextureHandle WebGPURenderInterface::LoadTexture(Rml::Vector2i& dimensions,
       texels = premultiplied.data();
     }
 
+    std::vector<Rml::byte> mipmapped;
+    uint32_t mipmapLevels = 1;
+    if (runtimeTexture->generateMipmaps) {
+      mipmapped = generate_mips(std::span(texels, size), runtimeTexture->width, runtimeTexture->height, mipmapLevels);
+
+      texels = mipmapped.data();
+      size = mipmapped.size();
+    }
+
     dimensions.x = static_cast<int>(runtimeTexture->width);
     dimensions.y = static_cast<int>(runtimeTexture->height);
-    return GenerateTexture({texels, size}, dimensions);
+    return GenerateTexture({texels, size}, dimensions, mipmapLevels);
   }
 
   // load texels from image source
@@ -463,6 +550,12 @@ Rml::TextureHandle WebGPURenderInterface::LoadTexture(Rml::Vector2i& dimensions,
 
 Rml::TextureHandle WebGPURenderInterface::GenerateTexture(Rml::Span<const Rml::byte> source,
                                                           Rml::Vector2i source_dimensions) {
+  return GenerateTexture(source, source_dimensions, 1);
+}
+
+Rml::TextureHandle WebGPURenderInterface::GenerateTexture(Rml::Span<const Rml::byte> source,
+                                                          Rml::Vector2i source_dimensions,
+                                                          uint32_t mipmapLevels) {
   auto* texData = new ShaderTextureData();
   const wgpu::Extent3D size{
       .width = static_cast<uint32_t>(source_dimensions.x),
@@ -475,15 +568,16 @@ Rml::TextureHandle WebGPURenderInterface::GenerateTexture(Rml::Span<const Rml::b
       .dimension = wgpu::TextureDimension::e2D,
       .size = size,
       .format = wgpu::TextureFormat::RGBA8Unorm,
+      .mipLevelCount = mipmapLevels,
   };
   texData->m_texture = webgpu::g_device.CreateTexture(&textureDesc);
   texData->m_textureView = texData->m_texture.CreateView(nullptr);
 
-  constexpr uint32_t BytesPerPixel = 4;
   texData->m_size = size;
-  texData->m_rowBytes = static_cast<uint32_t>(source_dimensions.x) * BytesPerPixel;
   texData->m_pendingUpload.assign(source.begin(), source.end());
   texData->m_uploaded = texData->m_pendingUpload.empty();
+  texData->m_mipLevels = mipmapLevels;
+  texData->m_bytesPerPixel = rmlBytesPerPixel;
   return reinterpret_cast<Rml::TextureHandle>(texData);
 }
 
@@ -1335,8 +1429,9 @@ Rml::TextureHandle WebGPURenderInterface::SaveLayerAsTexture() {
   texData->m_texture = webgpu::g_device.CreateTexture(&textureDesc);
   texData->m_textureView = texData->m_texture.CreateView(nullptr);
   texData->m_size = textureSize;
-  texData->m_rowBytes = textureSize.width * 4;
   texData->m_uploaded = true;
+  texData->m_bytesPerPixel = rmlBytesPerPixel;
+  texData->m_mipLevels = 1;
 
   EndActivePass();
 
