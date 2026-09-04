@@ -363,20 +363,20 @@ void queue_texture_upload_if_needed(ShaderTextureData& texture) {
   assert(texture.m_mipLevels == 1 || texture.m_size.depthOrArrayLayers == 1);
 
   for (uint32_t mipLevel = 0; mipLevel < texture.m_mipLevels; ++mipLevel) {
-    auto layer_size = static_cast<size_t>(width) * height * texture.m_bytesPerPixel;
+    auto layerSize = static_cast<size_t>(width) * height * texture.m_bytesPerPixel;
 
     const wgpu::TexelCopyTextureInfo dst{
-      .texture = texture.m_texture,
-      .mipLevel = mipLevel,
-      .aspect = wgpu::TextureAspect::All,
+        .texture = texture.m_texture,
+        .mipLevel = mipLevel,
+        .aspect = wgpu::TextureAspect::All,
     };
     gfx::queue_texture_upload_data(texPtr, texture.m_bytesPerPixel * width, height, dst,
                                    {width, height, texture.m_size.depthOrArrayLayers});
 
-    texPtr += layer_size;
+    texPtr += layerSize;
 
-    width /= 2;
-    height /= 2;
+    width = std::max(width / 2, 1u);
+    height = std::max(height / 2, 1u);
   }
   texture.m_pendingUpload.clear();
   texture.m_pendingUpload.shrink_to_fit();
@@ -442,20 +442,24 @@ void WebGPURenderInterface::ReleaseGeometry(Rml::CompiledGeometryHandle geometry
   delete reinterpret_cast<ShaderGeometryData*>(geometry);
 }
 
-static Rml::byte mipmap_sample(Rml::byte const* source, uint32_t source_width, uint32_t mip_x, uint32_t mip_y, uint32_t offset) {
-  auto x = mip_x * 2;
-  auto y = mip_y * 2;
+static Rml::byte mipmap_sample(Rml::byte const* source, uint32_t sourceWidth, uint32_t sourceHeight, uint32_t mipX,
+                               uint32_t mipY, uint32_t offset) {
+  const auto x0 = std::min(mipX * 2, sourceWidth - 1);
+  const auto x1 = std::min(x0 + 1, sourceWidth - 1);
+  const auto y0 = std::min(mipY * 2, sourceHeight - 1);
+  const auto y1 = std::min(y0 + 1, sourceHeight - 1);
 
-  auto const s1 = source[((y + 0) * source_width + (x + 0)) * rmlBytesPerPixel + offset];
-  auto const s2 = source[((y + 1) * source_width + (x + 0)) * rmlBytesPerPixel + offset];
-  auto const s3 = source[((y + 0) * source_width + (x + 1)) * rmlBytesPerPixel + offset];
-  auto const s4 = source[((y + 1) * source_width + (x + 1)) * rmlBytesPerPixel + offset];
+  auto const s1 = source[(static_cast<size_t>(y0) * sourceWidth + x0) * rmlBytesPerPixel + offset];
+  auto const s2 = source[(static_cast<size_t>(y1) * sourceWidth + x0) * rmlBytesPerPixel + offset];
+  auto const s3 = source[(static_cast<size_t>(y0) * sourceWidth + x1) * rmlBytesPerPixel + offset];
+  auto const s4 = source[(static_cast<size_t>(y1) * sourceWidth + x1) * rmlBytesPerPixel + offset];
 
   return (s1 + s2 + s3 + s4) / 4;
 }
 
-static std::vector<Rml::byte> generate_mips(std::span<Rml::byte const> source, uint32_t width, uint32_t height, uint32_t& out_levels) {
-  out_levels = 1;
+static std::vector<Rml::byte> generate_mips(std::span<Rml::byte const> source, uint32_t width, uint32_t height,
+                                            uint32_t& outLevels) {
+  outLevels = 1;
 
   assert(source.size() == width * height * rmlBytesPerPixel);
 
@@ -465,16 +469,13 @@ static std::vector<Rml::byte> generate_mips(std::span<Rml::byte const> source, u
   uint32_t mipWidth = width;
   uint32_t mipHeight = height;
   size_t prevTexelsOffset = 0;
-  uint32_t prevWidth = width;
+  while (mipWidth > 1 || mipHeight > 1) {
+    const auto prevWidth = mipWidth;
+    const auto prevHeight = mipHeight;
 
-  while (true) {
-    if (mipHeight % 2 != 0 || mipWidth % 2 != 0) {
-      break;
-    }
-
-    out_levels += 1;
-    mipWidth /= 2;
-    mipHeight /= 2;
+    outLevels += 1;
+    mipWidth = std::max(mipWidth / 2, 1u);
+    mipHeight = std::max(mipHeight / 2, 1u);
 
     auto const layerSize = mipWidth * mipHeight * rmlBytesPerPixel;
     auto prevSize = mipmapped.size();
@@ -485,15 +486,14 @@ static std::vector<Rml::byte> generate_mips(std::span<Rml::byte const> source, u
     auto prevLevel = &mipmapped[prevTexelsOffset];
     for (uint32_t y = 0; y < mipHeight; ++y) {
       for (uint32_t x = 0; x < mipWidth; ++x) {
-        level[(y * mipWidth + x) * rmlBytesPerPixel + 0] = mipmap_sample(prevLevel, prevWidth, x, y, 0);
-        level[(y * mipWidth + x) * rmlBytesPerPixel + 1] = mipmap_sample(prevLevel, prevWidth, x, y, 1);
-        level[(y * mipWidth + x) * rmlBytesPerPixel + 2] = mipmap_sample(prevLevel, prevWidth, x, y, 2);
-        level[(y * mipWidth + x) * rmlBytesPerPixel + 3] = mipmap_sample(prevLevel, prevWidth, x, y, 3);
+        level[(y * mipWidth + x) * rmlBytesPerPixel + 0] = mipmap_sample(prevLevel, prevWidth, prevHeight, x, y, 0);
+        level[(y * mipWidth + x) * rmlBytesPerPixel + 1] = mipmap_sample(prevLevel, prevWidth, prevHeight, x, y, 1);
+        level[(y * mipWidth + x) * rmlBytesPerPixel + 2] = mipmap_sample(prevLevel, prevWidth, prevHeight, x, y, 2);
+        level[(y * mipWidth + x) * rmlBytesPerPixel + 3] = mipmap_sample(prevLevel, prevWidth, prevHeight, x, y, 3);
       }
     }
 
     prevTexelsOffset = prevSize;
-    prevWidth = mipWidth;
   }
 
   return mipmapped;
