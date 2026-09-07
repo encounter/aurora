@@ -726,9 +726,6 @@ static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
 }
 
 static void release_surface_locked() noexcept {
-  if (g_surface) {
-    g_surface.Unconfigure();
-  }
   g_surface = {};
 }
 
@@ -759,7 +756,15 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         .requiredFeatures = requiredInstanceFeatures.data(),
     };
 #ifdef WEBGPU_DAWN
+    constexpr std::array instanceToggles{
+        "allow_unsafe_apis",
+    };
+    wgpu::DawnTogglesDescriptor instanceTogglesDescriptor(wgpu::DawnTogglesDescriptor::Init{
+        .enabledToggleCount = instanceToggles.size(),
+        .enabledToggles = instanceToggles.data(),
+    });
     dawn::native::DawnInstanceDescriptor dawnInstanceDescriptor;
+    dawnInstanceDescriptor.nextInChain = &instanceTogglesDescriptor;
     dawnInstanceDescriptor.backendValidationLevel = dawn::native::BackendValidationLevel::Disabled;
     dawnInstanceDescriptor.SetLoggingCallback(wgpu_log);
 #ifdef TRACY_ENABLE
@@ -784,7 +789,19 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     return false;
   }
   {
+#ifdef WEBGPU_DAWN
+    constexpr std::array adapterEnableToggles{
+        "allow_unsafe_apis",
+    };
+    wgpu::DawnTogglesDescriptor adapterToggles(wgpu::DawnTogglesDescriptor::Init{
+        .enabledToggleCount = adapterEnableToggles.size(),
+        .enabledToggles = adapterEnableToggles.data(),
+    });
+#endif
     const wgpu::RequestAdapterOptions options{
+#ifdef WEBGPU_DAWN
+        .nextInChain = &adapterToggles,
+#endif
         .featureLevel = wgpu::FeatureLevel::Compatibility,
         .powerPreference = wgpu::PowerPreference::HighPerformance,
         .backendType = backend,
@@ -819,6 +836,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
       }
       return false;
     }
+
     if (!g_adapter) {
       if (requestAdapterCallbackCompleted) {
         Log.error("Failed to create adapter: request status {}, message: {}",
