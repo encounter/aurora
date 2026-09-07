@@ -57,6 +57,7 @@ void queue_texture_copy(wgpu::TexelCopyTextureInfo src, wgpu::TexelCopyTextureIn
 void begin_offscreen(uint32_t width, uint32_t height);
 void end_offscreen();
 uint32_t get_sample_count() noexcept;
+bool has_normal_attachment() noexcept;
 RenderTargetLayout get_render_target_layout() noexcept;
 void clear_caches() noexcept;
 

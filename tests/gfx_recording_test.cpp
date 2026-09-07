@@ -166,5 +166,66 @@ TEST_F(GfxRecordingTest, FinalizedPassesAreSealedOrDeliberatelyDiscarded) {
   recordingActive = false;
 }
 
+class GfxNormalAttachmentTest : public GfxRecordingTest {
+protected:
+  void SetUp() override {
+    webgpu::g_graphicsConfig.normalBuffer = true;
+    webgpu::g_normalBuffer.size = {640, 480, 1};
+    webgpu::g_normalBuffer.format = webgpu::NormalBufferFormat;
+    GfxRecordingTest::SetUp();
+  }
+
+  void TearDown() override {
+    GfxRecordingTest::TearDown();
+    webgpu::g_graphicsConfig.normalBuffer = false;
+    webgpu::g_normalBuffer = {};
+  }
+
+  void resolve_efb(bool clearColor, bool clearAlpha, bool clearDepth) {
+    const auto size = frame.renderPasses.back().colorAttachments[SceneColorAttachmentIndex].size;
+    auto target = std::make_shared<TextureRef>(wgpu::Texture{}, wgpu::TextureView{}, wgpu::TextureView{}, size,
+                                               ColorFormat, 1, GX_TF_RGBA8);
+    resolve_pass_into(std::move(target), {0, 0, static_cast<int32_t>(size.width), static_cast<int32_t>(size.height)},
+                      clearColor, clearAlpha, clearDepth, {}, 1.f);
+  }
+};
+
+TEST_F(GfxNormalAttachmentTest, EfbPassCarriesNormalAttachment) {
+  ASSERT_FALSE(frame.renderPasses.empty());
+  const auto layout = frame.renderPasses.front().target_layout();
+
+  ASSERT_EQ(layout.colorAttachmentCount, 2u);
+  EXPECT_EQ(layout.colorAttachments[1].semantic, ColorAttachmentSemantic::Normal);
+  EXPECT_EQ(layout.colorAttachments[1].format, webgpu::NormalBufferFormat);
+  EXPECT_TRUE(has_normal_attachment());
+}
+
+TEST_F(GfxNormalAttachmentTest, OffscreenPassesOmitTheNormalAttachment) {
+  seed(320, 180);
+  begin_offscreen(320, 180);
+  EXPECT_EQ(frame.renderPasses.back().colorAttachmentCount, 1u);
+  EXPECT_FALSE(has_normal_attachment());
+
+  end_offscreen();
+
+  EXPECT_TRUE(has_normal_attachment());
+}
+
+TEST_F(GfxNormalAttachmentTest, NormalAttachmentClearsWithDepthNotColor) {
+  resolve_efb(true, true, false);
+  {
+    const auto& pass = frame.renderPasses.back();
+    EXPECT_TRUE(pass.colorAttachments[SceneColorAttachmentIndex].clear);
+    EXPECT_FALSE(pass.colorAttachments[1].clear);
+  }
+
+  resolve_efb(false, false, true);
+  {
+    const auto& pass = frame.renderPasses.back();
+    EXPECT_FALSE(pass.colorAttachments[SceneColorAttachmentIndex].clear);
+    EXPECT_TRUE(pass.colorAttachments[1].clear);
+  }
+}
+
 } // namespace
 } // namespace aurora::gfx

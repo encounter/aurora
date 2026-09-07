@@ -93,6 +93,13 @@ typedef struct {
   bool pauseOnFocusLost;
   bool allowTextureDumps;
   bool allowCpuAdapter;
+
+  /*
+   * Adds a scene color attachment holding the view-space vertex normal of every depth-writing draw.
+   * Requires core features and is silently ignored without them, so consumers should look for
+   * ColorAttachmentSemantic::Normal in the scene layout rather than assume it is present.
+   */
+  bool normalBuffer;
   int32_t windowPosX;
   int32_t windowPosY;
   uint32_t windowWidth;
