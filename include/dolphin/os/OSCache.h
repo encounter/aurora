@@ -16,9 +16,13 @@ void DCZeroRange(void* addr, u32 nBytes);
 void DCTouchRange(void* addr, u32 nBytes);
 void ICInvalidateRange(void* addr, u32 nBytes);
 
+#ifdef TARGET_PC
+extern void* LCGetBase(void);
+#else
 #define LC_BASE_PREFIX 0xE000
 #define LC_BASE (LC_BASE_PREFIX << 16)
 #define LCGetBase() ((void*)LC_BASE)
+#endif
 
 void LCEnable(void);
 void LCDisable(void);
