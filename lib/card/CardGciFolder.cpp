@@ -75,7 +75,7 @@ ECardResult CardGciFolder::openFile(const char* filename, FileHandle& handleOut)
 
   int idx = 0;
   for (auto& gciFile : m_files) {
-    if (strcmp(filename, gciFile.file.m_filename) == 0) {
+    if (!gciFile.deleted && strcmp(filename, gciFile.file.m_filename) == 0) {
       gciFile.opened = true;
       if (gciFile.fileSize == 0)
         gciFile.fileSize = std::filesystem::file_size(m_folderPath / gciFile.filename);
@@ -96,6 +96,10 @@ ECardResult CardGciFolder::openFile(uint32_t fileno, FileHandle& handleOut) {
 
   if (m_files.size() > fileno) {
     auto& gciFile = m_files[fileno];
+    if (gciFile.deleted) {
+      return ECardResult::NOFILE;
+    }
+
     handleOut = FileHandle(fileno, 0);
     gciFile.opened = true;
     if (gciFile.fileSize == 0)
@@ -111,6 +115,17 @@ ECardResult CardGciFolder::createFile(const char* filename, size_t size, FileHan
   if (!exists(m_folderPath) || !is_directory(m_folderPath)) {
     return ECardResult::NOCARD;
   }
+
+  // Try and reclaim the old file index if it was deleted
+  int idx = -1;
+  for (auto& gciFile : m_files) {
+    if (gciFile.deleted && strcmp(filename, gciFile.file.m_filename) == 0) {
+      gciFile.opened = true;
+      gciFile.deleted = false;
+    }
+    idx++;
+  }
+
   std::string gciFilename = fmt::format("{}-{}-{}.gci", m_maker, m_game, filename);
   uint16_t neededBlocks = ROUND_UP_8192(size) / BlockSize;
   size_t fileSize = sizeof(File) + size;
@@ -136,8 +151,14 @@ ECardResult CardGciFolder::createFile(const char* filename, size_t size, FileHan
   }
 
   gciFileHeader->swapEndian();
-  m_files.push_back({*gciFileHeader, fileSize, reinterpret_cast<const char8_t*>(gciFilename.c_str()), true});
-  handleOut = FileHandle(m_files.size() - 1, 0);
+  if (idx != -1) {
+    // Overwrite the old file descriptor
+    m_files[idx] = {*gciFileHeader, fileSize, reinterpret_cast<const char8_t*>(gciFilename.c_str()), true};
+    handleOut = FileHandle(idx, 0);
+  } else {
+    m_files.push_back({*gciFileHeader, fileSize, reinterpret_cast<const char8_t*>(gciFilename.c_str()), true});
+    handleOut = FileHandle(m_files.size() - 1, 0);
+  }
 
   return ECardResult::READY;
 }
@@ -174,7 +195,15 @@ ECardResult CardGciFolder::deleteFile(const char* filename) {
   for (auto& gciFile : m_files) {
     if (strcmp(filename, gciFile.file.m_filename) == 0) {
       gciFile.opened = false;
-      gciFile.deleted = std::filesystem::remove(m_folderPath / gciFile.filename);
+      gciFile.deleted = true;
+      if (exists(m_folderPath / "_deleted" / gciFile.filename)) {
+        remove(m_folderPath / "_deleted" / gciFile.filename);
+      }
+      try {
+        rename(m_folderPath / gciFile.filename, m_folderPath / "_deleted" / gciFile.filename);
+      } catch (...) {
+        // ignore, a failed delete is safe
+      }
 
       return ECardResult::READY;
     }
@@ -192,7 +221,15 @@ ECardResult CardGciFolder::deleteFile(uint32_t fileno) {
   if (m_files.size() > fileno) {
     auto& gciFile = m_files[fileno];
     gciFile.opened = false;
-    gciFile.deleted = std::filesystem::remove(m_folderPath / gciFile.filename);
+    gciFile.deleted = true;
+    if (exists(m_folderPath / "_deleted" / gciFile.filename)) {
+      remove(m_folderPath / "_deleted" / gciFile.filename);
+    }
+    try {
+      rename(m_folderPath / gciFile.filename, m_folderPath / "_deleted" / gciFile.filename);
+    } catch (...) {
+      // ignore, a failed delete is safe
+    }
 
     return ECardResult::READY;
   }
@@ -383,6 +420,9 @@ void CardGciFolder::format(ECardSlot deviceId, ECardSize size, EEncoding encodin
 
   if (!io::create_directories(m_folderPath)) {
     Log.error("Failed to create directory {}: {}", io::fs_path_to_string(m_folderPath), SDL_GetError());
+  } else {
+    // Failsafe backup for `deleteFile` API, will keep the most recently deleted file each time
+    io::create_directories(m_folderPath / "_deleted");
   }
 }
 
