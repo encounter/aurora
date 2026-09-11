@@ -15,6 +15,7 @@ public:
   virtual ECardResult openFile(uint32_t fileno, FileHandle& handleOut) = 0;
   virtual ECardResult createFile(const char* filename, size_t size, FileHandle& handleOut) = 0;
   virtual ECardResult closeFile(FileHandle& fh) = 0;
+  // Explicit delete, will remove the file from disk
   virtual void deleteFile(const FileHandle& fh) = 0;
   virtual ECardResult deleteFile(const char* filename) = 0;
   virtual ECardResult deleteFile(uint32_t fileno) = 0;
