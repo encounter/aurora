@@ -852,6 +852,103 @@ ProbeResults CardRawFile::probeCardFile(const std::filesystem::path& filename) {
           BlockSize};
 }
 
+size_t CardRawFile::extractGci(const char* filename, void* output, const size_t capacity) {
+  if (filename == nullptr) {
+    return 0;
+  }
+  FileHandle handle;
+  if (openFile(filename, handle) != ECardResult::READY) {
+    return 0;
+  }
+
+  const File* file = _fileFromHandle(handle);
+  if (file == nullptr) {
+    return 0;
+  }
+  if (m_maxBlock <= FSTBlocks || file->m_blockCount == 0 || file->m_blockCount > m_maxBlock - FSTBlocks) {
+    return 0;
+  }
+  const size_t required = sizeof(File) + static_cast<size_t>(file->m_blockCount) * BlockSize;
+  if (output == nullptr || capacity < required) {
+    return required;
+  }
+
+  File header = *file;
+  header.swapEndian();
+  std::memcpy(output, &header, sizeof(header));
+  seek(handle, 0, SeekOrigin::Begin);
+  if (fileRead(handle, static_cast<uint8_t*>(output) + sizeof(File), required - sizeof(File)) != ECardResult::READY) {
+    return 0;
+  }
+  return required;
+}
+
+bool CardRawFile::insertGci(const void* data, const size_t size, const bool replace) {
+  if (data == nullptr || size < sizeof(File) || (size - sizeof(File)) % BlockSize != 0) {
+    return false;
+  }
+
+  File imported;
+  std::memcpy(&imported, data, sizeof(imported));
+  imported.swapEndian();
+  const size_t blockCount = (size - sizeof(File)) / BlockSize;
+  if (blockCount == 0 || imported.m_blockCount != blockCount ||
+      std::memchr(imported.m_game, '\0', sizeof(imported.m_game)) != nullptr ||
+      std::memchr(imported.m_maker, '\0', sizeof(imported.m_maker)) != nullptr || imported.m_filename[0] == '\0' ||
+      std::memchr(imported.m_filename, '\0', sizeof(imported.m_filename)) == nullptr) {
+    return false;
+  }
+
+  char game[5]{};
+  char maker[3]{};
+  char filename[sizeof(imported.m_filename) + 1]{};
+  std::memcpy(game, imported.m_game, sizeof(imported.m_game));
+  std::memcpy(maker, imported.m_maker, sizeof(imported.m_maker));
+  std::memcpy(filename, imported.m_filename, sizeof(imported.m_filename));
+  std::fill(std::begin(m_game), std::end(m_game), '\0');
+  std::fill(std::begin(m_maker), std::end(m_maker), '\0');
+  std::memcpy(m_game, game, sizeof(imported.m_game));
+  std::memcpy(m_maker, maker, sizeof(imported.m_maker));
+
+  FileHandle existing;
+  const auto existingResult = openFile(filename, existing);
+  if (existingResult == ECardResult::READY) {
+    if (!replace) {
+      return false;
+    }
+    const File* existingFile = _fileFromHandle(existing);
+    if (existingFile == nullptr ||
+        blockCount > static_cast<size_t>(m_bats[m_currentBat].numFreeBlocks()) + existingFile->m_blockCount) {
+      return false;
+    }
+    deleteFile(existing);
+  } else if (existingResult != ECardResult::NOFILE) {
+    return false;
+  }
+
+  FileHandle handle;
+  if (createFile(filename, size - sizeof(File), handle) != ECardResult::READY) {
+    return false;
+  }
+
+  Directory dir = m_dirs[m_currentDir];
+  File* destination = dir.getFile(handle.idx);
+  if (destination == nullptr) {
+    return false;
+  }
+  const uint16_t firstBlock = destination->m_firstBlock;
+  *destination = imported;
+  destination->m_firstBlock = firstBlock;
+  destination->m_blockCount = static_cast<uint16_t>(blockCount);
+  _updateDirAndBat(dir, m_bats[m_currentBat]);
+
+  if (fileWrite(handle, static_cast<const uint8_t*>(data) + sizeof(File), size - sizeof(File)) != ECardResult::READY) {
+    return false;
+  }
+  commit();
+  return true;
+}
+
 void CardRawFile::commit() {
   if (!m_dirty)
     return;
