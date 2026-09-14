@@ -401,6 +401,9 @@ public:
    */
   ProbeResults probeCardFile(const std::filesystem::path& filename) override;
 
+  size_t extract_gci(const char* filename, void* output, size_t capacity);
+  bool insert_gci(const void* data, size_t size, bool replace);
+
   /**
    * @brief Writes any changes to the Card instance immediately to disk. <br />
    * <b>Note:</b> <i>Under normal circumstances there is no need to call this function.</i>
