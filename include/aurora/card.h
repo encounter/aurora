@@ -37,6 +37,10 @@ size_t aurora_card_get_path(const char* gameName, AuroraCardType type, s32 chann
 /** Closes and reopens a mounted channel so external filesystem changes become visible. */
 bool aurora_card_remount(s32 channel);
 
+/** Calls visit for each filename matching game and maker. Returns false if the image cannot be read. */
+bool aurora_card_raw_list(const char* imagePath, const char* game, const char* maker,
+                          void (*visit)(const char* fileName, void* userData), void* userData);
+
 /** Extracts one CARD file from a raw image as GCI bytes. */
 size_t aurora_card_raw_extract(const char* imagePath, const char* game, const char* maker, const char* fileName,
                                void* gciOut, size_t capacity);

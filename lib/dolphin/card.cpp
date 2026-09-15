@@ -130,6 +130,25 @@ bool aurora_card_remount(const s32 channel) {
   return CardChannels[channel]->open(cardPaths[channel]);
 }
 
+bool aurora_card_raw_list(const char* imagePath, const char* game, const char* maker,
+                          void (*visit)(const char* fileName, void* userData), void* userData) {
+  if (imagePath == nullptr || game == nullptr || std::strlen(game) != 4 || maker == nullptr ||
+      std::strlen(maker) != 2 || visit == nullptr) {
+    return false;
+  }
+  aurora::card::CardRawFile card;
+  card.InitCard(game, maker);
+  if (!card.open(aurora::io::fs_path_from_string(imagePath)) || card.getError() != aurora::card::ECardResult::READY) {
+    return false;
+  }
+  for (auto handle = card.firstFile(); handle; handle = card.nextFile(handle)) {
+    char fileName[33]{};
+    std::memcpy(fileName, card.getFilename(handle), 32);
+    visit(fileName, userData);
+  }
+  return true;
+}
+
 size_t aurora_card_raw_extract(const char* imagePath, const char* game, const char* maker, const char* fileName,
                                void* gciOut, const size_t capacity) {
   if (imagePath == nullptr || game == nullptr || maker == nullptr || fileName == nullptr) {
