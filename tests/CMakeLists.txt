@@ -98,11 +98,11 @@ if (AURORA_ENABLE_GX)
     gtest
     gtest_main
     fmt::fmt
-    xxhash
+    xxHash::xxhash
     absl::flat_hash_map
     absl::btree
     dawn::dawncpp_headers
-    TracyClient
+    Tracy::TracyClient
     ${AURORA_SDL3_TARGET}
   )
 
@@ -122,10 +122,10 @@ if (AURORA_ENABLE_GX)
     gtest
     gtest_main
     fmt::fmt
-    xxhash
+    xxHash::xxhash
     absl::flat_hash_map
     dawn::webgpu_dawn
-    TracyClient
+    Tracy::TracyClient
     ${AURORA_SDL3_TARGET}
   )
   aurora_copy_runtime_dlls(gx_texture_cache_tests)
@@ -162,7 +162,7 @@ if (AURORA_ENABLE_GX)
   target_link_libraries(render_worker_tests PRIVATE
     gtest
     gtest_main
-    TracyClient
+    Tracy::TracyClient
     ${AURORA_SDL3_TARGET}
   )
   gtest_discover_tests(render_worker_tests)
