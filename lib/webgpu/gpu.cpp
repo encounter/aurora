@@ -726,9 +726,6 @@ static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
 }
 
 static void release_surface_locked() noexcept {
-  if (g_surface) {
-    g_surface.Unconfigure();
-  }
   g_surface = {};
 }
 
@@ -759,7 +756,15 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         .requiredFeatures = requiredInstanceFeatures.data(),
     };
 #ifdef WEBGPU_DAWN
-    dawn::native::DawnInstanceDescriptor dawnInstanceDescriptor;
+    constexpr std::array instanceToggles{
+        "allow_unsafe_apis",
+    };
+    wgpu::DawnTogglesDescriptor instanceTogglesDescriptor{wgpu::DawnTogglesDescriptor::Init{
+        .enabledToggleCount = instanceToggles.size(),
+        .enabledToggles = instanceToggles.data(),
+    }};
+    dawn::native::DawnInstanceDescriptor dawnInstanceDescriptor{};
+    dawnInstanceDescriptor.nextInChain = &instanceTogglesDescriptor;
     dawnInstanceDescriptor.backendValidationLevel = dawn::native::BackendValidationLevel::Disabled;
     dawnInstanceDescriptor.SetLoggingCallback(wgpu_log);
 #ifdef TRACY_ENABLE
@@ -948,7 +953,6 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
 #ifndef ANDROID
         "use_user_defined_labels_in_backend",
 #endif
-        "allow_unsafe_apis",
         "disable_symbol_renaming",
         "enable_immediate_error_handling",
         "gl_allow_context_on_multi_threads",

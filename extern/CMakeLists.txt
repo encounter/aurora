@@ -3,7 +3,7 @@ include(FetchContent)
 # Don't build tests for third party dependencies
 set(BUILD_TESTING OFF CACHE INTERNAL "Build tests")
 set(SKIP_INSTALL_ALL ON)
-if (NOT DEFINED BUILD_SHARED_LIBS)
+if (WIN32 AND NOT DEFINED BUILD_SHARED_LIBS)
   set(_USE_SHARED ON)
 else ()
   set(_USE_SHARED OFF)
