@@ -10,7 +10,7 @@ else ()
 endif ()
 
 function(aurora_find_package_global)
-  find_package(${ARGV} CONFIG GLOBAL)
+  find_package(${ARGV} GLOBAL)
 endfunction()
 
 if (AURORA_ENABLE_GX)
