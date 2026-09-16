@@ -81,8 +81,10 @@ struct GXTexObj_ {
 
   static constexpr u32 get_bits(u32 reg, u32 size, u32 shift) noexcept { return (reg >> shift) & ((1u << size) - 1); }
 
-  u32 width() const noexcept { return mWidth != 0 ? mWidth : get_bits(image0, 10, 0) + 1 & 0x3FF; }
-  u32 height() const noexcept { return mHeight != 0 ? mHeight : get_bits(image0, 10, 10) + 1 & 0x3FF; }
+  u32 width() const noexcept { return mWidth != 0 ? mWidth : image0 == UINT32_MAX ? 0 : get_bits(image0, 10, 0) + 1; }
+  u32 height() const noexcept {
+    return mHeight != 0 ? mHeight : image0 == UINT32_MAX ? 0 : get_bits(image0, 10, 10) + 1;
+  }
   u32 raw_format() const noexcept { return get_bits(image0, 4, 20); }
   u32 format() const noexcept { return mFormat != aurora::gfx::InvalidTextureFormat ? mFormat : raw_format(); }
   GXTexWrapMode wrap_s() const noexcept { return static_cast<GXTexWrapMode>(get_bits(mode0, 2, 0)); }

@@ -1,4 +1,5 @@
 add_library(aurora_os STATIC lib/dolphin/os/OSInit.cpp
+        lib/dolphin/os/OSCache.cpp
         lib/dolphin/os/OSMemory.cpp
         lib/dolphin/os/internal.hpp
         lib/dolphin/os/OSBootInfo.cpp

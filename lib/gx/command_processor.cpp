@@ -282,7 +282,10 @@ ProcessResult process(const u8* data, u32 size) noexcept {
     }
 
     case CP_CMD_INVAL_VTX: {
-      // Invalidate vertex cache
+      for (auto& array : g_gxState.arrays) {
+        array.cachedRange = {};
+      }
+      g_gxState.dirty |= DirtyImmediates;
       break;
     }
 

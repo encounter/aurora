@@ -1650,14 +1650,25 @@ TEST_F(GXFifoTest, TexImage0BpWrite_ClearsExtendedTextureMetadata) {
   EXPECT_EQ(slot.format(), GX_TF_RGBA8);
 }
 
-TEST_F(GXFifoTest, TexObjRawDimensions_WrapAtTenBitBoundary) {
-  auto& slot = gxState().loadedTextures[GX_TEXMAP0];
-  slot.image0 = (0x3FFu << 0) | (0x3FFu << 10);
-  slot.mWidth = 0;
-  slot.mHeight = 0;
+TEST_F(GXFifoTest, TexObjUninitializedDimensions_AreZero) {
+  const GXTexObj_ obj{};
 
-  EXPECT_EQ(slot.width(), 0u);
-  EXPECT_EQ(slot.height(), 0u);
+  EXPECT_EQ(obj.width(), 0u);
+  EXPECT_EQ(obj.height(), 0u);
+}
+
+TEST_F(GXFifoTest, TexImage0BpWrite_PreservesMaximumDimensions) {
+  auto& slot = gxState().loadedTextures[GX_TEXMAP0];
+  const u32 image0 = (0x88u << 24) | (0x3FFu << 0) | (0x3FFu << 10) | (GX_TF_CMPR << 20);
+  aurora::gx::fifo::write_u8(0x61);
+  aurora::gx::fifo::write_u32(image0);
+  const auto bytes = capture_fifo();
+
+  decode_fifo(bytes);
+
+  EXPECT_EQ(slot.width(), 1024u);
+  EXPECT_EQ(slot.height(), 1024u);
+  EXPECT_EQ(slot.format(), GX_TF_CMPR);
 }
 
 TEST_F(GXFifoTest, TexObjExplicitDimensions_DoNotWrapAtTenBitBoundary) {
