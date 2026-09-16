@@ -16,6 +16,7 @@ private:
     size_t fileSize;
     std::u8string filename;
     bool opened = false;
+    bool deleted = false;
   };
 
   std::vector<GciFile> m_files;
