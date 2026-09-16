@@ -759,11 +759,11 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     constexpr std::array instanceToggles{
         "allow_unsafe_apis",
     };
-    wgpu::DawnTogglesDescriptor instanceTogglesDescriptor(wgpu::DawnTogglesDescriptor::Init{
+    wgpu::DawnTogglesDescriptor instanceTogglesDescriptor{wgpu::DawnTogglesDescriptor::Init{
         .enabledToggleCount = instanceToggles.size(),
         .enabledToggles = instanceToggles.data(),
-    });
-    dawn::native::DawnInstanceDescriptor dawnInstanceDescriptor;
+    }};
+    dawn::native::DawnInstanceDescriptor dawnInstanceDescriptor{};
     dawnInstanceDescriptor.nextInChain = &instanceTogglesDescriptor;
     dawnInstanceDescriptor.backendValidationLevel = dawn::native::BackendValidationLevel::Disabled;
     dawnInstanceDescriptor.SetLoggingCallback(wgpu_log);
@@ -789,19 +789,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     return false;
   }
   {
-#ifdef WEBGPU_DAWN
-    constexpr std::array adapterEnableToggles{
-        "allow_unsafe_apis",
-    };
-    wgpu::DawnTogglesDescriptor adapterToggles(wgpu::DawnTogglesDescriptor::Init{
-        .enabledToggleCount = adapterEnableToggles.size(),
-        .enabledToggles = adapterEnableToggles.data(),
-    });
-#endif
     const wgpu::RequestAdapterOptions options{
-#ifdef WEBGPU_DAWN
-        .nextInChain = &adapterToggles,
-#endif
         .featureLevel = wgpu::FeatureLevel::Compatibility,
         .powerPreference = wgpu::PowerPreference::HighPerformance,
         .backendType = backend,
@@ -836,7 +824,6 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
       }
       return false;
     }
-
     if (!g_adapter) {
       if (requestAdapterCallbackCompleted) {
         Log.error("Failed to create adapter: request status {}, message: {}",
@@ -966,7 +953,6 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
 #ifndef ANDROID
         "use_user_defined_labels_in_backend",
 #endif
-        "allow_unsafe_apis",
         "disable_symbol_renaming",
         "enable_immediate_error_handling",
         "gl_allow_context_on_multi_threads",
