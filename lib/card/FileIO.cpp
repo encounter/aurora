@@ -42,12 +42,8 @@ bool FileIO::fileWrite(const void* buf, size_t length, off_t offset) {
   if (!isReady() || offset < 0) {
     return false;
   }
-  auto stream = io::open_file(m_path, "r+b");
-  if (!stream) {
-    stream = io::open_file(m_path, "w+b");
-  }
-  return stream && io::write_at(stream.get(), static_cast<uint64_t>(offset), buf, length) &&
-         SDL_FlushIO(stream.get()) && SDL_CloseIO(stream.release());
+  auto writer = io::open_atomic_file(m_path, io::AtomicFileMode::UpdateExisting);
+  return writer && io::write_at(writer.get(), static_cast<uint64_t>(offset), buf, length) && writer.commit();
 }
 
 size_t FileIO::fileSize() const {

@@ -34,12 +34,13 @@ public:
   virtual void getChecksum(uint16_t& checksum, uint16_t& inverse) const = 0;
   virtual void getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) const = 0;
   virtual void getEncoding(uint16_t& encoding) const = 0;
-  virtual void format(ECardSlot deviceId, ECardSize size = ECardSize::Card2043Mb, EEncoding encoding = EEncoding::ASCII) = 0;
-  virtual void commit() = 0;
+  virtual ECardResult format(ECardSlot deviceId, ECardSize size = ECardSize::Card2043Mb,
+                             EEncoding encoding = EEncoding::ASCII) = 0;
+  virtual ECardResult commit() = 0;
   virtual bool open(const std::filesystem::path& filepath) = 0;
   virtual void close() = 0;
   virtual const std::filesystem::path& cardFilename() const = 0;
   virtual ECardResult getError() const = 0;
   virtual ProbeResults probeCardFile(const std::filesystem::path& filename) = 0;
 };
-}
+} // namespace aurora::card

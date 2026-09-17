@@ -117,7 +117,7 @@ ECardResult CardRawFile::_pumpOpen() {
   return ECardResult::READY;
 }
 
-void CardRawFile::_repair_card() {
+void CardRawFile::_repairCard() {
   // The old formatter wrote one block at the data-block count offset, leaving the image four blocks short.
   constexpr uint32_t MissingBlocks = 4;
 
@@ -239,15 +239,15 @@ ECardResult CardRawFile::createFile(const char* filename, size_t size, FileHandl
 
   handleOut = {};
 
-  if (size <= 0)
+  if (size == 0 || size % BlockSize != 0)
     return ECardResult::FATAL_ERROR;
   if (strlen(filename) > 32)
     return ECardResult::NAMETOOLONG;
   if (m_dirs[m_currentDir].getFile(m_game, m_maker, filename))
     return ECardResult::EXIST;
-  uint16_t neededBlocks = ROUND_UP_8192(size) / BlockSize;
-  if (neededBlocks > m_bats[m_currentBat].numFreeBlocks())
+  if (size / BlockSize > m_bats[m_currentBat].numFreeBlocks())
     return ECardResult::INSSPACE;
+  const auto neededBlocks = static_cast<uint16_t>(size / BlockSize);
   if (!m_dirs[m_currentDir].hasFreeFile())
     return ECardResult::NOENT;
 
@@ -377,17 +377,11 @@ ECardResult CardRawFile::renameFile(const char* oldName, const char* newName) {
     return ECardResult::NOFILE;
   }
 
-  if (File* replF = dir.getFile(m_game, m_maker, newName)) {
-    BlockAllocationTable bat = m_bats[m_currentBat];
-    _deleteFile(*replF, bat);
-    std::memset(f->m_filename, 0, 32);
-    std::strncpy(f->m_filename, newName, 32);
-    _updateDirAndBat(dir, bat);
-  } else {
-    std::memset(f->m_filename, 0, 32);
-    std::strncpy(f->m_filename, newName, 32);
-    _updateDirAndBat(dir, m_bats[m_currentBat]);
+  if (dir.getFile(m_game, m_maker, newName)) {
+    return ECardResult::EXIST;
   }
+  std::strncpy(f->m_filename, newName, CARD_FILENAME_MAX);
+  _updateDirAndBat(dir, m_bats[m_currentBat]);
   return ECardResult::READY;
 }
 
@@ -401,8 +395,24 @@ ECardResult CardRawFile::fileWrite(FileHandle& fh, const void* buf, size_t size)
     return ECardResult::NOFILE;
   }
   File* file = m_dirs[m_currentDir].getFile(fh.idx);
-  if (!file)
+  if (!file || file->m_game[0] == 0xFF) {
     return ECardResult::NOFILE;
+  }
+  const size_t dataSize = static_cast<size_t>(file->m_blockCount) * BlockSize;
+  if (fh.offset < 0 || static_cast<size_t>(fh.offset) > dataSize || size > dataSize - fh.offset) {
+    return ECardResult::LIMIT;
+  }
+
+  const auto failWrite = [this](ECardResult result) {
+    if (m_dirty) {
+      open(m_filename);
+    }
+    return result;
+  };
+  auto writer = io::open_atomic_file(m_filename, io::AtomicFileMode::UpdateExisting);
+  if (!writer) {
+    return failWrite(ECardResult::IOERROR);
+  }
 
   /* Block handling is a little different from cache handling,
    * since each block can be in an arbitrary location we must
@@ -418,15 +428,17 @@ ECardResult CardRawFile::fileWrite(FileHandle& fh, const void* buf, size_t size)
   uint32_t blockOffset = fh.offset % BlockSize;
   size_t rem = size;
   while (rem) {
-    if (curBlock == 0xFFFF)
-      return ECardResult::NOFILE;
+    if (curBlock < FSTBlocks || curBlock >= m_maxBlock) {
+      return failWrite(ECardResult::BROKEN);
+    }
 
     size_t cacheSize = rem;
     if (cacheSize + blockOffset > BlockSize)
       cacheSize = BlockSize - blockOffset;
     uint32_t offset = (curBlock * BlockSize) + blockOffset;
-    if (!m_fileHandle.fileWrite(tmpBuf, cacheSize, offset))
-      return ECardResult::FATAL_ERROR;
+    if (!io::write_at(writer.get(), offset, tmpBuf, cacheSize)) {
+      return failWrite(ECardResult::IOERROR);
+    }
     tmpBuf += cacheSize;
     rem -= cacheSize;
     blockOffset += cacheSize;
@@ -435,6 +447,10 @@ ECardResult CardRawFile::fileWrite(FileHandle& fh, const void* buf, size_t size)
       blockOffset = 0;
     }
   }
+  if ((m_dirty && !_writeMetadata(writer.get())) || !writer.commit()) {
+    return failWrite(ECardResult::IOERROR);
+  }
+  m_dirty = false;
   fh.offset += size;
 
   return ECardResult::READY;
@@ -788,7 +804,7 @@ void CardRawFile::getFreeBlocks(int32_t& bytesNotUsed, int32_t& filesNotUsed) co
 
 void CardRawFile::getEncoding(uint16_t& encoding) const { encoding = m_ch.m_encoding; }
 
-void CardRawFile::format(ECardSlot id, ECardSize size, EEncoding encoding) {
+ECardResult CardRawFile::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   m_ch.raw.fill(0xFF);
 
   uint64_t rand = static_cast<uint64_t>(getGCTime());
@@ -815,34 +831,21 @@ void CardRawFile::format(ECardSlot id, ECardSize size, EEncoding encoding) {
   m_currentDir = 1;
   m_currentBat = 1;
 
-  m_fileHandle = {};
-  m_fileHandle = FileIO(m_filename, true);
-
-  if (m_fileHandle) {
-    const uint32_t blockCount = (static_cast<uint32_t>(size) * MbitToBlocks) - 5;
-
-    m_tmpCh = m_ch;
-    m_tmpCh._swapEndian();
-    m_fileHandle.fileWrite(m_tmpCh.raw.data(), BlockSize, 0);
-    m_tmpDirs[0] = m_dirs[0];
-    m_tmpDirs[0].swapEndian();
-    m_fileHandle.fileWrite(m_tmpDirs[0].raw.data(), BlockSize, BlockSize * 1);
-    m_tmpDirs[1] = m_dirs[1];
-    m_tmpDirs[1].swapEndian();
-    m_fileHandle.fileWrite(m_tmpDirs[1].raw.data(), BlockSize, BlockSize * 2);
-    m_tmpBats[0] = m_bats[0];
-    m_tmpBats[0].swapEndian();
-    m_fileHandle.fileWrite(m_tmpBats[0].raw.data(), BlockSize, BlockSize * 3);
-    m_tmpBats[1] = m_bats[1];
-    m_tmpBats[1].swapEndian();
-    m_fileHandle.fileWrite(m_tmpBats[1].raw.data(), BlockSize, BlockSize * 4);
-
-    std::unique_ptr<uint8_t[]> dummyBlock;
-    dummyBlock.reset(new uint8_t[BlockSize * blockCount]);
-    memset(dummyBlock.get(), 0xFF, BlockSize * blockCount);
-    m_fileHandle.fileWrite(dummyBlock.get(), BlockSize * blockCount, BlockSize * FSTBlocks);
-    m_dirty = false;
+  m_dirty = false;
+  auto writer = io::open_atomic_file(m_filename);
+  bool ok = writer && _writeMetadata(writer.get());
+  std::array<uint8_t, BlockSize> emptyBlock;
+  emptyBlock.fill(0xFF);
+  for (uint32_t block = FSTBlocks; ok && block < m_maxBlock; ++block) {
+    ok = io::write_at(writer.get(), block * BlockSize, emptyBlock.data(), emptyBlock.size());
   }
+  if (!ok || !writer.commit()) {
+    open(m_filename);
+    return ECardResult::IOERROR;
+  }
+  m_fileHandle = FileIO{m_filename};
+  m_opened = true;
+  return m_fileHandle ? ECardResult::READY : ECardResult::IOERROR;
 }
 
 ProbeResults CardRawFile::probeCardFile(const std::filesystem::path& filename) {
@@ -894,8 +897,7 @@ bool CardRawFile::insertGci(const void* data, const size_t size, const bool repl
   const size_t blockCount = (size - sizeof(File)) / BlockSize;
   if (blockCount == 0 || imported.m_blockCount != blockCount ||
       std::memchr(imported.m_game, '\0', sizeof(imported.m_game)) != nullptr ||
-      std::memchr(imported.m_maker, '\0', sizeof(imported.m_maker)) != nullptr || imported.m_filename[0] == '\0' ||
-      std::memchr(imported.m_filename, '\0', sizeof(imported.m_filename)) == nullptr) {
+      std::memchr(imported.m_maker, '\0', sizeof(imported.m_maker)) != nullptr || imported.m_filename[0] == '\0') {
     return false;
   }
 
@@ -928,12 +930,14 @@ bool CardRawFile::insertGci(const void* data, const size_t size, const bool repl
 
   FileHandle handle;
   if (createFile(filename, size - sizeof(File), handle) != ECardResult::READY) {
+    open(m_filename);
     return false;
   }
 
   Directory dir = m_dirs[m_currentDir];
   File* destination = dir.getFile(handle.idx);
   if (destination == nullptr) {
+    open(m_filename);
     return false;
   }
   const uint16_t firstBlock = destination->m_firstBlock;
@@ -945,39 +949,48 @@ bool CardRawFile::insertGci(const void* data, const size_t size, const bool repl
   if (fileWrite(handle, static_cast<const uint8_t*>(data) + sizeof(File), size - sizeof(File)) != ECardResult::READY) {
     return false;
   }
-  commit();
+  return commit() == ECardResult::READY;
+}
+
+bool CardRawFile::_writeMetadata(SDL_IOStream* stream) {
+  m_tmpCh = m_ch;
+  m_tmpCh._swapEndian();
+  if (!io::write_at(stream, 0, m_tmpCh.raw.data(), BlockSize)) {
+    return false;
+  }
+  for (size_t i = 0; i < m_dirs.size(); ++i) {
+    m_tmpDirs[i] = m_dirs[i];
+    m_tmpDirs[i].updateChecksum();
+    m_tmpDirs[i].swapEndian();
+    if (!io::write_at(stream, BlockSize * (1 + i), m_tmpDirs[i].raw.data(), BlockSize)) {
+      return false;
+    }
+    m_tmpBats[i] = m_bats[i];
+    m_tmpBats[i].updateChecksum();
+    m_tmpBats[i].swapEndian();
+    if (!io::write_at(stream, BlockSize * (3 + i), m_tmpBats[i].raw.data(), BlockSize)) {
+      return false;
+    }
+  }
   return true;
 }
 
-void CardRawFile::commit() {
-  if (!m_dirty)
-    return;
-  if (m_fileHandle) {
-    m_tmpCh = m_ch;
-    m_tmpCh._swapEndian();
-    m_fileHandle.fileWrite(&m_tmpCh, BlockSize, 0);
-    m_tmpDirs[0] = m_dirs[0];
-    m_tmpDirs[0].updateChecksum();
-    m_tmpDirs[0].swapEndian();
-    m_fileHandle.fileWrite(m_tmpDirs[0].raw.data(), BlockSize, BlockSize * 1);
-    m_tmpDirs[1] = m_dirs[1];
-    m_tmpDirs[1].updateChecksum();
-    m_tmpDirs[1].swapEndian();
-    m_fileHandle.fileWrite(m_tmpDirs[1].raw.data(), BlockSize, BlockSize * 2);
-    m_tmpBats[0] = m_bats[0];
-    m_tmpBats[0].updateChecksum();
-    m_tmpBats[0].swapEndian();
-    m_fileHandle.fileWrite(m_tmpBats[0].raw.data(), BlockSize, BlockSize * 3);
-    m_tmpBats[1] = m_bats[1];
-    m_tmpBats[1].updateChecksum();
-    m_tmpBats[1].swapEndian();
-    m_fileHandle.fileWrite(m_tmpBats[1].raw.data(), BlockSize, BlockSize * 4);
-    m_dirty = false;
+ECardResult CardRawFile::commit() {
+  if (!m_dirty) {
+    return ECardResult::READY;
   }
+  auto writer = io::open_atomic_file(m_filename, io::AtomicFileMode::UpdateExisting);
+  if (!writer || !_writeMetadata(writer.get()) || !writer.commit()) {
+    open(m_filename);
+    return ECardResult::IOERROR;
+  }
+  m_dirty = false;
+  return ECardResult::READY;
 }
 
 bool CardRawFile::open(const std::filesystem::path& filepath) {
   m_opened = false;
+  m_dirty = false;
   m_filename = filepath;
   m_fileHandle = FileIO(m_filename);
   if (m_fileHandle) {
@@ -991,7 +1004,7 @@ bool CardRawFile::open(const std::filesystem::path& filepath) {
       return false;
     if (!m_fileHandle.fileRead(m_bats[1].raw.data(), BlockSize, BlockSize * 4))
       return false;
-    _repair_card();
+    _repairCard();
     return true;
   }
   return false;

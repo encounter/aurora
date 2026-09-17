@@ -60,6 +60,7 @@ enum class ECardResult {
   FATAL_ERROR = -128,
   ENCODING = -13,
   NAMETOOLONG = -12,
+  LIMIT = -11,
   INSSPACE = -9,
   NOENT = -8,
   EXIST = -7,

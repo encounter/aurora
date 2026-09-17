@@ -97,7 +97,13 @@ File* Directory::getFirstNonFreeFile(uint32_t start, const char* game, const cha
 }
 
 File* Directory::getFile(const char* game, const char* maker, const char* filename) {
+  if (std::strlen(filename) > CARD_FILENAME_MAX) {
+    return nullptr;
+  }
   const auto iter = std::find_if(std::begin(data.m_files), std::end(data.m_files), [=](const auto& file) {
+    if (file.m_game[0] == 0xFF) {
+      return false;
+    }
     const auto game_size = 4;
     if (game != nullptr && std::strlen(game) == game_size && std::memcmp(file.m_game, game, game_size) != 0) {
       return false;

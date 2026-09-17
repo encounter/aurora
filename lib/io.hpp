@@ -41,6 +41,8 @@ enum class AtomicFileMode {
   Truncate,
   /** Copies the destination into the temporary file, allowing in-place edits. */
   Preserve,
+  /** Copies an existing destination, failing if it can't be opened. */
+  UpdateExisting,
 };
 
 class AtomicFileWriter {
