@@ -314,6 +314,21 @@ void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo,
   if (passInfo.snapshotDepthDst) {
     tex_copy_conv::snapshot_depth(cmd, passInfo.copySourceDepthView, passInfo.msaaSamples, passInfo.snapshotDepthDst);
   }
+  if (passInfo.snapshotNormalDst) {
+    const webgpu::gpu_prof::Zone zone{cmd, "Normal snapshot"};
+    const wgpu::TexelCopyTextureInfo src{
+        .texture = passInfo.copySourceNormalTexture,
+    };
+    const wgpu::TexelCopyTextureInfo dst{
+        .texture = passInfo.snapshotNormalDst,
+    };
+    const wgpu::Extent3D size{
+        .width = passInfo.colorAttachments[SceneColorAttachmentIndex].size.width,
+        .height = passInfo.colorAttachments[SceneColorAttachmentIndex].size.height,
+        .depthOrArrayLayers = 1,
+    };
+    cmd.CopyTextureToTexture(&src, &dst, &size);
+  }
 }
 
 constexpr uint64_t VertexStagingOffset = 0;

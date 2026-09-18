@@ -397,7 +397,8 @@ static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Rang
 
   const u8 lineMode = line_mode_for_prim(prim);
   const bool pipelineValid = cache.hasPipeline && (state.dirty & DirtyPipeline) == 0 && cache.fmt == fmt &&
-                             cache.lineMode == lineMode && cache.config.msaaSamples == gfx::get_sample_count();
+                             cache.lineMode == lineMode && cache.config.msaaSamples == gfx::get_sample_count() &&
+                             cache.config.shaderConfig.normalTarget == gfx::has_normal_attachment();
   if (!pipelineValid) {
     const bool hadPipeline = cache.hasPipeline;
     const auto prevSampledTextures = cache.shaderInfo.sampledTextures;

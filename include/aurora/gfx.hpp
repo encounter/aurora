@@ -144,11 +144,13 @@ Range push_storage(const uint8_t* data, size_t length);
 struct ResolveDesc {
   bool color = true;
   bool depth = false;
+  bool normal = false;
 };
 
 struct ResolvedTargets {
-  wgpu::TextureView color; // single-sample snapshot; null if not requested
-  wgpu::TextureView depth; // single-sample R32Float depth snapshot; null if not requested
+  wgpu::TextureView color;  // single-sample snapshot; null if not requested
+  wgpu::TextureView depth;  // single-sample R32Float depth snapshot; null if not requested
+  wgpu::TextureView normal; // RGB10A2Unorm snapshot; null when not requested or unavailable
   wgpu::TextureFormat colorFormat = wgpu::TextureFormat::Undefined;
   uint32_t width = 0;
   uint32_t height = 0;
@@ -158,9 +160,16 @@ struct ResolvedTargets {
 /// current frame), then: on the EFB, continues rendering on a fresh EFB pass
 /// (GXCopyTex semantics); in an offscreen pass created by create_pass, ends it
 /// and restores the suspended EFB pass (GXRestoreFrameBuffer semantics).
-/// Requesting neither color nor depth is a plain pass break (or offscreen
-/// close, discarding its output). Depth is left null when unsupported by the
-/// device. Returns false (with a warning) outside an active render pass.
+/// Requesting no attachments is a plain pass break (or offscreen close,
+/// discarding its output). Depth is left null when unsupported by the device.
+/// Returns false (with a warning) outside an active render pass. Scene pipelines
+/// must rebuild based on layout.key, which can change at runtime.
+/// 
+/// **Normals:**
+/// The first resolve with normals will enable the normal attachment at the start
+/// of the next frame and stay enabled until shutdown. Before the normal buffer
+/// gets enabled, the resolved normal buffer will be null. Resolved normals will
+/// also be null in offscreen passes and when unsupported by the device.
 bool resolve_pass(const ResolveDesc& desc, ResolvedTargets& out);
 
 /// Opens an offscreen render pass (GXCreateFrameBuffer semantics): cleared
