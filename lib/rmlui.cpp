@@ -33,7 +33,7 @@ struct TrackedTouch {
   Rml::Vector2f position;
   Rml::Vector2f rmlPosition;
   Rml::Vector2f startPosition;
-  Rml::Element* target = nullptr;
+  Rml::ObserverPtr<Rml::Element> target;
   bool active = false;
 };
 
@@ -296,7 +296,7 @@ void handle_touch_down(const SDL_TouchFingerEvent& finger) noexcept {
       .position = mapped.position,
       .rmlPosition = mapped.position,
       .startPosition = mapped.position,
-      .target = target,
+      .target = target->GetObserverPtr(),
       .active = true,
   };
   dispatch_touch_event(*tracked, TouchStartEvent, mapped.position, true);
@@ -489,6 +489,7 @@ void shutdown() noexcept {
     return;
   }
 
+  s_trackedTouches = {};
   Rml::Shutdown();
   Backend::Shutdown();
   g_context = nullptr;
