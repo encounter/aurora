@@ -58,24 +58,7 @@ fn fs_main() {
 }
 } // namespace
 
-PipelineConfig make_pipeline_config(const RenderTargetLayout& layout, bool clearColor, bool clearAlpha,
-                                    bool clearDepth) noexcept {
-  PipelineConfig config{
-      .targetLayoutKey = layout.key,
-      .depthStencilFormat = layout.depthStencilFormat,
-      .colorAttachmentCount = layout.colorAttachmentCount,
-      .msaaSamples = layout.sampleCount,
-      .clearColor = clearColor,
-      .clearAlpha = clearAlpha,
-      .clearDepth = clearDepth,
-  };
-  for (uint32_t i = 0; i < layout.colorAttachmentCount; ++i) {
-    config.colorFormats[i] = layout.colorAttachments[i].format;
-  }
-  return config;
-}
-
-wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
+wgpu::RenderPipeline create_pipeline(const PipelineConfig& config, const RenderTargetLayout& layout) {
   ZoneScoped;
   const bool writesSceneColor = config.clearColor || config.clearAlpha;
   const auto source = shader_source(writesSceneColor);
@@ -106,9 +89,9 @@ wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
           },
   };
   std::array<wgpu::ColorTargetState, MaxColorAttachments> colorTargets{};
-  for (uint32_t i = 0; i < config.colorAttachmentCount; ++i) {
+  for (uint32_t i = 0; i < layout.colorAttachmentCount; ++i) {
     colorTargets[i] = {
-        .format = config.colorFormats[i],
+        .format = layout.colorAttachments[i].format,
         .writeMask = wgpu::ColorWriteMask::None,
     };
   }
@@ -117,11 +100,11 @@ wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
   const wgpu::FragmentState fragmentState{
       .module = module,
       .entryPoint = "fs_main",
-      .targetCount = config.colorAttachmentCount,
+      .targetCount = layout.colorAttachmentCount,
       .targets = colorTargets.data(),
   };
   const wgpu::DepthStencilState depthStencil{
-      .format = config.depthStencilFormat,
+      .format = layout.depthStencilFormat,
       .depthWriteEnabled = config.clearDepth,
       .depthCompare = wgpu::CompareFunction::Always,
   };
@@ -130,20 +113,10 @@ wgpu::RenderPipeline create_pipeline(const PipelineConfig& config) {
   const wgpu::RenderPipelineDescriptor pipelineDescriptor{
       .label = label.c_str(),
       .layout = pipelineLayout,
-      .vertex =
-          wgpu::VertexState{
-              .module = module,
-              .entryPoint = "vs_main",
-          },
-      .primitive =
-          wgpu::PrimitiveState{
-              .topology = wgpu::PrimitiveTopology::TriangleList,
-          },
-      .depthStencil = config.depthStencilFormat != wgpu::TextureFormat::Undefined ? &depthStencil : nullptr,
-      .multisample =
-          wgpu::MultisampleState{
-              .count = config.msaaSamples,
-          },
+      .vertex = wgpu::VertexState{.module = module, .entryPoint = "vs_main"},
+      .primitive = wgpu::PrimitiveState{.topology = wgpu::PrimitiveTopology::TriangleList},
+      .depthStencil = layout.depthStencilFormat != wgpu::TextureFormat::Undefined ? &depthStencil : nullptr,
+      .multisample = wgpu::MultisampleState{.count = layout.sampleCount},
       .fragment = &fragmentState,
   };
   return g_device.CreateRenderPipeline(&pipelineDescriptor);

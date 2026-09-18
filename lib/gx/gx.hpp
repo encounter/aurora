@@ -491,8 +491,7 @@ struct ShaderConfig {
   u8 vtxStride = 0;
   u8 lineMode : 2 = 0; // 1 = GX_LINES, 2 = GX_LINESTRIP, 3 = GX_POINTS
   u8 fogRangeEnabled : 1 = false;
-  u8 normalTarget : 1 = false;
-  u8 pad1 : 4 = 0;
+  u8 pad1 : 5 = 0;
   u8 pad2 = 0;
   std::array<AttrConfig, MaxVtxAttr> attrs;
   std::array<TevSwap, MaxTevSwap> tevSwapTable;
@@ -535,10 +534,11 @@ struct BindGroupRanges {
   std::array<gfx::Range, MaxIndexAttr> vaRanges{};
 };
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept;
-wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
-                                    wgpu::ShaderModule shader, const char* label) noexcept;
-std::string build_shader_source(const ShaderConfig& config) noexcept;
-wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept;
+wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const gfx::RenderTargetLayout& layout,
+                                    ArrayRef<wgpu::VertexBufferLayout> vtxBuffers, wgpu::ShaderModule shader,
+                                    const char* label) noexcept;
+std::string build_shader_source(const ShaderConfig& config, uint32_t normalAttachment = UINT32_MAX) noexcept;
+wgpu::ShaderModule build_shader(const ShaderConfig& config, const gfx::RenderTargetLayout& layout) noexcept;
 GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept;
 
 u8 comp_type_size(GXAttr attr, GXCompType type) noexcept;

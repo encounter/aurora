@@ -820,7 +820,7 @@ void push_draw_command(clear::DrawData data) {
 
 template <>
 PipelineRef pipeline_ref(const clear::PipelineConfig& config) {
-  return find_pipeline(ShaderType::Clear, config, [=] { return create_pipeline(config); });
+  return find_pipeline(config, get_render_target_layout());
 }
 
 void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
@@ -881,9 +881,12 @@ void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bo
 
   if (!fullColorClear && (clearColor || clearAlpha)) {
     // If we're only clearing color _or_ alpha, perform a clear draw
-    const auto targetLayout = current_render_passes()[g_recorder.currentRenderPass].target_layout();
     push_draw_command(clear::DrawData{
-        .pipeline = pipeline_ref(clear::make_pipeline_config(targetLayout, clearColor, clearAlpha, false)),
+        .pipeline = pipeline_ref(clear::PipelineConfig{
+            .clearColor = clearColor,
+            .clearAlpha = clearAlpha,
+            .clearDepth = false,
+        }),
         .color =
             wgpu::Color{
                 .r = clearColorValue.x(),
@@ -905,11 +908,6 @@ void queue_palette_conv(tex_palette_conv::ConvRequest req) {
 }
 
 bool is_offscreen() noexcept { return g_recorder.inOffscreen; }
-
-uint32_t get_sample_count() noexcept {
-  CHECK(g_recorder.currentRenderPass != UINT32_MAX, "get_sample_count called outside of a frame");
-  return current_render_passes()[g_recorder.currentRenderPass].msaaSamples;
-}
 
 bool has_normal_attachment() noexcept {
   CHECK(g_recorder.currentRenderPass != UINT32_MAX, "has_normal_attachment called outside of a frame");
@@ -1028,8 +1026,8 @@ bool resolve_pass(const ResolveDesc& desc, ResolvedTargets& out) {
   const uint32_t width = prevPass.colorAttachments[SceneColorAttachmentIndex].size.width;
   const uint32_t height = prevPass.colorAttachments[SceneColorAttachmentIndex].size.height;
   const bool wantNormal = desc.normal && prevPass.copySourceNormalTexture;
-  if (desc.normal && !g_recorder.inOffscreen && !webgpu::g_graphicsConfig.normalBuffer &&
-      webgpu::g_hasCoreFeatures && webgpu::g_graphicsConfig.msaaSamples == 1) {
+  if (desc.normal && !g_recorder.inOffscreen && !webgpu::g_graphicsConfig.normalBuffer && webgpu::g_hasCoreFeatures &&
+      webgpu::g_graphicsConfig.msaaSamples == 1) {
     g_recorder.normalRequested = true;
   }
   // Requesting no snapshots is a plain pass break (or offscreen close, discarding its output).
@@ -1132,13 +1130,13 @@ void push_draw_command(rmlui::DrawData data) {
 
 template <>
 PipelineRef pipeline_ref(const gx::PipelineConfig& config) {
-  return find_pipeline(ShaderType::GX, config, [=] { return create_pipeline(config); });
+  return find_pipeline(config, get_render_target_layout());
 }
 
 #ifdef AURORA_ENABLE_RMLUI
 template <>
 PipelineRef pipeline_ref(const rmlui::PipelineConfig& config) {
-  return find_pipeline(ShaderType::Rml, config, [=] { return rmlui::create_pipeline(config); });
+  return find_pipeline(config);
 }
 #endif
 

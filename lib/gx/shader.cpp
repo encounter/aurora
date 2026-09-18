@@ -870,9 +870,9 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8 
 absl::flat_hash_set<gfx::ShaderRef> s_seenShaders;
 } // namespace
 
-std::string build_shader_source(const ShaderConfig& config) noexcept {
+std::string build_shader_source(const ShaderConfig& config, uint32_t normalAttachment) noexcept {
   ZoneScoped;
-  const auto hash = xxh3_hash(config);
+  const auto hash = xxh3_hash(normalAttachment, xxh3_hash(config));
   const auto info = build_shader_info(config);
   if (EnableDebugPrints && !s_seenShaders.contains(hash)) {
     s_seenShaders.insert(hash);
@@ -1064,7 +1064,7 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
     vtxOutAttrs += fmt::format("\n    @location({}) nrm: vec3f,", vtxOutIdx++);
     vtxXfrAttrsPre += "\n    out.nrm = mv_nrm;";
   }
-  const bool useNormalTarget = config.normalTarget && config.attrs[GX_VA_NRM].attrType != GX_NONE;
+  const bool useNormalTarget = normalAttachment != UINT32_MAX && config.attrs[GX_VA_NRM].attrType != GX_NONE;
   if (useNormalTarget && !(UsePerPixelLighting && info.lightingEnabled)) {
     vtxOutAttrs += fmt::format("\n    @location({}) mv_nrm: vec3f,", vtxOutIdx++);
     vtxXfrAttrsPre += "\n    out.mv_nrm = mv_nrm;";
@@ -1636,12 +1636,13 @@ std::string build_shader_source(const ShaderConfig& config) noexcept {
   std::string fragmentOutput;
   std::string_view fragmentOutputType = "@location(0) vec4f"sv;
   std::string fragmentReturn = "\n    return prev;"s;
-  if (config.normalTarget) {
-    fragmentOutput =
-        "\nstruct FragmentOutput {\n"
+  if (normalAttachment != UINT32_MAX) {
+    fragmentOutput = fmt::format(
+        "\nstruct FragmentOutput {{\n"
         "    @location(0) color: vec4f,\n"
-        "    @location(1) normal: vec4f,\n"
-        "};\n";
+        "    @location({}) normal: vec4f,\n"
+        "}};\n",
+        normalAttachment);
     fragmentOutputType = "FragmentOutput"sv;
     fragmentReturn = "\n    var out: FragmentOutput;\n    out.color = prev;";
     if (useNormalTarget) {
@@ -2033,10 +2034,16 @@ fn fs_main(in: VertexOutput) -> {10} {{{6}{5}{11}
   return shaderSource;
 }
 
-wgpu::ShaderModule build_shader(const ShaderConfig& config) noexcept {
+wgpu::ShaderModule build_shader(const ShaderConfig& config, const gfx::RenderTargetLayout& layout) noexcept {
   ZoneScoped;
-  const auto shaderSource = build_shader_source(config);
-  const auto hash = xxh3_hash(config);
+  uint32_t normalAttachment = UINT32_MAX;
+  for (uint32_t i = 0; i < layout.colorAttachmentCount; ++i) {
+    if (layout.colorAttachments[i].semantic == gfx::ColorAttachmentSemantic::Normal) {
+      normalAttachment = i;
+    }
+  }
+  const auto shaderSource = build_shader_source(config, normalAttachment);
+  const auto hash = xxh3_hash(normalAttachment, xxh3_hash(config));
   wgpu::ShaderSourceWGSL wgslDescriptor{};
   wgslDescriptor.code = shaderSource.c_str();
   const auto label = fmt::format("GX Shader {:x}", hash);

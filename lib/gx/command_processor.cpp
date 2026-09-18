@@ -127,6 +127,7 @@ constexpr size_t MaxFogRangeLuts = 32;
 std::vector<FogRangeLutEntry> sFogRangeLuts;
 
 struct DrawCache {
+  uint64_t targetLayoutKey = 0;
   PipelineConfig config{};
   ShaderInfo shaderInfo{};
   gfx::PipelineRef pipelineRef{};
@@ -396,9 +397,9 @@ static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Rang
   }
 
   const u8 lineMode = line_mode_for_prim(prim);
+  const auto targetLayoutKey = gfx::get_render_target_layout().key;
   const bool pipelineValid = cache.hasPipeline && (state.dirty & DirtyPipeline) == 0 && cache.fmt == fmt &&
-                             cache.lineMode == lineMode && cache.config.msaaSamples == gfx::get_sample_count() &&
-                             cache.config.shaderConfig.normalTarget == gfx::has_normal_attachment();
+                             cache.lineMode == lineMode && cache.targetLayoutKey == targetLayoutKey;
   if (!pipelineValid) {
     const bool hadPipeline = cache.hasPipeline;
     const auto prevSampledTextures = cache.shaderInfo.sampledTextures;
@@ -406,6 +407,7 @@ static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Rang
     populate_pipeline_config(cache.config, prim, fmt);
     cache.shaderInfo = build_shader_info(cache.config.shaderConfig);
     cache.pipelineRef = gfx::pipeline_ref(cache.config);
+    cache.targetLayoutKey = targetLayoutKey;
     cache.fmt = fmt;
     cache.lineMode = lineMode;
     cache.hasPipeline = true;

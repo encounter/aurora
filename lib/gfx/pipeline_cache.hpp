@@ -2,8 +2,6 @@
 
 #include "types.hpp"
 
-#include <functional>
-
 namespace aurora::gfx::clear {
 struct PipelineConfig;
 } // namespace aurora::gfx::clear
@@ -24,15 +22,15 @@ enum class ShaderType : uint8_t {
   Rml = 2,
 };
 
-using NewPipelineCallback = std::function<wgpu::RenderPipeline()>;
-
 void initialize_pipeline_cache();
 void shutdown_pipeline_cache();
 void begin_pipeline_frame();
 void end_pipeline_frame();
+void rebuild_pipeline_cache();
 
-template <typename Config>
-PipelineRef find_pipeline(ShaderType type, const Config& config, NewPipelineCallback&& cb);
+PipelineRef find_pipeline(const gx::PipelineConfig& config, const RenderTargetLayout& layout);
+PipelineRef find_pipeline(const clear::PipelineConfig& config, const RenderTargetLayout& layout);
+PipelineRef find_pipeline(const rmlui::PipelineConfig& config);
 
 bool get_pipeline(PipelineRef ref, wgpu::RenderPipeline& pipeline);
 

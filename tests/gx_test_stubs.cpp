@@ -4,6 +4,7 @@
 
 #include "gx/gx.hpp"
 #include "gfx/clear.hpp"
+#include "gfx/frame_packet.hpp"
 #include "gfx/resources.hpp"
 #include "gfx/depth_peek.hpp"
 #include "gfx/recording.hpp"
@@ -112,8 +113,9 @@ void set_render_scissor(const gfx::ClipRect& scissor) noexcept { g_gxState.rende
 
 // --- Shader/pipeline stubs ---
 namespace aurora::gx {
+uint32_t g_testPipelineBuildCount = 0;
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept {
-  // No-op for tests
+  ++g_testPipelineBuildCount;
 }
 GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept { return {}; }
 ShaderInfo build_shader_info(const ShaderConfig& config) noexcept { return {}; }
@@ -131,34 +133,26 @@ Range push_storage(const uint8_t* data, size_t length) { return {}; }
 Vec2<uint32_t> get_render_target_size() noexcept { return {640, 480}; }
 void set_viewport(const Viewport& viewport) noexcept {}
 void set_scissor(uint32_t x, uint32_t y, uint32_t w, uint32_t h) noexcept {}
-uint32_t get_sample_count() noexcept { return 1; }
+bool g_testNormalAttachment = false;
+bool has_normal_attachment() noexcept { return g_testNormalAttachment; }
 RenderTargetLayout get_render_target_layout() noexcept {
-  return {
+  RenderTargetLayout layout{
       .colorAttachmentCount = 1,
       .colorAttachments = {{{ColorAttachmentSemantic::SceneColor, wgpu::TextureFormat::RGBA8Unorm}}},
       .depthStencilFormat = wgpu::TextureFormat::Depth24Plus,
       .sampleCount = 1,
   };
+  if (g_testNormalAttachment) {
+    layout.colorAttachmentCount = 2;
+    layout.colorAttachments[1] = {ColorAttachmentSemantic::Normal, wgpu::TextureFormat::RGB10A2Unorm};
+  }
+  detail::finalize_render_target_layout(layout);
+  return layout;
 }
 } // namespace aurora::gfx
 
 // --- Pipeline/draw command stubs ---
 namespace aurora::gfx {
-namespace clear {
-PipelineConfig make_pipeline_config(const RenderTargetLayout& layout, bool clearColor, bool clearAlpha,
-                                    bool clearDepth) noexcept {
-  return {
-      .targetLayoutKey = layout.key,
-      .depthStencilFormat = layout.depthStencilFormat,
-      .colorAttachmentCount = layout.colorAttachmentCount,
-      .msaaSamples = layout.sampleCount,
-      .clearColor = clearColor,
-      .clearAlpha = clearAlpha,
-      .clearDepth = clearDepth,
-  };
-}
-} // namespace clear
-
 template <>
 PipelineRef pipeline_ref<clear::PipelineConfig>(const clear::PipelineConfig& config) {
   return 0;

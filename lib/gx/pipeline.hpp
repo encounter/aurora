@@ -20,7 +20,7 @@ struct DrawData {
 constexpr uint32_t GXPipelineConfigVersion = 13;
 struct PipelineConfig {
   uint32_t version = GXPipelineConfigVersion;
-  uint32_t msaaSamples = 1;
+  uint32_t msaaSamples = 1; // deprecated
   ShaderConfig shaderConfig;
   GXCompare depthFunc;
   GXCullMode cullMode;
@@ -35,7 +35,7 @@ struct PipelineConfig {
 };
 static_assert(std::has_unique_object_representations_v<PipelineConfig>);
 
-wgpu::RenderPipeline create_pipeline([[maybe_unused]] const PipelineConfig& config);
+wgpu::RenderPipeline create_pipeline(const PipelineConfig& config, const gfx::RenderTargetLayout& layout);
 void render(const DrawData& data, const wgpu::RenderPassEncoder& pass);
 
 void queue_surface(const u8* dlStart, uint32_t dlSize, bool bigEndian) noexcept;

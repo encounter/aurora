@@ -69,8 +69,11 @@ void copy_tex(const void* dest, GXBool clear) noexcept {
     }
     // Overwrite alpha before resolving
     gfx::push_draw_command(gfx::clear::DrawData{
-        .pipeline =
-            gfx::pipeline_ref(gfx::clear::make_pipeline_config(gfx::get_render_target_layout(), false, true, false)),
+        .pipeline = gfx::pipeline_ref(gfx::clear::PipelineConfig{
+            .clearColor = false,
+            .clearAlpha = true,
+            .clearDepth = false,
+        }),
         .color = wgpu::Color{0.f, 0.f, 0.f, g_gxState.dstAlpha / 255.f},
     });
   }
