@@ -56,6 +56,7 @@ if(AURORA_ENABLE_RMLUI)
             lib/rmlui/SystemInterface_Aurora.cpp
             lib/rmlui/FileInterface_SDL.cpp
             lib/rmlui/GlassFilter.cpp
+            lib/rmlui/ImageEffects.cpp
     )
     target_link_libraries(aurora_core PUBLIC rmlui)
 

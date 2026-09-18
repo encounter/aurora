@@ -330,12 +330,9 @@ if (AURORA_ENABLE_GX)
   if (AURORA_ENABLE_RMLUI AND NOT TARGET RmlUi)
     message(STATUS "aurora: Fetching RmlUi")
     FetchContent_Declare(rmlui
-      URL https://github.com/mikke89/RmlUi/archive/0ae381e00d7426762bb5ed897973366358b16642.tar.gz
-      URL_HASH SHA256=fa4b84db1bae7b929996beb51d79b7037cd7aec438737a0df4d3c816d9b13bd8
+      URL https://github.com/encounter/RmlUi/archive/339cd6475b7fdbe06f17c0d4d3f2a34c424ead4f.tar.gz
+      URL_HASH SHA256=f91286a00f7c3a6fa832e4577c5b1924fc15b57db2fe41801c0dc16bde41ef19
       DOWNLOAD_EXTRACT_TIMESTAMP FALSE
-      PATCH_COMMAND ${CMAKE_COMMAND}
-        -DRMLUI_SOURCE_DIR=<SOURCE_DIR>
-        -P "${CMAKE_CURRENT_LIST_DIR}/../cmake/patches/apply-rmlui-keyboard-showed-state.cmake"
       EXCLUDE_FROM_ALL
     )
     block(SCOPE_FOR VARIABLES PROPAGATE rmlui_SOURCE_DIR rmlui_BINARY_DIR rmlui_POPULATED)

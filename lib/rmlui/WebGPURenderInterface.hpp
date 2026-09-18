@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <memory>
 #include <vector>
 
 #include <dawn/webgpu_cpp.h>
@@ -12,6 +13,8 @@ struct TextureWithSampler;
 } // namespace aurora::webgpu
 
 namespace aurora::rmlui {
+
+struct MaskSnapshot;
 
 inline constexpr bool EnableMsaa = false;
 inline constexpr uint32_t LayerSampleCount = EnableMsaa ? 4 : 1;
@@ -65,6 +68,10 @@ inline Rml::Vector2f g_glassLightDir{-0.7071f, -0.7071f};
 struct SimpleFilterUniformBlock {
   Rml::ColumnMajorMatrix4f matrix;
   Rml::Vector4f opacity;
+};
+
+struct ImageEffectsUniformBlock {
+  Rml::Vector4f parameters; // fade start/end in px, desaturation, fade enabled
 };
 
 struct GradientUniformBlock {
@@ -130,7 +137,7 @@ private:
   Rml::Vector2i m_clipResetGeometrySize{};
   std::vector<RenderTarget> m_layers;
   std::array<RenderTarget, 3> m_postprocessTargets{};
-  RenderTarget m_blendMaskTarget{};
+  std::vector<std::shared_ptr<MaskSnapshot>> m_maskSnapshots;
   std::vector<Rml::LayerHandle> m_layerStack;
   Rml::LayerHandle m_activeLayer = 0;
   Rml::LayerHandle m_nextLayer = 1;
@@ -170,7 +177,7 @@ private:
   void EnsureClipResetGeometry();
   void ApplyScissorRegion();
   void DrawGeometry(Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation, Rml::TextureHandle texture,
-                    gfx::PipelineRef pipeline);
+                    gfx::PipelineRef pipeline, gfx::Range effectUniform = {});
   void DrawFullscreenTexture(gfx::BindGroupRef bindGroup, gfx::PipelineRef pipeline,
                              gfx::BindGroupRef extraBindGroup = 0, gfx::Range extraUniformRange = {},
                              bool extraBindGroupHasDynamicOffset = true, std::array<float, 4> blendConstant = {},

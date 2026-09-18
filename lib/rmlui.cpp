@@ -15,6 +15,7 @@
 #include "imgui.hpp"
 #include "rmlui/FileInterface_SDL.h"
 #include "rmlui/GlassFilter.hpp"
+#include "rmlui/ImageEffects.hpp"
 #include "rmlui/SystemInterface_Aurora.h"
 #include "rmlui/WebGPURenderInterface.hpp"
 #include "webgpu/gpu.hpp"
@@ -365,6 +366,7 @@ void initialize(const AuroraWindowSize& size) noexcept {
   renderInterface->CreateDeviceObjects();
 
   Rml::Initialise();
+  register_image_effects();
 
   static GlassFilterInstancer s_glassInstancer;
   Rml::Factory::RegisterFilterInstancer("glass", &s_glassInstancer);

@@ -24,6 +24,7 @@ enum class PipelineKind : uint32_t {
   DropShadow,
   MaskImage,
   Glass,
+  ImageEffects,
 };
 
 enum class VertexLayoutKind : uint32_t {

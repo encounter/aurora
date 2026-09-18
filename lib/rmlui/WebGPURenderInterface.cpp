@@ -24,6 +24,13 @@
 #include "../webgpu/gpu.hpp"
 
 namespace aurora::rmlui {
+
+struct MaskSnapshot {
+  wgpu::Texture texture;
+  wgpu::TextureView view;
+  wgpu::Extent3D size;
+};
+
 namespace {
 Module Log("aurora::rmlui::RenderInterface");
 
@@ -55,7 +62,9 @@ struct ShaderTextureData {
 };
 
 struct CompiledShaderData {
-  GradientUniformBlock gradient;
+  GradientUniformBlock gradient{};
+  ImageEffectsUniformBlock image{};
+  bool imageEffects = false;
 };
 
 enum class FilterType {
@@ -83,6 +92,7 @@ struct CompiledFilter {
   float edges = -1.f;
   Rml::Vector2f rectSize;
   Rml::Vector4f radii;
+  std::shared_ptr<MaskSnapshot> mask;
 };
 
 Image get_image(const Rml::String& source) {
@@ -405,7 +415,8 @@ void WebGPURenderInterface::RenderGeometry(Rml::CompiledGeometryHandle geometry,
 }
 
 void WebGPURenderInterface::DrawGeometry(Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation,
-                                         Rml::TextureHandle texture, gfx::PipelineRef pipeline) {
+                                         Rml::TextureHandle texture, gfx::PipelineRef pipeline,
+                                         gfx::Range effectUniform) {
   EnsureActiveLayerPass("RmlUi resumed geometry layer pass");
   if (!m_passActive) {
     return;
@@ -430,6 +441,9 @@ void WebGPURenderInterface::DrawGeometry(Rml::CompiledGeometryHandle geometry, R
       .indexRange = indexRange,
       .uniformRange = uniformRange,
       .bindGroup1 = texture_bind_group_ref(textureData->m_textureView),
+      .bindGroup2 = effectUniform.size != 0 ? uniform_bind_group_ref() : 0,
+      .bindGroup2DynamicOffset = effectUniform.offset,
+      .dynamicBindGroupMask = effectUniform.size != 0 ? (1u << 2u) : 0u,
       .drawKind = static_cast<uint32_t>(DrawKind::Geometry),
       .indexCount = static_cast<uint32_t>(geometryData->indices.size()),
       .stencilRef = m_stencilRef,
@@ -554,8 +568,7 @@ Rml::TextureHandle WebGPURenderInterface::GenerateTexture(Rml::Span<const Rml::b
 }
 
 Rml::TextureHandle WebGPURenderInterface::GenerateTexture(Rml::Span<const Rml::byte> source,
-                                                          Rml::Vector2i source_dimensions,
-                                                          uint32_t mipmapLevels) {
+                                                          Rml::Vector2i source_dimensions, uint32_t mipmapLevels) {
   auto* texData = new ShaderTextureData();
   const wgpu::Extent3D size{
       .width = static_cast<uint32_t>(source_dimensions.x),
@@ -735,7 +748,6 @@ void WebGPURenderInterface::EnsureFrameTargets(const wgpu::Extent3D& size) {
   EnsureRenderTarget(m_postprocessTargets[0], "RmlUi Postprocess A", size);
   EnsureRenderTarget(m_postprocessTargets[1], "RmlUi Postprocess B", size);
   EnsureRenderTarget(m_postprocessTargets[2], "RmlUi Postprocess C", size);
-  EnsureRenderTarget(m_blendMaskTarget, "RmlUi Blend Mask", size);
 }
 
 TexCoordLimits WebGPURenderInterface::GetPostprocessTexCoordLimits() const {
@@ -1129,7 +1141,7 @@ size_t WebGPURenderInterface::RenderFilters(Rml::Span<const Rml::CompiledFilterH
       CompositeToTarget(texture_bind_group_ref(m_postprocessTargets[sourceIndex].view),
                         m_postprocessTargets[scratchIndex].view, wgpu::LoadOp::Clear,
                         filter_pipeline(PipelineKind::MaskImage, m_renderTargetFormat), "RmlUi mask image pass",
-                        texture_bind_group_ref(m_blendMaskTarget.view), {}, false);
+                        texture_bind_group_ref(filter->mask->view), {}, false);
       sourceIndex = scratchIndex;
       break;
     }
@@ -1327,6 +1339,23 @@ void WebGPURenderInterface::CompositeLayers(Rml::LayerHandle source, Rml::LayerH
   const BlitPipelineType pipelineType =
       replace ? (m_clipMaskEnabled ? BlitPipelineType::ReplaceMasked : BlitPipelineType::Replace)
               : (m_clipMaskEnabled ? BlitPipelineType::BlendMasked : BlitPipelineType::Blend);
+  if (source != destination && activeFilters.size() == 1) {
+    const auto* filter = reinterpret_cast<const CompiledFilter*>(activeFilters[0]);
+    if (filter->type == FilterType::MaskImage && filter->mask) {
+      BeginLayerPass(destination, wgpu::LoadOp::Load, "RmlUi mask composite pass");
+      const auto pipeline = gfx::pipeline_ref(make_pipeline_config(
+          PipelineKind::MaskImage, m_renderTargetFormat, LayerSampleCount, VertexLayoutKind::Fullscreen,
+          m_clipMaskEnabled ? StencilMode::EqualKeep : StencilMode::AlwaysKeep,
+          replace ? BlendMode::None : BlendMode::Premultiplied));
+      DrawFullscreenTexture(texture_bind_group_ref(m_layers[source].view), pipeline,
+                            texture_bind_group_ref(filter->mask->view), {}, false);
+      if (destination != topLayer) {
+        EndActivePass();
+        m_activeLayer = topLayer;
+      }
+      return;
+    }
+  }
   if (activeFilters.empty() && source != destination) {
     BeginLayerPass(destination, wgpu::LoadOp::Load, "RmlUi layer direct composite pass");
     DrawFullscreenTexture(texture_bind_group_ref(m_layers[source].view),
@@ -1468,17 +1497,40 @@ Rml::CompiledFilterHandle WebGPURenderInterface::SaveLayerAsMaskImage() {
 
   EnsureFrameRenderingStarted();
 
-  CompositeToTarget(texture_bind_group_ref(m_layers[layer].view), m_postprocessTargets[0].view, wgpu::LoadOp::Clear,
-                    blit_pipeline(m_renderTargetFormat, 1, BlitPipelineType::Replace, false),
-                    "RmlUi mask source copy pass");
-  CompositeToTarget(texture_bind_group_ref(m_postprocessTargets[0].view), m_blendMaskTarget.view, wgpu::LoadOp::Clear,
+  std::shared_ptr<MaskSnapshot> snapshot{};
+  std::erase_if(m_maskSnapshots,
+                [this](const auto& entry) { return entry.use_count() == 1 && entry->size != m_frameSize; });
+  for (const auto& entry : m_maskSnapshots) {
+    if (entry.use_count() == 1) {
+      snapshot = entry;
+      break;
+    }
+  }
+  if (!snapshot) {
+    snapshot = std::make_shared<MaskSnapshot>();
+    snapshot->size = m_frameSize;
+    const wgpu::TextureDescriptor desc{
+        .label = "RmlUi Mask Snapshot",
+        .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding,
+        .dimension = wgpu::TextureDimension::e2D,
+        .size = m_frameSize,
+        .format = m_renderTargetFormat,
+        .mipLevelCount = 1,
+        .sampleCount = 1,
+    };
+    snapshot->texture = webgpu::g_device.CreateTexture(&desc);
+    snapshot->view = snapshot->texture.CreateView();
+    m_maskSnapshots.push_back(snapshot);
+  }
+  CompositeToTarget(texture_bind_group_ref(m_layers[layer].view), snapshot->view, wgpu::LoadOp::Clear,
                     blit_pipeline(m_renderTargetFormat, 1, BlitPipelineType::Replace, false),
                     "RmlUi mask image save pass");
-
-  BeginLayerPass(layer, wgpu::LoadOp::Load, "RmlUi mask image restore pass");
+  EndActivePass();
+  m_activeLayer = layer;
 
   auto* filter = new CompiledFilter{
       .type = FilterType::MaskImage,
+      .mask = std::move(snapshot),
   };
   return reinterpret_cast<Rml::CompiledFilterHandle>(filter);
 }
@@ -1588,6 +1640,12 @@ void WebGPURenderInterface::ReleaseFilter(Rml::CompiledFilterHandle filter) {
 
 Rml::CompiledShaderHandle WebGPURenderInterface::CompileShader(const Rml::String& name,
                                                                const Rml::Dictionary& parameters) {
+  if (name == "image-effects") {
+    auto* shader = new CompiledShaderData{};
+    shader->imageEffects = true;
+    shader->image.parameters = Rml::Get(parameters, "parameters", Rml::Vector4f{});
+    return reinterpret_cast<Rml::CompiledShaderHandle>(shader);
+  }
   const bool supportedGradient = name == "linear-gradient" || name == "radial-gradient" || name == "conic-gradient";
   if (!supportedGradient) {
     Log.warn("Unsupported RmlUi shader '{}'", name);
@@ -1645,10 +1703,17 @@ Rml::CompiledShaderHandle WebGPURenderInterface::CompileShader(const Rml::String
 }
 
 void WebGPURenderInterface::RenderShader(Rml::CompiledShaderHandle shader, Rml::CompiledGeometryHandle geometry,
-                                         Rml::Vector2f translation, Rml::TextureHandle) {
+                                         Rml::Vector2f translation, Rml::TextureHandle texture) {
   const auto* shaderData = reinterpret_cast<const CompiledShaderData*>(shader);
   const auto* geometryData = reinterpret_cast<const ShaderGeometryData*>(geometry);
   if (shaderData == nullptr || geometryData == nullptr) {
+    return;
+  }
+  if (shaderData->imageEffects) {
+    const auto pipeline = gfx::pipeline_ref(make_pipeline_config(
+        PipelineKind::ImageEffects, m_renderTargetFormat, LayerSampleCount, VertexLayoutKind::Geometry,
+        m_clipMaskEnabled ? StencilMode::EqualKeep : StencilMode::AlwaysKeep, BlendMode::Premultiplied));
+    DrawGeometry(geometry, translation, texture, pipeline, gfx::push_uniform(shaderData->image));
     return;
   }
   EnsureActiveLayerPass("RmlUi resumed shader layer pass");

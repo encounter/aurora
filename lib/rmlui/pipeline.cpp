@@ -28,7 +28,8 @@ constexpr uint32_t DynamicGroup2 = 1u << 2u;
 constexpr uint64_t CommonUniformBindingSize = AURORA_ALIGN(sizeof(UniformBlock), 16);
 constexpr uint64_t ExtraUniformBindingSize =
     AURORA_ALIGN(std::max({sizeof(BlurUniformBlock), sizeof(DropShadowUniformBlock), sizeof(SimpleFilterUniformBlock),
-                           sizeof(GradientUniformBlock), sizeof(SeedResampleUniformBlock), sizeof(GlassUniformBlock)}),
+                           sizeof(GradientUniformBlock), sizeof(SeedResampleUniformBlock), sizeof(GlassUniformBlock),
+                           sizeof(ImageEffectsUniformBlock)}),
                  16);
 
 constexpr std::string_view vertexSource = R"(
@@ -42,6 +43,7 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) uv: vec2<f32>,
+    @location(2) local_position: vec2<f32>,
 };
 
 struct Uniforms {
@@ -60,6 +62,7 @@ fn main(in: VertexInput) -> VertexOutput {
     out.position = uniforms.mvp * vec4<f32>(translatedPos, 0.0, 1.0);
     out.color = in.color;
     out.uv = in.uv;
+    out.local_position = in.position;
     return out;
 }
 )"sv;
@@ -89,6 +92,43 @@ fn main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
     let corrected_color = pow(color.rgb, vec3<f32>(uniforms.gamma));
     return vec4<f32>(corrected_color, color.a);
+}
+)"sv;
+
+constexpr std::string_view imageEffectsFragmentSource = R"(
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) color: vec4<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) local_position: vec2<f32>,
+};
+
+struct Uniforms {
+    mvp: mat4x4<f32>,
+    translation: vec4<f32>,
+    gamma: f32,
+};
+struct ImageEffects { parameters: vec4<f32> };
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var s: sampler;
+@group(1) @binding(0) var t: texture_2d<f32>;
+@group(2) @binding(0) var<uniform> image: ImageEffects;
+
+@fragment
+fn main(in: VertexOutput) -> @location(0) vec4<f32> {
+    var color = in.color * textureSample(t, s, in.uv);
+    if (uniforms.gamma != 1.0) {
+        color = vec4<f32>(pow(color.rgb, vec3<f32>(uniforms.gamma)), color.a);
+    }
+    let gray = dot(color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    color = vec4<f32>(mix(color.rgb, vec3<f32>(gray), image.parameters.z), color.a);
+    if (image.parameters.w > 0.0) {
+        let fade = clamp((image.parameters.y - in.local_position.y) /
+                         max(image.parameters.y - image.parameters.x, 0.000001), 0.0, 1.0);
+        color *= fade;
+    }
+    return color;
 }
 )"sv;
 
@@ -649,6 +689,7 @@ const wgpu::PipelineLayout create_pipeline_layout(PipelineKind kind) {
   case PipelineKind::SimpleFilter:
   case PipelineKind::SeedResample:
   case PipelineKind::Glass:
+  case PipelineKind::ImageEffects:
     layouts[layoutCount++] = g_imageBindGroupLayout;
     layouts[layoutCount++] = g_uniformBindGroupLayout;
     break;
@@ -671,6 +712,8 @@ const std::string_view fragment_source(PipelineKind kind) {
   switch (kind) {
   case PipelineKind::Geometry:
     return fragmentSource;
+  case PipelineKind::ImageEffects:
+    return imageEffectsFragmentSource;
   case PipelineKind::Gradient:
     return gradientFragmentSource;
   case PipelineKind::OpaqueBlit:
