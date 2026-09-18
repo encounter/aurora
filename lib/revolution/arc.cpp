@@ -103,11 +103,9 @@ std::string currentDirPath(const ARCHandle* handle) {
 } // namespace aurora::arc
 
 BOOL ARCInitHandle(void* archiveStart, ARCHandle* handle) {
-  using namespace aurora::arc;
-
   aurora::ByteReader header(static_cast<const uint8_t*>(archiveStart), 32);
   const u32 magic = header.read<u32>();
-  if (magic != kMagic) {
+  if (magic != aurora::arc::kMagic) {
     Log.error("ARCInitHandle: bad magic 0x{:08X}", magic);
     return FALSE;
   }
@@ -121,7 +119,7 @@ BOOL ARCInitHandle(void* archiveStart, ARCHandle* handle) {
   handle->FSTLength = static_cast<u32>(fstSize);
   handle->currDir = 0;
 
-  const FstEntry root = readEntry(handle, 0);
+  const aurora::arc::FstEntry root = aurora::arc::readEntry(handle, 0);
   handle->entryNum = root.sizeOrNext;
   handle->FSTStringStart = POINTER_ADD_TYPE(char*, handle->FSTStart, handle->entryNum * 12);
 
@@ -129,13 +127,11 @@ BOOL ARCInitHandle(void* archiveStart, ARCHandle* handle) {
 }
 
 BOOL ARCFastOpen(ARCHandle* handle, s32 entrynum, ARCFileInfo* info) {
-  using namespace aurora::arc;
-
   if (entrynum < 0 || static_cast<u32>(entrynum) >= handle->entryNum) {
     return FALSE;
   }
 
-  const FstEntry entry = readEntry(handle, static_cast<u32>(entrynum));
+  const aurora::arc::FstEntry entry = aurora::arc::readEntry(handle, static_cast<u32>(entrynum));
   if (entry.isDir) {
     return FALSE;
   }
@@ -160,14 +156,12 @@ BOOL ARCClose(ARCFileInfo* info) {
 }
 
 BOOL ARCChangeDir(ARCHandle* handle, const char* path) {
-  using namespace aurora::arc;
-
-  const s32 entrynum = resolvePath(handle, path);
+  const s32 entrynum = aurora::arc::resolvePath(handle, path);
   if (entrynum < 0) {
     return FALSE;
   }
 
-  const FstEntry entry = readEntry(handle, static_cast<u32>(entrynum));
+  const aurora::arc::FstEntry entry = aurora::arc::readEntry(handle, static_cast<u32>(entrynum));
   if (!entry.isDir) {
     return FALSE;
   }
@@ -187,14 +181,12 @@ BOOL ARCGetCurrentDir(ARCHandle* handle, char* buf, u32 maxLen) {
 }
 
 BOOL ARCOpenDir(ARCHandle* handle, const char* path, ARCDir* dir) {
-  using namespace aurora::arc;
-
-  const s32 entrynum = resolvePath(handle, path);
+  const s32 entrynum = aurora::arc::resolvePath(handle, path);
   if (entrynum < 0) {
     return FALSE;
   }
 
-  const FstEntry entry = readEntry(handle, static_cast<u32>(entrynum));
+  const aurora::arc::FstEntry entry = aurora::arc::readEntry(handle, static_cast<u32>(entrynum));
   if (!entry.isDir) {
     return FALSE;
   }
@@ -207,17 +199,15 @@ BOOL ARCOpenDir(ARCHandle* handle, const char* path, ARCDir* dir) {
 }
 
 BOOL ARCReadDir(ARCDir* dir, ARCDirEntry* out) {
-  using namespace aurora::arc;
-
   if (dir->location >= dir->next) {
     return FALSE;
   }
 
-  const FstEntry entry = readEntry(dir->handle, dir->location);
+  const aurora::arc::FstEntry entry = aurora::arc::readEntry(dir->handle, dir->location);
   out->handle = dir->handle;
   out->entryNum = dir->location;
   out->isDir = entry.isDir ? TRUE : FALSE;
-  out->name = const_cast<char*>(entryName(dir->handle, entry));
+  out->name = const_cast<char*>(aurora::arc::entryName(dir->handle, entry));
 
   dir->location = entry.isDir ? entry.sizeOrNext : dir->location + 1;
   return TRUE;
