@@ -8,6 +8,9 @@
 
 namespace aurora::card {
 
+std::string gci_filename(std::string_view game, std::string_view maker, std::string_view filename);
+bool is_gci_filename(std::string_view filename);
+
 class CardGciFolder : public ICard {
 private:
   struct GciFile {
@@ -35,7 +38,7 @@ private:
   const GciFile* get_open_file(const FileHandle& fh) const;
 
 public:
-  CardGciFolder();
+  CardGciFolder() = default;
   ~CardGciFolder() override = default;
 
   CardGciFolder(const CardGciFolder& other) = delete;

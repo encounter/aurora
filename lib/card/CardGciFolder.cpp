@@ -12,11 +12,43 @@
 #include "FileIO.hpp"
 #include "../internal.hpp"
 
+namespace aurora::card {
 namespace {
-aurora::Module Log("aurora::card");
+Module Log("aurora::card");
+
+ECardResult check_new_path(const std::filesystem::path& path) {
+  std::error_code ec;
+  const auto status = std::filesystem::symlink_status(path, ec);
+  if (ec && ec != std::errc::no_such_file_or_directory) {
+    return ECardResult::IOERROR;
+  }
+  return std::filesystem::exists(status) ? ECardResult::EXIST : ECardResult::READY;
+}
+} // namespace
+
+std::string gci_filename(std::string_view game, std::string_view maker, std::string_view filename) {
+  if (game.size() != 4 || maker.size() != 2 || filename.size() > CARD_FILENAME_MAX ||
+      game.find('\0') != std::string_view::npos || maker.find('\0') != std::string_view::npos ||
+      filename.find('\0') != std::string_view::npos) {
+    return {};
+  }
+  std::string result = fmt::format("{}-{}-{}", maker, game, filename);
+  for (char& c : result) {
+    if (static_cast<unsigned char>(c) < 32 || std::strchr("<>:\"/\\|?*", c)) {
+      c = '_';
+    }
+  }
+  return result + ".gci";
 }
 
-namespace aurora::card {
+bool is_gci_filename(std::string_view filename) {
+  if (filename.size() < 13 || filename.size() > 12 + CARD_FILENAME_MAX || filename[2] != '-' || filename[7] != '-' ||
+      !filename.ends_with(".gci")) {
+    return false;
+  }
+  return filename ==
+         gci_filename(filename.substr(3, 4), filename.substr(0, 2), filename.substr(8, filename.size() - 12));
+}
 
 CardGciFolder::GciFile* CardGciFolder::get_file(uint32_t idx) {
   if (m_error == ECardResult::READY && m_files.size() > idx && !m_files[idx].deleted) {
@@ -41,8 +73,6 @@ const CardGciFolder::GciFile* CardGciFolder::get_open_file(const FileHandle& fh)
   const auto* file = get_file(fh.getFileNo());
   return file != nullptr && file->opened ? file : nullptr;
 }
-
-CardGciFolder::CardGciFolder() {}
 
 CardGciFolder::CardGciFolder(CardGciFolder&& other) {
   m_files = std::move(other.m_files);
@@ -91,6 +121,16 @@ ECardResult CardGciFolder::openFile(const char* filename, FileHandle& handleOut)
     return m_error;
   }
   const auto idx = find_file(filename);
+  if (idx < 0) {
+    const auto diskName = gci_filename(m_game, m_maker, filename);
+    if (diskName.empty() || filename[0] == '\0') {
+      return ECardResult::FATAL_ERROR;
+    }
+    if (check_new_path(m_folderPath / io::fs_path_from_string(diskName)) != ECardResult::READY) {
+      Log.error("GCI path '{}' is occupied by a file that does not match its CARD identity", diskName);
+      return m_error = ECardResult::IOERROR;
+    }
+  }
   return idx < 0 ? ECardResult::NOFILE : openFile(static_cast<uint32_t>(idx), handleOut);
 }
 
@@ -128,20 +168,13 @@ ECardResult CardGciFolder::createFile(const char* filename, size_t size, FileHan
     return ECardResult::INSSPACE;
   }
 
-  std::string baseName = fmt::format("{}-{}-{}", m_maker, m_game, filename);
-  for (char& c : baseName) {
-    if (static_cast<unsigned char>(c) < 32 || std::strchr("<>:\"/\\|?*", c)) {
-      c = '_';
-    }
+  const auto canonicalName = gci_filename(m_game, m_maker, filename);
+  if (canonicalName.empty() || filename[0] == '\0') {
+    return ECardResult::FATAL_ERROR;
   }
-  auto diskName = io::fs_path_from_string(baseName + ".gci");
-  // CARD filenames are case-sensitive even when the filesystem isn't.
-  std::error_code ec;
-  for (uint32_t suffix = 1; std::filesystem::exists(m_folderPath / diskName, ec) && !ec; ++suffix) {
-    diskName = io::fs_path_from_string(fmt::format("{}-{}.gci", baseName, suffix));
-  }
-  if (ec) {
-    return ECardResult::IOERROR;
+  const auto diskName = io::fs_path_from_string(canonicalName);
+  if (const auto result = check_new_path(m_folderPath / diskName); result != ECardResult::READY) {
+    return result;
   }
 
   File header{filename};
@@ -231,8 +264,39 @@ ECardResult CardGciFolder::renameFile(const char* oldName, const char* newName) 
     return ECardResult::EXIST;
   }
   auto& file = m_files[idx];
-  std::strncpy(file.file.m_filename, newName, CARD_FILENAME_MAX);
-  file.dirty = true;
+  const auto diskName = gci_filename(m_game, m_maker, newName);
+  if (diskName.empty() || newName[0] == '\0') {
+    return ECardResult::FATAL_ERROR;
+  }
+  const auto source = m_folderPath / file.filename;
+  const auto destination = m_folderPath / io::fs_path_from_string(diskName);
+  if (source != destination) {
+    if (const auto result = check_new_path(destination); result != ECardResult::READY) {
+      return result;
+    }
+  }
+
+  auto contents = io::read_file(source);
+  if (!contents || contents->size() != file.fileSize) {
+    return ECardResult::IOERROR;
+  }
+  File header = file.file;
+  std::strncpy(header.m_filename, newName, CARD_FILENAME_MAX);
+  File diskHeader = header;
+  diskHeader.swapEndian();
+  std::memcpy(contents->data(), &diskHeader, sizeof(File));
+  if (!io::write_file_atomic(destination, *contents)) {
+    return ECardResult::IOERROR;
+  }
+  if (source != destination && !SDL_RemovePath(io::fs_path_to_string(source).c_str())) {
+    if (!SDL_RemovePath(io::fs_path_to_string(destination).c_str())) {
+      m_error = ECardResult::IOERROR;
+    }
+    return ECardResult::IOERROR;
+  }
+  file.file = header;
+  file.filename = destination.filename().u8string();
+  file.dirty = false;
   return ECardResult::READY;
 }
 
@@ -476,68 +540,62 @@ bool CardGciFolder::open(const std::filesystem::path& filepath) {
 
   const std::filesystem::directory_iterator end;
   while (it != end) {
-    const auto path = it->path();
-    const auto status = it->status(ec);
+    const auto entry = *it;
+    it.increment(ec);
+    if (ec) {
+      Log.warn("Failed to continue enumerating GCI folder '{}': {}", io::fs_path_to_string(filepath), ec.message());
+      return false;
+    }
+    const auto path = entry.path();
+    if (path.extension() != ".gci") {
+      continue;
+    }
+    const auto diskName = io::fs_path_to_string(path.filename());
+    if (!is_gci_filename(diskName)) {
+      Log.debug("Ignoring GCI file with a noncanonical filename: '{}'", io::fs_path_to_string(path));
+      continue;
+    }
+    const auto status = entry.status(ec);
     if (ec) {
       Log.warn("Failed to inspect GCI folder entry '{}': {}", io::fs_path_to_string(path), ec.message());
       return false;
     }
     if (!std::filesystem::is_regular_file(status)) {
-      it.increment(ec);
-      if (ec) {
-        Log.warn("Failed to continue enumerating GCI folder '{}': {}", io::fs_path_to_string(filepath), ec.message());
-        return false;
-      }
       continue;
     }
 
-    if (path.extension() != ".gci") {
-      it.increment(ec);
-      if (ec) {
-        Log.warn("Failed to continue enumerating GCI folder '{}': {}", io::fs_path_to_string(filepath), ec.message());
-        return false;
-      }
-      continue;
-    }
-
-    FileIO file(path);
+    auto file = io::open_file(path, "rb");
     if (!file) {
       Log.warn("Failed to open GCI file '{}'", io::fs_path_to_string(path));
       return false;
     }
 
     File fileData;
-    if (!file.fileRead(&fileData, sizeof(File), 0)) {
+    if (!io::read_exact(file.get(), &fileData, sizeof(File))) {
       Log.warn("Failed to read GCI file '{}'", io::fs_path_to_string(path));
       return false;
     }
     fileData.swapEndian();
 
-    for (const auto& existing : files) {
-      if (std::memcmp(existing.file.m_game, fileData.m_game, 4) == 0 &&
-          std::memcmp(existing.file.m_maker, fileData.m_maker, 2) == 0 &&
-          std::strncmp(existing.file.m_filename, fileData.m_filename, CARD_FILENAME_MAX) == 0) {
-        Log.warn("Duplicate CARD identity in GCI folder: '{}' and '{}'", io::fs_path_to_string(existing.filename),
-                 io::fs_path_to_string(path));
-        m_error = ECardResult::BROKEN;
-        return false;
-      }
+    const auto* nameEnd = std::ranges::find(fileData.m_filename, '\0');
+    const auto canonicalName = gci_filename({reinterpret_cast<const char*>(fileData.m_game), 4},
+                                            {reinterpret_cast<const char*>(fileData.m_maker), 2},
+                                            {fileData.m_filename, static_cast<size_t>(nameEnd - fileData.m_filename)});
+    if (canonicalName != diskName) {
+      Log.debug("Ignoring GCI file whose filename does not match its CARD identity: '{}'", io::fs_path_to_string(path));
+      continue;
     }
     if (files.size() == MaxFiles) {
       m_error = ECardResult::BROKEN;
       return false;
     }
-    const auto fileSize = file.fileSize();
-    if (fileSize < sizeof(File)) {
+    const auto fileSize = SDL_GetIOSize(file.get());
+    if (fileSize < static_cast<Sint64>(sizeof(File)) || fileData.m_blockCount == 0 ||
+        fileSize != sizeof(File) + static_cast<size_t>(fileData.m_blockCount) * BlockSize) {
+      Log.warn("Invalid GCI file size: '{}'", io::fs_path_to_string(path));
       return false;
     }
-    files.push_back({fileData, fileSize, path.filename().u8string(), false});
-
-    it.increment(ec);
-    if (ec) {
-      Log.warn("Failed to continue enumerating GCI folder '{}': {}", io::fs_path_to_string(filepath), ec.message());
-      return false;
-    }
+    files.push_back({fileData, static_cast<size_t>(fileSize), path.filename().u8string(), false});
   }
 
   m_files = std::move(files);
@@ -564,3 +622,24 @@ ProbeResults CardGciFolder::probeCardFile(const std::filesystem::path& filename)
 }
 
 } // namespace aurora::card
+
+extern "C" {
+size_t aurora_card_gci_filename(const char* game, const char* maker, const char* fileName, char* buffer,
+                                size_t capacity) {
+  if (buffer != nullptr && capacity != 0) {
+    buffer[0] = '\0';
+  }
+  if (game == nullptr || maker == nullptr || fileName == nullptr) {
+    return 0;
+  }
+  const auto filename = aurora::card::gci_filename(game, maker, fileName);
+  if (filename.empty()) {
+    return 0;
+  }
+  const size_t required = filename.size() + 1;
+  if (buffer != nullptr && capacity >= required) {
+    std::memcpy(buffer, filename.c_str(), required);
+  }
+  return required;
+}
+}

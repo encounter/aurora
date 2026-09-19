@@ -544,7 +544,7 @@ s32 CARDFreeBlocks(const s32 chan, s32* byteNotUsed, s32* filesNotUsed) {
 
   const auto& card = GET_CARD(chan);
   card->getFreeBlocks(*byteNotUsed, *filesNotUsed);
-  return CARD_RESULT_READY;
+  return static_cast<s32>(card->getError());
 }
 
 s32 CARDGetAttributes(const s32 chan, const s32 fileNo [[maybe_unused]], u8* attr [[maybe_unused]]) {
