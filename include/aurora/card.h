@@ -51,6 +51,10 @@ bool aurora_card_raw_insert(const char* imagePath, const void* gci, size_t size,
 /** Deletes one CARD file from a raw image. */
 bool aurora_card_raw_delete(const char* imagePath, const char* game, const char* maker, const char* fileName);
 
+/** Builds a GCI filename from its game, maker, and internal CARD filename. */
+size_t aurora_card_gci_filename(const char* game, const char* maker, const char* fileName, char* buffer,
+                                size_t capacity);
+
 #ifdef __cplusplus
 }
 #endif
