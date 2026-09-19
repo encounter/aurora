@@ -330,8 +330,8 @@ if (AURORA_ENABLE_GX)
   if (AURORA_ENABLE_RMLUI AND NOT TARGET RmlUi)
     message(STATUS "aurora: Fetching RmlUi")
     FetchContent_Declare(rmlui
-      URL https://github.com/encounter/RmlUi/archive/339cd6475b7fdbe06f17c0d4d3f2a34c424ead4f.tar.gz
-      URL_HASH SHA256=f91286a00f7c3a6fa832e4577c5b1924fc15b57db2fe41801c0dc16bde41ef19
+      URL https://github.com/encounter/RmlUi/archive/215513c51ee1b3b75fc794518dda0576c462279f.tar.gz
+      URL_HASH SHA256=1df201ef7bade930cc825deeefc4361dc3681d0808806ff5cc746f1ffa272fcf
       DOWNLOAD_EXTRACT_TIMESTAMP FALSE
       EXCLUDE_FROM_ALL
     )
