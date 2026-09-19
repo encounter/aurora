@@ -50,13 +50,13 @@ wgpu::Buffer create_texture_upload_buffer(uint32_t width, uint32_t height, const
     dst += copyBytesPerRow;
     data += rowBytes;
   }
-  buffer.Unmap();
   return buffer;
 }
 
 void enqueue_texture_upload(wgpu::Buffer buffer, wgpu::TexelCopyTextureInfo dst, wgpu::TexelCopyBufferLayout layout,
                             wgpu::Extent3D size) {
   gfx::render_worker::enqueue_work([buffer = std::move(buffer), dst = std::move(dst), layout, size] {
+    buffer.Unmap();
     const wgpu::CommandEncoderDescriptor encoderDesc{
         .label = "imgui texture upload encoder",
     };
