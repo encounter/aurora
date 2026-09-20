@@ -57,6 +57,8 @@ void get_device_rumble_intensity(uint16_t* low_freq_intensity, uint16_t* high_fr
 void set_device_rumble_intensity(uint16_t low_freq_intensity, uint16_t high_freq_intensity) noexcept;
 uint32_t controller_count() noexcept;
 void initialize() noexcept;
+void update() noexcept;
+void set_wpad_hooks(void (*update)(), void (*shutdown)()) noexcept;
 void persist_controller_for_player(uint32_t player, const GameController* controller) noexcept;
 extern absl::flat_hash_map<Uint32, GameController> g_GameControllers;
 

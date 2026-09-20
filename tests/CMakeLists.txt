@@ -14,6 +14,23 @@ if (NOT TARGET gtest)
   FetchContent_MakeAvailable(googletest)
 endif ()
 
+add_executable(wpad_tests
+  wpad_test.cpp
+  wpad_header_test.c
+  ../lib/revolution/wpad/wpad.cpp
+  ../lib/revolution/kpad.cpp
+)
+target_include_directories(wpad_tests PRIVATE ../include ../lib)
+target_compile_definitions(wpad_tests PRIVATE AURORA TARGET_PC)
+target_link_libraries(wpad_tests PRIVATE gtest gtest_main)
+gtest_discover_tests(wpad_tests)
+
+add_executable(wpad_pad_tests wpad_pad_test.cpp)
+target_include_directories(wpad_pad_tests PRIVATE ../lib)
+target_link_libraries(wpad_pad_tests PRIVATE aurora::kpad absl::flat_hash_map gtest gtest_main)
+aurora_copy_runtime_dlls(wpad_pad_tests)
+gtest_discover_tests(wpad_pad_tests)
+
 add_executable(io_tests
   io_test.cpp
   ../lib/card/FileIO.cpp

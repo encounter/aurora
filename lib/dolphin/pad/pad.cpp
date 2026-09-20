@@ -1621,6 +1621,10 @@ void PADBlockInput(const bool block) {
   g_blockPAD = block;
 }
 
+BOOL PADIsInputBlocked() {
+	return g_blockPAD;
+}
+
 SDL_Gamepad* PADGetSDLGamepadForIndex(const u32 index) {
   const auto* ctrl = __PADGetControllerForIndex(index);
   if (ctrl == nullptr) {
