@@ -1363,6 +1363,10 @@ void PADRestoreDefaultMapping(const u32 port) {
 
 void PADBlockInput(const bool block) { aurora::pad::detail::set_blocked(block); }
 
+BOOL PADIsInputBlocked() {
+	return g_blockPAD;
+}
+
 SDL_Gamepad* PADGetSDLGamepadForIndex(const u32 index) {
   const auto* ctrl = __PADGetControllerForIndex(index);
   if (ctrl == nullptr) {
