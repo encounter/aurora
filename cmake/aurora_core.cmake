@@ -103,3 +103,7 @@ if (AURORA_ENABLE_GX)
         target_compile_definitions(aurora_core PRIVATE DAWN_ENABLE_BACKEND_NULL)
     endif ()
 endif ()
+
+if (AURORA_TARGET_RVL)
+    target_compile_definitions(aurora_core PUBLIC RVL)
+endif ()

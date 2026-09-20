@@ -77,6 +77,7 @@ typedef void (*AuroraLogCallback)(AuroraLogLevel level, const char* module, cons
 typedef void (*AuroraImGuiInitCallback)(const AuroraWindowSize* size);
 
 #define MEM1_DEFAULT_SIZE (24 * 1024 * 1024)
+#define MEM2_DEFAULT_SIZE (64 * 1024 * 1024)
 #define ARAM_DEFAULT_SIZE (16 * 1024 * 1024)
 
 typedef struct {
