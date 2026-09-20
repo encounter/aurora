@@ -230,7 +230,9 @@ const AuroraEvent* update() noexcept {
 #ifdef AURORA_ENABLE_GX
   gx::update();
 #endif
-  return window::poll_events();
+  const auto* events = window::poll_events();
+  input::update();
+  return events;
 }
 
 bool begin_frame() noexcept {

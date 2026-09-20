@@ -18,6 +18,19 @@ using namespace std::string_view_literals;
 
 namespace aurora::input {
 absl::flat_hash_map<Uint32, GameController> g_GameControllers;
+static void (*g_wpadUpdate)() = nullptr;
+static void (*g_wpadShutdown)() = nullptr;
+
+void set_wpad_hooks(void (*update)(), void (*shutdown)()) noexcept {
+	g_wpadUpdate = update;
+	g_wpadShutdown = shutdown;
+}
+
+void update() noexcept {
+	if (g_wpadUpdate) {
+		g_wpadUpdate();
+	}
+}
 
 namespace {
 constexpr Module Log{"aurora::input"};
@@ -474,6 +487,9 @@ void get_mouse_scroll(float* scrollX, float* scrollY) noexcept {
 }
 
 void shutdown() noexcept {
+  if (g_wpadShutdown) {
+    g_wpadShutdown();
+  }
   // Upon shutdown we want to ensure all controllers are in a default state, so force all rumble supporting controllers
   // to shut off their rumble motors.
   for (const auto& controller : g_GameControllers) {

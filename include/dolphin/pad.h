@@ -221,6 +221,7 @@ s32 PADGetNativeButtonPressed(u32 port);
 PADSignedNativeAxis PADGetNativeAxisPulled(u32 port);
 void PADRestoreDefaultMapping(u32 port);
 void PADBlockInput(bool block);
+BOOL PADIsInputBlocked(void);
 
 void PADSetVirtualStatus(u32 port, const PADStatus* status);
 void PADClearVirtualStatus(u32 port);
