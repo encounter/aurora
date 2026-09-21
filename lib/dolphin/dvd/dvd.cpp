@@ -738,9 +738,6 @@ static int DVDReadAbsAsyncPrioInternal(DVDCommandBlock* block, u32 command, void
   (void)prio;
   ASSERTMSGLINE(0x780, block, "DVDReadAbsAsync(): null pointer is specified to command block address.");
   ASSERTMSGLINE(0x781, addr, "DVDReadAbsAsync(): null pointer is specified to addr.");
-  ASSERTMSGLINE(0x783, isAligned(addr, 32), "DVDReadAbsAsync(): address must be aligned with 32 byte boundary.");
-  ASSERTMSGLINE(0x785, !(length & (32 - 1)), "DVDReadAbsAsync(): length must be a multiple of 32.");
-  ASSERTMSGLINE(0x787, !(offset & (4 - 1)), "DVDReadAbsAsync(): offset must be a multiple of 4.");
   ASSERTMSGLINE(0x789, length >= 0, "DVD read: negative value was specified to length of the read\n");
   ASSERTMSGLINE(0x793, isCommandBlockIdle(block),
                 "DVDReadAbsAsync(): command block is used for processing previous request.");
