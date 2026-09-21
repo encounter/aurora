@@ -7,39 +7,18 @@
 extern "C" {
 #endif
 
-typedef void (*ARQCallback)(uintptr_t pointerToARQRequest);
-
-struct ARQRequest {
-    /* 0x00 */ struct ARQRequest *next;
-    /* 0x04 */ u32 owner;
-    /* 0x08 */ u32 type;
-    /* 0x0C */ u32 priority;
-    /* 0x10 */ u32 source;
-    /* 0x14 */ u32 dest;
-    /* 0x18 */ u32 length;
-    /* 0x1C */ ARQCallback callback;
-};
-
-#define ARQ_DMA_ALIGNMENT 32
+#define AR_STACK_INDEX_ENTRY_SIZE sizeof(u32)
 
 #define ARAM_DIR_MRAM_TO_ARAM 0x00
 #define ARAM_DIR_ARAM_TO_MRAM 0x01
 
-#define ARStartDMARead(mmem, aram, len) \
-    ARStartDMA(ARAM_DIR_ARAM_TO_MRAM, mmem, aram, len)
-#define ARStartDMAWrite(mmem, aram, len) \
-    ARStartDMA(ARAM_DIR_MRAM_TO_ARAM, mmem, aram, len)
+#define AR_CLEAR_INTERNAL_ALL 0x00
+#define AR_CLEAR_INTERNAL_USER 0x01
+#define AR_CLEAR_EXPANSION 0x02
 
-typedef struct ARQRequest ARQRequest;
+typedef void (*ARCallback)(void);
 
-#define ARQ_TYPE_MRAM_TO_ARAM ARAM_DIR_MRAM_TO_ARAM
-#define ARQ_TYPE_ARAM_TO_MRAM ARAM_DIR_ARAM_TO_MRAM
-
-#define ARQ_PRIORITY_LOW  0
-#define ARQ_PRIORITY_HIGH 1
-
-// AR
-ARQCallback ARRegisterDMACallback(ARQCallback callback);
+ARCallback ARRegisterDMACallback(ARCallback callback);
 u32 ARGetDMAStatus(void);
 void ARStartDMA(u32 type, u32 mainmem_addr, u32 aram_addr, u32 length);
 u32 ARAlloc(u32 length);
@@ -58,19 +37,11 @@ void ARClear(u32 flag);
  */
 void* ARGetStorageAddress();
 
-// ARQ
-void ARQInit(void);
-void ARQReset(void);
-void ARQPostRequest(ARQRequest* request, u32 owner, u32 type, u32 priority, uintptr_t source, uintptr_t dest, u32 length, ARQCallback callback);
-void ARQRemoveRequest(ARQRequest* request);
-void ARQRemoveOwnerRequest(u32 owner);
-void ARQFlushQueue(void);
-void ARQSetChunkSize(u32 size);
-u32 ARQGetChunkSize(void);
-BOOL ARQCheckInit(void);
-
 u16 __ARGetInterruptStatus(void);
 void __ARClearInterrupt(void);
+
+#define ARStartDMARead(mmem, aram, len) ARStartDMA(ARAM_DIR_ARAM_TO_MRAM, mmem, aram, len)
+#define ARStartDMAWrite(mmem, aram, len) ARStartDMA(ARAM_DIR_MRAM_TO_ARAM, mmem, aram, len)
 
 #ifdef __cplusplus
 }

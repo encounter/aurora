@@ -213,7 +213,7 @@ void GXGetPointSize(u8* pointSize, GXTexOffset* texOffsets) {
   *texOffsets = static_cast<GXTexOffset>(GET_REG_FIELD(__gx->lpSize, 3, 19));
 }
 
-void GXGetViewportv(f32 *vp) {
+void GXGetViewportv(f32* vp) {
   CHECK(vp != nullptr, "null viewport output");
 
   vp[0] = __gx->vpLeft;
@@ -265,56 +265,64 @@ void GXGetCullMode(GXCullMode* mode) {
   }
 }
 
-void GXGetLightAttnA(GXLightObj* light_, float* a0, float* a1, float* a2) {
+void GXGetLightAttnA(const GXLightObj* light_, float* a0, float* a1, float* a2) {
   auto* light = reinterpret_cast<const GXLightObj_*>(light_);
   *a0 = light->a0;
   *a1 = light->a1;
   *a2 = light->a2;
 }
 
-void GXGetLightAttnK(GXLightObj* light_, float* k0, float* k1, float* k2) {
+void GXGetLightAttnK(const GXLightObj* light_, float* k0, float* k1, float* k2) {
   auto* light = reinterpret_cast<const GXLightObj_*>(light_);
   *k0 = light->k0;
   *k1 = light->k1;
   *k2 = light->k2;
 }
 
-void GXGetLightPos(GXLightObj* light_, float* x, float* y, float* z) {
+void GXGetLightPos(const GXLightObj* light_, float* x, float* y, float* z) {
   auto* light = reinterpret_cast<const GXLightObj_*>(light_);
   *x = light->px;
   *y = light->py;
   *z = light->pz;
 }
 
-void GXGetLightDir(GXLightObj* light_, float* nx, float* ny, float* nz) {
+void GXGetLightDir(const GXLightObj* light_, float* nx, float* ny, float* nz) {
   auto* light = reinterpret_cast<const GXLightObj_*>(light_);
   *nx = -light->nx;
   *ny = -light->ny;
   *nz = -light->nz;
 }
 
-void GXGetLightColor(GXLightObj* light_, GXColor* col) {
+void GXGetLightColor(const GXLightObj* light_, GXColor* col) {
   auto* light = reinterpret_cast<const GXLightObj_*>(light_);
   *col = light->color;
 }
 
-void* GXGetTexObjData(GXTexObj* tex_obj) {
+void* GXGetTexObjData(const GXTexObj* tex_obj) {
   return const_cast<void*>(reinterpret_cast<const GXTexObj_*>(tex_obj)->data);
 }
 
-u16 GXGetTexObjWidth(GXTexObj* tex_obj) { return static_cast<u16>(reinterpret_cast<const GXTexObj_*>(tex_obj)->width()); }
+u16 GXGetTexObjWidth(const GXTexObj* tex_obj) {
+  return static_cast<u16>(reinterpret_cast<const GXTexObj_*>(tex_obj)->width());
+}
 
-u16 GXGetTexObjHeight(GXTexObj* tex_obj) { return static_cast<u16>(reinterpret_cast<const GXTexObj_*>(tex_obj)->height()); }
+u16 GXGetTexObjHeight(const GXTexObj* tex_obj) {
+  return static_cast<u16>(reinterpret_cast<const GXTexObj_*>(tex_obj)->height());
+}
 
-GXTexFmt GXGetTexObjFmt(GXTexObj* tex_obj) {
+GXTexFmt GXGetTexObjFmt(const GXTexObj* tex_obj) {
   return static_cast<GXTexFmt>(reinterpret_cast<const GXTexObj_*>(tex_obj)->format());
 }
 
-GXTexWrapMode GXGetTexObjWrapS(GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->wrap_s(); }
+GXTexWrapMode GXGetTexObjWrapS(const GXTexObj* tex_obj) {
+  return reinterpret_cast<const GXTexObj_*>(tex_obj)->wrap_s();
+}
 
-GXTexWrapMode GXGetTexObjWrapT(GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->wrap_t(); }
+GXTexWrapMode GXGetTexObjWrapT(const GXTexObj* tex_obj) {
+  return reinterpret_cast<const GXTexObj_*>(tex_obj)->wrap_t();
+}
 
-GXBool GXGetTexObjMipMap(GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->has_mips(); }
+GXBool GXGetTexObjMipMap(const GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->has_mips(); }
 
 // TODO GXGetTexObjAll
 // TODO GXGetTexObjMinFilt
