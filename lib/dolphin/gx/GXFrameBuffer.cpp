@@ -151,11 +151,25 @@ GXRenderModeObj GXMpal480IntDf = {
 };
 
 void GXAdjustForOverscan(GXRenderModeObj* rmin, GXRenderModeObj* rmout, u16 hor, u16 ver) {
-  *rmout = *rmin;
-  const auto size = aurora::window::get_window_size();
-  rmout->fbWidth = size.fb_width;
-  rmout->efbHeight = size.fb_height;
-  rmout->xfbHeight = size.fb_height;
+  const GXRenderModeObj in = *rmin;
+  const u16 hor2 = hor * 2;
+  const u16 ver2 = ver * 2;
+  const u32 efbHeight = in.efbHeight;
+
+  *rmout = in;
+  rmout->fbWidth = in.fbWidth - hor2;
+  rmout->efbHeight = efbHeight - (ver2 * efbHeight) / in.xfbHeight;
+
+  if (in.xFBmode == VI_XFBMODE_SF && (in.viTVmode & 2) != 2) {
+    rmout->xfbHeight = in.xfbHeight - ver;
+  } else {
+    rmout->xfbHeight = in.xfbHeight - ver2;
+  }
+
+  rmout->viWidth = in.viWidth - hor2;
+  rmout->viHeight = in.viHeight - ver2;
+  rmout->viXOrigin = in.viXOrigin + hor;
+  rmout->viYOrigin = in.viYOrigin + ver;
 }
 
 void GXSetDispCopySrc(u16 left, u16 top, u16 wd, u16 ht) {}
