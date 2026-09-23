@@ -4,6 +4,10 @@ include(${CMAKE_CURRENT_LIST_DIR}/../cmake/AuroraCopyRuntimeDLLs.cmake)
 
 set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 
+if (CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+  add_compile_options(/Zc:__cplusplus)
+endif ()
+
 if (NOT TARGET gtest)
   FetchContent_Declare(googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.tar.gz
