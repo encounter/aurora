@@ -53,8 +53,8 @@ std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsXBox360{{
 
 std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsXBoxOne{{
     {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
+    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_X},
+    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_B},
     {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
     {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
     {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
@@ -528,9 +528,9 @@ void __PADLoadMapping(aurora::input::GameController* controller) /*  NOLINT(*-re
 
   controller->m_mappingLoaded = true;
 
-  const auto path = aurora::io::fs_path_from_string(aurora::g_config.userPath) /
-                    fmt::format("{}_{:04X}_{:04X}.controller", PADGetName(playerIndex), controller->m_vid,
-                                controller->m_pid);
+  const auto path =
+      aurora::io::fs_path_from_string(aurora::g_config.userPath) /
+      fmt::format("{}_{:04X}_{:04X}.controller", PADGetName(playerIndex), controller->m_vid, controller->m_pid);
   auto file = aurora::io::open_file(path, "rb");
   if (!file) {
     return;
@@ -543,8 +543,7 @@ void __PADLoadMapping(aurora::input::GameController* controller) /*  NOLINT(*-re
   }
 
   uint32_t version = 0;
-  if (!SDL_ReadU32LE(file.get(), &version) || version < k_minMappingsFileVersion ||
-      version > k_mappingsFileVersion) {
+  if (!SDL_ReadU32LE(file.get(), &version) || version < k_minMappingsFileVersion || version > k_mappingsFileVersion) {
     Log.warn("Invalid controller mapping version! (Expected {0}..{1}, found {2})", k_minMappingsFileVersion,
              k_mappingsFileVersion, version);
     return;
@@ -1445,8 +1444,7 @@ void PADSerializeMappings() {
     // write header
     constexpr uint32_t magic = SBIG('CTRL');
     bool ok = SDL_SeekIO(file.get(), 0, SDL_IO_SEEK_SET) == 0 && SDL_WriteU32LE(file.get(), magic) &&
-              SDL_WriteU32LE(file.get(), k_mappingsFileVersion) &&
-              SDL_WriteU8(file.get(), controller.m_isGameCube);
+              SDL_WriteU32LE(file.get(), k_mappingsFileVersion) && SDL_WriteU8(file.get(), controller.m_isGameCube);
 
     // start writing data at next 32-byte aligned offset
     Sint64 dataStart = 0;
