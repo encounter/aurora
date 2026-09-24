@@ -540,8 +540,7 @@ struct BindGroupRanges {
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept;
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const gfx::RenderTargetLayout& layout,
                                     const PipelineOptions& options, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
-                                    wgpu::ShaderModule shader,
-                                    const char* label) noexcept;
+                                    wgpu::ShaderModule shader, const char* label) noexcept;
 std::string build_shader_source(const ShaderConfig& config, DstAlphaMode dstAlphaMode,
                                 uint32_t normalAttachment = UINT32_MAX) noexcept;
 wgpu::ShaderModule build_shader(const ShaderConfig& config, const gfx::RenderTargetLayout& layout,
@@ -550,4 +549,6 @@ GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept;
 
 u8 comp_type_size(GXAttr attr, GXCompType type) noexcept;
 u8 comp_cnt_count(GXAttr attr, GXCompCnt cnt) noexcept;
+
+constexpr bool efb_has_alpha(GXPixelFmt format) noexcept { return format == GX_PF_RGBA6_Z24; }
 } // namespace aurora::gx

@@ -87,6 +87,7 @@ struct RenderPass {
 
   TextureHandle resolveTarget;
   GXTexFmt resolveFormat = GX_TF_RGBA8;
+  GXPixelFmt resolveSourceFormat = GX_PF_RGBA6_Z24;
   ClipRect resolveRect;
   Range resolveUniformRange;
   wgpu::Texture snapshotColorDst;

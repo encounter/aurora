@@ -824,22 +824,22 @@ PipelineRef pipeline_ref(const clear::PipelineConfig& config) {
 }
 
 void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
-                       Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat) {
+                       Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat,
+                       GXPixelFmt sourceFormat) {
   // Resolve current render pass
   auto& prevPass = current_render_passes()[g_recorder.currentRenderPass];
   prevPass.resolveTarget = std::move(texture);
   prevPass.resolveRect = rect;
   prevPass.resolveFormat = resolveFormat;
-  // Push UV transform uniform for tex_copy_conv (crop region in UV space)
+  prevPass.resolveSourceFormat = sourceFormat;
   const auto srcW = static_cast<float>(prevPass.colorAttachments[SceneColorAttachmentIndex].size.width);
   const auto srcH = static_cast<float>(prevPass.colorAttachments[SceneColorAttachmentIndex].size.height);
-  const std::array uvTransform{
-      static_cast<float>(rect.x) / srcW,
-      static_cast<float>(rect.y) / srcH,
-      static_cast<float>(rect.width) / srcW,
-      static_cast<float>(rect.height) / srcH,
+  const tex_copy_conv::Uniforms uniforms{
+      .offset = {static_cast<float>(rect.x) / srcW, static_cast<float>(rect.y) / srcH},
+      .scale = {static_cast<float>(rect.width) / srcW, static_cast<float>(rect.height) / srcH},
+      .opaqueAlpha = !gx::efb_has_alpha(sourceFormat),
   };
-  prevPass.resolveUniformRange = push_uniform(uvTransform);
+  prevPass.resolveUniformRange = push_uniform(uniforms);
   enqueue_pass(current_frame_packet(), g_recorder.currentRenderPass);
 
   // Populate new render pass from previous

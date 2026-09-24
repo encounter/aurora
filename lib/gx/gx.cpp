@@ -465,21 +465,34 @@ void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXV
   }
   const auto cullMode = config.shaderConfig.lineMode == 0 ? g_gxState.cullMode : GX_CULL_NONE;
   const auto [polygonOffset, polygonOffsetScale] = polygon_offset_for_cull_mode(cullMode);
+  const bool hasAlpha = efb_has_alpha(g_gxState.pixelFmt);
+  const bool alphaUpdate = hasAlpha && g_gxState.alphaUpdate;
+  const auto blendFactor = [hasAlpha](GXBlendFactor factor) {
+    if (!hasAlpha) {
+      if (factor == GX_BL_DSTALPHA) {
+        return GX_BL_ONE;
+      }
+      if (factor == GX_BL_INVDSTALPHA) {
+        return GX_BL_ZERO;
+      }
+    }
+    return factor;
+  };
   config = {
       .shaderConfig = config.shaderConfig,
       .depthFunc = g_gxState.depthFunc,
       .cullMode = cullMode,
       .blendMode = g_gxState.blendMode,
-      .blendFacSrc = g_gxState.blendFacSrc,
-      .blendFacDst = g_gxState.blendFacDst,
+      .blendFacSrc = blendFactor(g_gxState.blendFacSrc),
+      .blendFacDst = blendFactor(g_gxState.blendFacDst),
       .blendOp = g_gxState.blendOp,
-      .dstAlpha = g_gxState.dstAlpha,
+      .dstAlpha = alphaUpdate ? g_gxState.dstAlpha : UINT32_MAX,
       .polygonOffsetBits = std::bit_cast<uint32_t>(polygonOffset),
       .polygonOffsetScaleBits = std::bit_cast<uint32_t>(polygonOffsetScale),
       .polygonOffsetClampBits = std::bit_cast<uint32_t>(g_gxState.clamp),
       .depthCompare = g_gxState.depthCompare,
       .depthUpdate = g_gxState.depthUpdate,
-      .alphaUpdate = g_gxState.alphaUpdate,
+      .alphaUpdate = alphaUpdate,
       .colorUpdate = g_gxState.colorUpdate,
   };
 }
