@@ -51,6 +51,7 @@ void increment_merged_draw_count() noexcept {}
 
 namespace aurora::webgpu {
 GraphicsConfig g_graphicsConfig{};
+bool g_dualSourceBlendingSupported = false;
 } // namespace aurora::webgpu
 
 // --- GXState ---

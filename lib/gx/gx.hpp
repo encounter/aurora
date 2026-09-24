@@ -486,6 +486,9 @@ struct AttrConfig {
   bool le = true;
   bool nbt3 = false; // GX_NRM_NBT3
 };
+
+enum class DstAlphaMode : u8 { None, Replace, DualSource };
+
 struct ShaderConfig {
   u8 fogType = GX_FOG_NONE;
   u8 vtxStride = 0;
@@ -508,6 +511,7 @@ struct ShaderConfig {
 static_assert(std::has_unique_object_representations_v<ShaderConfig>);
 
 struct PipelineConfig;
+struct PipelineOptions;
 
 struct GXBindGroups {
   gfx::BindGroupRef textureBindGroup;
@@ -535,10 +539,13 @@ struct BindGroupRanges {
 };
 void populate_pipeline_config(PipelineConfig& config, GXPrimitive primitive, GXVtxFmt fmt) noexcept;
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const gfx::RenderTargetLayout& layout,
-                                    ArrayRef<wgpu::VertexBufferLayout> vtxBuffers, wgpu::ShaderModule shader,
+                                    const PipelineOptions& options, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
+                                    wgpu::ShaderModule shader,
                                     const char* label) noexcept;
-std::string build_shader_source(const ShaderConfig& config, uint32_t normalAttachment = UINT32_MAX) noexcept;
-wgpu::ShaderModule build_shader(const ShaderConfig& config, const gfx::RenderTargetLayout& layout) noexcept;
+std::string build_shader_source(const ShaderConfig& config, DstAlphaMode dstAlphaMode,
+                                uint32_t normalAttachment = UINT32_MAX) noexcept;
+wgpu::ShaderModule build_shader(const ShaderConfig& config, const gfx::RenderTargetLayout& layout,
+                                DstAlphaMode dstAlphaMode) noexcept;
 GXBindGroups build_bind_groups(const ShaderInfo& info) noexcept;
 
 u8 comp_type_size(GXAttr attr, GXCompType type) noexcept;

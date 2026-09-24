@@ -460,6 +460,7 @@ static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Rang
   cache.lastDrawFmt = fmt;
   gfx::push_draw_command(DrawData{
       .pipeline = cache.pipelineRef,
+      .bindGroups = cache.bindGroups,
       .vertRange = vertRange,
       .idxRange = idxRange,
       .uniformRange = cache.uniformRange,
@@ -467,7 +468,6 @@ static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Rang
       .vtxCount = vtxCount,
       .indexCount = numIndices,
       .instanceCount = instanceCount,
-      .bindGroups = cache.bindGroups,
       .dstAlpha = state.dstAlpha,
   });
 }

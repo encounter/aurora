@@ -5,7 +5,6 @@
 #include "../../gfx/texture.hpp"
 #include "../../gfx/recording.hpp"
 #include "../../window.hpp"
-#include "../../gfx/clear.hpp"
 #include "../../webgpu/gpu.hpp"
 #include "../../gx/texture.hpp"
 #include "../vi/vi_internal.hpp"
@@ -62,21 +61,6 @@ void copy_tex(const void* dest, GXBool clear) noexcept {
   }
   auto& handle = it->second;
 
-  if (g_gxState.alphaUpdate && g_gxState.dstAlpha != UINT32_MAX) {
-    if (!clear) {
-      // TODO: figure out the right behavior here.
-      // should the copy have a specific alpha value but the EFB remains untouched?
-    }
-    // Overwrite alpha before resolving
-    gfx::push_draw_command(gfx::clear::DrawData{
-        .pipeline = gfx::pipeline_ref(gfx::clear::PipelineConfig{
-            .clearColor = false,
-            .clearAlpha = true,
-            .clearDepth = false,
-        }),
-        .color = wgpu::Color{0.f, 0.f, 0.f, g_gxState.dstAlpha / 255.f},
-    });
-  }
   const auto clearColor = clear && g_gxState.colorUpdate;
   const auto clearAlpha = clear && g_gxState.alphaUpdate;
   const auto clearDepth = clear && g_gxState.depthUpdate;

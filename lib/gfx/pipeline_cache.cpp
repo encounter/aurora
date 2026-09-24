@@ -38,11 +38,7 @@ constexpr int PipelineCacheSchema = 1;
 constexpr const char* InitialPipelineCacheName = "initial_pipeline_cache.db";
 constexpr const char* SdlVfsName = "aurora_pipeline_cache_sdl_vfs";
 
-using NewPipelineCallback = std::function<wgpu::RenderPipeline()>;
-
-struct CachedPipeline {
-  wgpu::RenderPipeline pipeline;
-};
+using NewPipelineCallback = std::function<CompiledPipeline()>;
 
 struct PendingPipeline {
   PipelineRef hash;
@@ -88,7 +84,7 @@ static std::thread g_pipelineThread;
 static std::atomic_bool g_pipelineThreadEnd = false;
 static std::condition_variable g_pipelineQueueCv;
 static std::condition_variable g_pipelineReadyCv;
-static absl::flat_hash_map<PipelineRef, CachedPipeline> g_pipelines;
+static absl::flat_hash_map<PipelineRef, CompiledPipeline> g_pipelines;
 static absl::flat_hash_map<HashType, KnownPipeline> g_knownPipelines;
 static std::optional<uint64_t> g_pipelineLayoutKey;
 static std::deque<PendingPipeline> g_pipelineQueue;
@@ -344,6 +340,7 @@ struct AtomicStatRef {
   uint32_t operator--() { return __atomic_sub_fetch(&ref, 1, __ATOMIC_RELAXED); }
   uint32_t operator++(int) { return __atomic_fetch_add(&ref, 1, __ATOMIC_RELAXED); }
   uint32_t operator--(int) { return __atomic_fetch_sub(&ref, 1, __ATOMIC_RELAXED); }
+  uint32_t operator+=(uint32_t val) { return __atomic_add_fetch(&ref, val, __ATOMIC_RELAXED); }
   uint32_t operator=(uint32_t val) {
     __atomic_store_n(&ref, val, __ATOMIC_RELAXED);
     return val;
@@ -429,8 +426,8 @@ static std::optional<PendingPipeline> take_pending_pipeline(PipelineRef hash) {
   return std::nullopt;
 }
 
-static void notify_pipeline_ready(bool queued) {
-  ++createdPipelines;
+static void notify_pipeline_ready(bool queued, uint32_t pipelineCount) {
+  createdPipelines += pipelineCount;
   if (queued && --queuedPipelines == 0 && g_gpuCachePrunePending.exchange(false, std::memory_order_acq_rel)) {
     // Prune GPU cache entries after fully loading the pipeline cache.
     webgpu::cache_prune();
@@ -461,6 +458,7 @@ static PipelineRef find_pipeline_impl(PipelineRef runtimeKey, NewPipelineCallbac
   bool notifyWorker = false;
   bool pipelineReady = false;
   bool createdPipeline = false;
+  uint32_t pipelineCount = 0;
   bool queued = false;
   {
     std::scoped_lock guard{g_pipelineMutex};
@@ -471,9 +469,11 @@ static PipelineRef find_pipeline_impl(PipelineRef runtimeKey, NewPipelineCallbac
       if (blocking && !g_hasPipelineThread) {
         auto pending = take_pending_pipeline(runtimeKey);
         if (pending) {
-          g_pipelines.try_emplace(runtimeKey, CachedPipeline{.pipeline = pending->create()});
+          auto result = pending->create();
+          pipelineCount = result.pipeline_count();
+          g_pipelines.try_emplace(runtimeKey, std::move(result));
           pipelineReady = true;
-          ++g_pipelinesPerFrame;
+          g_pipelinesPerFrame += std::max(1u, pipelineCount);
           createdPipeline = true;
           queued = true;
         }
@@ -482,9 +482,11 @@ static PipelineRef find_pipeline_impl(PipelineRef runtimeKey, NewPipelineCallbac
         notifyWorker = priority != PipelinePriority::Background;
       }
     } else if (!g_hasPipelineThread && (blocking || g_pipelinesPerFrame < BuildPipelinesPerFrame)) {
-      g_pipelines.try_emplace(runtimeKey, CachedPipeline{.pipeline = cb()});
+      auto result = cb();
+      pipelineCount = result.pipeline_count();
+      g_pipelines.try_emplace(runtimeKey, std::move(result));
       pipelineReady = true;
-      ++g_pipelinesPerFrame;
+      g_pipelinesPerFrame += std::max(1u, pipelineCount);
       createdPipeline = true;
     } else {
       PendingPipeline pending{
@@ -509,7 +511,7 @@ static PipelineRef find_pipeline_impl(PipelineRef runtimeKey, NewPipelineCallbac
   }
 
   if (createdPipeline) {
-    notify_pipeline_ready(queued);
+    notify_pipeline_ready(queued, pipelineCount);
   }
 
   if (notifyWorker) {
@@ -532,14 +534,16 @@ static PipelineRef resolve_pipeline(ShaderType type, const gx::PipelineConfig& c
 static PipelineRef resolve_pipeline(ShaderType type, const clear::PipelineConfig& config,
                                     const RenderTargetLayout& layout, PipelinePriority priority) {
   const auto runtimeKey = xxh3_hash(layout.key, xxh3_hash(config, static_cast<HashType>(type)));
-  return find_pipeline_impl(runtimeKey, [config, layout] { return create_pipeline(config, layout); }, priority);
+  return find_pipeline_impl(
+      runtimeKey, [config, layout] { return CompiledPipeline{.main = create_pipeline(config, layout)}; }, priority);
 }
 
 #ifdef AURORA_ENABLE_RMLUI
 static PipelineRef resolve_pipeline(ShaderType type, const rmlui::PipelineConfig& config, const RenderTargetLayout&,
                                     PipelinePriority priority) {
   return find_pipeline_impl(
-      xxh3_hash(config, static_cast<HashType>(type)), [config] { return rmlui::create_pipeline(config); }, priority);
+      xxh3_hash(config, static_cast<HashType>(type)),
+      [config] { return CompiledPipeline{.main = rmlui::create_pipeline(config)}; }, priority);
 }
 #endif
 
@@ -978,16 +982,17 @@ static void pipeline_worker() {
       source.pop_front();
     }
     auto result = pending.create();
+    const auto pipelineCount = result.pipeline_count();
     {
       std::lock_guard lock{g_pipelineMutex};
-      g_pipelines.try_emplace(pending.hash, CachedPipeline{std::move(result)});
+      g_pipelines.try_emplace(pending.hash, std::move(result));
       g_pendingPipelines.erase(pending.hash);
       hasMore = !g_pipelineQueue.empty() || !g_backgroundPipelineQueue.empty();
     }
     if (!g_hasPipelineThread) {
-      ++g_pipelinesPerFrame;
+      g_pipelinesPerFrame += std::max(1u, pipelineCount);
     }
-    notify_pipeline_ready(true);
+    notify_pipeline_ready(true, pipelineCount);
   }
 }
 
@@ -1193,13 +1198,13 @@ void end_pipeline_frame() {
   }
 }
 
-bool get_pipeline(PipelineRef ref, wgpu::RenderPipeline& pipeline) {
+bool get_pipeline(PipelineRef ref, CompiledPipeline& pipeline) {
   std::lock_guard guard{g_pipelineMutex};
   const auto it = g_pipelines.find(ref);
-  if (it == g_pipelines.end()) {
+  if (it == g_pipelines.end() || !it->second.main) {
     return false;
   }
-  pipeline = it->second.pipeline;
+  pipeline = it->second;
   return true;
 }
 

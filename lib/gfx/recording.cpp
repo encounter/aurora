@@ -844,6 +844,13 @@ void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bo
 
   // Populate new render pass from previous
   const auto msaaSamples = prevPass.msaaSamples;
+  const auto& targetSize = prevPass.colorAttachments[SceneColorAttachmentIndex].size;
+  const auto left = std::clamp<int32_t>(rect.x, 0, static_cast<int32_t>(targetSize.width));
+  const auto top = std::clamp<int32_t>(rect.y, 0, static_cast<int32_t>(targetSize.height));
+  const auto right = std::clamp<int32_t>(rect.x + rect.width, left, static_cast<int32_t>(targetSize.width));
+  const auto bottom = std::clamp<int32_t>(rect.y + rect.height, top, static_cast<int32_t>(targetSize.height));
+  const ClipRect clearRect{.x = left, .y = top, .width = right - left, .height = bottom - top};
+  const bool fullTarget = left == 0 && top == 0 && right == targetSize.width && bottom == targetSize.height;
   RenderPass newPass{
       .label = pass_label(g_recorder.inOffscreen ? "Offscreen" : "EFB"),
       .colorAttachments = prevPass.colorAttachments,
@@ -856,15 +863,15 @@ void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bo
       .copySourceNormalTexture = prevPass.copySourceNormalTexture,
       .msaaSamples = msaaSamples,
       .clearDepthValue = clearDepthValue,
-      .clearDepth = clearDepth,
+      .clearDepth = clearDepth && fullTarget,
       .hasDepth = prevPass.hasDepth,
       .hasStencil = prevPass.hasStencil,
   };
-  const bool fullColorClear = clearColor && clearAlpha;
+  const bool fullColorClear = clearColor && clearAlpha && fullTarget;
   for (uint32_t i = 0; i < newPass.colorAttachmentCount; ++i) {
     auto& color = newPass.colorAttachments[i];
     color.loadOp = wgpu::LoadOp::Undefined;
-    if (color.semantic == ColorAttachmentSemantic::Normal && clearDepth) {
+    if (color.semantic == ColorAttachmentSemantic::Normal && clearDepth && fullTarget) {
       color.clear = true;
     } else {
       color.clear = false;
@@ -879,13 +886,16 @@ void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bo
   current_render_passes().emplace_back(std::move(newPass));
   ++g_recorder.currentRenderPass;
 
-  if (!fullColorClear && (clearColor || clearAlpha)) {
-    // If we're only clearing color _or_ alpha, perform a clear draw
+  const bool drawClearColor = clearColor && !fullColorClear;
+  const bool drawClearAlpha = clearAlpha && !fullColorClear;
+  const bool drawClearDepth = clearDepth && !fullTarget;
+  if (clearRect.width > 0 && clearRect.height > 0 && (drawClearColor || drawClearAlpha || drawClearDepth)) {
+    // If we're only clearing a portion of the render target (or only one of color/alpha), perform a clear draw
     push_draw_command(clear::DrawData{
         .pipeline = pipeline_ref(clear::PipelineConfig{
-            .clearColor = clearColor,
-            .clearAlpha = clearAlpha,
-            .clearDepth = false,
+            .clearColor = drawClearColor,
+            .clearAlpha = drawClearAlpha,
+            .clearDepth = drawClearDepth,
         }),
         .color =
             wgpu::Color{
@@ -894,6 +904,8 @@ void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bo
                 .b = clearColorValue.z(),
                 .a = clearColorValue.w(),
             },
+        .depth = clearDepthValue,
+        .rect = clearRect,
     });
   }
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_recorder.cachedViewport});

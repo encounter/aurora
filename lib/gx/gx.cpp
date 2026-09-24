@@ -109,7 +109,7 @@ wgpu::CompareFunction to_compare_function(GXCompare func) {
 }
 
 wgpu::BlendState to_blend_state(GXBlendMode mode, GXBlendFactor srcFac, GXBlendFactor dstFac, GXLogicOp op,
-                                u32 dstAlpha) {
+                                u32 dstAlpha, bool dualSource) {
   wgpu::BlendComponent colorBlendComponent;
   switch (mode) {
     DEFAULT_FATAL("unsupported blend mode {}", underlying(mode));
@@ -160,6 +160,19 @@ wgpu::BlendState to_blend_state(GXBlendMode mode, GXBlendFactor srcFac, GXBlendF
       break;
     }
     break;
+  }
+  if (dualSource) {
+    const auto remap = [](wgpu::BlendFactor factor) {
+      if (factor == wgpu::BlendFactor::SrcAlpha) {
+        return wgpu::BlendFactor::Src1Alpha;
+      }
+      if (factor == wgpu::BlendFactor::OneMinusSrcAlpha) {
+        return wgpu::BlendFactor::OneMinusSrc1Alpha;
+      }
+      return factor;
+    };
+    colorBlendComponent.srcFactor = remap(colorBlendComponent.srcFactor);
+    colorBlendComponent.dstFactor = remap(colorBlendComponent.dstFactor);
   }
   wgpu::BlendComponent alphaBlendComponent;
   if (dstAlpha != UINT32_MAX) {
@@ -314,13 +327,13 @@ void set_render_scissor(const gfx::ClipRect& scissor) noexcept {
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.textures[static_cast<size_t>(id)]; }
 
 wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const gfx::RenderTargetLayout& layout,
-                                    ArrayRef<wgpu::VertexBufferLayout> vtxBuffers, wgpu::ShaderModule shader,
-                                    const char* label) noexcept {
+                                    const PipelineOptions& options, ArrayRef<wgpu::VertexBufferLayout> vtxBuffers,
+                                    wgpu::ShaderModule shader, const char* label) noexcept {
   ZoneScoped;
   const float depthBias = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetBits);
   const float depthBiasSlopeScale = (UseReversedZ ? -1.0f : 1.0f) * std::bit_cast<float>(config.polygonOffsetScaleBits);
   const float depthBiasClamp = webgpu::g_hasCoreFeatures ? std::bit_cast<float>(config.polygonOffsetClampBits) : 0.0f;
-  const bool writesDepth = config.depthCompare && config.depthUpdate;
+  const bool writesDepth = config.depthCompare && options.depthUpdate;
   const wgpu::DepthStencilState depthStencil{
       .format = layout.depthStencilFormat,
       .depthWriteEnabled = writesDepth,
@@ -329,8 +342,8 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const gfx::Ren
       .depthBiasSlopeScale = depthBiasSlopeScale,
       .depthBiasClamp = depthBiasClamp,
   };
-  const auto blendState =
-      to_blend_state(config.blendMode, config.blendFacSrc, config.blendFacDst, config.blendOp, config.dstAlpha);
+  const auto blendState = to_blend_state(config.blendMode, config.blendFacSrc, config.blendFacDst, config.blendOp,
+                                         config.dstAlpha, options.dstAlphaMode == DstAlphaMode::DualSource);
   std::array<wgpu::ColorTargetState, gfx::MaxColorAttachments> colorTargets{};
   for (uint32_t i = 0; i < layout.colorAttachmentCount; ++i) {
     colorTargets[i] = {
@@ -341,7 +354,7 @@ wgpu::RenderPipeline build_pipeline(const PipelineConfig& config, const gfx::Ren
     };
   }
   colorTargets[gfx::SceneColorAttachmentIndex].blend = &blendState;
-  colorTargets[gfx::SceneColorAttachmentIndex].writeMask = to_write_mask(config.colorUpdate, config.alphaUpdate);
+  colorTargets[gfx::SceneColorAttachmentIndex].writeMask = to_write_mask(options.colorUpdate, options.alphaUpdate);
   const wgpu::FragmentState fragmentState{
       .module = shader,
       .entryPoint = "fs_main",

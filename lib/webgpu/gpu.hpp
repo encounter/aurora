@@ -60,6 +60,7 @@ extern bool g_hasCoreFeatures;
 extern bool g_bcTexturesSupported;
 extern bool g_astcTexturesSupported;
 extern bool g_textureComponentSwizzleSupported;
+extern bool g_dualSourceBlendingSupported;
 
 bool initialize(AuroraBackend backend, bool allowCpu);
 void shutdown();
