@@ -167,19 +167,12 @@ const REPEATING_CONIC: i32 = 5;
 const PI: f32 = 3.14159265;
 
 fn bayer_dither(position: vec4<f32>) -> f32 {
-    let bayer = array<u32, 64>(
-        0u, 32u, 8u, 40u, 2u, 34u, 10u, 42u,
-        48u, 16u, 56u, 24u, 50u, 18u, 58u, 26u,
-        12u, 44u, 4u, 36u, 14u, 46u, 6u, 38u,
-        60u, 28u, 52u, 20u, 62u, 30u, 54u, 22u,
-        3u, 35u, 11u, 43u, 1u, 33u, 9u, 41u,
-        51u, 19u, 59u, 27u, 49u, 17u, 57u, 25u,
-        15u, 47u, 7u, 39u, 13u, 45u, 5u, 37u,
-        63u, 31u, 55u, 23u, 61u, 29u, 53u, 21u
-    );
     let x = u32(position.x) % 8u;
     let y = u32(position.y) % 8u;
-    return (f32(bayer[x + y * 8u]) / 64.0 - 0.5) / 255.0;
+    let z = x ^ y;
+    let bayer = ((z & 1u) << 5u) | ((y & 1u) << 4u) | ((z & 2u) << 2u) |
+                ((y & 2u) << 1u) | ((z & 4u) >> 1u) | ((y & 4u) >> 2u);
+    return (f32(bayer) / 64.0 - 0.5) / 255.0;
 }
 
 fn stop_position(index: i32) -> f32 {
