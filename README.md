@@ -21,8 +21,9 @@ It now powers several completed source ports, including [Dusklight](https://gith
   - Custom APIs for offscreen rendering
 - PAD compatibility layer
   - Utilizes `SDL_Gamepad` for wide controller support, including GameCube controller adapters
+  - Layered input routing system for advanced input handling and remapping
   - Automatically saves and loads controller bindings and port mappings
-  - Gyro & mouse support
+  - Gyro, keyboard & mouse support
 - DVD compatibility layer
   - Utilizes [nod](https://github.com/encounter/nod) to support all GameCube/Wii disc image types, including RVZ
 - CARD compatibility layer

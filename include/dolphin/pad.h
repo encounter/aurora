@@ -226,6 +226,11 @@ void PADSetVirtualStatus(u32 port, const PADStatus* status);
 void PADClearVirtualStatus(u32 port);
 void PADClearAllVirtualStatus();
 
+/* Returns TRUE once after held input on the port was cancelled, e.g. because a menu opened. */
+BOOL PADConsumeCancellation(u32 port);
+/* Returns TRUE while something above gameplay, such as a menu, captures any input the port reads. */
+BOOL PADIsInputCaptured(u32 port);
+
 /**
  * Set the default controller mapping used.
  *

@@ -32,7 +32,7 @@ void initialize() noexcept;
 void shutdown() noexcept;
 
 void process_event(const SDL_Event& event) noexcept;
-bool wants_capture_event(const SDL_Event& event) noexcept;
+void set_cursor_managed(bool managed) noexcept;
 void new_frame(const AuroraWindowSize& size) noexcept;
 DrawData freeze() noexcept;
 void render(const wgpu::RenderPassEncoder& pass, const DrawData& drawData) noexcept;

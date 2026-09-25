@@ -14,6 +14,7 @@
 
 #include "internal.hpp"
 #include "gfx/render_worker.hpp"
+#include "input/router.hpp"
 #include "webgpu/gpu.hpp"
 #include "window.hpp"
 
@@ -73,6 +74,46 @@ void enqueue_texture_upload(wgpu::Buffer buffer, wgpu::TexelCopyTextureInfo dst,
     webgpu::g_queue.Submit(1, &commandBuffer);
   });
 }
+
+input::LayerId g_inputLayer = input::kInvalidLayerId;
+bool g_cursorManaged = false;
+
+input::EventResult input_layer_event(const input::InputEvent& event, void*) {
+  using Kind = input::InputSource::Kind;
+  const Kind kind = event.source.kind;
+  if (ImGui::GetCurrentContext() == nullptr || (kind != Kind::Keyboard && kind != Kind::Mouse)) {
+    return input::EventResult::Pass;
+  }
+  ImGuiIO& io = ImGui::GetIO();
+  if (event.payload.is<input::InputEvent::Cancelled>()) {
+    if (kind == Kind::Keyboard) {
+      io.ClearInputKeys();
+    } else {
+      io.ClearInputMouse();
+    }
+    return input::EventResult::Pass;
+  }
+  if (const SDL_Event* raw = input::detail::current_sdl_event()) {
+    process_event(*raw);
+  }
+  const bool capture = kind == Kind::Keyboard ? io.WantCaptureKeyboard || io.WantTextInput : io.WantCaptureMouse;
+  return capture ? input::EventResult::Consume : input::EventResult::Pass;
+}
+
+bool input_layer_captures(const input::InputSource& source, void*) {
+  if (ImGui::GetCurrentContext() == nullptr) {
+    return false;
+  }
+  const ImGuiIO& io = ImGui::GetIO();
+  switch (source.kind) {
+  case input::InputSource::Kind::Keyboard:
+    return io.WantCaptureKeyboard || io.WantTextInput;
+  case input::InputSource::Kind::Mouse:
+    return io.WantCaptureMouse;
+  default:
+    return false;
+  }
+}
 } // namespace
 
 struct DrawData::Impl {
@@ -103,10 +144,18 @@ void initialize() noexcept {
     info.RenderTargetFormat = static_cast<WGPUTextureFormat>(webgpu::g_graphicsConfig.surfaceConfiguration.format);
     ImGui_ImplWGPU_Init(&info);
   }
+  g_inputLayer = input::register_layer({
+      .label = "aurora.imgui",
+      .priority = input::kImGuiLayerPriority,
+      .onEvent = input_layer_event,
+      .capturesSource = input_layer_captures,
+  });
 }
 
 void shutdown() noexcept {
   ZoneScoped;
+  input::unregister_layer(g_inputLayer);
+  g_inputLayer = input::kInvalidLayerId;
   if (g_useSdlRenderer) {
     ImGui_ImplSDLRenderer3_Shutdown();
   } else {
@@ -121,6 +170,20 @@ void shutdown() noexcept {
   g_wgpuTextures.clear();
 }
 
+void set_cursor_managed(bool managed) noexcept {
+  if (ImGui::GetCurrentContext() == nullptr) {
+    return;
+  }
+  auto& flags = ImGui::GetIO().ConfigFlags;
+  if (managed && (flags & ImGuiConfigFlags_NoMouseCursorChange) == 0) {
+    flags |= ImGuiConfigFlags_NoMouseCursorChange;
+    g_cursorManaged = true;
+  } else if (!managed && g_cursorManaged) {
+    flags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+    g_cursorManaged = false;
+  }
+}
+
 void process_event(const SDL_Event& event) noexcept {
   auto renderEvent = event;
   if (g_useSdlRenderer) {
@@ -129,31 +192,6 @@ void process_event(const SDL_Event& event) noexcept {
     }
   }
   ImGui_ImplSDL3_ProcessEvent(&renderEvent);
-}
-
-bool wants_capture_event(const SDL_Event& event) noexcept {
-  if (ImGui::GetCurrentContext() == nullptr) {
-    return false;
-  }
-
-  const ImGuiIO& io = ImGui::GetIO();
-  switch (event.type) {
-  case SDL_EVENT_MOUSE_MOTION:
-  case SDL_EVENT_MOUSE_BUTTON_DOWN:
-  case SDL_EVENT_MOUSE_BUTTON_UP:
-  case SDL_EVENT_MOUSE_WHEEL:
-  case SDL_EVENT_FINGER_DOWN:
-  case SDL_EVENT_FINGER_MOTION:
-  case SDL_EVENT_FINGER_UP:
-  case SDL_EVENT_FINGER_CANCELED:
-    return io.WantCaptureMouse;
-  case SDL_EVENT_KEY_DOWN:
-  case SDL_EVENT_KEY_UP:
-  case SDL_EVENT_TEXT_INPUT:
-    return io.WantCaptureKeyboard || io.WantTextInput;
-  default:
-    return false;
-  }
 }
 
 void new_frame(const AuroraWindowSize& size) noexcept {

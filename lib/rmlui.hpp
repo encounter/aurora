@@ -15,7 +15,7 @@ struct RecordedFrame {
 };
 
 void initialize(const AuroraWindowSize& size) noexcept;
-void handle_event(SDL_Event& event) noexcept;
+void handle_window_event(const SDL_Event& event) noexcept;
 RecordedFrame record_frame(const webgpu::Viewport& presentViewport) noexcept;
 void shutdown() noexcept;
 
