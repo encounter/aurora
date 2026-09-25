@@ -12,7 +12,6 @@
 
 #include "window.hpp"
 #include "internal.hpp"
-#include "imgui.hpp"
 #include "rmlui/FileInterface_SDL.h"
 #include "rmlui/GlassFilter.hpp"
 #include "rmlui/ImageEffects.hpp"
@@ -159,12 +158,6 @@ MappedPoint map_window_point_to_content(float windowX, float windowY) noexcept {
       windowY * static_cast<float>(size.native_fb_height) / static_cast<float>(size.height));
 }
 
-MappedPoint map_touch_point_to_content(const SDL_TouchFingerEvent& event) noexcept {
-  const auto size = window::get_window_size();
-  return map_native_point_to_content(event.x * static_cast<float>(size.native_fb_width),
-                                     event.y * static_cast<float>(size.native_fb_height));
-}
-
 int rounded_content_coord(float value) noexcept { return static_cast<int>(std::floor(value)); }
 
 bool mouse_button_tracked(uint8_t button) noexcept {
@@ -223,76 +216,125 @@ void dispatch_touch_event(TrackedTouch& touch, const char* type, Rml::Vector2f p
   touch.target->DispatchEvent(type, parameters, true, true);
 }
 
-void handle_mouse_motion(const SDL_MouseMotionEvent& motion) noexcept {
-  const MappedPoint mapped = map_window_point_to_content(motion.x, motion.y);
-  if (!mapped.inside) {
-    g_context->ProcessMouseLeave();
-    return;
+int key_modifiers(SDL_Keymod mod) noexcept {
+  int modifiers = 0;
+  if ((mod & SDL_KMOD_CTRL) != 0) {
+    modifiers |= Rml::Input::KM_CTRL;
   }
-  g_context->ProcessMouseMove(rounded_content_coord(mapped.position.x), rounded_content_coord(mapped.position.y),
-                              RmlSDL::GetKeyModifierState());
+  if ((mod & SDL_KMOD_SHIFT) != 0) {
+    modifiers |= Rml::Input::KM_SHIFT;
+  }
+  if ((mod & SDL_KMOD_ALT) != 0) {
+    modifiers |= Rml::Input::KM_ALT;
+  }
+  if ((mod & SDL_KMOD_GUI) != 0) {
+    modifiers |= Rml::Input::KM_META;
+  }
+  if ((mod & SDL_KMOD_CAPS) != 0) {
+    modifiers |= Rml::Input::KM_CAPSLOCK;
+  }
+  if ((mod & SDL_KMOD_NUM) != 0) {
+    modifiers |= Rml::Input::KM_NUMLOCK;
+  }
+  if ((mod & SDL_KMOD_SCROLL) != 0) {
+    modifiers |= Rml::Input::KM_SCROLLLOCK;
+  }
+  return modifiers;
 }
 
-void handle_mouse_button_down(const SDL_MouseButtonEvent& button) noexcept {
-  const MappedPoint mapped = map_window_point_to_content(button.x, button.y);
-  if (!mapped.inside) {
-    g_context->ProcessMouseLeave();
-    return;
-  }
-  g_context->ProcessMouseMove(rounded_content_coord(mapped.position.x), rounded_content_coord(mapped.position.y),
-                              RmlSDL::GetKeyModifierState());
-  g_context->ProcessMouseButtonDown(RmlSDL::ConvertMouseButton(button.button), RmlSDL::GetKeyModifierState());
-  set_mouse_button_tracked(button.button, true);
-  SDL_CaptureMouse(true);
+using Pointer = input::InputEvent::PointerChanged;
+
+// RmlUi's Process* functions return true while the event is still propagating.
+InputResult input_result(bool stillPropagating, Rml::Element* target = nullptr) noexcept {
+  return {.handled = !stillPropagating, .target = target};
 }
 
-void handle_mouse_button_up(const SDL_MouseButtonEvent& button) noexcept {
-  if (!mouse_button_tracked(button.button)) {
-    return;
-  }
-  const auto mapped = map_window_point_to_content(button.x, button.y);
-  if (mapped.inside) {
+InputResult process_mouse(const Pointer& pointer) noexcept {
+  const MappedPoint mapped = map_window_point_to_content(pointer.position.x, pointer.position.y);
+  const int modifiers = key_modifiers(pointer.modifiers);
+  switch (pointer.phase) {
+  case Pointer::Phase::Move:
+    if (!mapped.inside) {
+      g_context->ProcessMouseLeave();
+      return {};
+    }
+    return input_result(g_context->ProcessMouseMove(rounded_content_coord(mapped.position.x),
+                                                    rounded_content_coord(mapped.position.y), modifiers));
+  case Pointer::Phase::Down: {
+    if (!mapped.inside) {
+      g_context->ProcessMouseLeave();
+      return {};
+    }
     g_context->ProcessMouseMove(rounded_content_coord(mapped.position.x), rounded_content_coord(mapped.position.y),
-                                RmlSDL::GetKeyModifierState());
-  } else {
-    g_context->ProcessMouseLeave();
+                                modifiers);
+    Rml::Element* target = g_context->GetElementAtPoint(mapped.position);
+    const bool stillPropagating =
+        g_context->ProcessMouseButtonDown(RmlSDL::ConvertMouseButton(pointer.button), modifiers);
+    set_mouse_button_tracked(pointer.button, true);
+    SDL_CaptureMouse(true);
+    return input_result(stillPropagating, target);
   }
-  g_context->ProcessMouseButtonUp(RmlSDL::ConvertMouseButton(button.button), RmlSDL::GetKeyModifierState());
-  set_mouse_button_tracked(button.button, false);
-  if (s_pressedMouseButtons == 0) {
+  case Pointer::Phase::Up: {
+    if (!mouse_button_tracked(pointer.button)) {
+      return {};
+    }
+    if (mapped.inside) {
+      g_context->ProcessMouseMove(rounded_content_coord(mapped.position.x), rounded_content_coord(mapped.position.y),
+                                  modifiers);
+    } else {
+      g_context->ProcessMouseLeave();
+    }
+    const bool stillPropagating =
+        g_context->ProcessMouseButtonUp(RmlSDL::ConvertMouseButton(pointer.button), modifiers);
+    set_mouse_button_tracked(pointer.button, false);
+    if (s_pressedMouseButtons == 0) {
+      SDL_CaptureMouse(false);
+    }
+    return input_result(stillPropagating);
+  }
+  case Pointer::Phase::Cancel:
+    return {};
+  }
+  return {};
+}
+
+void cancel_mouse() noexcept {
+  g_context->ProcessMouseLeave();
+  for (uint8_t button = 0; button < 32; ++button) {
+    if (mouse_button_tracked(button)) {
+      g_context->ProcessMouseButtonUp(RmlSDL::ConvertMouseButton(button), 0);
+    }
+  }
+  if (s_pressedMouseButtons != 0) {
+    s_pressedMouseButtons = 0;
     SDL_CaptureMouse(false);
   }
 }
 
-void handle_mouse_wheel(const SDL_MouseWheelEvent& wheel) noexcept {
-  float mouseX = 0.f;
-  float mouseY = 0.f;
-  SDL_GetMouseState(&mouseX, &mouseY);
-  if (!map_window_point_to_content(mouseX, mouseY).inside) {
+InputResult process_scroll(const input::InputEvent::Scroll& scroll) noexcept {
+  if (!map_window_point_to_content(scroll.position.x, scroll.position.y).inside) {
     g_context->ProcessMouseLeave();
-    return;
+    return {};
   }
-  g_context->ProcessMouseWheel(Rml::Vector2f{wheel.x, -wheel.y}, RmlSDL::GetKeyModifierState());
+  return input_result(
+      g_context->ProcessMouseWheel(Rml::Vector2f{scroll.delta.x, scroll.delta.y}, key_modifiers(scroll.modifiers)));
 }
 
-void handle_touch_down(const SDL_TouchFingerEvent& finger) noexcept {
-  if (find_tracked_touch(finger.fingerID) != nullptr) {
-    return;
-  }
-  const auto mapped = map_touch_point_to_content(finger);
-  if (!mapped.inside) {
-    return;
+InputResult touch_down(SDL_FingerID id, const MappedPoint& mapped) noexcept {
+  if (find_tracked_touch(id) != nullptr || !mapped.inside) {
+    return {};
   }
   auto* tracked = find_free_touch();
   if (tracked == nullptr) {
-    return;
+    return {};
   }
   auto* target = g_context->GetElementAtPoint(mapped.position);
+  Rml::Element* hit = target;
   if (target == nullptr) {
     target = g_context->GetRootElement();
   }
   *tracked = {
-      .id = finger.fingerID,
+      .id = id,
       .position = mapped.position,
       .rmlPosition = mapped.position,
       .startPosition = mapped.position,
@@ -300,50 +342,86 @@ void handle_touch_down(const SDL_TouchFingerEvent& finger) noexcept {
       .active = true,
   };
   dispatch_touch_event(*tracked, TouchStartEvent, mapped.position, true);
-  g_context->ProcessTouchStart(touch_list(finger.fingerID, mapped.position), RmlSDL::GetKeyModifierState());
+  return input_result(g_context->ProcessTouchStart(touch_list(id, mapped.position), 0), hit);
 }
 
-void handle_touch_motion(const SDL_TouchFingerEvent& finger) noexcept {
-  auto* tracked = find_tracked_touch(finger.fingerID);
-  if (tracked == nullptr) {
-    return;
-  }
-  const auto mapped = map_touch_point_to_content(finger);
-  if (!mapped.valid) {
-    return;
+InputResult touch_motion(SDL_FingerID id, const MappedPoint& mapped) noexcept {
+  auto* tracked = find_tracked_touch(id);
+  if (tracked == nullptr || !mapped.valid) {
+    return {};
   }
   const Rml::Vector2f delta = mapped.position - tracked->position;
   tracked->position = mapped.position;
   dispatch_touch_event(*tracked, TouchMoveEvent, mapped.position, mapped.inside, delta);
-  if (mapped.inside) {
-    tracked->rmlPosition = mapped.position;
-    g_context->ProcessTouchMove(touch_list(finger.fingerID, mapped.position), RmlSDL::GetKeyModifierState());
+  if (!mapped.inside) {
+    return {};
   }
+  tracked->rmlPosition = mapped.position;
+  return input_result(g_context->ProcessTouchMove(touch_list(id, mapped.position), 0));
 }
 
-void handle_touch_up(const SDL_TouchFingerEvent& finger) noexcept {
-  auto* tracked = find_tracked_touch(finger.fingerID);
+InputResult touch_up(SDL_FingerID id, const MappedPoint& mapped) noexcept {
+  auto* tracked = find_tracked_touch(id);
   if (tracked == nullptr) {
-    return;
+    return {};
   }
-  const auto mapped = map_touch_point_to_content(finger);
   const Rml::Vector2f position = mapped.valid ? mapped.position : tracked->position;
   const Rml::Vector2f delta = position - tracked->position;
   dispatch_touch_event(*tracked, TouchEndEvent, position, mapped.valid && mapped.inside, delta);
   const auto rmlPosition = tracked->rmlPosition;
   *tracked = {};
-  g_context->ProcessTouchEnd(touch_list(finger.fingerID, rmlPosition), RmlSDL::GetKeyModifierState());
+  return input_result(g_context->ProcessTouchEnd(touch_list(id, rmlPosition), 0));
 }
 
-void handle_touch_cancel(const SDL_TouchFingerEvent& finger) noexcept {
-  auto* tracked = find_tracked_touch(finger.fingerID);
-  if (tracked == nullptr) {
-    return;
+void touch_cancel(TrackedTouch& tracked) noexcept {
+  dispatch_touch_event(tracked, TouchCancelEvent, tracked.position, false);
+  const auto id = tracked.id;
+  const auto rmlPosition = tracked.rmlPosition;
+  tracked = {};
+  // RmlUi's touch cancel is an emulated mouse-up; leave first so it cannot click.
+  g_context->ProcessMouseLeave();
+  g_context->ProcessTouchCancel(touch_list(id, rmlPosition));
+}
+
+InputResult process_touch(const Pointer& pointer) noexcept {
+  const auto id = static_cast<SDL_FingerID>(pointer.pointer);
+  const MappedPoint mapped = map_window_point_to_content(pointer.position.x, pointer.position.y);
+  switch (pointer.phase) {
+  case Pointer::Phase::Down:
+    return touch_down(id, mapped);
+  case Pointer::Phase::Move:
+    return touch_motion(id, mapped);
+  case Pointer::Phase::Up:
+    return touch_up(id, mapped);
+  case Pointer::Phase::Cancel:
+    if (auto* tracked = find_tracked_touch(id)) {
+      touch_cancel(*tracked);
+    }
+    return {};
   }
-  dispatch_touch_event(*tracked, TouchCancelEvent, tracked->position, false);
-  const auto rmlPosition = tracked->rmlPosition;
-  *tracked = {};
-  g_context->ProcessTouchCancel(touch_list(finger.fingerID, rmlPosition));
+  return {};
+}
+
+void cancel_input(const input::InputSource& source, const input::InputEvent::Cancelled& cancelled) noexcept {
+  using Cancelled = input::InputEvent::Cancelled;
+  switch (source.kind) {
+  case input::InputSource::Kind::Mouse:
+    cancel_mouse();
+    break;
+  case input::InputSource::Kind::Touch:
+    for (auto& touch : s_trackedTouches) {
+      if (!touch.active) {
+        continue;
+      }
+      const auto* target = cancelled.target.get_if<Cancelled::Pointer>();
+      if (target == nullptr || static_cast<SDL_FingerID>(target->pointer) == touch.id) {
+        touch_cancel(touch);
+      }
+    }
+    break;
+  default:
+    break;
+  }
 }
 } // namespace
 
@@ -403,50 +481,60 @@ void set_input_type(InputType type) noexcept {
   }
 }
 
-void handle_event(SDL_Event& event) noexcept {
-  if (g_context == nullptr || imgui::wants_capture_event(event)) {
+void handle_window_event(const SDL_Event& event) noexcept {
+  if (g_context == nullptr) {
     return;
   }
 
   switch (event.type) {
-  case SDL_EVENT_MOUSE_MOTION:
-    handle_mouse_motion(event.motion);
-    return;
-  case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    handle_mouse_button_down(event.button);
-    return;
-  case SDL_EVENT_MOUSE_BUTTON_UP:
-    handle_mouse_button_up(event.button);
-    return;
-  case SDL_EVENT_MOUSE_WHEEL:
-    handle_mouse_wheel(event.wheel);
-    return;
-  case SDL_EVENT_FINGER_DOWN:
-    handle_touch_down(event.tfinger);
-    return;
-  case SDL_EVENT_FINGER_MOTION:
-    handle_touch_motion(event.tfinger);
-    return;
-  case SDL_EVENT_FINGER_UP:
-    handle_touch_up(event.tfinger);
-    return;
-  case SDL_EVENT_FINGER_CANCELED:
-    handle_touch_cancel(event.tfinger);
-    return;
   case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-    sync_context_metrics(presentation_dimensions_from_window_size(window::get_window_size()));
-    return;
-  case SDL_EVENT_WINDOW_MOUSE_LEAVE:
-    g_context->ProcessMouseLeave();
-    return;
   case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
     sync_context_metrics(presentation_dimensions_from_window_size(window::get_window_size()));
-    return;
+    break;
+  case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+    g_context->ProcessMouseLeave();
+    break;
   default:
     break;
   }
+}
 
-  RmlSDL::InputEventHandler(g_context, window::get_sdl_window(), event);
+InputResult process_input(const input::InputSource& source, const input::InputEvent& event) noexcept {
+  if (g_context == nullptr) {
+    return {};
+  }
+  using Event = input::InputEvent;
+  return event.payload.match(
+      [&](const Event::KeyChanged& key) -> InputResult {
+        const auto identifier = RmlSDL::ConvertKey(static_cast<int>(key.keycode));
+        const int modifiers = key_modifiers(key.modifiers);
+        if (!key.pressed) {
+          return input_result(g_context->ProcessKeyUp(identifier, modifiers));
+        }
+        bool stillPropagating = g_context->ProcessKeyDown(identifier, modifiers);
+        if (key.keycode == SDLK_RETURN || key.keycode == SDLK_KP_ENTER) {
+          stillPropagating &= g_context->ProcessTextInput('\n');
+        }
+        return input_result(stillPropagating);
+      },
+      [&](const Event::TextInput& text) -> InputResult {
+        return input_result(g_context->ProcessTextInput(Rml::String(text.text)));
+      },
+      [&](const Event::PointerChanged& pointer) -> InputResult {
+        if (source.kind == input::InputSource::Kind::Mouse) {
+          return process_mouse(pointer);
+        }
+        if (source.kind == input::InputSource::Kind::Touch) {
+          return process_touch(pointer);
+        }
+        return {};
+      },
+      [&](const Event::Scroll& scroll) -> InputResult { return process_scroll(scroll); },
+      [&](const Event::Cancelled& cancelled) -> InputResult {
+        cancel_input(source, cancelled);
+        return {};
+      },
+      [](const auto&) -> InputResult { return {}; });
 }
 
 RecordedFrame record_frame(const webgpu::Viewport& presentViewport) noexcept {

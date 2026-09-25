@@ -227,6 +227,16 @@ void PADClearVirtualStatus(u32 port);
 void PADClearAllVirtualStatus();
 
 /**
+ * Returns TRUE once after the port's gameplay input was cancelled (e.g. a UI layer
+ * captured a held button), then clears the flag.
+ */
+BOOL PADConsumeCancellation(u32 port);
+/* Increments whenever the port's gameplay input is cancelled; for consumers other than the PAD reader. */
+u32 PADGetCancellationCount(u32 port);
+/* Returns TRUE while any source feeding the port is captured above the gameplay layer. */
+BOOL PADIsInputCaptured(u32 port);
+
+/**
  * Set the default controller mapping used.
  *
  * Must be called before PADInit.

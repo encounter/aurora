@@ -1,4 +1,4 @@
-#include "input.hpp"
+#include "gamepad.hpp"
 #include "device.hpp"
 #include "internal.hpp"
 #include "io.hpp"
@@ -16,11 +16,11 @@
 
 using namespace std::string_view_literals;
 
-namespace aurora::input {
+namespace aurora::gamepad {
 absl::flat_hash_map<Uint32, GameController> g_GameControllers;
 
 namespace {
-constexpr Module Log{"aurora::input"};
+constexpr Module Log{"aurora::gamepad"};
 
 constexpr uint32_t kPortPreferencesMagic = SBIG('CPRT');
 constexpr uint32_t kPortPreferencesVersion = 3;
@@ -484,4 +484,4 @@ void shutdown() noexcept {
   }
   device::shutdown();
 }
-} // namespace aurora::input
+} // namespace aurora::gamepad

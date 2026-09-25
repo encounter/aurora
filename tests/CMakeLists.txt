@@ -28,6 +28,36 @@ target_link_libraries(io_tests PRIVATE gtest gtest_main ${AURORA_SDL3_TARGET})
 aurora_copy_runtime_dlls(io_tests)
 gtest_discover_tests(io_tests)
 
+add_executable(input_tests
+  input_binding_test.cpp
+  input_router_test.cpp
+  ../lib/input/binding.cpp
+  ../lib/input/router.cpp
+  ../lib/input/source_state.cpp
+)
+target_include_directories(input_tests PRIVATE
+  ../include
+  ../lib
+)
+target_compile_definitions(input_tests PRIVATE AURORA TARGET_PC)
+target_link_libraries(input_tests PRIVATE gtest gtest_main ${AURORA_SDL3_TARGET})
+aurora_copy_runtime_dlls(input_tests)
+gtest_discover_tests(input_tests)
+
+add_executable(pad_adapter_tests
+  pad_adapter_test.cpp
+)
+target_include_directories(pad_adapter_tests PRIVATE
+  ../include
+  ../lib
+)
+target_link_libraries(pad_adapter_tests PRIVATE aurora::pad gtest gtest_main)
+if (AURORA_ENABLE_GX)
+  target_link_libraries(pad_adapter_tests PRIVATE aurora::gx aurora::vi)
+endif ()
+aurora_copy_runtime_dlls(pad_adapter_tests)
+gtest_discover_tests(pad_adapter_tests)
+
 add_executable(time_tests
   time_test.cpp
   ../lib/time.cpp

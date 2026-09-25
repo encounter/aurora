@@ -2,7 +2,15 @@ add_library(aurora_core STATIC
         lib/aurora.cpp
         lib/device.cpp
         lib/device.hpp
-        lib/input.cpp
+        lib/gamepad.cpp
+        lib/gamepad.hpp
+        lib/input/binding.cpp
+        lib/input/router.cpp
+        lib/input/router.hpp
+        lib/input/sdl_input.cpp
+        lib/input/sdl_input.hpp
+        lib/input/source_state.cpp
+        lib/input/source_state.hpp
         lib/io.cpp
         lib/io.hpp
         lib/logging.cpp

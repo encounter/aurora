@@ -1,7 +1,7 @@
 #include "dolphin/ms.h"
 #include <SDL3/SDL_mouse.h>
 
-#include "../../input.hpp"
+#include "../../gamepad.hpp"
 
 extern "C" {
 static MSStatus gStatus{};
@@ -9,7 +9,7 @@ static MSStatus gStatus{};
 void MSPoll() {
   const uint32_t buttons = SDL_GetGlobalMouseState(&gStatus.x, &gStatus.y);
   SDL_GetRelativeMouseState(&gStatus.xrel, &gStatus.yrel);
-  aurora::input::get_mouse_scroll(&gStatus.scrollX, &gStatus.scrollY);
+  aurora::gamepad::get_mouse_scroll(&gStatus.scrollX, &gStatus.scrollY);
 
   gStatus.buttons = 0;
   if (buttons & SDL_BUTTON_LEFT) {
