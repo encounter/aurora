@@ -148,9 +148,15 @@ struct ResolveDesc {
 };
 
 struct ResolvedTargets {
-  wgpu::TextureView color;  // single-sample snapshot; null if not requested
-  wgpu::TextureView depth;  // single-sample R32Float depth snapshot; null if not requested
-  wgpu::TextureView normal; // RGB10A2Unorm snapshot; null when not requested or unavailable
+  // single-sample snapshot; null if not requested
+  wgpu::Texture colorTexture;
+  wgpu::TextureView color;
+  // single-sample R32Float depth snapshot; null if not requested
+  wgpu::Texture depthTexture;
+  wgpu::TextureView depth;
+  // RGB10A2Unorm snapshot; null when not requested or unavailable
+  wgpu::Texture normalTexture;
+  wgpu::TextureView normal;
   wgpu::TextureFormat colorFormat = wgpu::TextureFormat::Undefined;
   uint32_t width = 0;
   uint32_t height = 0;

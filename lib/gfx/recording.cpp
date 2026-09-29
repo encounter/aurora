@@ -169,7 +169,7 @@ PassSnapshotEntry& acquire_pass_snapshot(uint32_t width, uint32_t height, bool w
     const auto format = webgpu::g_graphicsConfig.surfaceConfiguration.format;
     const wgpu::TextureDescriptor desc{
         .label = "Pass Snapshot Color",
-        .usage = wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::TextureBinding,
+        .usage = wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc,
         .dimension = wgpu::TextureDimension::e2D,
         .size = size,
         .format = format,
@@ -188,7 +188,7 @@ PassSnapshotEntry& acquire_pass_snapshot(uint32_t width, uint32_t height, bool w
   if (wantDepth && (!entry.depth.texture || entry.depth.size.width != width || entry.depth.size.height != height)) {
     const wgpu::TextureDescriptor desc{
         .label = "Pass Snapshot Depth",
-        .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding,
+        .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc,
         .dimension = wgpu::TextureDimension::e2D,
         .size = size,
         .format = wgpu::TextureFormat::R32Float,
@@ -207,7 +207,7 @@ PassSnapshotEntry& acquire_pass_snapshot(uint32_t width, uint32_t height, bool w
   if (wantNormal && (!entry.normal.texture || entry.normal.size.width != width || entry.normal.size.height != height)) {
     const wgpu::TextureDescriptor desc{
         .label = "Pass Snapshot Normal",
-        .usage = wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::TextureBinding,
+        .usage = wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc,
         .dimension = wgpu::TextureDimension::e2D,
         .size = size,
         .format = webgpu::NormalBufferFormat,
@@ -1047,15 +1047,18 @@ bool resolve_pass(const ResolveDesc& desc, ResolvedTargets& out) {
     auto& entry = acquire_pass_snapshot(width, height, desc.color, wantDepth, wantNormal);
     if (desc.color) {
       prevPass.snapshotColorDst = entry.color.texture;
+      out.colorTexture = entry.color.texture;
       out.color = entry.color.view;
       out.colorFormat = entry.color.format;
     }
     if (wantDepth) {
       prevPass.snapshotDepthDst = entry.depth.view;
+      out.depthTexture = entry.depth.texture;
       out.depth = entry.depth.view;
     }
     if (wantNormal) {
       prevPass.snapshotNormalDst = entry.normal.texture;
+      out.normalTexture = entry.normal.texture;
       out.normal = entry.normal.view;
     }
   }
