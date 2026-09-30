@@ -55,4 +55,6 @@ See [examples/simple.c](../examples/simple.c) for a minimal application template
 - `AURORA_ENABLE_RMLUI` (default: OFF) - Enable HTML/CSS based UI library
 - `AURORA_RMLUI_TEXT_SHAPING` (default: ON) - Shape RmlUi text with HarfBuzz, which applies OpenType ligatures and kerning and
   supports complex scripts. Icon fonts such as Material Symbols can then be written with their icon names.
+- `AURORA_ENABLE_FREETYPE` (default: ON) - Rasterize fonts with FreeType, which hints glyphs. Without it, RmlUi rasterizes
+  unhinted glyphs with HarfBuzz (requires `AURORA_RMLUI_TEXT_SHAPING`) and ImGui with stb_truetype.
 - `AURORA_CACHE_USE_ZSTD` (default: ON) - Compress WebGPU cache entries with zstd

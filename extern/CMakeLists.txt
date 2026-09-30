@@ -194,31 +194,33 @@ if (AURORA_ENABLE_GX)
     message(STATUS "aurora: Using existing libpng")
   endif ()
 
-  aurora_find_package_global(Freetype QUIET)
-  if (NOT TARGET Freetype::Freetype)
-    find_package(PkgConfig)
-    if (PkgConfig_FOUND)
-      pkg_check_modules(freetype2 IMPORTED_TARGET GLOBAL freetype2)
-      if (TARGET PkgConfig::freetype2)
-        add_library(Freetype::Freetype ALIAS PkgConfig::freetype2)
+  if (AURORA_ENABLE_FREETYPE)
+    aurora_find_package_global(Freetype QUIET)
+    if (NOT TARGET Freetype::Freetype)
+      find_package(PkgConfig)
+      if (PkgConfig_FOUND)
+        pkg_check_modules(freetype2 IMPORTED_TARGET GLOBAL freetype2)
+        if (TARGET PkgConfig::freetype2)
+          add_library(Freetype::Freetype ALIAS PkgConfig::freetype2)
+        endif ()
       endif ()
     endif ()
-  endif ()
-  if (NOT TARGET Freetype::Freetype)
-    message(STATUS "aurora: Fetching Freetype")
-    set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
-    set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
-    set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
-    FetchContent_Declare(Freetype
-      URL https://files.twilitrealm.dev/freetype-2.14.3.tar.gz
-      URL_HASH SHA256=e61b31ab26358b946e767ed7eb7f4bb2e507da1cfefeb7a8861ace7fd5c899a1
-      DOWNLOAD_EXTRACT_TIMESTAMP FALSE
-      EXCLUDE_FROM_ALL
-    )
-    FetchContent_MakeAvailable(Freetype)
-    add_library(Freetype::Freetype ALIAS freetype)
-  else ()
-    message(STATUS "aurora: Using existing Freetype")
+    if (NOT TARGET Freetype::Freetype)
+      message(STATUS "aurora: Fetching Freetype")
+      set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
+      set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+      set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
+      FetchContent_Declare(Freetype
+        URL https://files.twilitrealm.dev/freetype-2.14.3.tar.gz
+        URL_HASH SHA256=e61b31ab26358b946e767ed7eb7f4bb2e507da1cfefeb7a8861ace7fd5c899a1
+        DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+        EXCLUDE_FROM_ALL
+      )
+      FetchContent_MakeAvailable(Freetype)
+      add_library(Freetype::Freetype ALIAS freetype)
+    else ()
+      message(STATUS "aurora: Using existing Freetype")
+    endif ()
   endif ()
 
   if (NOT TARGET imgui)
@@ -328,8 +330,9 @@ if (AURORA_ENABLE_GX)
   endif ()
 
   if (AURORA_ENABLE_RMLUI AND AURORA_RMLUI_TEXT_SHAPING)
-    # A system HarfBuzz links against the system FreeType, so only look for one when FreeType isn't fetched.
-    if (NOT TARGET harfbuzz::harfbuzz AND NOT TARGET freetype)
+    # A system HarfBuzz links against the system FreeType, so only look for one when FreeType isn't fetched. Without FreeType, the
+    # HarfBuzz rasterizer is always built with HarfBuzz itself.
+    if (NOT TARGET harfbuzz::harfbuzz AND NOT TARGET freetype AND AURORA_ENABLE_FREETYPE)
       aurora_find_package_global(harfbuzz CONFIG QUIET)
       if (NOT TARGET harfbuzz::harfbuzz)
         find_package(PkgConfig)
@@ -363,11 +366,34 @@ if (AURORA_ENABLE_GX)
         target_link_libraries(harfbuzz PRIVATE Threads::Threads)
       endif ()
       add_library(harfbuzz::harfbuzz ALIAS harfbuzz)
+
+      if (NOT AURORA_ENABLE_FREETYPE)
+        # The rasterizer paints color glyphs from PNG bitmaps with libpng.
+        add_library(harfbuzz_raster STATIC
+          ${harfbuzz_SOURCE_DIR}/src/hb-raster-draw.cc
+          ${harfbuzz_SOURCE_DIR}/src/hb-raster-image.cc
+          ${harfbuzz_SOURCE_DIR}/src/hb-raster-paint.cc
+        )
+        target_link_libraries(harfbuzz_raster PUBLIC harfbuzz)
+        if (TARGET PNG::PNG)
+          target_compile_definitions(harfbuzz_raster PRIVATE HAVE_PNG)
+          target_link_libraries(harfbuzz_raster PRIVATE PNG::PNG)
+        endif ()
+        add_library(harfbuzz::raster ALIAS harfbuzz_raster)
+      endif ()
     else ()
       message(STATUS "aurora: Using existing HarfBuzz")
     endif ()
     set(RMLUI_FONT_ENGINE "harfbuzz" CACHE STRING "" FORCE)
+    if (AURORA_ENABLE_FREETYPE)
+      set(RMLUI_HARFBUZZ_RASTER OFF CACHE BOOL "" FORCE)
+    else ()
+      set(RMLUI_HARFBUZZ_RASTER ON CACHE BOOL "" FORCE)
+    endif ()
   elseif (AURORA_ENABLE_RMLUI)
+    if (NOT AURORA_ENABLE_FREETYPE)
+      message(FATAL_ERROR "aurora: AURORA_ENABLE_RMLUI without AURORA_RMLUI_TEXT_SHAPING requires AURORA_ENABLE_FREETYPE")
+    endif ()
     set(RMLUI_FONT_ENGINE "freetype" CACHE STRING "" FORCE)
   endif ()
 

@@ -13,6 +13,7 @@ option(AURORA_ENABLE_CARD "Enable CARD implementation based on kabufuda" ON)
 option(AURORA_ENABLE_THP "Enable THP decoder" ON)
 option(AURORA_ENABLE_RMLUI "Enable HTML/CSS Based UI Library for use in end-user UI development." OFF)
 option(AURORA_RMLUI_TEXT_SHAPING "Shape RmlUi text with HarfBuzz, for ligatures, kerning and complex scripts." ON)
+option(AURORA_ENABLE_FREETYPE "Rasterize fonts with FreeType. Without it, RmlUi rasterizes with HarfBuzz and ImGui with stb_truetype." ON)
 option(AURORA_CACHE_USE_ZSTD "Compress WebGPU cache entries with zstd" ON)
 
 include(CMakeDependentOption)
