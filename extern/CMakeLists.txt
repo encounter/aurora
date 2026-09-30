@@ -327,6 +327,50 @@ if (AURORA_ENABLE_GX)
     endif ()
   endif ()
 
+  if (AURORA_ENABLE_RMLUI AND AURORA_RMLUI_TEXT_SHAPING)
+    # A system HarfBuzz links against the system FreeType, so only look for one when FreeType isn't fetched.
+    if (NOT TARGET harfbuzz::harfbuzz AND NOT TARGET freetype)
+      aurora_find_package_global(harfbuzz CONFIG QUIET)
+      if (NOT TARGET harfbuzz::harfbuzz)
+        find_package(PkgConfig)
+        if (PkgConfig_FOUND)
+          pkg_check_modules(harfbuzz IMPORTED_TARGET GLOBAL harfbuzz)
+          if (TARGET PkgConfig::harfbuzz)
+            add_library(harfbuzz::harfbuzz ALIAS PkgConfig::harfbuzz)
+          endif ()
+        endif ()
+      endif ()
+    endif ()
+    if (NOT TARGET harfbuzz::harfbuzz)
+      message(STATUS "aurora: Fetching HarfBuzz")
+      FetchContent_Declare(harfbuzz
+        URL https://github.com/harfbuzz/harfbuzz/releases/download/14.5.0/harfbuzz-14.5.0.tar.xz
+        URL_HASH SHA256=b7132e148358a45185c9feafd049dbaf243649d3c44414b3534d9c95d18592b9
+        DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+        SOURCE_SUBDIR src # Skip HarfBuzz's own build, we only compile the amalgamated source
+        EXCLUDE_FROM_ALL
+      )
+      FetchContent_MakeAvailable(harfbuzz)
+
+      # HarfBuzz is only used for shaping, with its built-in OpenType font and Unicode functions.
+      add_library(harfbuzz STATIC ${harfbuzz_SOURCE_DIR}/src/harfbuzz.cc)
+      target_include_directories(harfbuzz PUBLIC ${harfbuzz_SOURCE_DIR}/src)
+      if (MSVC)
+        target_compile_options(harfbuzz PRIVATE /bigobj)
+      endif ()
+      find_package(Threads)
+      if (TARGET Threads::Threads)
+        target_link_libraries(harfbuzz PRIVATE Threads::Threads)
+      endif ()
+      add_library(harfbuzz::harfbuzz ALIAS harfbuzz)
+    else ()
+      message(STATUS "aurora: Using existing HarfBuzz")
+    endif ()
+    set(RMLUI_FONT_ENGINE "harfbuzz" CACHE STRING "" FORCE)
+  elseif (AURORA_ENABLE_RMLUI)
+    set(RMLUI_FONT_ENGINE "freetype" CACHE STRING "" FORCE)
+  endif ()
+
   if (AURORA_ENABLE_RMLUI AND NOT TARGET RmlUi)
     message(STATUS "aurora: Fetching RmlUi")
     FetchContent_Declare(rmlui

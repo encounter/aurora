@@ -53,4 +53,6 @@ See [examples/simple.c](../examples/simple.c) for a minimal application template
 - `AURORA_ENABLE_DVD` (default: OFF) - Enable DVD implementation backed by nod
 - `AURORA_ENABLE_CARD` (default: ON) - Enable CARD implementation based on kabufuda
 - `AURORA_ENABLE_RMLUI` (default: OFF) - Enable HTML/CSS based UI library
+- `AURORA_RMLUI_TEXT_SHAPING` (default: ON) - Shape RmlUi text with HarfBuzz, which applies OpenType ligatures and kerning and
+  supports complex scripts. Icon fonts such as Material Symbols can then be written with their icon names.
 - `AURORA_CACHE_USE_ZSTD` (default: ON) - Compress WebGPU cache entries with zstd
