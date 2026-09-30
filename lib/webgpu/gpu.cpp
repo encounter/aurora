@@ -988,6 +988,9 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     };
     constexpr std::array disableToggles{
         "timestamp_quantization",
+        // Adreno strikes again!
+        // https://github.com/TwilitRealm/dusklight/issues/2563
+        "use_spirv_reconvergence_mode",
     };
     wgpu::DawnTogglesDescriptor togglesDescriptor(wgpu::DawnTogglesDescriptor::Init{
         .nextInChain = &cacheDescriptor,
