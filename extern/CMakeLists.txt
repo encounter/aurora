@@ -330,8 +330,8 @@ if (AURORA_ENABLE_GX)
   if (AURORA_ENABLE_RMLUI AND NOT TARGET RmlUi)
     message(STATUS "aurora: Fetching RmlUi")
     FetchContent_Declare(rmlui
-      URL https://github.com/encounter/RmlUi/archive/215513c51ee1b3b75fc794518dda0576c462279f.tar.gz
-      URL_HASH SHA256=1df201ef7bade930cc825deeefc4361dc3681d0808806ff5cc746f1ffa272fcf
+      URL https://github.com/encounter/RmlUi/archive/f00a0fee38391b2f927114e11bea18dc0a7dba1e.tar.gz
+      URL_HASH SHA256=6d9fd1164b7873c9dfba72d724753bda9e3db8280c9af802eed8e2a12035f152
       DOWNLOAD_EXTRACT_TIMESTAMP FALSE
       EXCLUDE_FROM_ALL
     )
@@ -341,7 +341,6 @@ if (AURORA_ENABLE_GX)
     endblock()
 
     add_library(rmlui_backends STATIC ${rmlui_SOURCE_DIR}/Backends/RmlUi_Platform_SDL.cpp)
-    # TODO: maybe dont hardcode this to SDL3?
     target_compile_definitions(rmlui_backends PUBLIC RMLUI_SDL_VERSION_MAJOR=3)
     target_include_directories(rmlui_backends PUBLIC ${rmlui_SOURCE_DIR}/Backends)
     target_link_libraries(rmlui_backends PRIVATE rmlui ${AURORA_SDL3_TARGET})
