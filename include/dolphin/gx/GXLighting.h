@@ -23,6 +23,9 @@ void GXInitLightColor(GXLightObj* lt_obj, GXColor color);
 void GXInitLightAttn(GXLightObj* lt_obj, f32 a0, f32 a1, f32 a2, f32 k0, f32 k1, f32 k2);
 void GXInitLightAttnA(GXLightObj* lt_obj, f32 a0, f32 a1, f32 a2);
 void GXInitLightAttnK(GXLightObj* lt_obj, f32 k0, f32 k1, f32 k2);
+
+#define GXInitLightShininess(lt_obj, shininess) GXInitLightAttn(lt_obj, 0.0F, 0.0F, 1.0F, (shininess) / 2.0F, 0.0F, 1.0F - (shininess) / 2.0F)
+
 void GXLoadLightObjImm(GXLightObj* lt_obj, GXLightID light);
 
 #ifdef __cplusplus
