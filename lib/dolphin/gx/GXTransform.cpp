@@ -193,7 +193,14 @@ void GXProject(f32 x, f32 y, f32 z, const f32 mtx[3][4], const f32* pm, const f3
 }
 
 // TODO GXLoadNrmMtxImm3x3
-// TODO GXLoadNrmMtxIndx3x3
+void GXLoadNrmMtxIndx3x3(u16 mtxIndx, u32 id) {
+  CHECK(id >= GX_PNMTX0 && id <= GX_PNMTX9, "invalid pn mtx {}", static_cast<int>(id));
+
+  GX_WRITE_U8(GX_LOAD_INDX_B);
+  GX_WRITE_U16(mtxIndx);
+  GX_WRITE_U16((8u << 12) | (id * 3 + 0x400));
+}
+
 // TODO GXLoadTexMtxIndx
 // TODO GXSetZScaleOffset
 }

@@ -6,6 +6,7 @@
 
 #include "gx_test_common.hpp"
 #include "__gx.h"
+#include "gx/regs.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -2085,6 +2086,55 @@ TEST_F(GXFifoTest, LoadPosMtxIndx_DecodesBigEndianArray) {
   }
 }
 
+TEST_F(GXFifoTest, LoadIdentity_RecognizesBothTextureMatrixSizes) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = mtx.m1[1] = mtx.m2[2] = 1.0f;
+  for (const auto type : {GX_MTX2x4, GX_MTX3x4}) {
+    GXLoadTexMtxImm(&mtx, GX_IDENTITY, type);
+    const auto bytes = capture_fifo();
+    const u32 words = type == GX_MTX2x4 ? 8u : 12u;
+    ASSERT_EQ(bytes.size(), 5u + words * sizeof(u32));
+    EXPECT_TRUE(aurora::gx::fifo::copy_xf_data(0x0F0, bytes.data() + 5, words, std::endian::big));
+    auto custom = bytes;
+    custom[5] = 0;
+    EXPECT_FALSE(aurora::gx::fifo::copy_xf_data(0x0F0, custom.data() + 5, words, std::endian::big));
+  }
+}
+
+TEST_F(GXFifoTest, LoadPTIdentity_RejectsCustomMatrixAndWrongLength) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 2.0f;
+  mtx.m1[1] = mtx.m2[2] = 1.0f;
+  GXLoadTexMtxImm(&mtx, GX_PTIDENTITY, GX_MTX3x4);
+  const auto bytes = capture_fifo();
+  EXPECT_FALSE(aurora::gx::fifo::copy_xf_data(0x5F4, bytes.data() + 5, 12, std::endian::big));
+  EXPECT_FALSE(aurora::gx::fifo::copy_xf_data(0x5F4, bytes.data() + 5, 8, std::endian::big));
+}
+
+TEST_F(GXFifoTest, LoadNrmMtxIndx3x3_RoundTripWithFullIndexAndFollowingCommand) {
+  std::array<std::array<f32, 9>, 257> matrices{};
+  matrices[0x100] = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f};
+  GXSetArray(GX_NRM_MTX_ARRAY, matrices.data(), sizeof(matrices), sizeof(matrices[0]), true);
+  GXLoadNrmMtxIndx3x3(0x100, GX_PNMTX3);
+  GXSetBlendMode(GX_BM_SUBTRACT, GX_BL_ONE, GX_BL_ONE, GX_LO_NOOP);
+  const auto bytes = capture_fifo();
+  ASSERT_EQ(bytes.size(), 32u);
+  EXPECT_EQ(bytes[22], GX_LOAD_INDX_B);
+  EXPECT_EQ(bytes[23], 0x01);
+  EXPECT_EQ(bytes[24], 0x00);
+  EXPECT_EQ(bytes[25], 0x84);
+  EXPECT_EQ(bytes[26], 0x1B);
+  reset_gx_state();
+  decode_fifo(bytes);
+  const auto& decoded = g_gxState.pnMtx[3].nrm;
+  for (u32 row = 0; row < 3; ++row) {
+    for (u32 col = 0; col < 3; ++col) {
+      EXPECT_FLOAT_EQ(reinterpret_cast<const f32*>(&decoded)[row * 4 + col], matrices[0x100][row * 3 + col]);
+    }
+  }
+  EXPECT_EQ(g_gxState.blendMode, GX_BM_SUBTRACT);
+}
+
 // --- GXLoadPosMtxImm (XF 0x000-0x077) ---
 
 TEST_F(GXFifoTest, LoadPosMtxImm_Identity) {
@@ -3686,6 +3736,21 @@ TEST_F(GXFifoTest, Composite_BlendAndZMode) {
 }
 
 // --- GXLoadTexMtxImm for PTTexMtx (XF 0x500-0x5EF) ---
+
+TEST_F(GXFifoTest, LoadPTIdentity_IsRecognized) {
+  aurora::Mat3x4<float> mtx{};
+  mtx.m0[0] = 1.0f;
+  mtx.m1[1] = 1.0f;
+  mtx.m2[2] = 1.0f;
+
+  GXLoadTexMtxImm(&mtx, GX_PTIDENTITY, GX_MTX3x4);
+  auto bytes = capture_fifo();
+
+  ASSERT_EQ(bytes.size(), 5u + 12u * sizeof(u32));
+  EXPECT_EQ(bytes[0], GX_LOAD_XF_REG);
+  EXPECT_EQ(read_fifo_u32(bytes, 1), 0x000B05F4u);
+  EXPECT_TRUE(aurora::gx::fifo::copy_xf_data(0x5F4, bytes.data() + 5, 12, std::endian::big));
+}
 
 TEST_F(GXFifoTest, LoadPTTexMtx_Identity) {
   aurora::Mat3x4<float> mtx{};

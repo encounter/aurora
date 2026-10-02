@@ -1016,6 +1016,16 @@ bool copy_xf_data(u32 addr, const u8* data, u32 len, std::endian e) noexcept {
     }
     return true;
   }
+  // GX_IDENTITY is synthesized by the shader; identity writes are harmless.
+  if (addr == 0x0F0 && (len == 8 || len == 12)) {
+    for (u32 i = 0; i < len; i++) {
+      const u32 expected = i % 5 == 0 ? 0x3F800000u : 0u;
+      if (read_bits<u32>(data + i * 4, e) != expected) {
+        return false;
+      }
+    }
+    return true;
+  }
   if (addr >= 0x400 && addr < 0x45A) {
     // Normal matrices (0x400-0x459)
     u32 nrmBase = addr - 0x400;
@@ -1050,6 +1060,16 @@ bool copy_xf_data(u32 addr, const u8* data, u32 len, std::endian e) noexcept {
     }
     if (changed) {
       g_gxState.dirty |= DirtyUniform;
+    }
+    return true;
+  }
+  if (addr == 0x5F4 && len == 12) {
+    // GX_PTIDENTITY is synthesized by the shader, like GX_IDENTITY above.
+    for (u32 i = 0; i < len; ++i) {
+      const u32 expected = i % 5 == 0 ? 0x3F800000u : 0u;
+      if (read_bits<u32>(data + i * 4, e) != expected) {
+        return false;
+      }
     }
     return true;
   }
