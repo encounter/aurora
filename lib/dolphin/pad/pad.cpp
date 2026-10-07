@@ -199,7 +199,7 @@ std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsJoyPair{{
     {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
 }};
 
-std::array<PADKeyButtonBinding, PAD_BUTTON_COUNT> g_defaultKeys{{
+constexpr std::array<PADKeyButtonBinding, PAD_BUTTON_COUNT> kUnboundKeys{{
     {PAD_KEY_INVALID, PAD_BUTTON_A},
     {PAD_KEY_INVALID, PAD_BUTTON_B},
     {PAD_KEY_INVALID, PAD_BUTTON_X},
@@ -214,7 +214,7 @@ std::array<PADKeyButtonBinding, PAD_BUTTON_COUNT> g_defaultKeys{{
     {PAD_KEY_INVALID, PAD_BUTTON_RIGHT},
 }};
 
-std::array<PADKeyAxisBinding, PAD_AXIS_COUNT> g_defaultKeyAxis{{
+constexpr std::array<PADKeyAxisBinding, PAD_AXIS_COUNT> kUnboundKeyAxes{{
     {PAD_KEY_INVALID, PAD_AXIS_LEFT_X_POS, 0},
     {PAD_KEY_INVALID, PAD_AXIS_LEFT_X_NEG, 0},
     {PAD_KEY_INVALID, PAD_AXIS_LEFT_Y_POS, 0},
@@ -248,6 +248,14 @@ constexpr const std::array<T, N>& toStdArray(const T (&array)[N]) {
   return reinterpret_cast<const std::array<T, N>&>(array);
 }
 
+std::array<PADKeyboardState, PAD_MAX_CONTROLLERS> g_defaultKeyboardBindings = [] {
+  std::array<PADKeyboardState, PAD_MAX_CONTROLLERS> defaults;
+  for (auto& state : defaults) {
+    state.m_buttonMapping = kUnboundKeys;
+    state.m_axisMapping = kUnboundKeyAxes;
+  }
+  return defaults;
+}();
 std::array<PADKeyboardState, PAD_MAX_CONTROLLERS> g_keyboardBindings;
 
 struct PADCLampRegion {
@@ -357,10 +365,12 @@ BOOL PADInit() {
   }
   g_initialized = true;
 
-  std::ranges::for_each(g_keyboardBindings, [](auto& state) {
-    state.m_buttonMapping = g_defaultKeys;
-    state.m_axisMapping = g_defaultKeyAxis;
-  });
+  for (u32 port = 0; port < g_keyboardBindings.size(); ++port) {
+    auto& state = g_keyboardBindings[port];
+    const auto& defaults = g_defaultKeyboardBindings[port];
+    state.m_buttonMapping = defaults.m_buttonMapping;
+    state.m_axisMapping = defaults.m_axisMapping;
+  }
 
   if (!g_keyboardBindingsLoaded) {
     g_keyboardBindingsLoaded = true;
@@ -997,6 +1007,40 @@ PADKeyAxisBinding* PADGetKeyAxisBindings(const u32 port, u32* axisCount) {
   return state.m_axisMapping.data();
 }
 
+BOOL PADSetDefaultKeyBindings(const u32 port, const PADDefaultKeyBindings* bindings) {
+  if (g_initialized || port >= PAD_MAX_CONTROLLERS || bindings == nullptr) {
+    return FALSE;
+  }
+
+  auto defaults = g_defaultKeyboardBindings[port];
+  for (auto& button : defaults.m_buttonMapping) {
+    const auto* binding = std::ranges::find(bindings->buttons, button.padButton, &PADKeyButtonBinding::padButton);
+    if (binding == std::end(bindings->buttons)) {
+      return FALSE;
+    }
+    button = *binding;
+  }
+  for (auto& axis : defaults.m_axisMapping) {
+    const auto* binding = std::ranges::find(bindings->axes, axis.padAxis, &PADKeyAxisBinding::padAxis);
+    if (binding == std::end(bindings->axes)) {
+      return FALSE;
+    }
+    axis = *binding;
+  }
+  g_defaultKeyboardBindings[port] = std::move(defaults);
+  return TRUE;
+}
+
+void PADRestoreDefaultKeyBindings(const u32 port) {
+  if (!g_initialized || port >= PAD_MAX_CONTROLLERS) {
+    return;
+  }
+  auto& state = g_keyboardBindings[port];
+  const auto& defaults = g_defaultKeyboardBindings[port];
+  state.m_buttonMapping = defaults.m_buttonMapping;
+  state.m_axisMapping = defaults.m_axisMapping;
+}
+
 void PADSetKeyboardActive(const u32 port, const BOOL active) {
   if (port >= PAD_MAX_CONTROLLERS) {
     return;
@@ -1008,8 +1052,8 @@ void PADClearKeyBindings(const u32 port) {
   if (port >= PAD_MAX_CONTROLLERS) {
     return;
   }
-  g_keyboardBindings[port].m_buttonMapping = g_defaultKeys;
-  g_keyboardBindings[port].m_axisMapping = g_defaultKeyAxis;
+  g_keyboardBindings[port].m_buttonMapping = kUnboundKeys;
+  g_keyboardBindings[port].m_axisMapping = kUnboundKeyAxes;
   g_keyboardBindings[port].m_mappingsSet = false;
 }
 
@@ -1060,26 +1104,26 @@ static void load_keyboard_bindings() {
 
     bool kbButtonCorrupt = false;
     for (uint32_t i = 0; i < PAD_BUTTON_COUNT; ++i) {
-      if (buttonMapping[i].padButton != g_defaultKeys[i].padButton) {
+      if (buttonMapping[i].padButton != kUnboundKeys[i].padButton) {
         kbButtonCorrupt = true;
         break;
       }
     }
     if (kbButtonCorrupt) {
       Log.warn("keyboard_bindings.dat port={}: corrupt button identifiers, resetting to defaults", port);
-      buttonMapping = g_defaultKeys;
+      buttonMapping = g_defaultKeyboardBindings[port].m_buttonMapping;
     }
 
     bool kbAxisCorrupt = false;
     for (uint32_t i = 0; i < PAD_AXIS_COUNT; ++i) {
-      if (axisMapping[i].padAxis != g_defaultKeyAxis[i].padAxis) {
+      if (axisMapping[i].padAxis != kUnboundKeyAxes[i].padAxis) {
         kbAxisCorrupt = true;
         break;
       }
     }
     if (kbAxisCorrupt) {
       Log.warn("keyboard_bindings.dat port={}: corrupt axis identifiers, resetting to defaults", port);
-      axisMapping = g_defaultKeyAxis;
+      axisMapping = g_defaultKeyboardBindings[port].m_axisMapping;
     }
 
     if (mappingsSet) {
