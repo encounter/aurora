@@ -5,7 +5,7 @@ add_library(aurora_dvd STATIC lib/dolphin/dvd/dvd.cpp lib/dolphin/dvd/dvd.hpp li
 add_library(aurora::dvd ALIAS aurora_dvd)
 set_target_properties(aurora_dvd PROPERTIES FOLDER "aurora")
 
-target_compile_definitions(aurora_dvd PUBLIC AURORA TARGET_PC)
+target_compile_definitions(aurora_dvd PUBLIC AURORA TARGET_PC=1)
 target_include_directories(aurora_dvd PUBLIC include)
 target_link_libraries(aurora_dvd PUBLIC aurora::core nod::nod fmt::fmt ${AURORA_SDL3_TARGET} Threads::Threads)
 target_link_libraries(aurora_dvd PRIVATE Tracy::TracyClient)
