@@ -483,6 +483,11 @@ aurora::pad::detail::default_buttons(const gamepad::GameController& controller) 
   case SDL_GAMEPAD_TYPE_XBOXONE:
     return g_defaultButtonsXBoxOne;
   case SDL_GAMEPAD_TYPE_STANDARD:
+#if SDL_VERSION < SDL_VERSIONNUM(3, 4, 18)
+    if (controller.m_vid == 0x28de && controller.m_pid == 0x1304) {
+      return g_defaultButtonsSteam;
+    }
+#endif
     return g_defaultButtonsStandard;
   case SDL_GAMEPAD_TYPE_PS3:
     return g_defaultButtonsPS3;
@@ -506,11 +511,6 @@ aurora::pad::detail::default_buttons(const gamepad::GameController& controller) 
     return g_defaultButtonsSteam;
 #endif
   default:
-#if SDL_VERSION < SDL_VERSIONNUM(3, 4, 18)
-    if (controller.m_vid == 0x28de && controller.m_pid == 0x1304) {
-      return g_defaultButtonsSteam;
-    }
-#endif
     return g_defaultButtonsStandard;
   }
 }
