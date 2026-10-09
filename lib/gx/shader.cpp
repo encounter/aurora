@@ -568,6 +568,9 @@ std::string vtx_attr(const ShaderConfig& config, GXAttr attr) {
     if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
       return "vec4f(0.0, 0.0, 0.0, 0.0)"s;
     }
+    if (attr >= GX_VA_TEX0 || attr <= GX_VA_TEX7) {
+      return "vec2f(0.0, 0.0)"s;
+    }
     UNLIKELY FATAL("unmapped vtx attr {}", underlying(attr));
   }
   if (attr == GX_VA_POS) {
@@ -1248,6 +1251,13 @@ std::string build_shader_source(const ShaderConfig& config, DstAlphaMode dstAlph
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, nbt_slice_local(NbtSlice::B));
     } else if (tcg.src == GX_TG_TANGENT) {
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, nbt_slice_local(NbtSlice::T));
+      // TODO: what's the proper behavior here?
+    } else if (tcg.src >= GX_TG_TEXCOORD0 || tcg.src <= GX_TG_TEXCOORD6) {
+      vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0, 1.0);", i,
+                                 vtx_attr(config, GXAttr(GX_TG_TEXCOORD0 + (tcg.src - GX_TG_TEXCOORD0))));
+    } else if (tcg.src >= GX_TG_COLOR0 || tcg.src <= GX_TG_COLOR1) {
+      vtxXfrAttrs +=
+          fmt::format("\n    var tc{} = {};", i, vtx_attr(config, GXAttr(GX_TG_COLOR0 + (tcg.src - GX_TG_COLOR1))));
     } else
       UNLIKELY FATAL("unhandled tcg src {}", underlying(tcg.src));
     if (tcg.type == GX_TG_MTX2x4 || tcg.type == GX_TG_MTX3x4) {
