@@ -1,5 +1,6 @@
 add_library(aurora_gx STATIC
         lib/gfx/clear.cpp
+        lib/gfx/copy_readback.cpp
         lib/gfx/depth_peek.cpp
         lib/gfx/encoding.cpp
         lib/gfx/frame.cpp
