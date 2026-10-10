@@ -825,6 +825,12 @@ typedef enum {
 } GXFBClamp;
 
 typedef enum {
+  GX_COPY_PROGRESSIVE = 0,
+  GX_COPY_INTLC_EVEN = 2,
+  GX_COPY_INTLC_ODD = 3,
+} GXCopyMode;
+
+typedef enum {
   GX_TLUT0 = 0,
   GX_TLUT1 = 1,
   GX_TLUT2 = 2,

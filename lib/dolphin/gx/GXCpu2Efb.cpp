@@ -6,6 +6,14 @@
 #include <dolphin/gx/GXAurora.h>
 #include <dolphin/gx/GXCpu2Efb.h>
 
+void GXPokeAlphaRead(GXAlphaReadMode mode) {}
+
+void GXPeekARGB(u16 x, u16 y, u32* color) {
+  if (color != nullptr) {
+    *color = 0;
+  }
+}
+
 void GXPeekZ(u16 x, u16 y, u32* z) {
   if (z != nullptr) {
     u32 value = 0;
