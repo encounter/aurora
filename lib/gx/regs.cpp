@@ -821,6 +821,16 @@ void xf_post_mtx(u8 reg, u32 value) noexcept {
   g_gxState.tcgs[tcIdx].normalize = reg_get(value, 1, 8) != 0;
 }
 
+// Clip disable (0x05)
+void xf_clip_disable(u8, u32 value) noexcept {
+  static bool warned = false;
+  if (value != 0 && !warned) {
+    warned = true;
+    Log.warn("XF: GXSetClipMode(GX_CLIP_DISABLE) is not implemented, geometry stays clipped (value 0x{:08X})",
+             value);
+  }
+}
+
 void xf_unhandled(u8 reg, u32 value) noexcept {
 #ifndef NDEBUG
   Log.debug("Unhandled XF register 0x{:04X} (value 0x{:08X})", static_cast<u32>(reg), value);
@@ -835,6 +845,7 @@ constexpr auto kXfRegs = [] {
   for (auto& reg : regs) {
     reg = {xf_unhandled};
   }
+  regs[0x05] = {xf_clip_disable};
   regs[0x08] = {}; // vertex specs (numColors/numNormals/numTexCoords)
   regs[0x09] = {xf_num_chans};
   for (u8 r = 0x0A; r <= 0x0D; ++r) {
