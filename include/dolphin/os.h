@@ -48,6 +48,7 @@ extern "C" {
 #include <dolphin/os/OSSemaphore.h>
 #include <dolphin/os/OSUtf.h>
 #include <dolphin/os/OSTimer.h>
+#include <dolphin/os/OSStopwatch.h>
 
 // private macro, maybe shouldn't be defined here?
 #define OFFSET(addr, align) (((u32)(addr) & ((align)-1)))
@@ -155,24 +156,6 @@ typedef struct OSBootInfo_s {
     void* FSTLocation;
     u32 FSTMaxLength;
 } OSBootInfo;
-
-typedef struct OSStopwatch {
-    char* name;
-    u32 hits;
-    OSTime total;
-    OSTime min;
-    OSTime max;
-    OSTime last;
-    BOOL running;
-    u32 _padding;
-} OSStopwatch;
-
-void OSInitStopwatch(OSStopwatch* sw, char* name);
-void OSStartStopwatch(OSStopwatch* sw);
-void OSStopStopwatch(OSStopwatch* sw);
-OSTime OSCheckStopwatch(OSStopwatch* sw);
-void OSResetStopwatch(OSStopwatch* sw);
-void OSDumpStopwatch(OSStopwatch* sw);
 
 OSTick OSGetTick(void);
 /**

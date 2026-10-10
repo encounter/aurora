@@ -8,6 +8,7 @@ add_library(aurora_os STATIC lib/dolphin/os/OSInit.cpp
         lib/dolphin/os/OSAlloc.cpp
         lib/dolphin/os/OSAddress.cpp
         lib/dolphin/os/OSReport.cpp
+        lib/dolphin/os/OSStopwatch.cpp
         lib/dolphin/AR.cpp)
 add_library(aurora::os ALIAS aurora_os)
 set_target_properties(aurora_os PROPERTIES FOLDER "aurora")
