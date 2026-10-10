@@ -155,8 +155,9 @@ void GXSetTexCopyDst(u16 wd, u16 ht, GXTexFmt fmt, GXBool mipmap) {
   GX_WRITE_U8(mipmap != GX_FALSE);
 }
 
-// TODO GXSetDispCopyFrame2Field
-// TODO GXSetCopyClamp
+void GXSetDispCopyFrame2Field(GXCopyMode mode) {}
+
+void GXSetCopyClamp(GXFBClamp clamp) {}
 
 u32 GXSetDispCopyYScale(f32 vscale) { return 0; }
 
@@ -183,7 +184,7 @@ void GXSetCopyClear(GXColor color, u32 depth) {
   __gx->bpSent = 1;
 }
 
-void GXSetCopyFilter(GXBool aa, u8 sample_pattern[12][2], GXBool vf, u8 vfilter[7]) {}
+void GXSetCopyFilter(GXBool aa, const u8 sample_pattern[12][2], GXBool vf, const u8 vfilter[7]) {}
 
 void GXSetDispCopyGamma(GXGamma gamma) {}
 

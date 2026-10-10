@@ -339,7 +339,8 @@ void GXLoadTlut(const GXTlutObj* obj_, u32 idx) {
   emit_loaded_tlut_metadata(*obj, idx);
 }
 
-// TODO GXInitTexCacheRegion
+void GXInitTexCacheRegion(GXTexRegion* region, GXBool is_32b_mipmap, u32 tmem_even, GXTexCacheSize size_even,
+                          u32 tmem_odd, GXTexCacheSize size_odd) {}
 // TODO GXInitTexPreLoadRegion
 // TODO GXInitTlutRegion
 // TODO GXInvalidateTexRegion

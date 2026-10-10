@@ -9,8 +9,17 @@ extern "C" {
 // TODO GXReadGP1Metric
 // TODO GXReadMemMetric
 // TODO GXClearMemMetric
-// TODO GXReadPixMetric
-// TODO GXClearPixMetric
+void GXReadPixMetric(u32* top_pixels_in, u32* top_pixels_out, u32* bot_pixels_in, u32* bot_pixels_out,
+                     u32* clr_pixels_in, u32* copy_clks) {
+  *top_pixels_in = 0;
+  *top_pixels_out = 0;
+  *bot_pixels_in = 0;
+  *bot_pixels_out = 0;
+  *clr_pixels_in = 0;
+  *copy_clks = 0;
+}
+
+void GXClearPixMetric() {}
 // TODO GXSetVCacheMetric
 // TODO GXReadVCacheMetric
 // TODO GXClearVCacheMetric
