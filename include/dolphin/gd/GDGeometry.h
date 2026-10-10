@@ -2,6 +2,7 @@
 #define _DOLPHIN_GD_GEOMETRY_H_
 
 #include <dolphin/gx/GXStruct.h>
+#include <dolphin/gd/GDBase.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -517,6 +518,156 @@ void GDSetGenMode(u8 nTexGens, u8 nChans, u8 nTevs);
 void GDSetGenMode2(u8 nTexGens, u8 nChans, u8 nTevs, u8 nInds, GXCullMode cm);
 void GDSetLPSize(u8 lineWidth, u8 pointSize, GXTexOffset lineOffset, GXTexOffset pointOffset, u8 lineHalfAspect);
 void GDSetCoPlanar(u8 enable);
+
+static inline void GDBegin(GXPrimitive type, GXVtxFmt vtxfmt, u16 nverts) {
+    GDWrite_u8((u8)vtxfmt | (u8)type);
+    GDWrite_u16(nverts);
+}
+
+static inline void GDEnd(void) {}
+
+static inline void GDPosition3f32(f32 x, f32 y, f32 z) {
+    GDWrite_f32(x);
+    GDWrite_f32(y);
+    GDWrite_f32(z);
+}
+
+static inline void GDPosition3u16(u16 x, u16 y, u16 z) {
+    GDWrite_u16(x);
+    GDWrite_u16(y);
+    GDWrite_u16(z);
+}
+
+static inline void GDPosition3s16(s16 x, s16 y, s16 z) {
+    GDWrite_u16((u16)x);
+    GDWrite_u16((u16)y);
+    GDWrite_u16((u16)z);
+}
+
+static inline void GDPosition3u8(u8 x, u8 y, u8 z) {
+    GDWrite_u8(x);
+    GDWrite_u8(y);
+    GDWrite_u8(z);
+}
+
+static inline void GDPosition3s8(s8 x, s8 y, s8 z) {
+    GDWrite_u8((u8)x);
+    GDWrite_u8((u8)y);
+    GDWrite_u8((u8)z);
+}
+
+static inline void GDPosition2f32(f32 x, f32 y) {
+    GDWrite_f32(x);
+    GDWrite_f32(y);
+}
+
+static inline void GDPosition2u16(u16 x, u16 y) {
+    GDWrite_u16(x);
+    GDWrite_u16(y);
+}
+
+static inline void GDPosition2s16(s16 x, s16 y) {
+    GDWrite_u16((u16)x);
+    GDWrite_u16((u16)y);
+}
+
+static inline void GDPosition2u8(u8 x, u8 y) {
+    GDWrite_u8(x);
+    GDWrite_u8(y);
+}
+
+static inline void GDPosition2s8(s8 x, s8 y) {
+    GDWrite_u8((u8)x);
+    GDWrite_u8((u8)y);
+}
+
+static inline void GDPosition1x16(u16 index) { GDWrite_u16(index); }
+
+static inline void GDPosition1x8(u8 index) { GDWrite_u8(index); }
+
+static inline void GDNormal3f32(f32 x, f32 y, f32 z) {
+    GDWrite_f32(x);
+    GDWrite_f32(y);
+    GDWrite_f32(z);
+}
+
+static inline void GDNormal3s16(s16 x, s16 y, s16 z) {
+    GDWrite_u16((u16)x);
+    GDWrite_u16((u16)y);
+    GDWrite_u16((u16)z);
+}
+
+static inline void GDNormal3s8(s8 x, s8 y, s8 z) {
+    GDWrite_u8((u8)x);
+    GDWrite_u8((u8)y);
+    GDWrite_u8((u8)z);
+}
+
+static inline void GDNormal1x16(u16 index) { GDWrite_u16(index); }
+
+static inline void GDNormal1x8(u8 index) { GDWrite_u8(index); }
+
+static inline void GDColor4u8(u8 r, u8 g, u8 b, u8 a) {
+    GDWrite_u8(r);
+    GDWrite_u8(g);
+    GDWrite_u8(b);
+    GDWrite_u8(a);
+}
+
+static inline void GDColor3u8(u8 r, u8 g, u8 b) {
+    GDWrite_u8(r);
+    GDWrite_u8(g);
+    GDWrite_u8(b);
+}
+
+static inline void GDColor1u32(u32 clr) { GDWrite_u32(clr); }
+
+static inline void GDColor1u16(u16 clr) { GDWrite_u16(clr); }
+
+static inline void GDColor1x16(u16 index) { GDWrite_u16(index); }
+
+static inline void GDColor1x8(u8 index) { GDWrite_u8(index); }
+
+static inline void GDTexCoord2f32(f32 s, f32 t) {
+    GDWrite_f32(s);
+    GDWrite_f32(t);
+}
+
+static inline void GDTexCoord2u16(u16 s, u16 t) {
+    GDWrite_u16(s);
+    GDWrite_u16(t);
+}
+
+static inline void GDTexCoord2s16(s16 s, s16 t) {
+    GDWrite_u16((u16)s);
+    GDWrite_u16((u16)t);
+}
+
+static inline void GDTexCoord2u8(u8 s, u8 t) {
+    GDWrite_u8(s);
+    GDWrite_u8(t);
+}
+
+static inline void GDTexCoord2s8(s8 s, s8 t) {
+    GDWrite_u8((u8)s);
+    GDWrite_u8((u8)t);
+}
+
+static inline void GDTexCoord1f32(f32 s) { GDWrite_f32(s); }
+
+static inline void GDTexCoord1u16(u16 s) { GDWrite_u16(s); }
+
+static inline void GDTexCoord1s16(s16 s) { GDWrite_u16((u16)s); }
+
+static inline void GDTexCoord1u8(u8 s) { GDWrite_u8(s); }
+
+static inline void GDTexCoord1s8(s8 s) { GDWrite_u8((u8)s); }
+
+static inline void GDTexCoord1x16(u16 index) { GDWrite_u16(index); }
+
+static inline void GDTexCoord1x8(u8 index) { GDWrite_u8(index); }
+
+static inline void GDMatrixIndex1u8(u8 index) { GDWrite_u8(index); }
 
 #ifdef __cplusplus
 }
