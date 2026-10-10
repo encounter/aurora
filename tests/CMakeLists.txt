@@ -219,6 +219,7 @@ if (AURORA_ENABLE_GX)
   target_link_libraries(gfx_recording_tests PRIVATE
     aurora::gx
     aurora::vi
+    absl::flat_hash_map
     gtest
     gtest_main
   )
