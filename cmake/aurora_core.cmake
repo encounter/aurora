@@ -26,7 +26,7 @@ add_library(aurora_core STATIC
 add_library(aurora::core ALIAS aurora_core)
 set_target_properties(aurora_core PROPERTIES FOLDER "aurora")
 
-target_compile_definitions(aurora_core PUBLIC AURORA TARGET_PC)
+target_compile_definitions(aurora_core PUBLIC AURORA TARGET_PC=1)
 target_include_directories(aurora_core PUBLIC include)
 target_link_libraries(aurora_core PUBLIC fmt::fmt ${AURORA_SDL3_TARGET} xxHash::xxhash)
 target_link_libraries(aurora_core PRIVATE absl::btree absl::flat_hash_map sqlite3 Tracy::TracyClient)

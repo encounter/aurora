@@ -83,7 +83,7 @@ target_include_directories(os_time_tests PRIVATE
   ../include
   ../lib
 )
-target_compile_definitions(os_time_tests PRIVATE AURORA TARGET_PC)
+target_compile_definitions(os_time_tests PRIVATE AURORA TARGET_PC=1)
 target_link_libraries(os_time_tests PRIVATE fmt::fmt gtest gtest_main)
 gtest_discover_tests(os_time_tests)
 
@@ -130,7 +130,7 @@ if (AURORA_ENABLE_GX)
     ../lib/dolphin/gx
   )
 
-  target_compile_definitions(gx_fifo_tests PRIVATE AURORA TARGET_PC)
+  target_compile_definitions(gx_fifo_tests PRIVATE AURORA TARGET_PC=1)
 
   target_link_libraries(gx_fifo_tests PRIVATE
     gtest
@@ -155,7 +155,7 @@ if (AURORA_ENABLE_GX)
     ../include
     ../lib
   )
-  target_compile_definitions(gx_texture_cache_tests PRIVATE AURORA TARGET_PC)
+  target_compile_definitions(gx_texture_cache_tests PRIVATE AURORA TARGET_PC=1)
   target_link_libraries(gx_texture_cache_tests PRIVATE
     gtest
     gtest_main
@@ -181,7 +181,7 @@ if (AURORA_ENABLE_GX)
     ../include
     ../lib
   )
-  target_compile_definitions(texture_replacement_streaming_tests PRIVATE AURORA TARGET_PC)
+  target_compile_definitions(texture_replacement_streaming_tests PRIVATE AURORA TARGET_PC=1)
   target_link_libraries(texture_replacement_streaming_tests PRIVATE
     aurora::gx
     aurora::vi
@@ -201,7 +201,7 @@ if (AURORA_ENABLE_GX)
     ../include
     ../lib
   )
-  target_compile_definitions(render_worker_tests PRIVATE AURORA TARGET_PC)
+  target_compile_definitions(render_worker_tests PRIVATE AURORA TARGET_PC=1)
   target_link_libraries(render_worker_tests PRIVATE
     gtest
     gtest_main
@@ -218,7 +218,7 @@ if (AURORA_ENABLE_GX)
     ../include
     ../lib
   )
-  target_compile_definitions(gfx_recording_tests PRIVATE AURORA TARGET_PC)
+  target_compile_definitions(gfx_recording_tests PRIVATE AURORA TARGET_PC=1)
   target_link_libraries(gfx_recording_tests PRIVATE
     aurora::gx
     aurora::vi
@@ -257,6 +257,6 @@ add_executable(os_alloc_tests
 target_include_directories(os_alloc_tests PRIVATE
   ../include
 )
-target_compile_definitions(os_alloc_tests PRIVATE AURORA TARGET_PC)
+target_compile_definitions(os_alloc_tests PRIVATE AURORA TARGET_PC=1)
 target_link_libraries(os_alloc_tests PRIVATE gtest gtest_main fmt::fmt)
 gtest_discover_tests(os_alloc_tests)
