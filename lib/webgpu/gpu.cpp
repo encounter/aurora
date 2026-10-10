@@ -784,7 +784,13 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     }};
     dawn::native::DawnInstanceDescriptor dawnInstanceDescriptor{};
     dawnInstanceDescriptor.nextInChain = &instanceTogglesDescriptor;
+#ifdef AURORA_GFX_DEBUG_GROUPS
+    dawnInstanceDescriptor.backendValidationLevel = auroraBackend == BACKEND_VULKAN
+                                                        ? dawn::native::BackendValidationLevel::Partial
+                                                        : dawn::native::BackendValidationLevel::Disabled;
+#else
     dawnInstanceDescriptor.backendValidationLevel = dawn::native::BackendValidationLevel::Disabled;
+#endif
     dawnInstanceDescriptor.SetLoggingCallback(wgpu_log);
 #ifdef TRACY_ENABLE
     dawnInstanceDescriptor.platform = tracy_dawn_platform();
