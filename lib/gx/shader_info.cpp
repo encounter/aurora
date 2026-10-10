@@ -2,6 +2,7 @@
 
 #include "../gfx/recording.hpp"
 
+#include <atomic>
 #include <cmath>
 
 #include <tracy/Tracy.hpp>
@@ -367,6 +368,74 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
     Log.fatal("Uniform size exceeds maximum: {} > {}", info.uniformSize, MaxUniformSize);
   }
   return info;
+}
+
+static bool stage_samples_texture(const TevStage& stage) noexcept {
+  if (stage.texMapId == GX_TEXMAP_NULL) {
+    return false;
+  }
+  const auto isTexColor = [](GXTevColorArg arg) { return arg == GX_CC_TEXC || arg == GX_CC_TEXA; };
+  const auto& c = stage.colorPass;
+  const auto& a = stage.alphaPass;
+  return isTexColor(c.a) || isTexColor(c.b) || isTexColor(c.c) || isTexColor(c.d) || a.a == GX_CA_TEXA ||
+         a.b == GX_CA_TEXA || a.c == GX_CA_TEXA || a.d == GX_CA_TEXA;
+}
+
+static std::string describe_texturing(const ShaderConfig& config, u32 numTexGens) {
+  std::string out = fmt::format("numTexGens {} numTevStages {} numIndStages {}", numTexGens, config.tevStageCount,
+                                config.numIndStages);
+  for (u32 i = 0; i < config.tevStageCount; ++i) {
+    const auto& st = config.tevStages[i];
+    out += fmt::format("\n  tev{}: texCoord {} texMap {} channel {} color {} {} {} {} alpha {} {} {} {} | indStage {} "
+                       "indMtx {} wrap {} {} addPrev {}",
+                       i, underlying(st.texCoordId), underlying(st.texMapId), underlying(st.channelId),
+                       underlying(st.colorPass.a), underlying(st.colorPass.b), underlying(st.colorPass.c),
+                       underlying(st.colorPass.d), underlying(st.alphaPass.a), underlying(st.alphaPass.b),
+                       underlying(st.alphaPass.c), underlying(st.alphaPass.d), underlying(st.indTexStage),
+                       underlying(st.indTexMtxId), underlying(st.indTexWrapS), underlying(st.indTexWrapT),
+                       st.indTexAddPrev);
+  }
+  for (u32 i = 0; i < config.numIndStages; ++i) {
+    const auto& ind = config.indStages[i];
+    out += fmt::format("\n  ind{}: texCoord {} texMap {}", i, underlying(ind.texCoordId), underlying(ind.texMapId));
+  }
+  return out;
+}
+
+void validate_shader_config(const ShaderConfig& config, const ShaderInfo& info, u32 numTexGens) noexcept {
+  for (u32 i = 0; i < info.sampledTexCoords.size(); ++i) {
+    if (!info.sampledTexCoords.test(i)) {
+      continue;
+    }
+    const auto& tcg = config.tcgs[i];
+    if (tcg.src == GX_MAX_TEXGENSRC && !(tcg.type >= GX_TG_BUMP0 && tcg.type <= GX_TG_BUMP7)) {
+      UNLIKELY FATAL("GX: a stage reads texcoord {}, but no texgen makes it (undefined on console). Usually a "
+                     "TEV or indirect stage is still set from an earlier draw.\n{}",
+                     i, describe_texturing(config, numTexGens));
+    }
+    if (tcg.src >= GX_TG_TEX0 && tcg.src <= GX_TG_TEX7) {
+      const auto attr = static_cast<GXAttr>(GX_VA_TEX0 + (tcg.src - GX_TG_TEX0));
+      if (config.attrs[attr].attrType == GX_NONE) {
+        UNLIKELY FATAL("GX: texgen {} reads vertex attribute TEX{}, but the vertex descriptor does not have it "
+                       "(undefined on console). Usually the texgen or the TEV stage is still set from an "
+                       "earlier draw.\n{}",
+                       i, static_cast<int>(tcg.src - GX_TG_TEX0), describe_texturing(config, numTexGens));
+      }
+    }
+  }
+  for (u32 i = 0; i < config.tevStageCount; ++i) {
+    const auto& stage = config.tevStages[i];
+    if (stage.indTexMtxId != GX_ITM_OFF && stage.indTexStage >= config.numIndStages &&
+        stage_samples_texture(stage)) {
+      static std::atomic<u32> sReported{0};
+      if (sReported.fetch_add(1, std::memory_order_relaxed) < 8) {
+        Log.warn("GX: TEV stage {} uses indirect stage {}, but only {} indirect stages are enabled (undefined on "
+                 "console, drawn without the indirect offset). Usually the TEV stage is still set from an earlier "
+                 "draw.\n{}",
+                 i, underlying(stage.indTexStage), config.numIndStages, describe_texturing(config, numTexGens));
+      }
+    }
+  }
 }
 
 static void fill_uniform(ByteBuffer& buf, const ShaderInfo& info) noexcept {
