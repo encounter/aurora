@@ -221,50 +221,8 @@ if (AURORA_ENABLE_GX)
     message(STATUS "aurora: Using existing Freetype")
   endif ()
 
-  if (NOT TARGET imgui)
-    message(STATUS "aurora: Fetching imgui")
-    FetchContent_Declare(imgui
-      URL https://github.com/ocornut/imgui/archive/refs/tags/v1.91.9b-docking.tar.gz
-      URL_HASH SHA256=466fdef9b18de15f0bb6e288e3d00ffa3d82200ec458ce5e4f724a161d9528a5
-      DOWNLOAD_EXTRACT_TIMESTAMP FALSE
-      EXCLUDE_FROM_ALL
-    )
-    FetchContent_MakeAvailable(imgui)
-
-    add_library(imgui STATIC
-      ${imgui_SOURCE_DIR}/imgui.cpp
-      ${imgui_SOURCE_DIR}/imgui_demo.cpp
-      ${imgui_SOURCE_DIR}/imgui_draw.cpp
-      ${imgui_SOURCE_DIR}/imgui_tables.cpp
-      ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-      ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
-    )
-    target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
-
-    add_library(imgui_backends STATIC
-      ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
-      ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
-      ${imgui_SOURCE_DIR}/backends/imgui_impl_wgpu.cpp
-    )
-    target_compile_definitions(imgui_backends PRIVATE IMGUI_IMPL_WEBGPU_BACKEND_DAWN)
-    target_link_libraries(imgui_backends PRIVATE imgui ${AURORA_SDL3_TARGET} dawn::webgpu_dawn)
-    target_link_libraries(imgui PUBLIC imgui_backends)
-
-    if (TARGET Freetype::Freetype)
-      target_sources(imgui PRIVATE ${imgui_SOURCE_DIR}/misc/freetype/imgui_freetype.cpp)
-      target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_FREETYPE)
-      target_link_libraries(imgui PRIVATE Freetype::Freetype)
-    endif ()
-  else ()
-    message(STATUS "aurora: Using existing imgui")
-  endif ()
-
-  if (TARGET imgui)
-    target_include_directories(imgui PUBLIC ${PROJECT_SOURCE_DIR}/include)
-    target_compile_definitions(imgui PUBLIC IMGUI_USER_CONFIG="aurora/imgui_config.h")
-    target_sources(imgui PRIVATE ${PROJECT_SOURCE_DIR}/lib/imgui_config.cpp)
-    target_link_libraries(imgui PRIVATE ${AURORA_SDL3_TARGET})
-  endif ()
+  set(AURORA_IMGUI_IMPLEMENTATION ON)
+  include(../cmake/AuroraDearImguiProvider.cmake)
 
   aurora_find_package_global(SQLite3)
   if (TARGET SQLite3::SQLite3)
