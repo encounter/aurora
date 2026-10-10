@@ -324,7 +324,16 @@ GXTexWrapMode GXGetTexObjWrapT(const GXTexObj* tex_obj) {
 
 GXBool GXGetTexObjMipMap(const GXTexObj* tex_obj) { return reinterpret_cast<const GXTexObj_*>(tex_obj)->has_mips(); }
 
-// TODO GXGetTexObjAll
+void GXGetTexObjAll(const GXTexObj* tex_obj, void** image_ptr, u16* width, u16* height, GXTexFmt* format,
+                    GXTexWrapMode* wrap_s, GXTexWrapMode* wrap_t, u8* mipmap) {
+  *image_ptr = GXGetTexObjData(tex_obj);
+  *width = GXGetTexObjWidth(tex_obj);
+  *height = GXGetTexObjHeight(tex_obj);
+  *format = GXGetTexObjFmt(tex_obj);
+  *wrap_s = GXGetTexObjWrapS(tex_obj);
+  *wrap_t = GXGetTexObjWrapT(tex_obj);
+  *mipmap = GXGetTexObjMipMap(tex_obj);
+}
 // TODO GXGetTexObjMinFilt
 // TODO GXGetTexObjMagFilt
 // TODO GXGetTexObjMinLOD
