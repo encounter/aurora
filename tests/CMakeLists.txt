@@ -62,6 +62,13 @@ endif ()
 aurora_copy_runtime_dlls(pad_adapter_tests)
 gtest_discover_tests(pad_adapter_tests)
 
+add_executable(copy_readback_layout_tests
+  copy_readback_layout_test.cpp
+)
+target_include_directories(copy_readback_layout_tests PRIVATE ../lib)
+target_link_libraries(copy_readback_layout_tests PRIVATE gtest gtest_main)
+gtest_discover_tests(copy_readback_layout_tests)
+
 add_executable(time_tests
   time_test.cpp
   ../lib/time.cpp

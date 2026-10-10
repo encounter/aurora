@@ -1,5 +1,6 @@
 #include "frame.hpp"
 
+#include "copy_readback.hpp"
 #include "depth_peek.hpp"
 #include "pipeline_cache.hpp"
 #include "recording.hpp"
@@ -400,6 +401,7 @@ void initialize() {
   //   }
   // });
   depth_peek::initialize();
+  copy_readback::initialize();
   tex_copy_conv::initialize();
   tex_palette_conv::initialize();
 
@@ -540,6 +542,7 @@ void shutdown() {
   }
   shutdown_pipeline_cache();
   depth_peek::shutdown();
+  copy_readback::shutdown();
   tex_copy_conv::shutdown();
   tex_palette_conv::shutdown();
   texture_replacement::shutdown();

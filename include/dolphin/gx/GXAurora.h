@@ -2,6 +2,7 @@
 #define DOLPHIN_GXAURORA_H
 
 #include <dolphin/types.h>
+#include <dolphin/gx/GXEnum.h>
 
 #if __cplusplus
 extern "C" {
@@ -172,6 +173,24 @@ void GXCreateFrameBuffer(u32 width, u32 height);
  * Must be called after GXCreateFrameBuffer() to resume normal rendering.
  */
 void GXRestoreFrameBuffer(void);
+
+/**
+ * Reads a texture copy back into CPU memory, in the GX tiled layout that the GameCube
+ * GPU writes to main memory.
+ *
+ * Requests a readback of the GPU copy currently bound to `src` (the destination of a
+ * previous GXCopyTex), recorded at this point in the command stream. Then writes the
+ * newest completed readback for `src` into `dst`, which may be equal to `src`. Results
+ * arrive a few frames after their request, and only results taken from the copy texture
+ * that is still bound to `src` are delivered (see GXDestroyCopyTex).
+ *
+ * `width`, `height` and `fmt` are the logical GXSetTexCopyDst values. Supported formats:
+ * GX_TF_I8, GX_CTF_A8, GX_CTF_R8, GX_CTF_G8 and GX_CTF_B8. `dst` must hold
+ * GXGetTexBufferSize(width, height, fmt, GX_FALSE, 0) bytes.
+ *
+ * Returns GX_TRUE when this call wrote a new result into `dst`.
+ */
+GXBool GXAuroraReadback(const void* src, void* dst, u16 width, u16 height, GXTexFmt fmt);
 
 #if __cplusplus
 }

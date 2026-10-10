@@ -7,6 +7,7 @@
 #include "../../window.hpp"
 
 #include "../../gx/fifo.hpp"
+#include "../../gfx/copy_readback.hpp"
 
 static void GXWriteString(const char* label) {
   auto length = strlen(label);
@@ -96,4 +97,8 @@ void GXCreateFrameBuffer(u32 width, u32 height) {
 void GXRestoreFrameBuffer() {
   GX_WRITE_AURORA(GX_AURORA_END_OFFSCREEN);
   aurora::gx::fifo::publish();
+}
+
+GXBool GXAuroraReadback(const void* src, void* dst, u16 width, u16 height, GXTexFmt fmt) {
+  return aurora::gfx::copy_readback::request(src, dst, width, height, fmt) ? GX_TRUE : GX_FALSE;
 }
