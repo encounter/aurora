@@ -20,9 +20,16 @@ void shutdown_recording();
 void increment_merged_draw_count() noexcept;
 
 namespace testing {
+struct OffscreenCacheStats {
+  uint64_t bytes;
+  size_t entries;
+};
 void suppress_render_worker(bool suppress) noexcept;
 void seed_offscreen_cache(uint32_t width, uint32_t height, wgpu::TextureFormat colorFormat,
                           wgpu::TextureFormat depthFormat);
+OffscreenCacheStats offscreen_cache_stats() noexcept;
+bool is_offscreen_cached(uint32_t width, uint32_t height, wgpu::TextureFormat colorFormat,
+                         wgpu::TextureFormat depthFormat);
 }
 
 } // namespace aurora::gfx::detail
@@ -58,7 +65,6 @@ void begin_offscreen(uint32_t width, uint32_t height);
 void end_offscreen();
 bool has_normal_attachment() noexcept;
 RenderTargetLayout get_render_target_layout() noexcept;
-void clear_caches() noexcept;
 
 namespace tex_palette_conv {
 struct ConvRequest;

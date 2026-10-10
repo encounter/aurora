@@ -1,6 +1,8 @@
 #include "texture.hpp"
 
+#include "../gfx/lru_cache.hpp"
 #include "../gfx/recording.hpp"
+#include "../gfx/tex_copy_conv.hpp"
 #include "../gfx/tex_palette_conv.hpp"
 #include "../gfx/texture_convert.hpp"
 #include "../gfx/texture_replacement.hpp"
@@ -16,7 +18,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <list>
 #include <optional>
 #include <utility>
 
@@ -89,12 +90,6 @@ struct TextureContentKey {
   }
 };
 
-struct ContentCacheEntry {
-  gfx::TextureHandle handle;
-  uint64_t bytes = 0;
-  std::list<TextureContentKey>::iterator lruIt;
-};
-
 constexpr size_t SourceKeyCacheMaxEntries = 16384;
 
 struct SourceKeyCacheEntry {
@@ -118,17 +113,22 @@ struct SourceKeyCacheKey {
 
 absl::flat_hash_map<u32, CachedTextureEntry> s_textureObjectCaches;
 absl::flat_hash_map<u32, TlutObjectCache> s_tlutObjectCaches;
-absl::flat_hash_map<TextureContentKey, ContentCacheEntry> s_contentCache;
 absl::flat_hash_map<SourceKeyCacheKey, SourceKeyCacheEntry> s_sourceKeyCache;
 absl::flat_hash_map<uint64_t, absl::flat_hash_set<u32>> s_replacementUsers;
-std::list<TextureContentKey> s_contentLru;
-uint64_t s_contentCacheBytes = 0;
-uint64_t s_contentCacheBudgetBytes = texture::ContentCacheBudgetBytes;
+TextureStats s_stats;
+gfx::LruCache<TextureContentKey, gfx::TextureHandle> s_contentCache{
+    {.bytes = texture::ContentCacheBudgetBytes},
+    [](const gfx::TextureHandle&) { ++s_stats.evictions; },
+};
+void retire_copy_texture(const GXState::CopyTextureRef& copy);
+gfx::LruCache<GXState::CopyTextureKey, GXState::CopyTextureRef> s_copyCache{
+    gfx::RenderTextureCacheLimits,
+    retire_copy_texture,
+};
 uint64_t s_frameCount = 0;
 uint64_t s_bindGeneration = 1;
 std::atomic<uint64_t> s_pendingInvalidations = 0;
 std::atomic<uint64_t> s_pendingCacheClears = 0;
-TextureStats s_stats;
 
 #if DEBUG
 constexpr bool BuildSourceKeyForDebug = true;
@@ -222,19 +222,12 @@ void store_cached_texture(const GXTexObj_& obj, gfx::TextureHandle handle, u32 t
   }
 }
 
-void touch_content_cache(ContentCacheEntry& entry) {
-  s_contentLru.splice(s_contentLru.begin(), s_contentLru, entry.lruIt);
-  entry.lruIt = s_contentLru.begin();
-}
-
 gfx::TextureHandle find_content_texture(const TextureContentKey& key) {
-  const auto it = s_contentCache.find(key);
-  if (it == s_contentCache.end()) {
-    return {};
+  if (const auto* handle = s_contentCache.find(key)) {
+    ++s_stats.contentHits;
+    return *handle;
   }
-  touch_content_cache(it->second);
-  ++s_stats.contentHits;
-  return it->second.handle;
+  return {};
 }
 
 uint64_t texture_handle_size(const gfx::TextureHandle& handle) noexcept {
@@ -244,33 +237,29 @@ uint64_t texture_handle_size(const gfx::TextureHandle& handle) noexcept {
   return gfx::calc_texture_size(handle->format, handle->size.width, handle->size.height, handle->mipCount);
 }
 
+void update_cache_stats() {
+  s_stats.contentCacheBytes = s_contentCache.cached_bytes();
+  s_stats.contentCacheEntries = s_contentCache.cached_count();
+  s_stats.copyCacheBytes = s_copyCache.cached_bytes();
+  s_stats.copyCacheEntries = s_copyCache.cached_count();
+  s_stats.currentCopyBytes = s_copyCache.pinned_bytes();
+}
+
+void retire_copy_texture(const GXState::CopyTextureRef& copy) {
+  for (auto& [_, cache] : s_tlutObjectCaches) {
+    absl::erase_if(cache.dynamicPaletteTextures,
+                   [&](const auto& entry) { return entry.first.sourceIdentity == copy.handle.get(); });
+  }
+  ++s_stats.copyCacheEvictions;
+}
+
 void cache_content_texture(TextureContentKey key, const gfx::TextureHandle& handle) {
   const uint64_t bytes = texture_handle_size(handle);
-  if (!handle || bytes == 0 || bytes > s_contentCacheBudgetBytes) {
+  if (bytes == 0 || bytes > s_contentCache.budget()) {
     return;
   }
-
-  s_contentLru.push_front(key);
-  const auto [it, inserted] = s_contentCache.emplace(
-      std::move(key), ContentCacheEntry{.handle = handle, .bytes = bytes, .lruIt = s_contentLru.begin()});
-  if (!inserted) {
-    s_contentLru.pop_front();
-    touch_content_cache(it->second);
-    return;
-  }
-  s_contentCacheBytes += bytes;
-
-  while (s_contentCacheBytes > s_contentCacheBudgetBytes && !s_contentLru.empty()) {
-    const auto cacheIt = s_contentCache.find(s_contentLru.back());
-    if (cacheIt != s_contentCache.end()) {
-      s_contentCacheBytes -= cacheIt->second.bytes;
-      s_contentCache.erase(cacheIt);
-      ++s_stats.evictions;
-    }
-    s_contentLru.pop_back();
-  }
-  s_stats.contentCacheBytes = s_contentCacheBytes;
-  s_stats.contentCacheEntries = s_contentCache.size();
+  s_contentCache.insert(std::move(key), handle, bytes);
+  update_cache_stats();
 }
 
 struct TextureKeys {
@@ -515,6 +504,30 @@ bool use_replacement(std::optional<gfx::texture_replacement::ReplacementResult> 
 const TextureStats& texture_stats() noexcept { return s_stats; }
 
 namespace texture {
+GXState::CopyTextureRef resolve_copy_texture(const GXState::CopyTextureKey& key) noexcept {
+  ZoneScoped;
+  auto* copy = s_copyCache.pin(key);
+  auto& current = g_gxState.copyTextures[key.dest];
+  if (current && current.key != key) {
+    s_copyCache.unpin(current.key);
+  }
+  if (copy) {
+    ++s_stats.copyCacheHits;
+  } else {
+    auto handle = gfx::tex_copy_conv::needs_conversion(key.format)
+                      ? gfx::new_conv_texture(key.width, key.height, key.format, "Copy Conv Texture")
+                      : gfx::new_render_texture(key.width, key.height, GX_TF_RGBA8, "Resolved Texture");
+    const uint64_t bytes = texture_handle_size(handle);
+    copy = &s_copyCache.insert_pinned(key, {.handle = std::move(handle), .key = key}, bytes);
+    ++s_stats.copyCacheMisses;
+  }
+  ++copy->revision;
+  current = *copy;
+  update_cache_stats();
+  invalidate_bindings();
+  return current;
+}
+
 size_t texture_source_size(u32 format, u32 width, u32 height, u32 mipCount) noexcept {
   if (width == 0 || height == 0 || mipCount == 0) {
     return 0;
@@ -707,32 +720,39 @@ void end_frame() noexcept {
   TracyPlot("aurora: textureHashedBytes", static_cast<int64_t>(s_stats.hashedBytes));
   TracyPlot("aurora: textureObjectHits", static_cast<int64_t>(s_stats.objectHits));
   TracyPlot("aurora: textureContentHits", static_cast<int64_t>(s_stats.contentHits));
-  TracyPlot("aurora: textureCacheBytes", static_cast<int64_t>(s_contentCacheBytes));
-  TracyPlot("aurora: textureCacheEntries", static_cast<int64_t>(s_contentCache.size()));
+  TracyPlot("aurora: textureCacheBytes", static_cast<int64_t>(s_contentCache.cached_bytes()));
+  TracyPlot("aurora: textureCacheEntries", static_cast<int64_t>(s_contentCache.cached_count()));
+  TracyPlot("aurora: copyTextureCacheBytes", static_cast<int64_t>(s_stats.copyCacheBytes));
+  TracyPlot("aurora: copyTextureCacheEntries", static_cast<int64_t>(s_stats.copyCacheEntries));
+  TracyPlot("aurora: copyTextureCacheHits", static_cast<int64_t>(s_stats.copyCacheHits));
+  TracyPlot("aurora: copyTextureCacheMisses", static_cast<int64_t>(s_stats.copyCacheMisses));
+  TracyPlot("aurora: copyTextureCacheEvictions", static_cast<int64_t>(s_stats.copyCacheEvictions));
+  TracyPlot("aurora: currentCopyTextureBytes", static_cast<int64_t>(s_copyCache.pinned_bytes()));
   TracyPlot("aurora: texturePendingReplacementLoads", static_cast<int64_t>(s_stats.pendingLoads));
   TracyPlot("aurora: textureReplacementPublishes", static_cast<int64_t>(s_stats.publishes));
   TracyPlot("aurora: textureReplacementPublishBytes", static_cast<int64_t>(s_stats.publishBytes));
 
   s_stats = {};
-  s_stats.contentCacheBytes = s_contentCacheBytes;
-  s_stats.contentCacheEntries = s_contentCache.size();
   s_stats.pendingLoads = streamingStats.pendingLoads;
   s_stats.publishes = streamingStats.publishes;
   s_stats.publishBytes = streamingStats.publishBytes;
   ++s_frameCount;
   apply_pending_invalidations();
   sweep_object_caches();
+  s_copyCache.end_frame();
+  s_contentCache.end_frame();
+  update_cache_stats();
 }
 
 void shutdown() noexcept {
+  clear_copy_texture_cache();
+  s_copyCache.set_budget(gfx::RenderTextureCacheLimits.bytes);
   s_textureObjectCaches.clear();
   s_tlutObjectCaches.clear();
   s_replacementUsers.clear();
   s_contentCache.clear();
-  s_contentLru.clear();
   s_sourceKeyCache.clear();
-  s_contentCacheBytes = 0;
-  s_contentCacheBudgetBytes = ContentCacheBudgetBytes;
+  s_contentCache.set_budget(ContentCacheBudgetBytes);
   s_frameCount = 0;
   s_bindGeneration = 1;
   s_pendingInvalidations.store(0, std::memory_order_release);
@@ -741,17 +761,13 @@ void shutdown() noexcept {
 }
 
 void set_content_cache_budget_for_testing(uint64_t bytes) noexcept {
-  s_contentCacheBudgetBytes = bytes;
-  while (s_contentCacheBytes > s_contentCacheBudgetBytes && !s_contentLru.empty()) {
-    const auto cacheIt = s_contentCache.find(s_contentLru.back());
-    if (cacheIt != s_contentCache.end()) {
-      s_contentCacheBytes -= cacheIt->second.bytes;
-      s_contentCache.erase(cacheIt);
-    }
-    s_contentLru.pop_back();
-  }
-  s_stats.contentCacheBytes = s_contentCacheBytes;
-  s_stats.contentCacheEntries = s_contentCache.size();
+  s_contentCache.set_budget(bytes);
+  update_cache_stats();
+}
+
+void set_copy_cache_budget_for_testing(uint64_t bytes) noexcept {
+  s_copyCache.set_budget(bytes);
+  update_cache_stats();
 }
 } // namespace texture
 
@@ -791,46 +807,17 @@ void evict_tlut_object(u32 tlutObjId) noexcept {
 
 void clear_copy_texture_cache() noexcept {
   g_gxState.copyTextures.clear();
-  g_gxState.copyTextureCache.clear();
-  for (auto& [_, cache] : s_tlutObjectCaches) {
-    cache.dynamicPaletteTextures.clear();
-  }
+  s_copyCache.clear();
+  update_cache_stats();
   texture::invalidate_bindings();
 }
 
 void clear_static_texture_cache() noexcept { s_pendingCacheClears.fetch_add(1, std::memory_order_release); }
 
 void evict_copy_texture(const void* dest) noexcept {
-  absl::flat_hash_set<const void*> sourceIdentities;
-  if (const auto it = g_gxState.copyTextures.find(dest); it != g_gxState.copyTextures.end()) {
-    if (it->second.handle) {
-      sourceIdentities.insert(it->second.handle.get());
-    }
-    g_gxState.copyTextures.erase(it);
-  }
-
-  for (auto it = g_gxState.copyTextureCache.begin(); it != g_gxState.copyTextureCache.end();) {
-    if (it->first.dest == dest) {
-      if (it->second.handle) {
-        sourceIdentities.insert(it->second.handle.get());
-      }
-      g_gxState.copyTextureCache.erase(it++);
-    } else {
-      ++it;
-    }
-  }
-
-  if (!sourceIdentities.empty()) {
-    for (auto& [_, cache] : s_tlutObjectCaches) {
-      for (auto it = cache.dynamicPaletteTextures.begin(); it != cache.dynamicPaletteTextures.end();) {
-        if (sourceIdentities.contains(it->first.sourceIdentity)) {
-          cache.dynamicPaletteTextures.erase(it++);
-        } else {
-          ++it;
-        }
-      }
-    }
-  }
+  g_gxState.copyTextures.erase(dest);
+  s_copyCache.erase_if([&](const auto& key) { return key.dest == dest; });
+  update_cache_stats();
   texture::invalidate_bindings();
 }
 

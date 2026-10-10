@@ -25,6 +25,8 @@ TextureFormatInfo format_info(wgpu::TextureFormat format) noexcept {
   case wgpu::TextureFormat::RGBA8Unorm:
   case wgpu::TextureFormat::BGRA8Unorm:
   case wgpu::TextureFormat::R32Float:
+  case wgpu::TextureFormat::Depth24Plus:
+  case wgpu::TextureFormat::Depth32Float:
     return {1, 1, 4, false};
   case wgpu::TextureFormat::BC1RGBAUnorm:
     return {4, 4, 8, true};

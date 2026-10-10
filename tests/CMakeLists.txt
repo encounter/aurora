@@ -166,6 +166,11 @@ if (AURORA_ENABLE_GX)
   aurora_copy_runtime_dlls(gx_texture_cache_tests)
   gtest_discover_tests(gx_texture_cache_tests)
 
+  add_executable(lru_cache_tests lru_cache_test.cpp)
+  target_include_directories(lru_cache_tests PRIVATE ../lib)
+  target_link_libraries(lru_cache_tests PRIVATE gtest gtest_main absl::flat_hash_map)
+  gtest_discover_tests(lru_cache_tests)
+
   add_executable(texture_replacement_streaming_tests
     texture_replacement_streaming_test.cpp
   )

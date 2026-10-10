@@ -622,7 +622,6 @@ void shutdown() noexcept {
   }
   g_gxState.loadedTextures.fill({});
   g_gxState.loadedTluts.fill({});
-  clear_copy_texture_cache();
   texture::shutdown();
 }
 } // namespace aurora::gx

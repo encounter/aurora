@@ -1,6 +1,7 @@
 #include "gx/texture.hpp"
 
 #include "gfx/tex_palette_conv.hpp"
+#include "gfx/tex_copy_conv.hpp"
 #include "gfx/texture_convert.hpp"
 #include "gfx/texture_replacement.hpp"
 #include "internal.hpp"
@@ -14,6 +15,7 @@
 namespace {
 uint64_t s_textureAllocations = 0;
 uint64_t s_paletteConversions = 0;
+uint64_t s_copyAllocations = 0;
 aurora::gfx::TextureHandle s_replacement;
 std::optional<aurora::texture::TextureSourceKey> s_sourceKey;
 aurora::gfx::TextureHandle s_sourceReplacement;
@@ -47,6 +49,7 @@ gfx::TextureHandle make_texture_handle(uint32_t width, uint32_t height, u32 form
 void reset_texture_stubs() {
   s_textureAllocations = 0;
   s_paletteConversions = 0;
+  s_copyAllocations = 0;
   s_replacement.reset();
   s_sourceKey.reset();
   s_sourceReplacement.reset();
@@ -56,6 +59,7 @@ void reset_texture_stubs() {
 
 uint64_t texture_allocations() { return s_textureAllocations; }
 uint64_t palette_conversions() { return s_paletteConversions; }
+uint64_t copy_allocations() { return s_copyAllocations; }
 void set_replacement(gfx::TextureHandle handle, uint64_t id) {
   s_replacement = std::move(handle);
   s_replacementId = id;
@@ -86,6 +90,12 @@ TextureHandle new_static_texture_2d(uint32_t width, uint32_t height, uint32_t mi
 }
 
 TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept {
+  ++s_copyAllocations;
+  return gx::testing::make_texture_handle(width, height, gxFormat);
+}
+
+TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept {
+  ++s_copyAllocations;
   return gx::testing::make_texture_handle(width, height, gxFormat);
 }
 
@@ -110,6 +120,10 @@ GXTexFmt tlut_texture_format(GXTlutFmt format) noexcept { return GX_TF_RGBA8_PC;
 
 void queue_palette_conv(tex_palette_conv::ConvRequest req) { ++s_paletteConversions; }
 } // namespace aurora::gfx
+
+namespace aurora::gfx::tex_copy_conv {
+bool needs_conversion(GXTexFmt format) { return format != GX_TF_RGBA8; }
+} // namespace aurora::gfx::tex_copy_conv
 
 namespace aurora::gfx::texture_replacement {
 StreamingStats process_streaming() noexcept { return {}; }

@@ -71,6 +71,11 @@ const gfx::TextureBind& get_texture(GXTexMapID id) noexcept { return g_gxState.t
 namespace texture {
 void invalidate_bindings() noexcept {}
 uint64_t current_bind_generation() noexcept { return 1; }
+GXState::CopyTextureRef resolve_copy_texture(const GXState::CopyTextureKey& key) noexcept {
+  auto& ref = g_gxState.copyTextures[key.dest];
+  ++ref.revision;
+  return ref;
+}
 } // namespace texture
 void evict_texture_object(u32 texObjId) noexcept {
   for (auto& obj : g_gxState.loadedTextures) {
@@ -88,13 +93,6 @@ void evict_tlut_object(u32 tlutObjId) noexcept {
 }
 void evict_copy_texture(const void* dest) noexcept {
   g_gxState.copyTextures.erase(dest);
-  for (auto it = g_gxState.copyTextureCache.begin(); it != g_gxState.copyTextureCache.end();) {
-    if (it->first.dest == dest) {
-      g_gxState.copyTextureCache.erase(it++);
-    } else {
-      ++it;
-    }
-  }
 }
 void shutdown() noexcept {}
 Vec2<uint32_t> logical_fb_size() noexcept { return {640, 480}; }

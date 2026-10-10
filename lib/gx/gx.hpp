@@ -307,12 +307,6 @@ inline bool operator==(const AttrArray& lhs, const AttrArray& rhs) {
 inline bool operator!=(const AttrArray& lhs, const AttrArray& rhs) { return !(lhs == rhs); }
 
 struct GXState {
-  struct CopyTextureRef {
-    gfx::TextureHandle handle;
-    u32 revision = 0;
-
-    operator bool() const noexcept { return handle.operator bool(); }
-  };
   struct CopyTextureKey {
     const void* dest = nullptr;
     u32 width = 0;
@@ -327,6 +321,14 @@ struct GXState {
     friend H AbslHashValue(H h, const CopyTextureKey& key) {
       return H::combine(std::move(h), key.dest, key.width, key.height, key.format);
     }
+  };
+
+  struct CopyTextureRef {
+    gfx::TextureHandle handle;
+    u32 revision = 0;
+    CopyTextureKey key;
+
+    operator bool() const noexcept { return handle.operator bool(); }
   };
 
   // Decoded state
@@ -407,7 +409,6 @@ struct GXState {
   bool texCopyDstWide = false;
   const void* texCopyDest = nullptr;
   absl::flat_hash_map<const void*, CopyTextureRef> copyTextures;
-  absl::flat_hash_map<CopyTextureKey, CopyTextureRef> copyTextureCache;
 
   // Cache state
   std::array<gfx::TextureBind, MaxTextures> textures;
