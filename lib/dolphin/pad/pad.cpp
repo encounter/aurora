@@ -12,6 +12,7 @@
 #include <limits>
 #include <ranges>
 #include <sys/stat.h>
+#include <SDL3/SDL.h>
 
 namespace {
 constexpr aurora::Module Log{"aurora::pad"};
@@ -50,6 +51,21 @@ std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsXBox360{{
 }};
 
 std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsXBoxOne{{
+    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
+    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_X},
+    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_B},
+    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
+    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
+    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
+    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_L},
+    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_R},
+    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
+    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
+    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
+    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
+}};
+
+std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsSteam{{
     {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
     {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_X},
     {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_B},
@@ -467,6 +483,11 @@ aurora::pad::detail::default_buttons(const gamepad::GameController& controller) 
   case SDL_GAMEPAD_TYPE_XBOXONE:
     return g_defaultButtonsXBoxOne;
   case SDL_GAMEPAD_TYPE_STANDARD:
+#if SDL_VERSION < SDL_VERSIONNUM(3, 4, 18)
+    if (controller.m_vid == 0x28de && controller.m_pid == 0x1304) {
+      return g_defaultButtonsSteam;
+    }
+#endif
     return g_defaultButtonsStandard;
   case SDL_GAMEPAD_TYPE_PS3:
     return g_defaultButtonsPS3;
@@ -485,6 +506,10 @@ aurora::pad::detail::default_buttons(const gamepad::GameController& controller) 
     return g_defaultButtonsJoyConLeft;
   case SDL_GAMEPAD_TYPE_GAMECUBE:
     return g_defaultButtonsGamecube;
+#if SDL_VERSION_ATLEAST(3, 4, 18)
+  case SDL_GAMEPAD_TYPE_STEAM:
+    return g_defaultButtonsSteam;
+#endif
   default:
     return g_defaultButtonsStandard;
   }
