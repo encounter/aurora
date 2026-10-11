@@ -3577,6 +3577,26 @@ TEST_F(GXFifoTest, TexCoordScale_Isolation) {
 }
 
 // ============================================================================
+// GX copy scaling uses a quantized 9-bit reciprocal, rather than height * scale.
+TEST_F(GXFifoTest, GetNumXfbLines_QuantizesAndClamps) {
+  EXPECT_EQ(GXGetNumXfbLines(480, 1.0f), 480);
+  EXPECT_EQ(GXGetNumXfbLines(240, 2.0f), 479);
+  EXPECT_EQ(GXGetNumXfbLines(480, 1.5f), 722);
+  EXPECT_EQ(GXGetNumXfbLines(510, 1.5f), 768);
+  EXPECT_EQ(GXGetNumXfbLines(528, 3.0f), 1024);
+}
+
+TEST_F(GXFifoTest, GetYScaleFactor_CommonFramebufferSizes) {
+  EXPECT_FLOAT_EQ(GXGetYScaleFactor(480, 480), 1.0f);
+  EXPECT_FLOAT_EQ(GXGetYScaleFactor(528, 528), 1.0f);
+  for (const auto [efbHeight, xfbHeight] : {std::pair{240u, 480u}, std::pair{480u, 576u},
+                                         std::pair{528u, 576u}}) {
+    const f32 scale = GXGetYScaleFactor(efbHeight, xfbHeight);
+    EXPECT_LE(GXGetNumXfbLines(efbHeight, scale), xfbHeight);
+    EXPECT_GT(scale, 0.0f);
+  }
+}
+
 // GXSetTexCopyDst
 // ============================================================================
 

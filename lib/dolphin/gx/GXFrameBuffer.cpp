@@ -200,8 +200,50 @@ void GXCopyTex(void* dest, GXBool clear) {
   aurora::gx::fifo::publish();
 }
 
-// TODO GXGetYScaleFactor
-// TODO GXGetNumXfbLines
+static u32 get_num_xfb_lines(u32 height, u32 scale) {
+  u32 actualHeight = (height - 1) * 0x100 / scale + 1;
+
+  u32 newScale = scale;
+  if (newScale > 0x80 && newScale < 0x100) {
+    while (newScale % 2 == 0) {
+      newScale /= 2;
+    }
+    if (height % newScale == 0) {
+      actualHeight++;
+    }
+  }
+
+  if (actualHeight > 0x400) {
+    actualHeight = 0x400;
+  }
+  return actualHeight;
+}
+
+f32 GXGetYScaleFactor(u16 efbHeight, u16 xfbHeight) {
+  u32 height1 = xfbHeight;
+  f32 scale1 = static_cast<f32>(xfbHeight) / static_cast<f32>(efbHeight);
+  u32 height2 = get_num_xfb_lines(efbHeight, static_cast<u32>(256.0f / scale1) & 0x1FF);
+
+  while (height2 > xfbHeight) {
+    height1--;
+    scale1 = static_cast<f32>(height1) / static_cast<f32>(efbHeight);
+    height2 = get_num_xfb_lines(efbHeight, static_cast<u32>(256.0f / scale1) & 0x1FF);
+  }
+
+  f32 scale2 = scale1;
+  while (height2 < xfbHeight) {
+    scale2 = scale1;
+    height1++;
+    scale1 = static_cast<f32>(height1) / static_cast<f32>(efbHeight);
+    height2 = get_num_xfb_lines(efbHeight, static_cast<u32>(256.0f / scale1) & 0x1FF);
+  }
+
+  return scale2;
+}
+
+u16 GXGetNumXfbLines(u16 efbHeight, f32 yScale) {
+  return get_num_xfb_lines(efbHeight, static_cast<u32>(256.0f / yScale) & 0x1FF);
+}
 // TODO GXClearBoundingBox
 // TODO GXReadBoundingBox
 }
