@@ -133,10 +133,17 @@ void bp_tev_ind(u8 reg, u32 value) noexcept {
 void bp_scissor(u8, u32) noexcept {
   const u32 scis0 = g_gxState.bpRegCache[0x20];
   const u32 scis1 = g_gxState.bpRegCache[0x21];
-  const s32 tp = static_cast<s32>(reg_get(scis0, 11, 0)) - 342;
-  const s32 lf = static_cast<s32>(reg_get(scis0, 11, 12)) - 342;
-  const s32 bm = static_cast<s32>(reg_get(scis1, 11, 0)) - 342;
-  const s32 rt = static_cast<s32>(reg_get(scis1, 11, 12)) - 342;
+  // Measured from the scissor box offset (0x59, halved), as the hardware does:
+  // GXSetScissorBoxOffset(0, 0) reads back as 342. A game that moves it (by -2, say) moves
+  // its viewports by as much, so that the picture still starts at the EFB's origin;
+  // taking 342 put the scissor two pixels left of the drawing.
+  const u32 offset = g_gxState.bpRegValid.test(0x59) ? g_gxState.bpRegCache[0x59] : (171u | 171u << 10);
+  const s32 xoff = static_cast<s32>(reg_get(offset, 10, 0)) * 2;
+  const s32 yoff = static_cast<s32>(reg_get(offset, 10, 10)) * 2;
+  const s32 tp = static_cast<s32>(reg_get(scis0, 11, 0)) - yoff;
+  const s32 lf = static_cast<s32>(reg_get(scis0, 11, 12)) - xoff;
+  const s32 bm = static_cast<s32>(reg_get(scis1, 11, 0)) - yoff;
+  const s32 rt = static_cast<s32>(reg_get(scis1, 11, 12)) - xoff;
   const s32 wd = std::max(rt - lf + 1, 0);
   const s32 ht = std::max(bm - tp + 1, 0);
   set_logical_scissor({lf, tp, wd, ht});
@@ -523,6 +530,7 @@ constexpr auto kBpRegs = [] {
   }
   regs[0x20] = {bp_scissor};
   regs[0x21] = {bp_scissor};
+  regs[0x59] = {bp_scissor};
   regs[0x22] = {bp_line_point_size, DirtyUniform};
   regs[0x25] = {bp_ind_scale, DirtyPipeline};
   regs[0x26] = {bp_ind_scale, DirtyPipeline};

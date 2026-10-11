@@ -354,6 +354,41 @@ TEST_F(GXFifoTest, FirstZeroBpWrite_IsDecoded) {
   EXPECT_EQ(g_gxState.cullMode, GX_CULL_NONE);
 }
 
+// --- Scissor (BP 0x20/0x21), measured from the scissor box offset (BP 0x59) ---
+
+TEST_F(GXFifoTest, Scissor_DefaultBoxOffset) {
+  // Left 10, top 20, 300x200, biased by 342 as the reset scissor box offset reads.
+  const std::vector<u8> bytes{
+      0x61, 0x20, 0x16, 0x01, 0x6A, // top 362, left 352
+      0x61, 0x21, 0x28, 0xB2, 0x31, // bottom 561, right 651
+  };
+
+  decode_fifo(bytes);
+
+  EXPECT_EQ(g_gxState.logicalScissor.x, 10);
+  EXPECT_EQ(g_gxState.logicalScissor.y, 20);
+  EXPECT_EQ(g_gxState.logicalScissor.width, 300);
+  EXPECT_EQ(g_gxState.logicalScissor.height, 200);
+}
+
+TEST_F(GXFifoTest, Scissor_MovedBoxOffset) {
+  // The same box written by a stream whose scissor box offset is (-2, -2): BP 0x59 holds
+  // (342 - 2) / 2 for both axes, and the scissor's coordinates are biased by 340. The offset
+  // comes last: it still applies.
+  const std::vector<u8> bytes{
+      0x61, 0x20, 0x15, 0xE1, 0x68, // top 360, left 350
+      0x61, 0x21, 0x28, 0x92, 0x2F, // bottom 559, right 649
+      0x61, 0x59, 0x02, 0xA8, 0xAA, // offset 170, 170
+  };
+
+  decode_fifo(bytes);
+
+  EXPECT_EQ(g_gxState.logicalScissor.x, 10);
+  EXPECT_EQ(g_gxState.logicalScissor.y, 20);
+  EXPECT_EQ(g_gxState.logicalScissor.width, 300);
+  EXPECT_EQ(g_gxState.logicalScissor.height, 200);
+}
+
 // --- GXSetBlendMode (BP 0x41) ---
 
 TEST_F(GXFifoTest, BlendMode_Blend_SrcAlpha) {
