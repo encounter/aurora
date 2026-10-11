@@ -56,6 +56,44 @@ struct ReplacementGroup {
   std::vector<ReplacementRegistration> registrations;
 };
 
+struct ReplacementLookup {
+  const void* pointer = nullptr;
+  TextureSourceKey source;
+};
+
+enum class ResolvedTextureFormat : uint32_t {
+  Gx,
+  Rgba8,
+  Bgra8,
+  Bc1,
+  Bc3,
+  Bc5,
+  Bc7,
+  Astc,
+};
+
+enum class ResolvedTextureMatch : uint32_t {
+  Source,
+  Pointer,
+};
+
+struct ResolvedTexture {
+  std::vector<uint8_t> data;
+  uint32_t width = 0;
+  uint32_t height = 0;
+  uint32_t mipCount = 1;
+  ResolvedTextureFormat format = ResolvedTextureFormat::Gx;
+  uint32_t gxFormat = 0;
+  uint32_t blockWidth = 0;
+  uint32_t blockHeight = 0;
+  uint32_t blockSize = 0;
+  bool srgb = false;
+  ResolvedTextureMatch match = ResolvedTextureMatch::Source;
+};
+
+std::optional<ResolvedTexture> resolve_replacement(const ReplacementLookup& lookup,
+                                                   uint64_t excludedRegistrationId = 0) noexcept;
+
 /// Parses a replacement filename of the form "tex1_{w}x{h}[_m]_{texhash}[_{tluthash}]_{fmt}[_arb].dds|.png"
 /// into the source key it addresses. Hash fields may be "$" (see the wildcard constants above).
 /// Returns nullopt if the filename is invalid.
