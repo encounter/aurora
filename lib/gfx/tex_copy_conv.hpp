@@ -28,6 +28,7 @@ struct ConvRequest {
   Range uniformRange;        // Uniforms
   TextureHandle dst;         // Destination texture
   SampleFilter sampleFilter = SampleFilter::Nearest;
+  uint32_t srcSamples = 1; // a depth source's samples: from a multisampled EFB, sample 0 is read
 };
 
 bool needs_conversion(GXTexFmt fmt);
