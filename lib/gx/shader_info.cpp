@@ -305,6 +305,11 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
       info.sampledTexCoords.set(tcg.embossSrc);
       info.lightingEnabled = true;
     }
+    // A color texgen reads its channel's lit color, so the channel is computed even when no TEV
+    // stage rasterizes it.
+    if (tcg.type == GX_TG_SRTG) {
+      info.sampledColorChannels.set(tcg.src == GX_TG_COLOR1 ? 1 : 0);
+    }
   }
 
   info.uniformSize += info.loadsTevReg.count() * sizeof(Vec4<float>);

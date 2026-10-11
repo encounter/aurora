@@ -1249,6 +1249,10 @@ std::string build_shader_source(const ShaderConfig& config, DstAlphaMode dstAlph
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, vtx_attr(config, GX_VA_POS));
     } else if (tcg.src == GX_TG_NRM) {
       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, vtx_attr(config, GX_VA_NRM));
+    } else if ((tcg.src == GX_TG_COLOR0 || tcg.src == GX_TG_COLOR1) && tcg.type == GX_TG_SRTG && !UsePerPixelLighting) {
+      // GX_TG_SRTG takes the channel's color after lighting, not the vertex's color attribute:
+      // geometry with no color attribute at all (a light cone shaded by a spot light) relies on it.
+      vtxXfrAttrs += fmt::format("\n    var tc{} = out.cc{};", i, tcg.src == GX_TG_COLOR1 ? 1 : 0);
     } else if (tcg.src == GX_TG_COLOR0) {
       vtxXfrAttrs += fmt::format("\n    var tc{} = {};", i, vtx_attr(config, GX_VA_CLR0));
     } else if (tcg.src == GX_TG_COLOR1) {
