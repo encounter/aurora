@@ -181,7 +181,7 @@ ALWAYS_INLINE constexpr auto underlying(T value) noexcept -> std::underlying_typ
 namespace aurora {
 extern AuroraConfig g_config;
 extern uint32_t g_sdlCustomEventsStart;
-extern char g_gameName[4];
+extern char g_gameName[5];
 
 template <typename T>
 class ArrayRef {

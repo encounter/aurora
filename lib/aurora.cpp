@@ -34,7 +34,7 @@
 namespace aurora {
 AuroraConfig g_config;
 uint32_t g_sdlCustomEventsStart;
-char g_gameName[4];
+char g_gameName[5];   // four characters and a NUL: card.cpp takes its strlen
 
 namespace {
 constexpr Module Log{"aurora"};
