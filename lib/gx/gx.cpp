@@ -35,11 +35,7 @@ namespace {
 wgpu::Sampler sEmptySampler;
 wgpu::Texture sEmptyTexture;
 wgpu::TextureView sEmptyTextureView;
-std::mutex sBindGroupLayoutMutex;
-absl::flat_hash_map<u32, wgpu::BindGroupLayout> sUniformBindGroupLayouts;
-absl::flat_hash_map<u32, std::pair<wgpu::BindGroupLayout, wgpu::BindGroupLayout>> sTextureBindGroupLayouts;
 wgpu::BindGroupLayout sTextureBindGroupLayout;
-wgpu::BindGroupLayout sSamplerBindGroupLayout;
 wgpu::PipelineLayout sPipelineLayout;
 
 std::atomic<int> sPendingViewportPolicy{-1};
@@ -610,13 +606,7 @@ void initialize() noexcept {
 
 void shutdown() noexcept {
   // TODO we should probably store this all in g_state.gx instead
-  sSamplerBindGroupLayout = {};
   sTextureBindGroupLayout = {};
-  {
-    std::lock_guard lock{sBindGroupLayoutMutex};
-    sUniformBindGroupLayouts.clear();
-    sTextureBindGroupLayouts.clear();
-  }
   for (auto& item : g_gxState.textures) {
     item.ref.reset();
   }
