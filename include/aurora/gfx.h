@@ -33,6 +33,13 @@ float aurora_get_fps();
 
 void aurora_enable_vsync(bool enabled);
 
+/**
+ * Whether a draw whose pipeline is not compiled yet waits for it (true) or is skipped until
+ * it is ready (false, the default). Waiting is what the console does: no geometry missing from
+ * a frame, at the cost of a stall the first time a pipeline is needed.
+ */
+void aurora_set_pipeline_blocking(bool blocking);
+
 #ifdef __cplusplus
 }
 #endif
