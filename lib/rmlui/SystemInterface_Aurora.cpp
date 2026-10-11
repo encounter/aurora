@@ -126,3 +126,29 @@ bool SystemInterface_Aurora::LogMessage(Rml::Log::Type type, const Rml::String& 
   }
 }
 } // namespace aurora::rmlui
+
+namespace aurora::rmlui {
+namespace {
+Translator s_translator;
+} // namespace
+
+void set_translator(Translator translator) noexcept { s_translator = std::move(translator); }
+
+int SystemInterface_Aurora::TranslateString(Rml::String& translated, const Rml::String& input) {
+  if (s_translator && s_translator(translated, input)) {
+    return 1;
+  }
+  translated = input;
+  return 0;
+}
+
+// An absolute path is taken as it is, rather than as relative to the document.
+void SystemInterface_Aurora::JoinPath(Rml::String& translated_path, const Rml::String& document_path,
+                                      const Rml::String& path) {
+  if (!path.empty() && (path[0] == '/' || (path.size() > 2 && path[1] == ':'))) {
+    translated_path = path;
+    return;
+  }
+  SystemInterface_SDL::JoinPath(translated_path, document_path, path);
+}
+} // namespace aurora::rmlui

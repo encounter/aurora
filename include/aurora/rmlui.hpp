@@ -49,6 +49,11 @@ struct RuntimeTexture {
 
 using TextureProvider = std::function<std::optional<RuntimeTexture>(std::string_view)>;
 
+// Every text RmlUi shows goes through this, for the application's translations: true, with
+// `out` set, to replace `in`. Unset, texts are shown as written.
+using Translator = std::function<bool(Rml::String& out, const Rml::String& in)>;
+void set_translator(Translator translator) noexcept;
+
 void register_texture_provider(std::string scheme, TextureProvider provider);
 void unregister_texture_provider(std::string_view scheme) noexcept;
 
