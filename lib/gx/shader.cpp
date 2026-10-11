@@ -565,8 +565,14 @@ std::string vtx_attr(const ShaderConfig& config, GXAttr attr) {
       // Default normal
       return "vec3f(1.0, 0.0, 0.0)"s;
     }
+    if (attr == GX_VA_CLR1 && config.attrs[GX_VA_CLR0].attrType != GX_NONE) {
+      // No second color: the hardware reads the first, as Dolphin does.
+      return "in_clr0"s;
+    }
     if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
-      return "vec4f(0.0, 0.0, 0.0, 0.0)"s;
+      // No vertex color at all: white, as Dolphin does. A channel that takes its material or
+      // ambient color from the vertex then lights as if the vertex were white.
+      return "vec4f(1.0, 1.0, 1.0, 1.0)"s;
     }
     UNLIKELY FATAL("unmapped vtx attr {}", underlying(attr));
   }
