@@ -826,7 +826,7 @@ void xf_clip_disable(u8, u32 value) noexcept {
   static bool warned = false;
   if (value != 0 && !warned) {
     warned = true;
-    Log.warn("XF: GXSetClipMode(GX_CLIP_DISABLE) is not implemented, geometry stays clipped (value 0x{:08X})",
+    Log.debug("STUB: GXSetClipMode(GX_CLIP_DISABLE) is not implemented (value 0x{:08X})",
              value);
   }
 }
