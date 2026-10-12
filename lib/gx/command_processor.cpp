@@ -406,7 +406,9 @@ static void push_gx_draw(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, gfx::Rang
     const auto prevSampledIndTextures = cache.shaderInfo.sampledIndTextures;
     populate_pipeline_config(cache.config, prim, fmt);
     cache.shaderInfo = build_shader_info(cache.config.shaderConfig);
+#ifndef NDEBUG
     validate_shader_config(cache.config.shaderConfig, cache.shaderInfo, g_gxState.numTexGens);
+#endif
     cache.pipelineRef = gfx::pipeline_ref(cache.config);
     cache.targetLayoutKey = targetLayoutKey;
     cache.fmt = fmt;
