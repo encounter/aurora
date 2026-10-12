@@ -6,7 +6,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <thread>
+#include <future>
 #include <vector>
 
 // =============================================================================
@@ -126,10 +126,28 @@ TEST(DVDNoDisc, FastOpenFails) {
 
 TEST(DVDNoDisc, CloseNullHandle) {
   DVDFileInfo fi{};
-  fi.cb.userData = nullptr;
+  int context = 42;
+  fi.cb.userData = &context;
   fi.cb.state = DVD_STATE_BUSY;
   EXPECT_EQ(DVDClose(&fi), TRUE);
   EXPECT_EQ(fi.cb.state, DVD_STATE_END);
+  EXPECT_EQ(fi.cb.userData, &context);
+}
+
+TEST(DVDNoDisc, AbsoluteCommandsPreserveUserData) {
+  DVDCommandBlock block{};
+  int callbacks = 0;
+  block.userData = &callbacks;
+  const auto callback = [](s32 result, DVDCommandBlock* block) {
+    EXPECT_EQ(result, DVD_RESULT_FATAL_ERROR);
+    ++*static_cast<int*>(block->userData);
+  };
+  u8 buffer[32]{};
+  EXPECT_EQ(DVDReadAbsAsyncPrio(&block, buffer, sizeof(buffer), 0, callback, 2), TRUE);
+  EXPECT_EQ(DVDSeekAbsAsyncPrio(&block, 0, callback, 2), TRUE);
+  EXPECT_EQ(DVDReadAbsAsyncForBS(&block, buffer, sizeof(buffer), 0, callback), TRUE);
+  EXPECT_EQ(callbacks, 3);
+  EXPECT_EQ(block.userData, &callbacks);
 }
 
 TEST(DVDNoDisc, OpenDirFails) {
@@ -289,14 +307,22 @@ TEST_F(DVDDiscTest, OpenCloseFile) {
     GTEST_SKIP() << "No files in root directory";
   }
 
-  DVDFileInfo fi{};
-  EXPECT_EQ(DVDOpen(fileName, &fi), TRUE);
+  // Opening a file must initialize Aurora's fields without reading or clearing userData.
+  DVDFileInfo fi;
+  int context = 42;
+  fi.cb.userData = &context;
+  ASSERT_EQ(DVDOpen(fileName, &fi), TRUE);
+  EXPECT_EQ(fi.cb.userData, &context);
   EXPECT_GT(fi.length, 0u);
   EXPECT_EQ(fi.cb.state, DVD_STATE_END);
   EXPECT_EQ(DVDClose(&fi), TRUE);
+  EXPECT_EQ(fi.cb.userData, &context);
 
-  EXPECT_EQ(DVDFastOpen(fileEntry, &fi), TRUE);
+  ASSERT_EQ(DVDFastOpen(fileEntry, &fi), TRUE);
+  EXPECT_EQ(fi.cb.userData, &context);
+  EXPECT_EQ(DVDSeekPrio(&fi, 0, 2), DVD_RESULT_GOOD);
   EXPECT_EQ(DVDClose(&fi), TRUE);
+  EXPECT_EQ(fi.cb.userData, &context);
 }
 
 TEST_F(DVDDiscTest, ReadFile) {
@@ -328,17 +354,20 @@ TEST_F(DVDDiscTest, ReadAsync) {
 
   u32 readSize = fi.length < 32 ? fi.length : 32;
   std::vector<u8> buf(readSize);
-  BOOL ok = DVDReadAsyncPrio(&fi, buf.data(), static_cast<s32>(readSize), 0, [](s32, DVDFileInfo*) {}, 2);
+  std::promise<s32> result;
+  auto done = result.get_future();
+  fi.cb.userData = &result;
+  BOOL ok = DVDReadAsyncPrio(&fi, buf.data(), static_cast<s32>(readSize), 0, [](s32 result, DVDFileInfo* info) {
+    EXPECT_EQ(DVDClose(info), TRUE);
+    static_cast<std::promise<s32>*>(info->cb.userData)->set_value(result);
+  }, 2);
   EXPECT_EQ(ok, TRUE);
-  for (int i = 0; i < 5000 && (DVDGetFileInfoStatus(&fi) == DVD_STATE_WAITING ||
-                               DVDGetFileInfoStatus(&fi) == DVD_STATE_BUSY);
-       ++i) {
-    std::this_thread::sleep_for(std::chrono::milliseconds{1});
-  }
-  EXPECT_EQ(DVDGetFileInfoStatus(&fi), DVD_STATE_END);
+  const auto status = done.wait_for(std::chrono::seconds{5});
+  DVDClose(&fi); // Drain the worker before releasing the callback context, including on timeout.
+  ASSERT_EQ(status, std::future_status::ready);
+  EXPECT_EQ(done.get(), static_cast<s32>(readSize));
   EXPECT_EQ(DVDGetTransferredSize(&fi), static_cast<s32>(readSize));
-
-  DVDClose(&fi);
+  EXPECT_EQ(fi.cb.userData, &result);
 }
 
 TEST_F(DVDDiscTest, DiskID) {

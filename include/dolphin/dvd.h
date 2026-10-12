@@ -104,6 +104,9 @@ struct DVDFileInfo {
     /* 0x30 */ u32 startAddr;
     /* 0x34 */ u32 length;
     /* 0x38 */ DVDCallback callback;
+#ifdef TARGET_PC
+    void* auroraHandle;
+#endif
 };
 
 typedef struct {
