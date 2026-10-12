@@ -163,7 +163,7 @@ GXFifoObj* GXInit(void* base, u32 size) {
   GXSetCullMode(GX_CULL_BACK);
   GXSetClipMode(GX_CLIP_ENABLE);
   GXSetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
-  // GXSetScissorBoxOffset(0, 0);
+  GXSetScissorBoxOffset(0, 0);
 
   GXSetNumChans(0);
   GXSetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE);
