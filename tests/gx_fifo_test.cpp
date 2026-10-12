@@ -2596,10 +2596,12 @@ TEST_F(GXFifoTest, GetProjectionAndScissorShadowState) {
 
 TEST_F(GXFifoTest, Scissor_EncodesBpAndDecodesLogicalState) {
   GXSetScissor(16, 24, 320, 240);
+  GXSetScissorBoxOffset(0, 0);
   auto bytes = capture_fifo();
 
   EXPECT_TRUE(has_bp_write(bytes, 0x20));
   EXPECT_TRUE(has_bp_write(bytes, 0x21));
+  EXPECT_TRUE(has_bp_write(bytes, 0x59));
 
   reset_gx_state();
   decode_fifo(bytes);
