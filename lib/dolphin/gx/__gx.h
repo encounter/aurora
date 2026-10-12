@@ -67,7 +67,8 @@
 
 #define SET_REG_FIELD(line, reg, size, shift, val)                                                                     \
   do {                                                                                                                 \
-    (reg) = ((u32)(reg) & ~(((1u << (size)) - 1) << (shift))) | ((u32)(val) << (shift));                               \
+    constexpr int kMask = ((1u << (size)) - 1) << (shift);                                                             \
+    (reg) = (u32(reg) & ~kMask) | ((u32(val) << (shift)) & kMask);                                                     \
   } while (0)
 
 #define GX_WRITE_AURORA(cmd)     \
