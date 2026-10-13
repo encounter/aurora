@@ -326,6 +326,9 @@ struct GXState {
     gfx::TextureHandle handle;
     u32 revision = 0;
     CopyTextureKey key;
+    u32 width = 0;
+    u32 height = 0;
+    GXPixelFmt pixelFormat = GX_PF_RGB8_Z24;
 
     operator bool() const noexcept { return handle.operator bool(); }
   };

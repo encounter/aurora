@@ -421,7 +421,6 @@ void end_frame() noexcept {
         callback();
       }
     }
-    gfx::after_submit();
 
     TracyPlotConfig("aurora: lastVertSize", tracy::PlotFormatType::Memory, false, true, 0);
     TracyPlotConfig("aurora: lastUniformSize", tracy::PlotFormatType::Memory, false, true, 0);

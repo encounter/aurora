@@ -42,6 +42,10 @@ void copy_tex(const void* dest, GXBool clear) noexcept {
       .height = dstHeight,
       .format = texCopyFmt,
   });
+  auto& current = g_gxState.copyTextures[dest];
+  current.width = g_gxState.texCopyDstWidth;
+  current.height = g_gxState.texCopyDstHeight;
+  current.pixelFormat = g_gxState.pixelFmt;
 
   const auto clearColor = clear && g_gxState.colorUpdate;
   const auto clearAlpha = clear && g_gxState.alphaUpdate && efb_has_alpha(g_gxState.pixelFmt);

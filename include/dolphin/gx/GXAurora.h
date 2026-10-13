@@ -2,6 +2,7 @@
 #define DOLPHIN_GXAURORA_H
 
 #include <dolphin/types.h>
+#include <dolphin/gx/GXEnum.h>
 
 #if __cplusplus
 extern "C" {
@@ -73,8 +74,6 @@ extern "C" {
 
 #define GX_AURORA_LOAD_COPY_DEST 0x0037
 
-#define GX_AURORA_REQUEST_DEPTH_SNAPSHOT 0x0038
-
 #define GX_AURORA_BEGIN_OFFSCREEN 0x0039
 
 #define GX_AURORA_END_OFFSCREEN 0x003A
@@ -96,8 +95,36 @@ extern "C" {
  */
 #define GX_AURORA_DRAW_INDEXED 0x0041
 
-#define GX2_SET_POLYGON_OFFSET 0x1000
+/**
+ * Asynchronous readback of EFB points.
+ *
+ * Command format:
+ *   u64 stream
+ *   u64 sequence
+ *   u32 count
+ *   u8  alphaReadMode            GXAlphaReadMode
+ *   count times:
+ *     u64 key
+ *     u8  kind                   AuroraReadbackPeekKind
+ *     u16 x
+ *     u16 y
+ */
+#define GX_AURORA_READBACK_CAPTURE_PEEKS 0x0050
 
+/**
+ * Asynchronous readback of texture copies.
+ *
+ * Command format:
+ *   u64 stream
+ *   u64 sequence
+ *   u32 count
+ *   count times:
+ *     u64 key
+ *     u64 src                    GXCopyTex dest address
+ */
+#define GX_AURORA_READBACK_CAPTURE_COPIES 0x0051
+
+#define GX2_SET_POLYGON_OFFSET 0x1000
 
 /*
  * Debug marker stuff
@@ -172,6 +199,113 @@ void GXCreateFrameBuffer(u32 width, u32 height);
  * Must be called after GXCreateFrameBuffer() to resume normal rendering.
  */
 void GXRestoreFrameBuffer(void);
+
+/*
+ * Asynchronous readback APIs
+ *
+ * On original hardware, GXPeekZ and GXPeekARGB read the EFB contents directly, and GXCopyTex writes directly to
+ * CPU-visible memory. On modern hardware, GPU work is broadly asynchronous and attempting to read data back right away
+ * would stall our main thread until the GPU finishes all of its current work and writes the results, leaving the GPU
+ * idle while we finish our current frame.
+ *
+ * Instead of trying to replicate the original behavior, Aurora's readback APIs request data and then allow it to be
+ * read a few frames later, whenever the GPU has finished the work. For most cases, the delay is imperceptible: a
+ * GXPeekZ that determines whether a lens flare is visible will simply have the visibility change delayed by a frame or
+ * two.
+ *
+ * For simplicity's sake, the API is designed for multiple "peeks" or copies to be requested at once, where some games
+ * may call GXPeekZ or GXCopyTex back-to-back for different points or formats/regions. Aurora will dispatch and deliver
+ * the results in one go.
+ *
+ * To use it:
+ * 1. Create a stream for each logical consumer, such as a lens flare probe.
+ * 2. Where the game reads the data, first collect the results of an earlier capture with Get, then
+ *    request a new one with Capture. A capture uses the EFB's contents at that point in the frame.
+ * 3. Expect no results at first. Keep the previous value or use a default.
+ *
+ * Each item has a key that you choose and keep stable across frames, such as an actor ID. Results are
+ * looked up by key. A stream only holds the results (and therefore keys) of its most recent completed capture.
+ *
+ *   // Once:
+ *   AuroraReadbackStream stream = AuroraReadbackCreateStream();
+ *
+ *   // Each frame, where the game used to call GXPeekZ:
+ *   u32 depth[2];
+ *   AuroraReadbackDest results[] = {
+ *       {0, &depth[0], sizeof(u32)},
+ *       {1, &depth[1], sizeof(u32)},
+ *   };
+ *   if (AuroraReadbackGet(stream, results, 2)) {
+ *     for (int i = 0; i < 2; ++i) {
+ *       if (results[i].found) {
+ *         visible[i] = depth[i] == 0xFFFFFF;
+ *       }
+ *     }
+ *   }
+ *   const AuroraReadbackPeekRequest points[] = {
+ *       {0, AURORA_READBACK_PEEK_Z, x[0], y[0]},
+ *       {1, AURORA_READBACK_PEEK_Z, x[1], y[1]},
+ *   };
+ *   AuroraReadbackCapturePeeks(stream, points, 2);
+ */
+
+/** Identifies a readback stream. 0 is never a valid stream. */
+typedef u64 AuroraReadbackStream;
+
+typedef enum _AuroraReadbackPeekKind {
+  AURORA_READBACK_PEEK_Z,    // Depth (GXPeekZ)
+  AURORA_READBACK_PEEK_ARGB, // Color (GXPeekARGB w/ alpha from GXPokeAlphaRead)
+} AuroraReadbackPeekKind;
+
+typedef struct {
+  u64 key;
+  AuroraReadbackPeekKind kind;
+  u16 x;
+  u16 y;
+} AuroraReadbackPeekRequest;
+
+typedef struct {
+  u64 key;
+  const void* src; // dest passed to GXCopyTex (unique identifier; not a real pointer)
+} AuroraReadbackCopySrc;
+
+typedef struct {
+  u64 key;
+  void* dest;   // Written when key found in the latest completed capture
+  u32 size;     // Exact size of the result: sizeof(u32) for a peek, or the copy's size (see GXGetTexBufferSize)
+  GXBool found; // Set to GX_TRUE when found & written
+} AuroraReadbackDest;
+
+/** Creates a stream for one consumer of readback results. */
+AuroraReadbackStream AuroraReadbackCreateStream();
+void AuroraReadbackDestroyStream(AuroraReadbackStream stream);
+
+/**
+ * Requests EFB values at this point in the frame's rendering.
+ * Values are read back asynchronously and can be retrieved later with AuroraReadbackGet.
+ *
+ * Returns GX_TRUE if the capture was accepted. If GX_FALSE, either readback is unavailable (on this GPU, or with MSAA
+ * enabled), or the request was invalid (and logged).
+ */
+GXBool AuroraReadbackCapturePeeks(AuroraReadbackStream stream, const AuroraReadbackPeekRequest* requests, u32 count);
+
+/**
+ * Requests the data of earlier GXCopyTex calls, as the hardware would have written it to main memory.
+ * Texture data is read back asynchronously and can be retrieved later with AuroraReadbackGet.
+ *
+ * Returns GX_TRUE if the capture was accepted. If GX_FALSE, either readback is unavailable (on this GPU, or with MSAA
+ * enabled), or the request was invalid (and logged).
+ */
+GXBool AuroraReadbackCaptureCopies(AuroraReadbackStream stream, const AuroraReadbackCopySrc* srcs, u32 count);
+
+/**
+ * Retrieves results from the stream's most recent completed capture. A peek result is a u32, as GXPeekZ or GXPeekARGB
+ * returns it; a copy result is the texture data as GXCopyTex would have written it to main memory.
+ *
+ * Returns GX_TRUE if any were found. Each destination's `found` allows you to check individual results. A destination
+ * whose size doesn't match its result is not found (and logged).
+ */
+GXBool AuroraReadbackGet(AuroraReadbackStream stream, AuroraReadbackDest* dests, u32 count);
 
 #if __cplusplus
 }

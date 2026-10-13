@@ -1,12 +1,12 @@
 #include "command_processor.hpp"
 
-#include "../gfx/depth_peek.hpp"
 #include "../gfx/recording.hpp"
 #include "../internal.hpp"
 #include "dolphin/gd/GDGeometry.h"
 #include "dolphin/gx/GXAurora.h"
 #include "gx.hpp"
 #include "pipeline.hpp"
+#include "readback.hpp"
 #include "regs.hpp"
 #include "shader_info.hpp"
 #include "texture.hpp"
@@ -691,8 +691,10 @@ void handle_aurora(ByteReader& reader) noexcept {
     g_gxState.texCopyDstWide = true;
   } else if (subCmd == GX_AURORA_LOAD_COPY_DEST) {
     g_gxState.texCopyDest = reinterpret_cast<const void*>(reader.read<u64>());
-  } else if (subCmd == GX_AURORA_REQUEST_DEPTH_SNAPSHOT) {
-    gfx::depth_peek::request_snapshot();
+  } else if (subCmd == GX_AURORA_READBACK_CAPTURE_PEEKS) {
+    readback::handle_capture_peeks(reader);
+  } else if (subCmd == GX_AURORA_READBACK_CAPTURE_COPIES) {
+    readback::handle_capture_copies(reader);
   } else if (subCmd == GX_AURORA_BEGIN_OFFSCREEN) {
     const u32 width = reader.read<u32>();
     const u32 height = reader.read<u32>();

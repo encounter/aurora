@@ -6,7 +6,7 @@
 #include "gfx/clear.hpp"
 #include "gfx/frame_packet.hpp"
 #include "gfx/resources.hpp"
-#include "gfx/depth_peek.hpp"
+#include "gfx/readback/gpu.hpp"
 #include "gfx/recording.hpp"
 #include "gfx/tex_copy_conv.hpp"
 #include "gfx/tex_palette_conv.hpp"
@@ -73,6 +73,12 @@ void invalidate_bindings() noexcept {}
 uint64_t current_bind_generation() noexcept { return 1; }
 GXState::CopyTextureRef resolve_copy_texture(const GXState::CopyTextureKey& key) noexcept {
   auto& ref = g_gxState.copyTextures[key.dest];
+  if (!ref.handle || ref.key != key) {
+    ref.handle = std::make_shared<gfx::TextureRef>(wgpu::Texture{}, wgpu::TextureView{}, wgpu::TextureView{},
+                                                   wgpu::Extent3D{key.width, key.height, 1},
+                                                   wgpu::TextureFormat::RGBA8Unorm, 1, key.format);
+  }
+  ref.key = key;
   ++ref.revision;
   return ref;
 }
@@ -126,8 +132,19 @@ void resolve_sampled_textures(const ShaderInfo& info) noexcept {}
 namespace aurora::gfx {
 Range push_verts(const uint8_t* data, size_t length, size_t alignment) { return {}; }
 Range push_indices(const uint8_t* data, size_t length, size_t alignment) { return {}; }
-Range push_uniform(const uint8_t* data, size_t length) { return {}; }
-Range push_storage(const uint8_t* data, size_t length) { return {}; }
+namespace testing {
+std::vector<uint8_t> uniformData;
+std::vector<uint8_t> storageData;
+} // namespace testing
+static Range push_test_data(std::vector<uint8_t>& target, const uint8_t* data, size_t length) {
+  const auto offset = static_cast<uint32_t>(target.size());
+  if (data != nullptr && length != 0) {
+    target.insert(target.end(), data, data + length);
+  }
+  return {offset, static_cast<uint32_t>(length)};
+}
+Range push_uniform(const uint8_t* data, size_t length) { return push_test_data(testing::uniformData, data, length); }
+Range push_storage(const uint8_t* data, size_t length) { return push_test_data(testing::storageData, data, length); }
 
 Vec2<uint32_t> get_render_target_size() noexcept { return {640, 480}; }
 void set_viewport(const Viewport& viewport) noexcept {}
@@ -226,47 +243,34 @@ void end_offscreen() { testing::endOffscreenCount.fetch_add(1, std::memory_order
 bool is_offscreen() noexcept { return false; }
 } // namespace aurora::gfx
 
-namespace aurora::gfx::depth_peek {
-namespace {
-bool s_snapshotRequested = false;
-uint32_t s_width = 0;
-uint32_t s_height = 0;
-std::vector<uint32_t> s_data;
-} // namespace
+// --- Readback recording hooks ---
+namespace aurora::gfx {
+namespace testing {
+ReadbackCapture readbackCapture{.active = true, .width = 640, .height = 480};
+std::vector<std::shared_ptr<readback::Job>> readbackJobs;
+std::vector<bool> readbackJobEfb;
+std::vector<uint32_t> readbackJobCopies;
+std::vector<uint32_t> readbackJobDraws;
+} // namespace testing
 
-void initialize() {}
-void shutdown() {}
-void request_snapshot() noexcept { s_snapshotRequested = true; }
-void poll() noexcept {}
-void encode_frame_snapshot(const wgpu::CommandEncoder& cmd, const wgpu::TextureView& depthView,
-                           wgpu::Extent3D sourceSize, uint32_t msaaSamples) noexcept {}
-void after_submit() noexcept {}
-
-bool read_latest(uint16_t x, uint16_t y, uint32_t& z) noexcept {
-  if (x >= s_width || y >= s_height || s_data.empty()) {
+ReadbackCapture readback_capture() noexcept { return testing::readbackCapture; }
+bool push_readback_op(std::shared_ptr<readback::Job> job, bool efbSource) {
+  if (!testing::readbackCapture.active || (efbSource && testing::readbackCapture.offscreen)) {
     return false;
   }
-  z = s_data[static_cast<size_t>(y) * s_width + x] & 0x00ffffffu;
+  testing::readbackJobs.push_back(std::move(job));
+  testing::readbackJobEfb.push_back(efbSource);
+  testing::readbackJobCopies.push_back(testing::resolvePassCount.load(std::memory_order_acquire));
+  testing::readbackJobDraws.push_back(g_testDrawCount);
   return true;
 }
+} // namespace aurora::gfx
 
-namespace testing {
-void reset() noexcept {
-  s_snapshotRequested = false;
-  s_width = 0;
-  s_height = 0;
-  s_data.clear();
-}
-
-bool snapshot_requested() noexcept { return s_snapshotRequested; }
-
-void set_latest(uint32_t width, uint32_t height, const std::vector<uint32_t>& data) {
-  s_width = width;
-  s_height = height;
-  s_data = data;
-}
-} // namespace testing
-} // namespace aurora::gfx::depth_peek
+namespace aurora::gfx::readback::gpu {
+void initialize() {}
+void shutdown() {}
+void release_buffer(wgpu::Buffer, uint64_t) noexcept {}
+} // namespace aurora::gfx::readback::gpu
 
 namespace aurora::gfx::tex_copy_conv {
 bool needs_conversion(GXTexFmt fmt) { return false; }

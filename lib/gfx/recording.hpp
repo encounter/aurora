@@ -3,6 +3,7 @@
 #include "types.hpp"
 
 #include <cstddef>
+#include <memory>
 #include <string>
 
 namespace aurora::gfx::detail {
@@ -30,9 +31,13 @@ void seed_offscreen_cache(uint32_t width, uint32_t height, wgpu::TextureFormat c
 OffscreenCacheStats offscreen_cache_stats() noexcept;
 bool is_offscreen_cached(uint32_t width, uint32_t height, wgpu::TextureFormat colorFormat,
                          wgpu::TextureFormat depthFormat);
-}
+} // namespace testing
 
 } // namespace aurora::gfx::detail
+
+namespace aurora::gfx::readback {
+struct Job;
+}
 
 namespace aurora::gfx {
 struct ColorPassDescriptor {
@@ -65,7 +70,6 @@ void begin_offscreen(uint32_t width, uint32_t height);
 void end_offscreen();
 bool has_normal_attachment() noexcept;
 RenderTargetLayout get_render_target_layout() noexcept;
-
 namespace tex_palette_conv {
 struct ConvRequest;
 }
@@ -113,4 +117,13 @@ void set_viewport(const Viewport& viewport) noexcept;
 void set_scissor(const ClipRect& scissor) noexcept;
 void push_debug_group(std::string label);
 void insert_debug_marker(std::string label);
+
+struct ReadbackCapture {
+  bool active = false;
+  bool offscreen = false;
+  uint32_t width = 0;
+  uint32_t height = 0;
+};
+ReadbackCapture readback_capture() noexcept;
+bool push_readback_op(std::shared_ptr<readback::Job> job, bool efbSource);
 } // namespace aurora::gfx

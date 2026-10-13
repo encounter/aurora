@@ -254,7 +254,7 @@ GXFifoObj* GXInit(void* base, u32 size) {
   // GXPokeDither(GX_FALSE);
   // GXPokeBlendMode(GX_BM_NONE, GX_BL_ZERO, GX_BL_ONE, GX_LO_SET);
   // GXPokeAlphaMode(GX_ALWAYS, 0);
-  // GXPokeAlphaRead(GX_READ_FF);
+  GXPokeAlphaRead(GX_READ_FF);
   // GXPokeDstAlpha(GX_DISABLE, 0);
   // GXPokeZMode(GX_TRUE, GX_ALWAYS, GX_TRUE);
 

@@ -7,6 +7,7 @@
 
 #include "clear.hpp"
 #include "pipeline_cache.hpp"
+#include "readback/readback.hpp"
 #include "render_worker.hpp"
 #include "tex_copy_conv.hpp"
 #include "tex_palette_conv.hpp"
@@ -195,7 +196,8 @@ PassSnapshotEntry& acquire_pass_snapshot(uint32_t width, uint32_t height, bool w
   if (wantDepth && (!entry.depth.texture || entry.depth.size.width != width || entry.depth.size.height != height)) {
     const wgpu::TextureDescriptor desc{
         .label = "Pass Snapshot Depth",
-        .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc,
+        .usage =
+            wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc,
         .dimension = wgpu::TextureDimension::e2D,
         .size = size,
         .format = wgpu::TextureFormat::R32Float,
@@ -259,6 +261,8 @@ FrameOp capture_frame_op(FramePacket& frame, FrameOpType type, uint32_t index) {
                          : nullptr,
       .encoderTask =
           type == FrameOpType::EncoderTask && index < frame.encoderTasks.size() ? &frame.encoderTasks[index] : nullptr,
+      .readbackTask =
+          type == FrameOpType::Readback && index < frame.readbackTasks.size() ? &frame.readbackTasks[index] : nullptr,
       .highWater = current_high_water(frame),
   };
   op.textureUploads.reserve(op.highWater.textureUploadCount);
@@ -551,7 +555,8 @@ void enqueue_op(FramePacket& frame, uint32_t opIndex) {
   }
   auto op = frame.ops[opIndex];
   render_worker::enqueue_encode_pass(frame.frameId, opIndex, [packet = &frame, op = std::move(op)] {
-    if (op.renderPass == nullptr && op.textureCopy == nullptr && op.encoderTask == nullptr) {
+    if (op.renderPass == nullptr && op.textureCopy == nullptr && op.encoderTask == nullptr &&
+        op.readbackTask == nullptr) {
       return;
     }
     encode_op(packet->encoder, *packet, op);
@@ -1094,6 +1099,46 @@ bool resolve_pass(const ResolveDesc& desc, ResolvedTargets& out) {
   return true;
 }
 
+ReadbackCapture readback_capture() noexcept {
+  if (!g_recorder.active() || g_recorder.currentRenderPass == UINT32_MAX) {
+    return {};
+  }
+  const auto& pass = current_render_passes()[g_recorder.currentRenderPass];
+  const auto& size = pass.colorAttachments[SceneColorAttachmentIndex].size;
+  return {
+      .active = true,
+      .offscreen = g_recorder.inOffscreen,
+      .width = size.width,
+      .height = size.height,
+  };
+}
+
+bool push_readback_op(std::shared_ptr<readback::Job> job, bool efbSource) {
+  if (!g_recorder.active() || g_recorder.currentRenderPass == UINT32_MAX || !job) {
+    return false;
+  }
+  auto& frame = current_frame_packet();
+  if (efbSource) {
+    if (g_recorder.inOffscreen) {
+      return false;
+    }
+    auto& pass = current_render_passes()[g_recorder.currentRenderPass];
+    job->depthView = pass.copySourceDepthView;
+    job->colorView = pass.copySourceView;
+    if (pass.has_content()) {
+      pass.discardable = !pass.has_consumer() && !pass.has_content();
+      enqueue_pass(frame, g_recorder.currentRenderPass);
+      resume_efb_pass_loading(pass);
+    }
+  }
+  const auto taskIndex = static_cast<uint32_t>(frame.readbackTasks.size());
+  frame.readbackTasks.emplace_back(ReadbackTask{.job = std::move(job)});
+  const auto opIndex = static_cast<uint32_t>(frame.ops.size());
+  frame.ops.emplace_back(capture_frame_op(frame, FrameOpType::Readback, taskIndex));
+  enqueue_op(frame, opIndex);
+  return true;
+}
+
 bool push_encoder_task(EncoderTaskId type, const void* payload, size_t payloadSize) {
   if (type == InvalidEncoderTask) {
     Log.warn("push_encoder_task: invalid encoder task type");
@@ -1178,8 +1223,6 @@ void finish() {
   if (g_recorder.currentRenderPass != UINT32_MAX) {
     auto& frame = current_frame_packet();
     frame.uniforms.append_zeroes(gx::MaxUniformSize);
-    auto& pass = frame.renderPasses[g_recorder.currentRenderPass];
-    pass.captureDepthSnapshot = true;
     enqueue_pass(frame, g_recorder.currentRenderPass);
     g_recorder.currentRenderPass = UINT32_MAX;
   }

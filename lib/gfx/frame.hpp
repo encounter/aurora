@@ -36,7 +36,6 @@ void shutdown();
 bool begin_frame();
 void end_frame(EndFrameCallback callback);
 uint32_t current_frame() noexcept;
-void after_submit() noexcept;
 void gpu_synchronize();
 void after_present() noexcept;
 float calculate_fps() noexcept;

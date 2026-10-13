@@ -2,6 +2,7 @@
 
 #include "gfx/frame_packet.hpp"
 #include "gfx/lru_cache.hpp"
+#include "gfx/readback/readback.hpp"
 #include "gfx/recording.hpp"
 #include "gfx/texture.hpp"
 #include "webgpu/gpu.hpp"
@@ -176,6 +177,54 @@ TEST_F(GfxRecordingTest, FinalizedPassesAreSealedOrDeliberatelyDiscarded) {
   }
   detail::end_recording();
   recordingActive = false;
+}
+
+std::shared_ptr<readback::Job> make_readback_job(readback::StreamHandle stream) {
+  return readback::create_job(stream, readback::next_sequence(stream), readback::JobKind::Efb,
+                              {{.key = 0, .payloadSize = 4}}, 4);
+}
+
+std::vector<detail::FrameOpType> op_types(const detail::FramePacket& frame) {
+  std::vector<detail::FrameOpType> types;
+  for (const auto& op : frame.ops) {
+    types.push_back(op.type);
+  }
+  return types;
+}
+
+TEST_F(GfxRecordingTest, EfbReadbackSealsPassWithContentOnly) {
+  using enum detail::FrameOpType;
+  const auto stream = readback::create_stream();
+  ASSERT_TRUE(push_readback_op(make_readback_job(stream), true));
+  EXPECT_EQ(op_types(frame), (std::vector{RenderPass, Readback}));
+  ASSERT_EQ(frame.renderPasses.size(), 2u);
+  EXPECT_FALSE(frame.renderPasses[1].sealed);
+  ASSERT_TRUE(push_readback_op(make_readback_job(stream), true));
+  EXPECT_EQ(op_types(frame), (std::vector{RenderPass, Readback, Readback}));
+  EXPECT_EQ(frame.renderPasses.size(), 2u);
+  finish();
+  EXPECT_EQ(op_types(frame), (std::vector{RenderPass, Readback, Readback, RenderPass}));
+  detail::end_recording();
+  recordingActive = false;
+  readback::destroy_stream(stream);
+}
+
+TEST_F(GfxRecordingTest, CopyReadbackNeverBreaksPasses) {
+  using enum detail::FrameOpType;
+  const auto stream = readback::create_stream();
+  ASSERT_TRUE(push_readback_op(make_readback_job(stream), false));
+  EXPECT_EQ(op_types(frame), (std::vector{Readback}));
+  EXPECT_EQ(frame.renderPasses.size(), 1u);
+  readback::destroy_stream(stream);
+}
+
+TEST_F(GfxRecordingTest, EfbReadbackRejectsOffscreenPasses) {
+  seed(320, 180);
+  begin_offscreen(320, 180);
+  const auto stream = readback::create_stream();
+  EXPECT_FALSE(push_readback_op(make_readback_job(stream), true));
+  EXPECT_TRUE(readback_capture().offscreen);
+  readback::destroy_stream(stream);
 }
 
 TEST_F(GfxRecordingTest, OffscreenBudgetIncludesColorAndDepth) {

@@ -116,12 +116,15 @@ if (AURORA_ENABLE_GX)
     # FIFO/command processor (encoder + decoder)
     ../lib/gx/fifo.cpp
     ../lib/gx/command_processor.cpp
+    ../lib/gx/readback.cpp
     ../lib/gx/regs.cpp
+    ../lib/gfx/readback/readback.cpp
     ../lib/thread.cpp
     # Display list reader/optimizer
     ../lib/gx/attr_fmt.cpp
     ../lib/gx/dl.cpp
     gx_dl_test.cpp
+    gx_readback_test.cpp
   )
 
   target_include_directories(gx_fifo_tests PRIVATE
@@ -228,6 +231,24 @@ if (AURORA_ENABLE_GX)
   )
   aurora_copy_runtime_dlls(gfx_recording_tests)
   gtest_discover_tests(gfx_recording_tests)
+
+  add_executable(gfx_readback_tests
+    gfx_readback_test.cpp
+  )
+  target_include_directories(gfx_readback_tests PRIVATE
+    ../include
+    ../lib
+  )
+  target_compile_definitions(gfx_readback_tests PRIVATE AURORA TARGET_PC=1)
+  target_link_libraries(gfx_readback_tests PRIVATE
+    aurora::gx
+    aurora::vi
+    absl::flat_hash_map
+    gtest
+    gtest_main
+  )
+  aurora_copy_runtime_dlls(gfx_readback_tests)
+  gtest_discover_tests(gfx_readback_tests)
 endif () # AURORA_ENABLE_GX
 
 # DVD API tests

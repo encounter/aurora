@@ -3,8 +3,8 @@
 #include "frame.hpp"
 
 #include "clear.hpp"
-#include "depth_peek.hpp"
 #include "pipeline_cache.hpp"
+#include "readback/gpu.hpp"
 #include "tex_copy_conv.hpp"
 #include "tex_palette_conv.hpp"
 #include "../gx/gx.hpp"
@@ -249,11 +249,6 @@ void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo,
   render_pass(pass, frame, passInfo);
   pass.End();
 
-  if (passInfo.captureDepthSnapshot) {
-    depth_peek::encode_frame_snapshot(cmd, passInfo.copySourceDepthView,
-                                      passInfo.colorAttachments[SceneColorAttachmentIndex].size, passInfo.msaaSamples);
-  }
-
   if (passInfo.resolveTarget) {
     const auto& dstSize = passInfo.resolveTarget->size;
     const bool needsConversion = tex_copy_conv::needs_conversion(passInfo.resolveFormat);
@@ -419,6 +414,11 @@ void encode_op(wgpu::CommandEncoder& cmd, FramePacket& frame, const FrameOp& op)
   case FrameOpType::EncoderTask:
     if (op.encoderTask != nullptr) {
       execute_encoder_task(cmd, frame, *op.encoderTask);
+    }
+    break;
+  case FrameOpType::Readback:
+    if (op.readbackTask != nullptr) {
+      readback::gpu::encode_job(cmd, frame, op.readbackTask->job);
     }
     break;
   }
