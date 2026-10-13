@@ -275,16 +275,6 @@ void GXSetDrawDone() {
 
 GXDrawDoneCallback GXSetDrawDoneCallback(GXDrawDoneCallback cb) { return aurora::gx::fifo::set_draw_done_callback(cb); }
 
-void GXWaitDrawDone() { aurora::gx::fifo::drain(); }
-
-static GXDrawSyncCallback sDrawSyncCallback = nullptr;
-
-GXDrawSyncCallback GXSetDrawSyncCallback(GXDrawSyncCallback cb) {
-  const GXDrawSyncCallback old = sDrawSyncCallback;
-  sDrawSyncCallback = cb;
-  return old;
-}
-
 void GXSetDrawSync(u16 token) {}
 
 u16 GXReadDrawSync() { return 0; }
