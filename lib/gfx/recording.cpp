@@ -844,7 +844,7 @@ void push_draw_command(clear::DrawData data) {
 
 template <>
 PipelineRef pipeline_ref(const clear::PipelineConfig& config) {
-  return find_pipeline(config, get_render_target_layout());
+  return find_pipeline(config, get_render_target_layout(), gx::g_gxState.drawsBlocking);
 }
 
 void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
@@ -1204,7 +1204,7 @@ void push_draw_command(rmlui::DrawData data) {
 
 template <>
 PipelineRef pipeline_ref(const gx::PipelineConfig& config) {
-  return find_pipeline(config, get_render_target_layout());
+  return find_pipeline(config, get_render_target_layout(), gx::g_gxState.drawsBlocking);
 }
 
 #ifdef AURORA_ENABLE_RMLUI

@@ -677,6 +677,12 @@ void handle_aurora(ByteReader& reader) noexcept {
       g_gxState.clamp = clamp;
       g_gxState.dirty |= DirtyPipeline;
     }
+  } else if (subCmd == GX_AURORA_SET_DRAWS_BLOCKING) {
+    const bool blocking = reader.read<u8>() != 0;
+    if (g_gxState.drawsBlocking != blocking) {
+      g_gxState.drawsBlocking = blocking;
+      g_gxState.dirty |= DirtyPipeline;
+    }
   } else if (subCmd == GX_AURORA_LOAD_COPY_SRC) {
     const s32 left = reader.read<s32>();
     const s32 top = reader.read<s32>();

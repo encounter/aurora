@@ -1087,14 +1087,16 @@ static void stop_pipeline_cache_writer() {
   g_pipelineCacheWriteQueue.clear();
 }
 
-PipelineRef find_pipeline(const clear::PipelineConfig& config, const RenderTargetLayout& layout) {
+PipelineRef find_pipeline(const clear::PipelineConfig& config, const RenderTargetLayout& layout, bool blocking) {
   remember_pipeline_config(ShaderType::Clear, config, current_frame(), true);
-  return resolve_pipeline(ShaderType::Clear, config, layout, PipelinePriority::Normal);
+  return resolve_pipeline(ShaderType::Clear, config, layout,
+                          blocking ? PipelinePriority::Blocking : PipelinePriority::Normal);
 }
 
-PipelineRef find_pipeline(const gx::PipelineConfig& config, const RenderTargetLayout& layout) {
+PipelineRef find_pipeline(const gx::PipelineConfig& config, const RenderTargetLayout& layout, bool blocking) {
   remember_pipeline_config(ShaderType::GX, config, current_frame(), true);
-  return resolve_pipeline(ShaderType::GX, config, layout, PipelinePriority::Normal);
+  return resolve_pipeline(ShaderType::GX, config, layout,
+                          blocking ? PipelinePriority::Blocking : PipelinePriority::Normal);
 }
 
 #ifdef AURORA_ENABLE_RMLUI

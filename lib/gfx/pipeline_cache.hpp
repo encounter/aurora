@@ -37,8 +37,8 @@ void begin_pipeline_frame();
 void end_pipeline_frame();
 void rebuild_pipeline_cache();
 
-PipelineRef find_pipeline(const gx::PipelineConfig& config, const RenderTargetLayout& layout);
-PipelineRef find_pipeline(const clear::PipelineConfig& config, const RenderTargetLayout& layout);
+PipelineRef find_pipeline(const gx::PipelineConfig& config, const RenderTargetLayout& layout, bool blocking = false);
+PipelineRef find_pipeline(const clear::PipelineConfig& config, const RenderTargetLayout& layout, bool blocking = false);
 PipelineRef find_pipeline(const rmlui::PipelineConfig& config);
 
 bool get_pipeline(PipelineRef ref, CompiledPipeline& pipeline);

@@ -95,6 +95,9 @@ extern "C" {
  */
 #define GX_AURORA_DRAW_INDEXED 0x0041
 
+/** Sets whether subsequent draws wait for pipeline compilation. Followed by a u8 boolean. */
+#define GX_AURORA_SET_DRAWS_BLOCKING 0x0042
+
 /**
  * Asynchronous readback of EFB points.
  *
@@ -167,6 +170,13 @@ void AuroraGetRenderSize(u32* width, u32* height);
  * Flush pending GX state and wait for FIFO processing without signaling a draw-done callback.
  */
 void AuroraGXSync(void);
+
+/**
+ * When true, GX draws block and wait for their pipeline compilation to complete, if not already done.
+ * When false, GX draws are skipped if their pipeline is not yet compiled.
+ * Defaults to false ("async pipelines"). Applies to all future draws.
+ */
+void AuroraSetDrawsBlocking(bool blocking);
 
 /**
  * Sets the actual render viewport in native framebuffer coordinates.

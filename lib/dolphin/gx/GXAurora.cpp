@@ -51,6 +51,11 @@ void AuroraGXSync() {
   aurora::gx::fifo::drain();
 }
 
+void AuroraSetDrawsBlocking(bool blocking) {
+  GX_WRITE_AURORA(GX_AURORA_SET_DRAWS_BLOCKING);
+  GX_WRITE_U8(blocking);
+}
+
 void GXSetViewportRender(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz) {
   GX_WRITE_AURORA(GX_AURORA_LOAD_VIEWPORT_RENDER);
   GX_WRITE_F32(left);

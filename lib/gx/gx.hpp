@@ -413,6 +413,7 @@ struct GXState {
   absl::flat_hash_map<const void*, CopyTextureRef> copyTextures;
 
   // Cache state
+  bool drawsBlocking = false;
   std::array<gfx::TextureBind, MaxTextures> textures;
   u16 lastVtxSize = 0;
   GXVtxFmt lastVtxFmt = GX_MAX_VTXFMT;
