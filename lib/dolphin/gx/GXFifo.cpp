@@ -25,8 +25,9 @@ GXFifoObj* GXGetGPFifo() { return GPFifo; }
 // TODO GXGetFifoSize
 // TODO GXGetFifoLimits
 // TODO GXSetBreakPtCallback
-// TODO GXEnableBreakPt
-// TODO GXDisableBreakPt
+void GXEnableBreakPt(void* break_pt) {}
+
+void GXDisableBreakPt() {}
 
 void GXInitFifoBase(GXFifoObj* fifo, void* base, u32 size) {}
 
