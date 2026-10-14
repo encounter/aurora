@@ -10,7 +10,7 @@ void initialize();
 void shutdown();
 
 void frame_begin(const wgpu::CommandEncoder& encoder);
-void frame_end(const wgpu::CommandEncoder& encoder);
+void frame_end();
 void after_submit();
 const wgpu::PassTimestampWrites* pass_writes(std::string_view name);
 

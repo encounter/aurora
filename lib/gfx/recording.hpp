@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.hpp"
+#include "../imgui.hpp"
 
 #include <cstddef>
 #include <memory>
@@ -16,6 +17,8 @@ struct RecordedFrame {
 };
 
 void begin_recording(FramePacket& packet, size_t frameSlot);
+void prepare_recording();
+void record_xfb_present(imgui::DrawData drawData, wgpu::BindGroup rmlBindGroup, bool rmlOverlay);
 RecordedFrame end_recording();
 void shutdown_recording();
 void increment_merged_draw_count() noexcept;
@@ -31,6 +34,7 @@ void seed_offscreen_cache(uint32_t width, uint32_t height, wgpu::TextureFormat c
 OffscreenCacheStats offscreen_cache_stats() noexcept;
 bool is_offscreen_cached(uint32_t width, uint32_t height, wgpu::TextureFormat colorFormat,
                          wgpu::TextureFormat depthFormat);
+webgpu::TextureWithSampler recorded_present_source(PresentTargetId target);
 } // namespace testing
 
 } // namespace aurora::gfx::detail

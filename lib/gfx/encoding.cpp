@@ -421,6 +421,12 @@ void encode_op(wgpu::CommandEncoder& cmd, FramePacket& frame, const FrameOp& op)
       readback::gpu::encode_job(cmd, frame, op.readbackTask->job);
     }
     break;
+  case FrameOpType::Resample:
+    if (op.resampleTask != nullptr) {
+      const auto& [source, destination, uniformRange] = *op.resampleTask;
+      webgpu::resample(cmd, source, destination, resources().uniformBuffer, uniformRange.offset);
+    }
+    break;
   }
 }
 } // namespace detail

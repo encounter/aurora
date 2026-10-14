@@ -159,7 +159,11 @@ void complete_job(Job& job, std::span<const uint8_t> data) noexcept {
     return;
   }
   std::memcpy(packet.payload.data(), data.data(), data.size());
+  publish_job(job);
+}
 
+void publish_job(Job& job) noexcept {
+  auto& packet = *job.packet;
   std::shared_ptr<const Packet> released;
   std::lock_guard lock{g_mutex};
   auto* stream = find_stream_locked(packet.stream);

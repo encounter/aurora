@@ -483,5 +483,6 @@ void shutdown() noexcept {
     controller_rumble(controller.first, 0, 0, 0);
   }
   device::shutdown();
+  SDL_QuitSubSystem(SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_SENSOR);
 }
 } // namespace aurora::gamepad

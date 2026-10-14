@@ -143,7 +143,7 @@ protected:
     auto jobs = std::move(stub::readbackJobs);
     stub::readbackJobs.clear();
     for (const auto& job : jobs) {
-      const auto payload = job->kind == rb::JobKind::Efb ? efb_payload(*job) : copy_payload(*job);
+      const auto payload = job->kind == rb::JobKind::EfbGather ? efb_payload(*job) : copy_payload(*job);
       rb::complete_job(*job, payload);
     }
   }

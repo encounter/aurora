@@ -4,6 +4,7 @@
 #include "types.hpp"
 #include "tex_palette_conv.hpp"
 #include "texture.hpp"
+#include "efb.hpp"
 
 #include <array>
 #include <cstddef>
@@ -111,10 +112,13 @@ struct RenderPass {
   bool hasDraws = false;
   bool discardable = false;
   bool sealed = false;
+  bool presentConsumer = false;
   std::vector<tex_palette_conv::ConvRequest> paletteConvs;
 
   RenderTargetLayout target_layout() const noexcept;
-  bool has_consumer() const { return resolveTarget || snapshotColorDst || snapshotDepthDst || snapshotNormalDst; }
+  bool has_consumer() const {
+    return resolveTarget || snapshotColorDst || snapshotDepthDst || snapshotNormalDst || presentConsumer;
+  }
   bool has_content() const {
     if (hasDraws || clearDepth) {
       return true;
@@ -174,11 +178,18 @@ struct ReadbackTask {
   std::shared_ptr<readback::Job> job;
 };
 
+struct ResampleTask {
+  webgpu::TextureWithSampler source;
+  webgpu::TextureWithSampler destination;
+  Range uniformRange;
+};
+
 enum class FrameOpType : uint8_t {
   RenderPass,
   TextureCopy,
   EncoderTask,
   Readback,
+  Resample,
 };
 
 struct FrameOp {
@@ -188,6 +199,7 @@ struct FrameOp {
   TextureCopy* textureCopy = nullptr;
   EncoderTask* encoderTask = nullptr;
   ReadbackTask* readbackTask = nullptr;
+  ResampleTask* resampleTask = nullptr;
   StagingHighWater highWater;
   std::vector<const TextureUpload*> textureUploads;
 };
@@ -195,10 +207,13 @@ struct FrameOp {
 using RenderPassList = std::deque<RenderPass>;
 
 struct FramePacket {
+  efb::State efb;
   RenderPassList renderPasses;
   std::deque<TextureCopy> textureCopies;
   std::deque<EncoderTask> encoderTasks;
   std::deque<ReadbackTask> readbackTasks;
+  std::deque<ResampleTask> resampleTasks;
+  std::vector<present::Request> presents;
   std::deque<FrameOp> ops;
   std::deque<TextureUpload> textureUploads;
 #ifdef AURORA_GFX_DEBUG_GROUPS

@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_properties.h>
+#include <SDL3/SDL_timer.h>
 #include <algorithm>
 
 #include "../logging.hpp"
@@ -41,7 +42,36 @@ bool start_text_input(SDL_Window* window, InputType type) {
 
 } // namespace
 
-SystemInterface_Aurora::SystemInterface_Aurora() : SystemInterface_SDL(window::get_sdl_window()) {}
+SystemInterface_Aurora::SystemInterface_Aurora() {
+  if (auto* window = window::get_sdl_window()) {
+    mSdlInterface = std::make_unique<SystemInterface_SDL>(window);
+  }
+}
+
+double SystemInterface_Aurora::GetElapsedTime() {
+  static const auto start = SDL_GetPerformanceCounter();
+  return static_cast<double>(SDL_GetPerformanceCounter() - start) / static_cast<double>(SDL_GetPerformanceFrequency());
+}
+
+void SystemInterface_Aurora::SetMouseCursor(const Rml::String& cursor) {
+  if (mSdlInterface && window::get_sdl_window()) {
+    mSdlInterface->SetMouseCursor(cursor);
+  }
+}
+
+void SystemInterface_Aurora::SetClipboardText(const Rml::String& text) {
+  if (mSdlInterface && window::get_sdl_window()) {
+    mSdlInterface->SetClipboardText(text);
+  }
+}
+
+void SystemInterface_Aurora::GetClipboardText(Rml::String& text) {
+  if (mSdlInterface && window::get_sdl_window()) {
+    mSdlInterface->GetClipboardText(text);
+  } else {
+    text.clear();
+  }
+}
 
 void SystemInterface_Aurora::SetInputType(InputType type) noexcept { mTextInputType = type; }
 
@@ -65,9 +95,9 @@ void SystemInterface_Aurora::ActivateKeyboard(Rml::Vector2f caret_position, floa
     return;
   }
 
-  const auto viewport = webgpu::calculate_present_viewport(size.native_fb_width, size.native_fb_height,
-                                                           static_cast<uint32_t>(contentSize.x),
-                                                           static_cast<uint32_t>(contentSize.y));
+  const auto viewport =
+      webgpu::calculate_present_viewport(size.native_fb_width, size.native_fb_height,
+                                         static_cast<uint32_t>(contentSize.x), static_cast<uint32_t>(contentSize.y));
   if (viewport.width <= 0.f || viewport.height <= 0.f) {
     return;
   }

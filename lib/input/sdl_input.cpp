@@ -207,6 +207,9 @@ void dispatch(const SDL_Event& event) noexcept {
   case SDL_EVENT_FINGER_MOTION:
   case SDL_EVENT_FINGER_UP:
   case SDL_EVENT_FINGER_CANCELED:
+    if (window::get_sdl_window() == nullptr) {
+      return;
+    }
     input.source = touch_source();
     input.payload = InputEvent::PointerChanged{
         .pointer = event.tfinger.fingerID,

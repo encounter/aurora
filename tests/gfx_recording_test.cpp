@@ -19,7 +19,7 @@ constexpr auto DepthFormat = wgpu::TextureFormat::Depth24Plus;
 class GfxRecordingTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    webgpu::g_graphicsConfig.surfaceConfiguration.format = ColorFormat;
+    webgpu::g_efbFormat = ColorFormat;
     webgpu::g_graphicsConfig.depthFormat = DepthFormat;
     webgpu::g_graphicsConfig.msaaSamples = 1;
     webgpu::g_frameBuffer.size = {640, 480, 1};
@@ -180,7 +180,7 @@ TEST_F(GfxRecordingTest, FinalizedPassesAreSealedOrDeliberatelyDiscarded) {
 }
 
 std::shared_ptr<readback::Job> make_readback_job(readback::StreamHandle stream) {
-  return readback::create_job(stream, readback::next_sequence(stream), readback::JobKind::Efb,
+  return readback::create_job(stream, readback::next_sequence(stream), readback::JobKind::EfbGather,
                               {{.key = 0, .payloadSize = 4}}, 4);
 }
 
@@ -311,7 +311,7 @@ TEST_F(GfxRecordingTest, OffscreenKeyIncludesColorAndDepthFormats) {
 
   for (const auto [color, depth] :
        {std::pair{ColorFormat, DepthFormat}, std::pair{OtherColor, DepthFormat}, std::pair{OtherColor, OtherDepth}}) {
-    webgpu::g_graphicsConfig.surfaceConfiguration.format = color;
+    webgpu::g_efbFormat = color;
     webgpu::g_graphicsConfig.depthFormat = depth;
     begin_offscreen(320, 240);
     const auto layout = get_render_target_layout();

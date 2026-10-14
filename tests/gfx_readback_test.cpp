@@ -20,6 +20,7 @@
 
 #include "internal.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstring>
@@ -30,6 +31,78 @@
 namespace {
 using namespace aurora;
 namespace rb = gfx::readback;
+
+TEST(ReadbackColorLayout, PortableFallbackHandlesTailsAndUnalignedBuffers) {
+  for (size_t pixels = 0; pixels <= 129; ++pixels) {
+    for (const size_t srcOffset : {0u, 1u, 3u}) {
+      for (const size_t dstOffset : {0u, 1u, 3u}) {
+        SCOPED_TRACE(::testing::Message()
+                     << "pixels=" << pixels << " srcOffset=" << srcOffset << " dstOffset=" << dstOffset);
+        std::vector<uint8_t> source(srcOffset + pixels * 4);
+        std::vector<uint8_t> dest(dstOffset + pixels * 4, 0xef);
+        auto expected = dest;
+        for (size_t i = 0; i < source.size(); ++i) {
+          source[i] = static_cast<uint8_t>(i * 37 + i / 17);
+        }
+        for (size_t x = 0; x < pixels; ++x) {
+          for (size_t channel = 0; channel < 4; ++channel) {
+            const size_t srcChannel = channel == 0 ? 2 : channel == 2 ? 0 : channel;
+            expected[dstOffset + x * 4 + channel] = source[srcOffset + x * 4 + srcChannel];
+          }
+        }
+
+        rb::copy_bgra_to_rgba(dest.data() + dstOffset, source.data() + srcOffset, pixels);
+        EXPECT_EQ(dest, expected);
+        std::fill(dest.begin(), dest.end(), 0xef);
+        rb::copy_color_rows(dest.data() + dstOffset, source.data() + srcOffset, pixels, 1, pixels * 4, true);
+        EXPECT_EQ(dest, expected);
+      }
+    }
+  }
+}
+
+TEST(ReadbackColorLayout, EmptyImagesDoNotAccessMemory) {
+  for (const bool bgra : {false, true}) {
+    rb::copy_color_rows(nullptr, nullptr, 0, 3, 0, bgra);
+    rb::copy_color_rows(nullptr, nullptr, 3, 0, 256, bgra);
+  }
+}
+
+TEST(ReadbackColorLayout, PacksRowsAndPreservesChannels) {
+  for (const bool bgra : {false, true}) {
+    for (const size_t width : {1u, 2u, 3u, 4u, 7u, 15u, 16u, 17u, 31u, 32u, 33u, 63u, 64u, 65u, 257u}) {
+      for (const bool padded : {false, true}) {
+        for (const size_t offset : {0u, 1u, 3u}) {
+          constexpr size_t height = 3;
+          const size_t rowBytes = width * 4;
+          const size_t pitch = padded ? (rowBytes + 255) / 256 * 256 + 256 : rowBytes;
+          SCOPED_TRACE(::testing::Message()
+                       << "bgra=" << bgra << " width=" << width << " pitch=" << pitch << " offset=" << offset);
+          // End allocations at the last pixel so sanitizers also catch SIMD tail overreads/writes.
+          std::vector<uint8_t> source(offset + pitch * (height - 1) + rowBytes, 0xcd);
+          std::vector<uint8_t> dest(offset + rowBytes * height, 0xef);
+          std::vector<uint8_t> expected(dest.size(), 0xef);
+          for (size_t y = 0; y < height; ++y) {
+            for (size_t x = 0; x < width; ++x) {
+              const std::array<uint8_t, 4> rgba{static_cast<uint8_t>(x + y * 7), static_cast<uint8_t>(x * 3 + 19),
+                                                static_cast<uint8_t>(y * 13 + 83), static_cast<uint8_t>(x ^ y ^ 0xa5)};
+              auto* pixel = source.data() + offset + y * pitch + x * 4;
+              pixel[0] = rgba[bgra ? 2 : 0];
+              pixel[1] = rgba[1];
+              pixel[2] = rgba[bgra ? 0 : 2];
+              pixel[3] = rgba[3];
+              std::memcpy(expected.data() + offset + y * rowBytes + x * 4, rgba.data(), 4);
+            }
+          }
+          const auto original = source;
+          rb::copy_color_rows(dest.data() + offset, source.data() + offset, width, height, pitch, bgra);
+          EXPECT_EQ(dest, expected);
+          EXPECT_EQ(source, original);
+        }
+      }
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // GX texture layouts
@@ -276,7 +349,7 @@ protected:
     }
     webgpu::g_queue = webgpu::g_device.GetQueue();
     webgpu::g_hasCoreFeatures = true;
-    webgpu::g_graphicsConfig.surfaceConfiguration.format = ColorFormat;
+    webgpu::g_efbFormat = ColorFormat;
     webgpu::g_graphicsConfig.depthFormat = DepthFormat;
     webgpu::g_graphicsConfig.msaaSamples = 1;
     webgpu::g_frameBuffer = create_target(ColorFormat,
@@ -495,7 +568,7 @@ TEST_F(ReadbackGpuTest, PackShaderMatchesReferenceForEveryFormat) {
     sources.push_back(std::move(texels));
     words += size / 4;
   }
-  auto job = rb::create_job(stream, 1, rb::JobKind::Copy, outputs, words * 4);
+  auto job = rb::create_job(stream, 1, rb::JobKind::GxCopy, outputs, words * 4);
   uint32_t uniformOffset = 0;
   for (size_t i = 0; i < formats.size(); ++i) {
     auto texture = create_target(ColorFormat, wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
@@ -644,7 +717,7 @@ struct Out { @builtin(frag_depth) depth: f32 };
         .targetHeight = TargetHeight,
     };
     std::vector<rb::Output> outputs{{.key = 0, .payloadSize = words * 4}};
-    auto job = rb::create_job(stream, sequence, rb::JobKind::Efb, outputs, words * 4);
+    auto job = rb::create_job(stream, sequence, rb::JobKind::EfbGather, outputs, words * 4);
     uint32_t uniformOffset = 0;
     job->gatherParams = {write_uniform(uniformOffset, &params, sizeof(params)), sizeof(params)};
     webgpu::g_queue.WriteBuffer(gfx::detail::resources().storageBuffer, 0, jobs.data(),

@@ -309,6 +309,14 @@ GXBool AuroraReadbackCapturePeeks(AuroraReadbackStream stream, const AuroraReadb
 GXBool AuroraReadbackCaptureCopies(AuroraReadbackStream stream, const AuroraReadbackCopySrc* srcs, u32 count);
 
 /**
+ * Captures the current EFB/offscreen pass contents at full resolution RGBA8.
+ * Texture data is read back asynchronously and can be retrieved later with AuroraReadbackGet.
+ *
+ * Returns GX_TRUE if the capture was accepted. If GX_FALSE, the request was invalid (and logged).
+ */
+GXBool AuroraReadbackCaptureColor(AuroraReadbackStream stream, u64 key, u32* width, u32* height);
+
+/**
  * Retrieves results from the stream's most recent completed capture. A peek result is a u32, as GXPeekZ or GXPeekARGB
  * returns it; a copy result is the texture data as GXCopyTex would have written it to main memory.
  *

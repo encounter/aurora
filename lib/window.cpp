@@ -3,6 +3,9 @@
 #ifdef AURORA_ENABLE_GX
 #include "imgui.hpp"
 #include "webgpu/gpu.hpp"
+#include "gfx/efb.hpp"
+#include "gfx/present_target.hpp"
+#include <aurora/webgpu.hpp>
 #endif
 #include "gamepad.hpp"
 #include "input/router.hpp"
@@ -32,10 +35,13 @@ extern "C" void Android_UnlockActivityMutex(void);
 #include <algorithm>
 #include <atomic>
 #include <deque>
+#include <mutex>
 #include <string>
 #include <vector>
 
+#ifdef AURORA_ENABLE_RMLUI
 #include "rmlui.hpp"
+#endif
 #include "time_internal.hpp"
 #include "dolphin/vi/vi_internal.hpp"
 
@@ -44,9 +50,15 @@ namespace {
 constexpr Module Log{"aurora::window"};
 
 SDL_Window* g_window;
+std::atomic g_surfaceType = AURORA_SURFACE_SDL_MANAGED;
 SDL_Renderer* g_renderer;
+#ifndef AURORA_ENABLE_GX
 float g_frameBufferScale = 0.f;
 bool g_frameBufferAspectFit = false;
+#endif
+SDL_InitFlags g_initializedSubsystems = 0;
+std::mutex g_eventMutex;
+std::vector<AuroraEvent> g_pendingEvents;
 AuroraWindowSize g_windowSize;
 std::vector<AuroraEvent> g_events;
 std::deque<std::string> g_eventStrings;
@@ -58,6 +70,17 @@ std::atomic_bool g_surfaceReady = true;
 #endif
 bool g_lastPaused = false;
 bool g_gotFocus = false;
+std::atomic_bool g_surfaceRestorePending = false;
+
+#ifdef AURORA_ENABLE_GX
+bool surface_restore_pending() noexcept { return g_surfaceRestorePending.load(std::memory_order_acquire); }
+
+void retire_surface_for_restore() {
+  const bool restore = surface_restore_pending() || gfx::present::is_sdl_xfb();
+  g_surfaceRestorePending.store(restore, std::memory_order_release);
+  gfx::present::retire_sdl_targets();
+}
+#endif
 
 void retain_event_strings(SDL_Event& event) {
   switch (event.type) {
@@ -86,6 +109,7 @@ bool operator==(const AuroraWindowSize& lhs, const AuroraWindowSize& rhs) {
          lhs.native_fb_width == rhs.native_fb_width && lhs.scale == rhs.scale;
 }
 
+#ifndef AURORA_ENABLE_GX
 Vec2<int> scale_frame_buffer_to_aspect(int w, int h, float scale, float aspect) {
   if (w <= 0 || h <= 0 || scale <= 0.f || aspect <= 0.f) {
     return {std::max(w, 1), std::max(h, 1)};
@@ -108,8 +132,10 @@ Vec2<int> fit_frame_buffer_to_aspect(int width, int height, float aspect) {
   return {width, std::max(1, static_cast<int>(std::lround(static_cast<float>(width) / aspect)))};
 }
 
-void resize_swapchain() noexcept {
-  const auto size = get_window_size();
+#endif
+
+void update_size() noexcept {
+  const auto size = refresh_window_size();
   if (size == g_windowSize) {
     return;
   }
@@ -124,9 +150,6 @@ void resize_swapchain() noexcept {
                                      static_cast<int>(size.native_fb_height), SDL_LOGICAL_PRESENTATION_DISABLED);
     SDL_SetRenderScale(g_renderer, size.scale, size.scale);
   }
-#ifdef AURORA_ENABLE_GX
-  webgpu::resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height);
-#endif
 }
 
 void set_window_icon() noexcept {
@@ -144,7 +167,7 @@ void set_window_icon() noexcept {
 
 bool targets_primary_window(const SDL_Event* event) noexcept {
   const SDL_Window* eventWindow = SDL_GetWindowFromEvent(event);
-  return eventWindow == nullptr || eventWindow == g_window;
+  return eventWindow == nullptr || eventWindow == get_sdl_window();
 }
 
 bool SDLCALL lifecycle_event_watch(void*, SDL_Event* event) {
@@ -152,6 +175,11 @@ bool SDLCALL lifecycle_event_watch(void*, SDL_Event* event) {
     switch (event->type) {
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_APPLE)
     case SDL_EVENT_WINDOW_MINIMIZED:
+#ifdef AURORA_ENABLE_GX
+      if (!gfx::present::is_sdl_xfb() && !surface_restore_pending()) {
+        break;
+      }
+#endif
       time::internal::set_pause_reason(time::internal::PauseReason::Background, true);
       g_backgrounded.store(true, std::memory_order_relaxed);
       break;
@@ -206,10 +234,10 @@ void process_event(SDL_Event& event) {
     if (!primaryWindow) {
       break;
     }
-    resize_swapchain();
+    update_size();
     g_events.push_back(AuroraEvent{
         .type = AURORA_DISPLAY_SCALE_CHANGED,
-        .windowSize = get_window_size(),
+        .windowSize = refresh_window_size(),
     });
     break;
   }
@@ -217,10 +245,10 @@ void process_event(SDL_Event& event) {
     if (!primaryWindow) {
       break;
     }
-    resize_swapchain();
+    update_size();
     g_events.push_back(AuroraEvent{
         .type = AURORA_WINDOW_RESIZED,
-        .windowSize = get_window_size(),
+        .windowSize = refresh_window_size(),
     });
     break;
   }
@@ -270,18 +298,12 @@ void process_event(SDL_Event& event) {
     });
     break;
   default:
-    if (event.type == g_sdlCustomEventsStart + CustomEvent::FutureResize) {
-      // Future resize event
-      resize_swapchain();
+    if (event.type == g_sdlCustomEventsStart + CustomEvent::FrameBufferChanged) {
+      update_size();
       g_events.push_back(AuroraEvent{
           .type = AURORA_WINDOW_RESIZED,
-          .windowSize = get_window_size(),
+          .windowSize = refresh_window_size(),
       });
-    } else if (event.type == g_sdlCustomEventsStart + CustomEvent::RefreshSurface) {
-      // Refresh surface (vsync changed)
-#ifdef AURORA_ENABLE_GX
-      webgpu::refresh_surface(false);
-#endif
     }
     break;
   }
@@ -302,13 +324,18 @@ void process_event(SDL_Event& event) {
 
 const AuroraEvent* poll_events() {
   ZoneScoped;
-  g_events.clear();
+  {
+    std::lock_guard lock{g_eventMutex};
+    g_events = std::move(g_pendingEvents);
+    g_pendingEvents.clear();
+  }
   g_eventStrings.clear();
+  const bool eventsInitialized = SDL_WasInit(SDL_INIT_EVENTS) != 0;
 
   SDL_Event event;
   // Clear out the previous scroll values to prevent ghost input
   gamepad::set_mouse_scroll(0, 0);
-  if (is_paused()) {
+  if (eventsInitialized && is_paused()) {
     ZoneScopedN("SDL_WaitEvent (paused)");
     if (SDL_WaitEvent(&event)) {
       process_event(event);
@@ -316,7 +343,7 @@ const AuroraEvent* poll_events() {
       Log.warn("SDL_WaitEvent failed: {}", SDL_GetError());
     }
   }
-  while (true) {
+  while (eventsInitialized) {
     bool hasEvent = false;
     {
       ZoneScopedN("SDL_PollEvent");
@@ -346,8 +373,8 @@ bool create_window(AuroraBackend backend) {
     flags |= SDL_WINDOW_FULLSCREEN;
   }
 #endif
-  auto width = static_cast<Sint32>(g_config.windowWidth);
-  auto height = static_cast<Sint32>(g_config.windowHeight);
+  auto width = static_cast<Sint32>(g_config.surface.width ? g_config.surface.width : g_config.windowWidth);
+  auto height = static_cast<Sint32>(g_config.surface.height ? g_config.surface.height : g_config.windowHeight);
   if (width == 0 || height == 0) {
     width = 1280;
     height = 960;
@@ -426,10 +453,19 @@ void show_window() {
 }
 
 bool initialize() {
+  set_surface_type(g_config.surface.type);
   /* We don't want to initialize anything input related here, otherwise the add events will get lost to the void */
   TRY(SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight"), "Error setting {}: {}", SDL_HINT_ORIENTATIONS,
       SDL_GetError());
-  TRY(SDL_InitSubSystem(SDL_INIT_EVENTS | SDL_INIT_VIDEO), "Error initializing SDL: {}", SDL_GetError());
+  g_initializedSubsystems = surface_type() == AURORA_SURFACE_SDL_MANAGED ? SDL_INIT_EVENTS | SDL_INIT_VIDEO
+                            : surface_type() == AURORA_SURFACE_HEADLESS  ? 0
+                                                                         : SDL_INIT_EVENTS;
+  if (g_initializedSubsystems) {
+    TRY(SDL_InitSubSystem(g_initializedSubsystems), "Error initializing SDL: {}", SDL_GetError());
+  }
+  if (surface_type() != AURORA_SURFACE_SDL_MANAGED) {
+    g_surfaceReady.store(true, std::memory_order_release);
+  }
   time::internal::set_pause_reason(time::internal::PauseReason::Surface,
                                    !g_surfaceReady.load(std::memory_order_acquire));
 
@@ -447,7 +483,9 @@ bool initialize() {
   TRY(SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0"), "Error setting {}: {}", SDL_HINT_MOUSE_TOUCH_EVENTS,
       SDL_GetError());
 
-  TRY(SDL_DisableScreenSaver(), "Error disabling screensaver: {}", SDL_GetError());
+  if ((g_initializedSubsystems & SDL_INIT_VIDEO) != 0) {
+    TRY(SDL_DisableScreenSaver(), "Error disabling screensaver: {}", SDL_GetError());
+  }
   if (g_config.allowJoystickBackgroundEvents) {
     TRY(SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1"), "Error setting {}: {}",
         SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, SDL_GetError());
@@ -457,26 +495,82 @@ bool initialize() {
 }
 
 bool initialize_event_watch() {
+  if (!g_initializedSubsystems) {
+    return true;
+  }
   TRY(SDL_AddEventWatch(lifecycle_event_watch, nullptr), "Error adding SDL event watch: {}", SDL_GetError());
   return true;
 }
 
 void shutdown() {
-  SDL_RemoveEventWatch(lifecycle_event_watch, nullptr);
+  if (g_initializedSubsystems) {
+    SDL_RemoveEventWatch(lifecycle_event_watch, nullptr);
+  }
   destroy_window();
-  TRY_WARN(SDL_EnableScreenSaver(), "Error enabling screensaver: {}", SDL_GetError());
-  SDL_Quit();
+  if ((g_initializedSubsystems & SDL_INIT_VIDEO) != 0) {
+    TRY_WARN(SDL_EnableScreenSaver(), "Error enabling screensaver: {}", SDL_GetError());
+  }
+  if (g_initializedSubsystems) {
+    SDL_QuitSubSystem(g_initializedSubsystems);
+  }
+  g_initializedSubsystems = 0;
+  g_windowSize = {};
+  g_lastPaused = false;
+  g_gotFocus = false;
+  g_backgrounded.store(false, std::memory_order_release);
+  clear_surface_restore();
+  std::lock_guard lock{g_eventMutex};
+  g_pendingEvents.clear();
 }
 
 AuroraWindowSize get_window_size() {
+#ifdef AURORA_ENABLE_GX
+  return gfx::efb::applied_size();
+#else
+  return refresh_window_size();
+#endif
+}
+
+AuroraWindowSize refresh_window_size() {
+  if (!g_window) {
+#ifdef AURORA_ENABLE_GX
+    return gfx::efb::pending_size();
+#else
+    const auto [w, h] = vi::configured_fb_size();
+    return {
+        .width = w,
+        .height = h,
+        .fb_width = w,
+        .fb_height = h,
+        .native_fb_width = w,
+        .native_fb_height = h,
+        .scale = 1.f,
+    };
+#endif
+  }
+
   int width = 0;
   int height = 0;
   int native_fb_w = 0;
   int native_fb_h = 0;
   AURORA_ASSERT(SDL_GetWindowSize(g_window, &width, &height), "Failed to get window size: {}", SDL_GetError());
-  AURORA_ASSERT(SDL_GetWindowSizeInPixels(g_window, &native_fb_w, &native_fb_h), "Failed to get window size in pixels: {}",
-         SDL_GetError());
+  AURORA_ASSERT(SDL_GetWindowSizeInPixels(g_window, &native_fb_w, &native_fb_h),
+                "Failed to get window size in pixels: {}", SDL_GetError());
 
+#ifdef AURORA_ENABLE_GX
+  const auto scale = SDL_GetWindowDisplayScale(g_window);
+  if (gfx::present::is_sdl_xfb()) {
+    gfx::present::resize_sdl_target(gfx::xfb_target(), width, height, native_fb_w, native_fb_h, scale);
+  }
+
+  return gfx::efb::resolve_size({
+      .width = static_cast<uint32_t>(width),
+      .height = static_cast<uint32_t>(height),
+      .native_fb_width = static_cast<uint32_t>(native_fb_w),
+      .native_fb_height = static_cast<uint32_t>(native_fb_h),
+      .scale = scale,
+  });
+#else
   int fb_w = native_fb_w;
   int fb_h = native_fb_h;
   if (g_frameBufferScale > 0.f) {
@@ -507,13 +601,49 @@ AuroraWindowSize get_window_size() {
       .native_fb_height = static_cast<uint32_t>(native_fb_h),
       .scale = scale,
   };
+#endif
 }
 
-SDL_Window* get_sdl_window() { return g_window; }
+void queue_size_events(const AuroraWindowSize& oldSize, const AuroraWindowSize& size) {
+  if (oldSize == size) {
+    return;
+  }
+
+  std::lock_guard lock{g_eventMutex};
+  if (oldSize.scale != size.scale) {
+    g_pendingEvents.push_back({
+        .type = AURORA_DISPLAY_SCALE_CHANGED,
+        .windowSize = size,
+    });
+  }
+  g_pendingEvents.push_back({
+      .type = AURORA_WINDOW_RESIZED,
+      .windowSize = size,
+  });
+}
+
+SDL_Window* get_sdl_window() { return surface_type() == AURORA_SURFACE_SDL_MANAGED ? g_window : nullptr; }
+
+#ifdef AURORA_ENABLE_GX
+wgpu::Surface create_sdl_surface(const wgpu::Instance& instance, const char* label) {
+  return webgpu::create_window_surface(instance, g_window, label);
+}
+#endif
+
+AuroraSurfaceType surface_type() noexcept { return g_surfaceType.load(std::memory_order_acquire); }
+void set_surface_type(AuroraSurfaceType type) noexcept { g_surfaceType.store(type, std::memory_order_release); }
 
 SDL_Renderer* get_sdl_renderer() { return g_renderer; }
 
 bool is_paused() noexcept {
+  if (surface_type() != AURORA_SURFACE_SDL_MANAGED || !g_window) {
+    return false;
+  }
+#ifdef AURORA_ENABLE_GX
+  if (!gfx::present::is_sdl_xfb() && !surface_restore_pending()) {
+    return false;
+  }
+#endif
   if (!is_presentable()) {
     return true;
   }
@@ -536,80 +666,144 @@ bool is_presentable() noexcept {
 
 void set_surface_ready(bool ready) noexcept {
   g_surfaceReady.store(ready, std::memory_order_release);
-  time::internal::set_pause_reason(time::internal::PauseReason::Surface, !ready);
+#if defined(AURORA_ENABLE_GX) && defined(SDL_PLATFORM_ANDROID)
+  // JNI calls this before SDL destroys the ANativeWindow. Pending scene work
+  // owns EFB views only, so retire the target without draining that work.
+  if (!ready && surface_type() == AURORA_SURFACE_SDL_MANAGED) {
+    retire_surface_for_restore();
+  }
+#endif
+  const bool managedOutput = surface_type() == AURORA_SURFACE_SDL_MANAGED &&
+#ifdef AURORA_ENABLE_GX
+                             (gfx::present::is_sdl_xfb() || surface_restore_pending());
+#else
+                             g_window != nullptr;
+#endif
+  time::internal::set_pause_reason(time::internal::PauseReason::Surface, managedOutput && !ready);
 }
 
-SurfaceLock::SurfaceLock() noexcept {
+bool prepare_frame() {
+#ifdef AURORA_ENABLE_GX
+  if (gfx::present::is_sdl_xfb() || (surface_type() == AURORA_SURFACE_SDL_MANAGED && surface_restore_pending())) {
+    if (!is_presentable()) {
+      retire_surface_for_restore();
+      return false;
+    }
+    if (is_paused()) {
+      return false;
+    }
+    if (!gfx::present::ensure_sdl_target()) {
+      return false;
+    }
+    clear_surface_restore();
+  }
+#endif
+  return true;
+}
+
+void clear_surface_restore() noexcept { g_surfaceRestorePending.store(false, std::memory_order_release); }
+
+SurfaceLock::SurfaceLock(bool enabled) noexcept : m_locked(enabled) {
 #if defined(SDL_PLATFORM_ANDROID)
-  Android_LockActivityMutex();
+  if (m_locked) {
+    Android_LockActivityMutex();
+  }
 #endif
 }
 
 SurfaceLock::~SurfaceLock() {
 #if defined(SDL_PLATFORM_ANDROID)
-  Android_UnlockActivityMutex();
+  if (m_locked) {
+    Android_UnlockActivityMutex();
+  }
 #endif
 }
 
 bool push_custom_event(CustomEvent eventType) {
+  if (!g_sdlCustomEventsStart || !SDL_WasInit(SDL_INIT_EVENTS)) {
+    return false;
+  }
   SDL_Event event{.type = g_sdlCustomEventsStart + eventType};
   return SDL_PushEvent(&event);
 }
 
 void set_title(const char* title) {
+  if (!get_sdl_window()) {
+    return;
+  }
   TRY_WARN(SDL_SetWindowTitle(g_window, title), "Failed to set window title: {}", SDL_GetError());
 }
 
 void set_fullscreen(bool fullscreen) {
+  if (!get_sdl_window()) {
+    return;
+  }
   TRY_WARN(SDL_SetWindowFullscreen(g_window, fullscreen), "Failed to set window fullscreen: {}", SDL_GetError());
 }
 
-bool get_fullscreen() { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0u; }
+bool get_fullscreen() { return get_sdl_window() && (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0u; }
 
 void set_window_size(uint32_t width, uint32_t height) {
+  if (!get_sdl_window()) {
+    return;
+  }
   TRY_WARN(SDL_RestoreWindow(g_window), "Failed to un-maximize window: {}", SDL_GetError());
   TRY_WARN(SDL_SetWindowSize(g_window, width, height), "Failed to set window size: {}", SDL_GetError());
 }
 
 void set_window_position(uint32_t x, uint32_t y) {
+  if (!get_sdl_window()) {
+    return;
+  }
   TRY_WARN(SDL_SetWindowPosition(g_window, x, y), "Failed to set window position: {}", SDL_GetError());
 }
 
 void center_window() {
+  if (!get_sdl_window()) {
+    return;
+  }
   TRY_WARN(SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED),
            "Failed to center window: {}", SDL_GetError());
 }
 
-static void push_future_resize_event() {
-  TRY_WARN(push_custom_event(CustomEvent::FutureResize), "Failed to push SDL event for future resize: {}",
-           SDL_GetError());
-}
-
-void request_frame_buffer_resize() {
-  if (g_window != nullptr) {
-    // Defer so that we don't try to reconfigure the surface in the middle of game logic.
-    push_future_resize_event();
+void notify_frame_buffer_change() {
+  if (get_sdl_window() != nullptr) {
+    TRY_WARN(push_custom_event(CustomEvent::FrameBufferChanged), "Failed to push framebuffer change event: {}",
+             SDL_GetError());
+  } else {
+#ifdef AURORA_ENABLE_GX
+    queue_size_events(get_window_size(), gfx::efb::pending_size());
+#endif
   }
 }
 
 void set_frame_buffer_scale(float scale) {
-  if (scale < 0.f) {
-    scale = 0.f;
+#ifdef AURORA_ENABLE_GX
+  if (!gfx::efb::set_scale(scale)) {
+    return;
   }
+#else
+  scale = std::max(0.f, scale);
   if (g_frameBufferScale == scale) {
     return;
   }
   g_frameBufferScale = scale;
-  request_frame_buffer_resize();
+#endif
+  notify_frame_buffer_change();
 }
 
 void set_frame_buffer_aspect_fit(bool fit) {
+#ifdef AURORA_ENABLE_GX
+  if (!gfx::efb::set_aspect_fit(fit)) {
+    return;
+  }
+#else
   if (g_frameBufferAspectFit == fit) {
     return;
   }
-
   g_frameBufferAspectFit = fit;
-  request_frame_buffer_resize();
+#endif
+  notify_frame_buffer_change();
 }
 
 void set_background_input(bool value) { SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, value ? "1" : "0"); }

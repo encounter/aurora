@@ -61,9 +61,15 @@ void on_mapped(Job& job, wgpu::Buffer buffer, wgpu::MapAsyncStatus status, wgpu:
     fail_job(job, fmt::format("buffer mapping {}: {}", magic_enum::enum_name(status), message));
     return;
   }
-  const auto* data = static_cast<const uint8_t*>(buffer.GetConstMappedRange(0, job.outputBytes));
+  const auto* data = static_cast<const uint8_t*>(buffer.GetConstMappedRange(0, job.bufferBytes));
   if (data != nullptr) {
-    complete_job(job, {data, job.outputBytes});
+    if (job.kind == JobKind::Color) {
+      copy_color_rows(job.packet->payload.data(), data, job.colorWidth, job.colorHeight, job.colorRowPitch,
+                      job.colorFormat == wgpu::TextureFormat::BGRA8Unorm);
+      publish_job(job);
+    } else {
+      complete_job(job, {data, job.outputBytes});
+    }
   } else {
     fail_job(job, "mapped range unavailable");
   }
@@ -73,7 +79,7 @@ void on_mapped(Job& job, wgpu::Buffer buffer, wgpu::MapAsyncStatus status, wgpu:
 
 void map_job(const std::shared_ptr<Job>& job) {
   auto buffer = std::move(job->buffer);
-  buffer.MapAsync(wgpu::MapMode::Read, 0, job->outputBytes, wgpu::CallbackMode::AllowSpontaneous,
+  buffer.MapAsync(wgpu::MapMode::Read, 0, job->bufferBytes, wgpu::CallbackMode::AllowSpontaneous,
                   [job, buffer](wgpu::MapAsyncStatus status, wgpu::StringView message) {
                     on_mapped(*job, buffer, status, message);
                   });
@@ -121,6 +127,23 @@ void release_buffer(wgpu::Buffer buffer, uint64_t bytes) noexcept {
 
 void encode_job(const wgpu::CommandEncoder& cmd, detail::FramePacket& frame, const std::shared_ptr<Job>& job) {
   ZoneScoped;
+  if (job->kind == JobKind::Color) {
+    job->bufferBytes = staging_bucket(uint64_t{job->colorRowPitch} * job->colorHeight);
+    job->buffer = acquire_buffer(job->bufferBytes);
+    const wgpu::TexelCopyTextureInfo source{.texture = job->colorTexture};
+    const wgpu::TexelCopyBufferInfo destination{
+        .layout =
+            {
+                .bytesPerRow = job->colorRowPitch,
+                .rowsPerImage = job->colorHeight,
+            },
+        .buffer = job->buffer,
+    };
+    const wgpu::Extent3D size{job->colorWidth, job->colorHeight, 1};
+    cmd.CopyTextureToBuffer(&source, &destination, &size);
+    frame.afterSubmitCallbacks.emplace_back([job] { map_job(job); });
+    return;
+  }
   if (!supported()) {
     fail_job(*job, "readback GPU resources are not initialized");
     return;
@@ -129,11 +152,13 @@ void encode_job(const wgpu::CommandEncoder& cmd, detail::FramePacket& frame, con
   job->bufferBytes = staging_bucket(job->outputBytes);
   job->buffer = acquire_buffer(job->bufferBytes);
   switch (job->kind) {
-  case JobKind::Efb:
+  case JobKind::EfbGather:
     encode_efb_gather(cmd, *job, scratch);
     break;
-  case JobKind::Copy:
+  case JobKind::GxCopy:
     encode_copy_pack(cmd, *job, scratch);
+    break;
+  case JobKind::Color:
     break;
   }
   {

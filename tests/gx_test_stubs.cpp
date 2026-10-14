@@ -266,6 +266,10 @@ bool push_readback_op(std::shared_ptr<readback::Job> job, bool efbSource) {
 }
 } // namespace aurora::gfx
 
+namespace aurora::gfx::readback {
+bool capture_color(StreamHandle, uint64_t, uint32_t*, uint32_t*) { return false; }
+} // namespace aurora::gfx::readback
+
 namespace aurora::gfx::readback::gpu {
 void initialize() {}
 void shutdown() {}
