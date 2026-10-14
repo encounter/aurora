@@ -249,6 +249,19 @@ if (AURORA_ENABLE_GX)
   )
   aurora_copy_runtime_dlls(gfx_readback_tests)
   gtest_discover_tests(gfx_readback_tests)
+
+  add_executable(present_target_tests present_target_test.cpp)
+  target_include_directories(present_target_tests PRIVATE ../include ../lib)
+  target_compile_definitions(present_target_tests PRIVATE AURORA TARGET_PC=1)
+  target_link_libraries(present_target_tests PRIVATE aurora::gx aurora::vi gtest gtest_main)
+  if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    target_link_libraries(present_target_tests PRIVATE "-framework AppKit" "-framework QuartzCore")
+  endif ()
+  if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(present_target_tests PRIVATE $<LINK_GROUP:RESCAN,aurora::gx,aurora::vi,aurora::core>)
+  endif ()
+  aurora_copy_runtime_dlls(present_target_tests)
+  gtest_discover_tests(present_target_tests)
 endif () # AURORA_ENABLE_GX
 
 # DVD API tests

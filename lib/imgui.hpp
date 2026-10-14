@@ -27,6 +27,7 @@ private:
   friend void render(const wgpu::RenderPassEncoder& pass, const DrawData& drawData) noexcept;
 };
 
+bool is_initialized() noexcept;
 void create_context() noexcept;
 void initialize() noexcept;
 void shutdown() noexcept;

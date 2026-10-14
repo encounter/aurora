@@ -18,8 +18,9 @@ using StreamHandle = AuroraReadbackStream;
 using Clock = std::chrono::steady_clock;
 
 enum class JobKind : uint8_t {
-  Efb,
-  Copy,
+  EfbGather,
+  GxCopy,
+  Color,
 };
 
 struct Output {
@@ -35,6 +36,8 @@ struct Packet {
   Clock::time_point recordedAt;
   std::vector<Output> outputs;
   std::vector<uint8_t> payload;
+  uint32_t imageWidth = 0;
+  uint32_t imageHeight = 0;
 
   const Output* find(uint64_t key) const noexcept;
   std::span<const uint8_t> payload_of(const Output& output) const noexcept {
@@ -99,8 +102,15 @@ struct CopySource {
 
 struct Job {
   std::shared_ptr<Packet> packet;
-  JobKind kind = JobKind::Efb;
+  JobKind kind = JobKind::EfbGather;
   uint32_t outputBytes = 0;
+
+  // Full-resolution RGBA8 color capture (EFB or offscreen)
+  wgpu::Texture colorTexture;
+  uint32_t colorWidth = 0;
+  uint32_t colorHeight = 0;
+  uint32_t colorRowPitch = 0;
+  wgpu::TextureFormat colorFormat = wgpu::TextureFormat::Undefined;
 
   // EFB gather inputs
   wgpu::TextureView depthView;
@@ -131,6 +141,10 @@ StreamHandle create_stream();
 void destroy_stream(StreamHandle stream);
 bool valid_stream(StreamHandle stream) noexcept;
 uint64_t next_sequence(StreamHandle stream) noexcept; // 0 if invalid
+bool capture_color(StreamHandle stream, uint64_t key = 0, uint32_t* width = nullptr, uint32_t* height = nullptr);
+void copy_bgra_to_rgba(uint8_t* dst, const uint8_t* src, size_t pixels) noexcept;
+void copy_color_rows(uint8_t* dst, const uint8_t* src, size_t width, size_t height, size_t rowPitch,
+                     bool bgra) noexcept;
 
 // Newest successful packet for the stream, or null.
 std::shared_ptr<const Packet> latest(StreamHandle stream);
@@ -140,6 +154,7 @@ std::shared_ptr<Job> create_job(StreamHandle stream, uint64_t sequence, JobKind 
 
 // Completion: copies the mapped bytes into the job's packet and publishes it if still wanted.
 void complete_job(Job& job, std::span<const uint8_t> data) noexcept;
+void publish_job(Job& job) noexcept;
 void fail_job(Job& job, std::string_view reason) noexcept;
 
 } // namespace aurora::gfx::readback

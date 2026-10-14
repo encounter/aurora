@@ -275,7 +275,7 @@ wgpu::Device device() noexcept { return g_device; }
 
 wgpu::Queue queue() noexcept { return g_queue; }
 
-wgpu::TextureFormat color_format() noexcept { return webgpu::g_graphicsConfig.surfaceConfiguration.format; }
+wgpu::TextureFormat color_format() noexcept { return webgpu::g_efbFormat; }
 
 wgpu::TextureFormat depth_format() noexcept { return webgpu::g_graphicsConfig.depthFormat; }
 
@@ -565,6 +565,8 @@ void shutdown() {
     packet = {};
   }
   shutdown_recording();
+  present::shutdown();
+  efb::shutdown();
   g_resources.staticBindGroup = {};
   g_resources.staticBindGroupLayout = {};
   g_resources.uniformBindGroup = {};
@@ -635,6 +637,8 @@ bool begin_frame() {
   frame.frameId = g_nextFrameId++;
   frame.frameIndex = g_frameIndex;
   frame.stagingBuffer = *stagingSlot;
+  prepare_recording();
+  frame.efb = efb::prepare_frame();
   size_t bufferOffset = 0;
   const auto& stagingBuf = g_stagingBuffers[*stagingSlot];
   const auto mapBuffer = [&](ByteBuffer& buf, uint64_t size) {
@@ -686,7 +690,6 @@ void end_frame(EndFrameCallback callback) {
     auto encoder = std::move(packet.encoder);
     const auto stats = packet.stats;
     auto afterSubmitCallbacks = std::move(packet.afterSubmitCallbacks);
-    packet = {};
     g_resources.stats.drawCallCount = stats.drawCallCount;
     g_resources.stats.mergedDrawCallCount = stats.mergedDrawCallCount;
     g_resources.stats.lastVertSize = stats.lastVertSize;
@@ -697,6 +700,12 @@ void end_frame(EndFrameCallback callback) {
     if (callback) {
       callback(encoder, std::move(afterSubmitCallbacks));
     }
+    for (const auto& request : packet.presents) {
+      present::submit(request);
+    }
+    webgpu::gpu_prof::frame_end();
+    webgpu::gpu_prof::after_submit();
+    packet = {};
     g_frameSlots.release(frameSlot);
     expire_cached_bind_groups();
     map_staging_buffer(stagingSlot, true);

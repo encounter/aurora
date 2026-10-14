@@ -1,9 +1,11 @@
 #include "imgui.hpp"
+#include <SDL3/SDL_timer.h>
 
 #include <cstddef>
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,10 +28,12 @@
 
 namespace aurora::imgui {
 namespace {
-float g_scale;
 std::string g_imguiSettings{};
 std::string g_imguiLog{};
 bool g_useSdlRenderer = false;
+bool g_useSdlPlatform = false;
+uint64_t g_lastFrameTime = 0;
+std::mutex g_rendererMutex;
 
 std::vector<SDL_Texture*> g_sdlTextures;
 std::vector<wgpu::Texture> g_wgpuTextures;
@@ -119,6 +123,7 @@ bool input_layer_captures(const input::InputSource& source, void*) {
 struct DrawData::Impl {
   ImDrawData drawData;
   std::vector<std::unique_ptr<ImDrawList>> drawLists;
+  std::vector<wgpu::TextureView> textures;
 };
 
 void create_context() noexcept {
@@ -131,17 +136,22 @@ void create_context() noexcept {
   io.LogFilename = g_imguiLog.c_str();
 }
 
+bool is_initialized() noexcept { return ImGui::GetCurrentContext() != nullptr; }
+
 void initialize() noexcept {
   ZoneScoped;
   SDL_Renderer* renderer = window::get_sdl_renderer();
-  ImGui_ImplSDL3_InitForSDLRenderer(window::get_sdl_window(), renderer);
+  g_useSdlPlatform = window::get_sdl_window() != nullptr;
+  if (g_useSdlPlatform) {
+    ImGui_ImplSDL3_InitForSDLRenderer(window::get_sdl_window(), renderer);
+  }
   g_useSdlRenderer = renderer != nullptr;
   if (g_useSdlRenderer) {
     ImGui_ImplSDLRenderer3_Init(renderer);
   } else {
     ImGui_ImplWGPU_InitInfo info;
     info.Device = webgpu::g_device.Get();
-    info.RenderTargetFormat = static_cast<WGPUTextureFormat>(webgpu::g_graphicsConfig.surfaceConfiguration.format);
+    info.RenderTargetFormat = static_cast<WGPUTextureFormat>(webgpu::g_efbFormat);
     ImGui_ImplWGPU_Init(&info);
   }
   g_inputLayer = input::register_layer({
@@ -154,6 +164,9 @@ void initialize() noexcept {
 
 void shutdown() noexcept {
   ZoneScoped;
+  if (!is_initialized()) {
+    return;
+  }
   input::unregister_layer(g_inputLayer);
   g_inputLayer = input::kInvalidLayerId;
   if (g_useSdlRenderer) {
@@ -161,7 +174,11 @@ void shutdown() noexcept {
   } else {
     ImGui_ImplWGPU_Shutdown();
   }
-  ImGui_ImplSDL3_Shutdown();
+  if (g_useSdlPlatform) {
+    ImGui_ImplSDL3_Shutdown();
+  }
+  g_useSdlPlatform = false;
+  g_lastFrameTime = 0;
   ImGui::DestroyContext();
   for (const auto& texture : g_sdlTextures) {
     SDL_DestroyTexture(texture);
@@ -185,6 +202,9 @@ void set_cursor_managed(bool managed) noexcept {
 }
 
 void process_event(const SDL_Event& event) noexcept {
+  if (!g_useSdlPlatform || !window::get_sdl_window()) {
+    return;
+  }
   auto renderEvent = event;
   if (g_useSdlRenderer) {
     if (SDL_Renderer* renderer = window::get_sdl_renderer()) {
@@ -220,20 +240,22 @@ void new_frame(const AuroraWindowSize& size) noexcept {
       }
     }
     ImGui_ImplSDLRenderer3_NewFrame();
-    g_scale = size.scale;
   } else {
-    if (g_scale != size.scale) {
-      if (g_scale > 0.f) {
-        ImGui_ImplWGPU_CreateDeviceObjects();
-      }
-      g_scale = size.scale;
-    }
+    std::lock_guard lock{g_rendererMutex};
     if (!ImGui::GetIO().Fonts->IsBuilt()) {
       ImGui_ImplWGPU_CreateDeviceObjects();
     }
     ImGui_ImplWGPU_NewFrame();
   }
-  ImGui_ImplSDL3_NewFrame();
+  if (g_useSdlPlatform && window::get_sdl_window()) {
+    ImGui_ImplSDL3_NewFrame();
+  } else {
+    const auto now = SDL_GetTicksNS();
+    ImGui::GetIO().DeltaTime = g_lastFrameTime && now > g_lastFrameTime
+                                   ? static_cast<float>(now - g_lastFrameTime) / 1'000'000'000.f
+                                   : 1.f / 60.f;
+    g_lastFrameTime = now;
+  }
 
   ImGuiIO& io = ImGui::GetIO();
   io.DisplayFramebufferScale = framebufferScale;
@@ -254,6 +276,13 @@ DrawData freeze() noexcept {
   for (int i = 0; i < data->CmdListsCount; ++i) {
     frozen->drawLists.emplace_back(data->CmdLists[i]->CloneOutput());
     frozen->drawData.CmdLists[i] = frozen->drawLists.back().get();
+    if (!g_useSdlRenderer) {
+      for (const auto& cmd : frozen->drawLists.back()->CmdBuffer) {
+        if (!cmd.UserCallback && cmd.GetTexID()) {
+          frozen->textures.emplace_back(reinterpret_cast<WGPUTextureView>(cmd.GetTexID()));
+        }
+      }
+    }
   }
   return DrawData{std::move(frozen)};
 }
@@ -274,6 +303,7 @@ void render(const wgpu::RenderPassEncoder& pass, const DrawData& drawData) noexc
     ImGui_ImplSDLRenderer3_RenderDrawData(data, renderer);
     SDL_RenderPresent(renderer);
   } else {
+    std::lock_guard lock{g_rendererMutex};
     pass.PushDebugGroup("Aurora: Dear Imgui");
     ImGui_ImplWGPU_RenderDrawData(data, pass.Get());
     pass.PopDebugGroup();
@@ -302,7 +332,7 @@ ImTextureID add_texture(uint32_t width, uint32_t height, const uint8_t* data) no
       .mipLevelCount = 1,
       .sampleCount = 1,
   };
-  const wgpu::TextureViewDescriptor textureViewDescriptor{
+  constexpr wgpu::TextureViewDescriptor textureViewDescriptor{
       .label = "imgui texture view",
       .format = wgpu::TextureFormat::RGBA8Unorm,
       .dimension = wgpu::TextureViewDimension::e2D,

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <array>
 #include <cmath>
+#include <map>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -18,7 +19,9 @@
 #include <webgpu/webgpu_cpp.h>
 
 #include "../gx/gx.hpp"
+#include "../gfx/efb.hpp"
 #include "../gfx/frame.hpp"
+#include "../gfx/present_target.hpp"
 #include "../gfx/recording.hpp"
 #include "../gfx/render_worker.hpp"
 #include "../internal.hpp"
@@ -35,7 +38,7 @@ static Module Log("aurora::gpu");
 
 wgpu::Device g_device;
 wgpu::Queue g_queue;
-wgpu::Surface g_surface;
+wgpu::TextureFormat g_efbFormat = wgpu::TextureFormat::RGBA8Unorm;
 wgpu::BackendType g_backendType;
 GraphicsConfig g_graphicsConfig;
 TextureWithSampler g_frameBuffer;
@@ -45,19 +48,14 @@ TextureWithSampler g_normalBuffer;
 
 // EFB -> XFB copy pipeline
 static wgpu::BindGroupLayout g_CopyBindGroupLayout;
-wgpu::RenderPipeline g_CopyPipeline;
-wgpu::RenderPipeline g_CopyPremultipliedAlphaPipeline;
-wgpu::BindGroup g_CopyBindGroup;
-static AuroraSampler g_Resampler = SAMPLER_BILINEAR;
+static std::map<wgpu::TextureFormat, std::array<wgpu::RenderPipeline, 2>> g_CopyPipelines;
+static std::atomic g_Resampler = SAMPLER_BILINEAR;
 static wgpu::BindGroupLayout g_ResampleBindGroupLayout;
 static wgpu::RenderPipeline g_ResamplePipeline;
-static wgpu::Buffer g_ResampleUniformBuffer;
-static TextureWithSampler g_resampledFrameBuffer;
 
-static wgpu::Adapter g_adapter;
+wgpu::Adapter g_adapter;
 wgpu::Instance g_instance;
 wgpu::AdapterInfo g_adapterInfo;
-static wgpu::SurfaceCapabilities g_surfaceCapabilities;
 bool g_hasCoreFeatures = false;
 bool g_dualSourceBlendingSupported = false;
 bool g_bcTexturesSupported = false;
@@ -86,12 +84,6 @@ AuroraLogLevel wgpu_log_level(wgpu::LoggingType type) {
 void wgpu_log(wgpu::LoggingType type, wgpu::StringView message) {
   Log.report(wgpu_log_level(type), "WebGPU message: {}", message);
 }
-
-struct ResampleUniformBlock {
-  uint32_t samplerMode = 0;
-  float frameWidth = 0.f;
-  float frameHeight = 0.f;
-};
 
 constexpr std::string_view resampleShaderSource = R"(
 struct Uniforms {
@@ -187,29 +179,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 )"sv;
 
-wgpu::TextureFormat to_linear(wgpu::TextureFormat format) {
-  if (format == wgpu::TextureFormat::RGBA8UnormSrgb) {
-    return wgpu::TextureFormat::RGBA8Unorm;
-  }
-  if (format == wgpu::TextureFormat::BGRA8UnormSrgb) {
-    return wgpu::TextureFormat::BGRA8Unorm;
-  }
-  return format;
-}
-
-wgpu::TextureFormat best_surface_format() {
-  if (g_surfaceCapabilities.formatCount == 0) {
-    return wgpu::TextureFormat::Undefined;
-  }
-  for (size_t i = 0; i < g_surfaceCapabilities.formatCount; ++i) {
-    const auto format = to_linear(g_surfaceCapabilities.formats[i]);
-    if (format == wgpu::TextureFormat::RGBA8Unorm || format == wgpu::TextureFormat::BGRA8Unorm) {
-      return format;
-    }
-  }
-  return g_surfaceCapabilities.formats[0];
-}
-
 uint32_t sampler_mode(AuroraSampler sampler) noexcept {
   switch (sampler) {
   case SAMPLER_AREA:
@@ -220,24 +189,23 @@ uint32_t sampler_mode(AuroraSampler sampler) noexcept {
   }
 }
 
-uint32_t viewport_extent(float value) noexcept {
-  return std::max(1u, static_cast<uint32_t>(std::lround(std::max(value, 1.f))));
-}
-
 } // namespace
 
 bool vsync_enabled() noexcept { return g_vsyncEnabled.load(std::memory_order_acquire); }
 
 wgpu::PresentMode select_present_mode(const wgpu::SurfaceCapabilities& capabilities) noexcept {
-  const auto supports = [&capabilities](const wgpu::PresentMode candidate) {
-    for (size_t i = 0; i < capabilities.presentModeCount; ++i) {
-      if (capabilities.presentModes[i] == candidate) {
-        return true;
-      }
-    }
-    return false;
+  return select_present_mode(capabilities, vsync_enabled());
+}
+
+wgpu::PresentMode select_present_mode(const wgpu::SurfaceCapabilities& capabilities, bool vsync) noexcept {
+  return select_present_mode({capabilities.presentModes, capabilities.presentModeCount}, vsync);
+}
+
+wgpu::PresentMode select_present_mode(std::span<const wgpu::PresentMode> modes, bool vsync) noexcept {
+  const auto supports = [modes](const wgpu::PresentMode candidate) {
+    return std::ranges::any_of(modes, [&](const wgpu::PresentMode mode) { return mode == candidate; });
   };
-  if (vsync_enabled()) {
+  if (vsync) {
     if (supports(wgpu::PresentMode::FifoRelaxed)) {
       return wgpu::PresentMode::FifoRelaxed;
     }
@@ -259,7 +227,7 @@ TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool m
       .height = height,
       .depthOrArrayLayers = 1,
   };
-  const auto format = g_graphicsConfig.surfaceConfiguration.format;
+  const auto format = g_efbFormat;
   uint32_t sampleCount = 1;
   if (multisampled) {
     sampleCount = g_graphicsConfig.msaaSamples;
@@ -307,10 +275,6 @@ TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool m
       .format = format,
       .sampler = std::move(sampler),
   };
-}
-
-const TextureWithSampler& present_source() noexcept {
-  return g_graphicsConfig.msaaSamples > 1 ? g_frameBufferResolved : g_frameBuffer;
 }
 
 void set_resampler(AuroraSampler sampler) noexcept {
@@ -428,7 +392,10 @@ bool enable_normal_buffer() {
   return true;
 }
 
-void create_copy_pipeline() {
+wgpu::RenderPipeline copy_pipeline(wgpu::TextureFormat format, bool premultipliedAlpha) {
+  if (const auto it = g_CopyPipelines.find(format); it != g_CopyPipelines.end()) {
+    return it->second[premultipliedAlpha];
+  }
   wgpu::ShaderSourceWGSL sourceDescriptor{};
   sourceDescriptor.code = R"""(
 @group(0) @binding(0)
@@ -476,7 +443,7 @@ fn fs_premultiplied_alpha(in: VertexOutput) -> @location(0) vec4<f32> {
       .label = "XFB Copy Module",
   };
   auto module = g_device.CreateShaderModule(&moduleDescriptor);
-  const std::array bindGroupLayoutEntries{
+  constexpr std::array bindGroupLayoutEntries{
       wgpu::BindGroupLayoutEntry{
           .binding = 0,
           .visibility = wgpu::ShaderStage::Fragment,
@@ -499,8 +466,10 @@ fn fs_premultiplied_alpha(in: VertexOutput) -> @location(0) vec4<f32> {
       .entryCount = bindGroupLayoutEntries.size(),
       .entries = bindGroupLayoutEntries.data(),
   };
-  g_CopyBindGroupLayout = g_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
-  const wgpu::PipelineLayoutDescriptor layoutDescriptor{
+  if (!g_CopyBindGroupLayout) {
+    g_CopyBindGroupLayout = g_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
+  }
+  constexpr wgpu::PipelineLayoutDescriptor layoutDescriptor{
       .bindGroupLayoutCount = 1,
       .bindGroupLayouts = &g_CopyBindGroupLayout,
   };
@@ -509,7 +478,7 @@ fn fs_premultiplied_alpha(in: VertexOutput) -> @location(0) vec4<f32> {
   const auto make_copy_pipeline = [&](const char* label, const char* fragmentEntryPoint,
                                       const wgpu::BlendState* blend) {
     const std::array colorTargets{wgpu::ColorTargetState{
-        .format = g_graphicsConfig.surfaceConfiguration.format,
+        .format = format,
         .blend = blend,
         .writeMask = wgpu::ColorWriteMask::All,
     }};
@@ -540,9 +509,9 @@ fn fs_premultiplied_alpha(in: VertexOutput) -> @location(0) vec4<f32> {
     };
     return g_device.CreateRenderPipeline(&pipelineDescriptor);
   };
-  g_CopyPipeline = make_copy_pipeline("XFB Copy Pipeline", "fs_opaque", nullptr);
+  auto opaque = make_copy_pipeline("XFB Copy Pipeline", "fs_opaque", nullptr);
 
-  const wgpu::BlendState premultipliedAlphaBlend{
+  constexpr wgpu::BlendState premultipliedAlphaBlend{
       .color =
           {
               .operation = wgpu::BlendOperation::Add,
@@ -556,8 +525,10 @@ fn fs_premultiplied_alpha(in: VertexOutput) -> @location(0) vec4<f32> {
               .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha,
           },
   };
-  g_CopyPremultipliedAlphaPipeline =
+  auto alpha =
       make_copy_pipeline("XFB Premultiplied Alpha Copy Pipeline", "fs_premultiplied_alpha", &premultipliedAlphaBlend);
+  const auto [it, inserted] = g_CopyPipelines.emplace(format, std::array{std::move(opaque), std::move(alpha)});
+  return it->second[premultipliedAlpha];
 }
 
 void create_resample_pipeline() {
@@ -569,7 +540,7 @@ void create_resample_pipeline() {
   };
   auto module = g_device.CreateShaderModule(&moduleDescriptor);
   const std::array colorTargets{wgpu::ColorTargetState{
-      .format = g_graphicsConfig.surfaceConfiguration.format,
+      .format = g_efbFormat,
       .writeMask = wgpu::ColorWriteMask::All,
   }};
   const wgpu::FragmentState fragmentState{
@@ -578,7 +549,7 @@ void create_resample_pipeline() {
       .targetCount = colorTargets.size(),
       .targets = colorTargets.data(),
   };
-  const std::array bindGroupLayoutEntries{
+  constexpr std::array bindGroupLayoutEntries{
       wgpu::BindGroupLayoutEntry{
           .binding = 0,
           .visibility = wgpu::ShaderStage::Fragment,
@@ -610,7 +581,7 @@ void create_resample_pipeline() {
       .entries = bindGroupLayoutEntries.data(),
   };
   g_ResampleBindGroupLayout = g_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
-  const wgpu::PipelineLayoutDescriptor layoutDescriptor{
+  constexpr wgpu::PipelineLayoutDescriptor layoutDescriptor{
       .bindGroupLayoutCount = 1,
       .bindGroupLayouts = &g_ResampleBindGroupLayout,
   };
@@ -635,13 +606,6 @@ void create_resample_pipeline() {
       .fragment = &fragmentState,
   };
   g_ResamplePipeline = g_device.CreateRenderPipeline(&pipelineDescriptor);
-
-  const wgpu::BufferDescriptor uniformBufferDescriptor{
-      .label = "Present Resample Uniform Buffer",
-      .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Uniform,
-      .size = AURORA_ALIGN(sizeof(ResampleUniformBlock), 16),
-  };
-  g_ResampleUniformBuffer = g_device.CreateBuffer(&uniformBufferDescriptor);
 }
 
 wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source) {
@@ -663,27 +627,23 @@ wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source) {
   return g_device.CreateBindGroup(&bindGroupDescriptor);
 }
 
-const TextureWithSampler& resample_present_source(const wgpu::CommandEncoder& encoder, const Viewport& viewport) {
-  const auto& source = present_source();
-  const uint32_t width = viewport_extent(viewport.width);
-  const uint32_t height = viewport_extent(viewport.height);
-  if (!g_resampledFrameBuffer.view || g_resampledFrameBuffer.size.width != width ||
-      g_resampledFrameBuffer.size.height != height || g_resampledFrameBuffer.format != source.format) {
-    g_resampledFrameBuffer = create_render_texture(width, height, false);
-  }
-
-  const ResampleUniformBlock uniform{
-      .samplerMode = sampler_mode(g_Resampler),
+ResampleUniformBlock resample_uniform(uint32_t width, uint32_t height) noexcept {
+  return {
+      .samplerMode = sampler_mode(g_Resampler.load(std::memory_order_acquire)),
       .frameWidth = static_cast<float>(width),
       .frameHeight = static_cast<float>(height),
   };
-  AURORA_ASSERT(gfx::render_worker::is_worker_thread(), "Present resample queue write must run on the render worker");
-  g_queue.WriteBuffer(g_ResampleUniformBuffer, 0, &uniform, sizeof(uniform));
+}
 
+void resample(const wgpu::CommandEncoder& encoder, const TextureWithSampler& source,
+              const TextureWithSampler& destination, const wgpu::Buffer& uniforms, uint32_t offset) {
+  const auto width = destination.size.width;
+  const auto height = destination.size.height;
   const std::array bindGroupEntries{
       wgpu::BindGroupEntry{
           .binding = 0,
-          .buffer = g_ResampleUniformBuffer,
+          .buffer = uniforms,
+          .offset = offset,
           .size = AURORA_ALIGN(sizeof(ResampleUniformBlock), 16),
       },
       wgpu::BindGroupEntry{
@@ -704,7 +664,7 @@ const TextureWithSampler& resample_present_source(const wgpu::CommandEncoder& en
 
   const std::array attachments{
       wgpu::RenderPassColorAttachment{
-          .view = g_resampledFrameBuffer.view,
+          .view = destination.view,
           .loadOp = wgpu::LoadOp::Clear,
           .storeOp = wgpu::StoreOp::Store,
       },
@@ -721,8 +681,6 @@ const TextureWithSampler& resample_present_source(const wgpu::CommandEncoder& en
   pass.SetViewport(0.f, 0.f, static_cast<float>(width), static_cast<float>(height), 0.f, 1.f);
   pass.Draw(3);
   pass.End();
-
-  return g_resampledFrameBuffer;
 }
 
 static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
@@ -746,28 +704,15 @@ static wgpu::BackendType to_wgpu_backend(AuroraBackend backend) {
   }
 }
 
-static void release_surface_locked() noexcept { g_surface = {}; }
-
-static bool create_surface() {
-  SDL_Window* window = window::get_sdl_window();
-  if (window == nullptr) {
-    Log.error("Failed to create surface: no window");
-    return false;
-  }
-  window::SurfaceLock surfaceLock;
-  release_surface_locked();
-  g_surface = create_window_surface(g_instance, window, "Surface");
-  if (!g_surface) {
-    Log.error("Failed to create surface");
-    return false;
-  }
-  return true;
-}
-
 bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
+  if (g_config.surface.type != AURORA_SURFACE_SDL_MANAGED && g_config.surface.type != AURORA_SURFACE_HEADLESS &&
+      (!g_config.surface.width || !g_config.surface.height)) {
+    Log.error("External surfaces require nonzero drawable dimensions");
+    return false;
+  }
   if (!g_instance) {
     Log.info("Creating WebGPU instance");
-    const std::array requiredInstanceFeatures{
+    constexpr std::array requiredInstanceFeatures{
         wgpu::InstanceFeatureName::TimedWaitAny,
     };
     wgpu::InstanceDescriptor instanceDescriptor{
@@ -810,7 +755,14 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
   g_dawnInstance->EnableBackendValidation(backend != WGPUBackendType::D3D12);
 #endif
 
-  if (!create_surface()) {
+  g_adapter = {};
+  g_device = {};
+  g_queue = {};
+  auto startupSurface = [&] {
+    window::SurfaceLock activityLock{g_config.surface.type == AURORA_SURFACE_SDL_MANAGED};
+    return create_surface(g_instance, g_config.surface, "Startup surface");
+  }();
+  if (!startupSurface && g_config.surface.type != AURORA_SURFACE_HEADLESS) {
     return false;
   }
   {
@@ -818,7 +770,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         .featureLevel = wgpu::FeatureLevel::Compatibility,
         .powerPreference = wgpu::PowerPreference::HighPerformance,
         .backendType = backend,
-        .compatibleSurface = g_surface,
+        .compatibleSurface = startupSurface,
     };
     Log.info("Requesting adapter\n  Feature level: {}\n  Power preference: {}\n  Backend: {}\n  Compatible surface: {}",
              magic_enum::enum_name(options.featureLevel), magic_enum::enum_name(options.powerPreference),
@@ -1045,42 +997,40 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
   }
   g_queue = g_device.GetQueue();
 
-  const wgpu::Status status = g_surface.GetCapabilities(g_adapter, &g_surfaceCapabilities);
-  if (status != wgpu::Status::Success) {
-    Log.error("Failed to get surface capabilities: {}", magic_enum::enum_name(status));
-    return false;
+  g_efbFormat = wgpu::TextureFormat::RGBA8Unorm;
+  if (startupSurface) {
+    wgpu::SurfaceCapabilities caps;
+    if (startupSurface.GetCapabilities(g_adapter, &caps) != wgpu::Status::Success || !caps.formatCount ||
+        !caps.presentModeCount) {
+      return false;
+    }
+    bool found = false;
+    for (size_t i = 0; i < caps.formatCount; ++i) {
+      const auto format = caps.formats[i];
+      if (format == wgpu::TextureFormat::RGBA8Unorm || format == wgpu::TextureFormat::BGRA8Unorm) {
+        g_efbFormat = format;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      return false;
+    }
   }
-  if (g_surfaceCapabilities.formatCount == 0) {
-    Log.error("Surface has no formats");
-    return false;
-  }
-  if (g_surfaceCapabilities.presentModeCount == 0) {
-    Log.error("Surface has no present modes");
-    return false;
-  }
-  auto surfaceFormat = best_surface_format();
   g_vsyncEnabled.store(g_config.vsync, std::memory_order_release);
-  auto presentMode = select_present_mode(g_surfaceCapabilities);
-  Log.info("Using surface format {}, present mode {}", magic_enum::enum_name(surfaceFormat),
-           magic_enum::enum_name(presentMode));
-  const auto size = window::get_window_size();
-  g_graphicsConfig = GraphicsConfig{
-      .surfaceConfiguration =
-          wgpu::SurfaceConfiguration{
-              .format = surfaceFormat,
-              .usage = wgpu::TextureUsage::RenderAttachment,
-              .width = size.native_fb_width,
-              .height = size.native_fb_height,
-              .presentMode = presentMode,
-          },
+  g_graphicsConfig = {
       .depthFormat = wgpu::TextureFormat::Depth32Float,
       .msaaSamples = g_config.msaa,
       .textureAnisotropy = g_config.maxTextureAnisotropy,
   };
-  create_copy_pipeline();
+  if (startupSurface && !gfx::present::bind_xfb_surface(std::move(startupSurface), g_config.surface)) {
+    return false;
+  }
+  copy_pipeline(g_efbFormat);
+
   create_resample_pipeline();
   gpu_prof::initialize();
-  resize_swapchain(size.fb_width, size.fb_height, size.native_fb_width, size.native_fb_height, true);
+  gfx::efb::prepare_frame(false);
   g_initialized = true;
   return true;
 }
@@ -1090,52 +1040,27 @@ void shutdown() {
   gfx::gpu_synchronize();
   gpu_prof::shutdown();
   g_CopyBindGroupLayout = {};
-  g_CopyPipeline = {};
-  g_CopyPremultipliedAlphaPipeline = {};
-  g_CopyBindGroup = {};
+  gfx::present::shutdown();
+  gfx::efb::shutdown();
+  g_CopyPipelines.clear();
   g_ResampleBindGroupLayout = {};
   g_ResamplePipeline = {};
-  g_ResampleUniformBuffer = {};
-  g_resampledFrameBuffer = {};
   g_frameBuffer = {};
   g_frameBufferResolved = {};
   g_depthBuffer = {};
   g_normalBuffer = {};
   g_graphicsConfig.normalBuffer = false;
   g_queue = {};
-  g_surface = {};
   g_device = {};
   g_adapter = {};
   g_instance = {};
   cache_shutdown();
 }
 
-void release_surface() noexcept {
-  gfx::gpu_synchronize();
-  {
-    window::SurfaceLock surfaceLock;
-    release_surface_locked();
-  }
-}
-
-static void resize_swapchain_internal(uint32_t width, uint32_t height, uint32_t nativeWidth, uint32_t nativeHeight,
-                                      bool force) {
-  if (!g_surface || !g_device || width == 0 || height == 0 || nativeHeight == 0 || nativeWidth == 0) {
+void resize_efb(uint32_t width, uint32_t height) {
+  if (!g_device || !width || !height ||
+      (g_frameBuffer.size.width == width && g_frameBuffer.size.height == height && g_frameBuffer.view)) {
     return;
-  }
-  const bool sizeChanged = g_graphicsConfig.surfaceConfiguration.width != nativeWidth ||
-                           g_graphicsConfig.surfaceConfiguration.height != nativeHeight ||
-                           g_frameBuffer.size.width != width || g_frameBuffer.size.height != height;
-  if (!force && !sizeChanged) {
-    return;
-  }
-  g_graphicsConfig.surfaceConfiguration.width = nativeWidth;
-  g_graphicsConfig.surfaceConfiguration.height = nativeHeight;
-  auto surfaceConfiguration = g_graphicsConfig.surfaceConfiguration;
-  surfaceConfiguration.device = g_device;
-  {
-    window::SurfaceLock surfaceLock;
-    g_surface.Configure(&surfaceConfiguration);
   }
   g_frameBuffer = create_render_texture(width, height, true);
   g_frameBufferResolved = create_render_texture(width, height, false);
@@ -1143,50 +1068,10 @@ static void resize_swapchain_internal(uint32_t width, uint32_t height, uint32_t 
   if (g_graphicsConfig.normalBuffer) {
     g_normalBuffer = create_normal_texture(width, height);
   }
-  g_CopyBindGroup = create_copy_bind_group(present_source());
-}
-
-bool refresh_surface(bool recreate) {
-  gfx::gpu_synchronize();
-  if (!g_instance || !g_device) {
-    return false;
-  }
-  if (!window::is_presentable()) {
-    {
-      window::SurfaceLock surfaceLock;
-      release_surface_locked();
-    }
-    return false;
-  }
-  if ((!g_surface || recreate) && !create_surface()) {
-    return false;
-  }
-  uint32_t width = g_graphicsConfig.surfaceConfiguration.width;
-  uint32_t height = g_graphicsConfig.surfaceConfiguration.height;
-  uint32_t nativeWidth = width;
-  uint32_t nativeHeight = height;
-  if (window::get_sdl_window() != nullptr) {
-    const auto size = window::get_window_size();
-    width = size.fb_width;
-    height = size.fb_height;
-    nativeWidth = size.native_fb_width;
-    nativeHeight = size.native_fb_height;
-  }
-  if (width != 0 && height != 0) {
-    resize_swapchain_internal(width, height, nativeWidth, nativeHeight, true);
-  }
-  return true;
-}
-
-void resize_swapchain(uint32_t width, uint32_t height, uint32_t nativeWidth, uint32_t nativeHeight, bool force) {
-  gfx::gpu_synchronize();
-  resize_swapchain_internal(width, height, nativeWidth, nativeHeight, force);
 }
 } // namespace aurora::webgpu
 
 void aurora_enable_vsync(const bool enabled) {
   aurora::webgpu::g_vsyncEnabled.store(enabled, std::memory_order_release);
-  aurora::webgpu::g_graphicsConfig.surfaceConfiguration.presentMode =
-      aurora::webgpu::select_present_mode(aurora::webgpu::g_surfaceCapabilities);
-  aurora::window::push_custom_event(aurora::window::CustomEvent::RefreshSurface);
+  aurora::gfx::present::set_vsync(enabled);
 }

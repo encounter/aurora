@@ -239,7 +239,7 @@ void handle_capture_peeks(ByteReader& reader) {
     }
   }
 
-  auto job = create_job(header.stream, header.sequence, JobKind::Efb, std::move(outputs), header.count * 4);
+  auto job = create_job(header.stream, header.sequence, JobKind::EfbGather, std::move(outputs), header.count * 4);
   job->gatherJobs =
       gfx::push_storage(reinterpret_cast<const uint8_t*>(jobs.data()), jobs.size() * sizeof(EfbGatherJob));
   job->gatherParams = gfx::push_uniform(params);
@@ -305,7 +305,7 @@ void handle_capture_copies(ByteReader& reader) {
   }
 
   auto job =
-      create_job(header.stream, header.sequence, JobKind::Copy, std::move(outputs), static_cast<uint32_t>(words * 4));
+      create_job(header.stream, header.sequence, JobKind::GxCopy, std::move(outputs), static_cast<uint32_t>(words * 4));
   job->copies.reserve(packs.size());
   for (auto& [texture, params] : packs) {
     job->copies.push_back({

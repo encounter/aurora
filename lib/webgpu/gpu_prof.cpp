@@ -361,7 +361,7 @@ void frame_begin(const wgpu::CommandEncoder& encoder) {
   }
 }
 
-void frame_end(const wgpu::CommandEncoder& encoder) {
+void frame_end() {
   if (!g_enabled || !g_frameActive) {
     return;
   }
@@ -371,11 +371,20 @@ void frame_end(const wgpu::CommandEncoder& encoder) {
     slot.state = SlotState::Free;
     return;
   }
+
+  constexpr wgpu::CommandEncoderDescriptor encoderDescriptor{.label = "Profiler resolve encoder"};
+  const auto encoder = g_device.CreateCommandEncoder(&encoderDescriptor);
   if (g_timestampsEnabled) {
     encoder.WriteTimestamp(g_querySet, FrameEndQuery);
   }
   encoder.ResolveQuerySet(g_querySet, 0, QueryCount, g_resolveBuffer, 0);
   encoder.CopyBufferToBuffer(g_resolveBuffer, 0, slot.readback, 0, ReadbackSize);
+  constexpr wgpu::CommandBufferDescriptor bufferDescriptor{.label = "Profiler resolve command buffer"};
+  const auto buffer = encoder.Finish(&bufferDescriptor);
+  {
+    ZoneScopedN("Queue Submit");
+    g_queue.Submit(1, &buffer);
+  }
   g_framePending = true;
 }
 
@@ -464,7 +473,7 @@ namespace aurora::webgpu::gpu_prof {
 void initialize() {}
 void shutdown() {}
 void frame_begin(const wgpu::CommandEncoder&) {}
-void frame_end(const wgpu::CommandEncoder&) {}
+void frame_end() {}
 void after_submit() {}
 const wgpu::PassTimestampWrites* pass_writes(std::string_view) { return nullptr; }
 Zone::Zone(const wgpu::CommandEncoder&, std::string_view) {}

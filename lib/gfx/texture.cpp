@@ -193,7 +193,7 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
 TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept {
   ZoneScoped;
 
-  const auto wgpuFormat = webgpu::g_graphicsConfig.surfaceConfiguration.format;
+  const auto wgpuFormat = webgpu::g_efbFormat;
   const wgpu::Extent3D size{
       .width = width,
       .height = height,

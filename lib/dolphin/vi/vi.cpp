@@ -24,13 +24,11 @@ void configure(const GXRenderModeObj* rm) noexcept {
     g_renderMode = *rm;
   }
   if (render_mode_size() != oldSize) {
-    window::request_frame_buffer_resize();
+    window::notify_frame_buffer_change();
   }
 }
 
-Vec2<uint32_t> configured_fb_size() noexcept {
-  return render_mode_size();
-}
+Vec2<uint32_t> configured_fb_size() noexcept { return render_mode_size(); }
 } // namespace aurora::vi
 
 extern "C" {

@@ -82,6 +82,55 @@ typedef struct {
 typedef struct SDL_Window SDL_Window;
 typedef struct AuroraEvent AuroraEvent;
 
+typedef enum {
+  /// Default: Aurora creates and manages an internal SDL_Window.
+  AURORA_SURFACE_SDL_MANAGED = 0,
+  /// HWND + optional HINSTANCE (Windows)
+  AURORA_SURFACE_WIN32,
+  /// CAMetalLayer* (macOS or iOS)
+  AURORA_SURFACE_METAL_LAYER,
+  /// NSView* (macOS)
+  AURORA_SURFACE_COCOA_VIEW,
+  /// Wayland wl_display* + wl_surface* (Linux)
+  AURORA_SURFACE_WAYLAND,
+  /// X11 Display* + Window XID (Linux)
+  AURORA_SURFACE_X11,
+  /// ANativeWindow* (Android)
+  AURORA_SURFACE_ANDROID,
+  /// No window or surface; EFB renders offscreen
+  AURORA_SURFACE_HEADLESS,
+} AuroraSurfaceType;
+
+typedef struct {
+  AuroraSurfaceType type;
+  uint32_t width;  // Zero defaults to VIConfigure fbWidth
+  uint32_t height; // Zero defaults to VIConfigure efbHeight
+  float scale;     // Zero defaults to 1
+  union {
+    struct {
+      void* hinstance; // HINSTANCE
+      void* hwnd;      // HWND
+    } win32;
+    struct {
+      void* layer; // CAMetalLayer*
+    } metal;
+    struct {
+      void* nsView; // NSView*
+    } cocoa;
+    struct {
+      void* display; // wl_display*
+      void* surface; // wl_surface*
+    } wayland;
+    struct {
+      void* display;   // Display*
+      uint64_t window; // Window
+    } x11;
+    struct {
+      void* window; // ANativeWindow*
+    } android;
+  };
+} AuroraSurfaceDesc;
+
 typedef void (*AuroraLogCallback)(AuroraLogLevel level, const char* module, const char* message, unsigned int len);
 typedef void (*AuroraImGuiInitCallback)(const AuroraWindowSize* size);
 
@@ -126,6 +175,8 @@ typedef struct {
    * This can be set to 0 to disable allocating this region.
    */
   uint32_t mem2Size;
+
+  AuroraSurfaceDesc surface;
 } AuroraConfig;
 
 typedef struct {
@@ -151,6 +202,10 @@ void aurora_set_timescale(float scale);
 
 SDL_Window* aurora_get_window();
 AuroraWindowSize aurora_get_window_size();
+
+/** Replaces the primary surface. NULL detaches to headless. */
+bool aurora_set_surface(const AuroraSurfaceDesc* desc);
+void aurora_set_surface_size(uint32_t width, uint32_t height, float scale);
 
 AuroraBackend aurora_get_backend();
 const AuroraBackend* aurora_get_available_backends(size_t* count);

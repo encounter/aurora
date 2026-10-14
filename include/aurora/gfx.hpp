@@ -8,6 +8,44 @@
 
 namespace aurora::gfx {
 
+using PresentTargetId = uint64_t;
+inline constexpr PresentTargetId InvalidPresentTarget = 0;
+
+enum class PresentTargetStatus : uint8_t {
+  Pending,
+  Ready,
+  TransientUnavailable,
+  Lost,
+  Error,
+};
+
+struct PresentTargetDesc {
+  const char* label = nullptr;
+  /// Aurora takes ownership of the surface and will destroy it when the target is destroyed.
+  /// Move the surface into the descriptor and don't hold any other references to it.
+  wgpu::Surface surface;
+  uint32_t width = 0;
+  uint32_t height = 0;
+  float scale = 1.f;
+  wgpu::TextureUsage usage = wgpu::TextureUsage::RenderAttachment;
+  wgpu::TextureFormat preferredFormat = wgpu::TextureFormat::Undefined;
+  wgpu::CompositeAlphaMode preferredAlphaMode = wgpu::CompositeAlphaMode::Auto;
+  bool vsync = true;
+};
+
+PresentTargetId create_present_target(PresentTargetDesc&& desc);
+/// Waits for a target's last GPU submission, then releases its resources.
+void destroy_present_target(PresentTargetId target) noexcept;
+PresentTargetStatus present_target_status(PresentTargetId target) noexcept;
+void resize_present_target(PresentTargetId target, uint32_t width, uint32_t height, float scale) noexcept;
+/// Sets the primary XFB for upcoming frames. Zero switches to headless rendering.
+bool set_xfb_target(PresentTargetId target) noexcept;
+PresentTargetId xfb_target() noexcept;
+/// Snapshots and resamples the current EFB/offscreen pass.
+/// A target can be presented once per frame.
+/// The primary XFB is presented automatically by aurora_end_frame.
+bool present_to(PresentTargetId target);
+
 inline constexpr size_t InlineDrawPayloadSize = 128;
 inline constexpr size_t MaxColorAttachments = 8;
 inline constexpr uint32_t SceneColorAttachmentIndex = 0;
@@ -170,7 +208,7 @@ struct ResolvedTargets {
 /// discarding its output). Depth is left null when unsupported by the device.
 /// Returns false (with a warning) outside an active render pass. Scene pipelines
 /// must rebuild based on layout.key, which can change at runtime.
-/// 
+///
 /// **Normals:**
 /// The first resolve with normals will enable the normal attachment at the start
 /// of the next frame and stay enabled until shutdown. Before the normal buffer
