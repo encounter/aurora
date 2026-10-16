@@ -19,12 +19,22 @@ constexpr SystemTime kGcnEpochUnix{946684800s};
 std::once_flag s_gameEpochOnce;
 OSTime s_gameEpochOffset;
 
+#if defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L && !_WIN32
+#define CHRONO_TIME_WORKS 1
+#else
+// Apple libc++ currently ships <chrono> with the C++20 timezone database API disabled
+// (_LIBCPP_HAS_TIME_ZONE_DATABASE == 0), so zoned_time/current_zone are unavailable there.
+//
+// Oh guess what, Microsoft's STL has broken time zone handling evidently,
+// breaks on the new (at the time of writing) Alberta Standard Time.
+// https://github.com/TwilitRealm/dusklight/issues/2734
+#define CHRONO_TIME_WORKS 0
+#endif
+
 LocalTime system_time_to_local_time(SystemTime time) {
-#if defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L
+#if CHRONO_TIME_WORKS
   return chrono::zoned_time(chrono::current_zone(), time).get_local_time();
 #else
-  // Apple libc++ currently ships <chrono> with the C++20 timezone database API disabled
-  // (_LIBCPP_HAS_TIME_ZONE_DATABASE == 0), so zoned_time/current_zone are unavailable there.
   const auto wholeSeconds = chrono::floor<chrono::seconds>(time);
   const auto fractionalSeconds = chrono::duration_cast<SystemDuration>(time - wholeSeconds);
   const std::time_t wallClock = chrono::system_clock::to_time_t(time);
@@ -49,7 +59,7 @@ LocalTime system_time_to_local_time(SystemTime time) {
 }
 
 SystemTime local_time_to_system_time(LocalTime time) {
-#if defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L
+#if CHRONO_TIME_WORKS
   return chrono::zoned_time(chrono::current_zone(), time).get_sys_time();
 #else
   // Apple libc++ currently ships <chrono> with the C++20 timezone database API disabled
