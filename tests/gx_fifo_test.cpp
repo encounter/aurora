@@ -1611,7 +1611,6 @@ TEST_F(GXFifoTest, LoadTexObj_EncodesSdkBpBurstAndAuroraMetadata) {
   EXPECT_EQ(slot.texDataVersion, 1u);
 }
 
-// Verify SDK texture state survives encoding and decoding into renderer state.
 TEST_F(GXFifoTest, TextureMinFiltersRoundTrip) {
   alignas(32) u8 image[64]{};
   const GXTexFilter filters[] = {GX_NEAR, GX_LINEAR, GX_NEAR_MIP_NEAR,
@@ -1641,7 +1640,6 @@ TEST_F(GXFifoTest, TextureLodBiasRoundTrip) {
     float input;
     float expected;
   };
-  // Signed 3.5 fixed-point, clamped to [-4, 3.99] before truncation.
   const Case cases[] = {{-8.f, -4.f}, {-4.f, -4.f}, {-1.5f, -1.5f},
                         {-0.04f, -1.f / 32.f}, {-0.01f, 0.f}, {0.f, 0.f},
                         {0.04f, 1.f / 32.f}, {1.5f, 1.5f}, {8.f, 127.f / 32.f}};
