@@ -120,7 +120,8 @@ void GXInitTexObjLOD(GXTexObj* obj_, GXTexFilter minFilt, GXTexFilter magFilt, f
                      float lodBias, GXBool biasClamp, GXBool doEdgeLod, GXAnisotropy maxAniso) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
   const float clampedBias = std::clamp(lodBias, -4.0f, 3.99f);
-  const auto lbias = static_cast<u8>(32.0f * clampedBias);
+  // Convert through a signed integer: negative float-to-u8 conversion is undefined.
+  const auto lbias = static_cast<u8>(static_cast<int>(32.0f * clampedBias));
   SET_REG_FIELD(0, obj->mode0, 8, 9, lbias);
   SET_REG_FIELD(0, obj->mode0, 1, 4, magFilt == GX_LINEAR ? 1 : 0);
   SET_REG_FIELD(0, obj->mode0, 3, 5, GX2HWFiltConv[minFilt]);
@@ -174,7 +175,8 @@ void GXInitTexObjMinLOD(GXTexObj* obj_, float minLod) {
 void GXInitTexObjLODBias(GXTexObj* obj_, float lodBias) {
   auto* obj = reinterpret_cast<GXTexObj_*>(obj_);
   const float clampedBias = std::clamp(lodBias, -4.0f, 3.99f);
-  const auto lbias = static_cast<u8>(32.0f * clampedBias);
+  // Convert through a signed integer: negative float-to-u8 conversion is undefined.
+  const auto lbias = static_cast<u8>(static_cast<int>(32.0f * clampedBias));
   SET_REG_FIELD(0, obj->mode0, 8, 9, lbias);
 }
 

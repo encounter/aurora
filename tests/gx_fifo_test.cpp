@@ -1611,6 +1611,61 @@ TEST_F(GXFifoTest, LoadTexObj_EncodesSdkBpBurstAndAuroraMetadata) {
   EXPECT_EQ(slot.texDataVersion, 1u);
 }
 
+// Verify SDK texture state survives encoding and decoding into renderer state.
+TEST_F(GXFifoTest, TextureMinFiltersRoundTrip) {
+  alignas(32) u8 image[64]{};
+  const GXTexFilter filters[] = {GX_NEAR, GX_LINEAR, GX_NEAR_MIP_NEAR,
+                                 GX_LIN_MIP_NEAR, GX_NEAR_MIP_LIN, GX_LIN_MIP_LIN};
+  for (const auto filter : filters) {
+    SCOPED_TRACE(static_cast<int>(filter));
+    GXTexObj obj{};
+    GXInitTexObj(&obj, image, 8, 8, GX_TF_I8, GX_REPEAT, GX_REPEAT, GX_TRUE);
+    GXInitTexObjLOD(&obj, filter, GX_LINEAR, 0.f, 3.f, 0.f, GX_FALSE, GX_FALSE, GX_ANISO_1);
+    GXLoadTexObj(&obj, GX_TEXMAP0);
+    decode_fifo(capture_fifo());
+    EXPECT_EQ(gxState().loadedTextures[GX_TEXMAP0].min_filter(), filter);
+    EXPECT_EQ(gxState().loadedTextures[GX_TEXMAP0].mag_filter(), GX_LINEAR);
+
+    GXInitTexObjFilter(&obj, GX_NEAR, GX_LINEAR);
+    GXInitTexObjFilter(&obj, filter, GX_NEAR);
+    GXLoadTexObj(&obj, GX_TEXMAP0);
+    decode_fifo(capture_fifo());
+    EXPECT_EQ(gxState().loadedTextures[GX_TEXMAP0].min_filter(), filter);
+    EXPECT_EQ(gxState().loadedTextures[GX_TEXMAP0].mag_filter(), GX_NEAR);
+  }
+}
+
+TEST_F(GXFifoTest, TextureLodBiasRoundTrip) {
+  alignas(32) u8 image[64]{};
+  struct Case {
+    float input;
+    float expected;
+  };
+  // Signed 3.5 fixed-point, clamped to [-4, 3.99] before truncation.
+  const Case cases[] = {{-8.f, -4.f}, {-4.f, -4.f}, {-1.5f, -1.5f},
+                        {-0.04f, -1.f / 32.f}, {-0.01f, 0.f}, {0.f, 0.f},
+                        {0.04f, 1.f / 32.f}, {1.5f, 1.5f}, {8.f, 127.f / 32.f}};
+  for (const auto& test : cases) {
+    SCOPED_TRACE(test.input);
+    GXTexObj obj{};
+    GXInitTexObj(&obj, image, 8, 8, GX_TF_I8, GX_REPEAT, GX_REPEAT, GX_TRUE);
+    GXInitTexObjLOD(&obj, GX_LIN_MIP_LIN, GX_LINEAR, 0.f, 3.f, test.input,
+                    GX_TRUE, GX_FALSE, GX_ANISO_2);
+    GXLoadTexObj(&obj, GX_TEXMAP0);
+    decode_fifo(capture_fifo());
+    EXPECT_FLOAT_EQ(gxState().loadedTextures[GX_TEXMAP0].lod_bias(), test.expected);
+
+    GXInitTexObjLODBias(&obj, 0.f);
+    GXInitTexObjLODBias(&obj, test.input);
+    GXLoadTexObj(&obj, GX_TEXMAP0);
+    decode_fifo(capture_fifo());
+    const auto& texture = gxState().loadedTextures[GX_TEXMAP0];
+    EXPECT_FLOAT_EQ(texture.lod_bias(), test.expected);
+    EXPECT_EQ(texture.min_filter(), GX_LIN_MIP_LIN);
+    EXPECT_EQ(texture.mag_filter(), GX_LINEAR);
+  }
+}
+
 TEST_F(GXFifoTest, LoadTexObjPcFormat_PreservesFullFormatMetadata) {
   alignas(32) u8 image[64]{};
   GXTexObj obj{};
