@@ -17,6 +17,7 @@ constexpr u8 GXTexImage2Ids[8] = {0x90, 0x91, 0x92, 0x93, 0xB0, 0xB1, 0xB2, 0xB3
 constexpr u8 GXTexImage3Ids[8] = {0x94, 0x95, 0x96, 0x97, 0xB4, 0xB5, 0xB6, 0xB7};
 constexpr u8 GXTexTlutIds[8] = {0x98, 0x99, 0x9A, 0x9B, 0xB8, 0xB9, 0xBA, 0xBB};
 constexpr u8 GX2HWFiltConv[6] = {0x00, 0x04, 0x01, 0x05, 0x02, 0x06};
+constexpr GXTexFilter HW2GXFiltConv[8] = {GX_NEAR, GX_NEAR_MIP_NEAR, GX_NEAR_MIP_LIN, GX_NEAR, GX_LINEAR, GX_LIN_MIP_NEAR, GX_LIN_MIP_LIN, GX_NEAR};
 
 u32 sNextTexObjId = 1;
 u32 sNextTlutObjId = 1;
@@ -382,6 +383,63 @@ void GXSetTexCoordBias(GXTexCoordID coord, GXBool s_enable, GXBool t_enable) {
     __gx->bpSent = 1;
   }
 }
+
+GXTexFilter GXGetTexObjMinFilt(const GXTexObj* obj_) {
+    auto* obj = reinterpret_cast<const GXTexObj_*>(obj_);
+    return HW2GXFiltConv[GET_REG_FIELD(obj->mode0, 3, 5)];
+}
+
+GXTexFilter GXGetTexObjMaxFilt(const GXTexObj* obj_) {
+    auto* obj = reinterpret_cast<const GXTexObj_*>(obj_);
+    return GXTexFilter(GET_REG_FIELD(obj->mode0, 1, 4));
+}
+
+f32 GXGetTexObjMinLOD(const GXTexObj* obj_) {
+    auto* obj = reinterpret_cast<const GXTexObj_*>(obj_);
+    return (u32)GET_REG_FIELD(obj->mode1, 8, 0) / 16.0f;
+}
+
+f32 GXGetTexObjMaxLOD(const GXTexObj* obj_) {
+    auto* obj = reinterpret_cast<const GXTexObj_*>(obj_);
+    return (u32)GET_REG_FIELD(obj->mode1, 8, 8) / 16.0f;
+}
+
+f32 GXGetTexObjLODBias(const GXTexObj* obj_) {
+    s16 tmp;
+    auto* obj = reinterpret_cast<const GXTexObj_*>(obj_);
+
+    tmp = (s32)GET_REG_FIELD(obj->mode0, 8, 9);
+    return (s8)tmp / 32.0f;
+}
+
+GXBool GXGetTexObjBiasClamp(const GXTexObj* obj_) {
+    auto* obj = reinterpret_cast<const GXTexObj_*>(obj_);
+    return (u32)GET_REG_FIELD(obj->mode0, 1, 21);
+}
+
+GXBool GXGetTexObjEdgeLOD(const GXTexObj* obj_) {
+    auto* obj = reinterpret_cast<const GXTexObj_*>(obj_);
+    return !GET_REG_FIELD(obj->mode0, 1, 8);
+}
+
+GXAnisotropy GXGetTexObjMaxAniso(const GXTexObj* obj_) {
+    auto* obj = reinterpret_cast<const GXTexObj_*>(obj_);
+    return GXAnisotropy(GET_REG_FIELD(obj->mode0, 2, 19));
+}
+
+void GXGetTexObjLODAll(const GXTexObj* obj, GXTexFilter* min_filt, GXTexFilter* mag_filt, f32* min_lod, f32* max_lod, f32* lod_bias,
+                       GXBool* bias_clamp, GXBool* do_edge_lod, GXAnisotropy* max_aniso)
+{
+  *min_filt = GXGetTexObjMinFilt(obj);
+  *mag_filt = GXGetTexObjMaxFilt(obj);
+  *min_lod = GXGetTexObjMinLOD(obj);
+  *max_lod = GXGetTexObjMaxLOD(obj);
+  *lod_bias = GXGetTexObjLODBias(obj);
+  *bias_clamp = GXGetTexObjBiasClamp(obj);
+  *do_edge_lod = GXGetTexObjEdgeLOD(obj);
+  *max_aniso = GXGetTexObjMaxAniso(obj);
+}
+
 
 void __GXFlushTextureState() {
   GX_WRITE_RAS_REG(__gx->bpMask);
