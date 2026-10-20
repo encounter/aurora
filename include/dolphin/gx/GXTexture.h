@@ -41,7 +41,15 @@ void GXInitTexCacheRegion(GXTexRegion* region, GXBool is_32b_mipmap, u32 tmem_ev
                           u32 tmem_odd, GXTexCacheSize size_odd);
 GXTexRegionCallback GXSetTexRegionCallback(GXTexRegionCallback callback);
 void GXInvalidateTexRegion(const GXTexRegion* region);
-
+GXTexFilter GXGetTexObjMinFilt(const GXTexObj* tex_obj);
+GXTexFilter GXGetTexObjMagFilt(const GXTexObj* tex_obj);
+f32 GXGetTexObjMinLOD(const GXTexObj* tex_obj);
+f32 GXGetTexObjMaxLOD(const GXTexObj* tex_obj);
+f32 GXGetTexObjLODBias(const GXTexObj* tex_obj);
+GXBool GXGetTexObjBiasClamp(const GXTexObj* tex_obj);
+GXBool GXGetTexObjEdgeLOD(const GXTexObj* tex_obj);
+GXAnisotropy GXGetTexObjMaxAniso(const GXTexObj* tex_obj);
+void GXGetTexObjLODAll(const GXTexObj* tex_obj, GXTexFilter* min_filt, GXTexFilter* mag_filt, f32* min_lod, f32* max_lod, f32* lod_bias, GXBool* bias_clamp, GXBool* do_edge_lod, GXAnisotropy* max_aniso);
 #ifdef __cplusplus
 }
 #endif

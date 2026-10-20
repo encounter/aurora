@@ -22,7 +22,7 @@ GXTexWrapMode GXGetTexObjWrapS(const GXTexObj* tex_obj);
 GXTexWrapMode GXGetTexObjWrapT(const GXTexObj* tex_obj);
 void* GXGetTexObjData(const GXTexObj* tex_obj);
 void GXGetTexObjAll(const GXTexObj* tex_obj, void** image_ptr, u16* width, u16* height, GXTexFmt* format,
-                    GXTexWrapMode* wrap_s, GXTexWrapMode* wrap_t, u8* mipmap);
+                    GXTexWrapMode* wrap_s, GXTexWrapMode* wrap_t, GXBool* mipmap);
 void GXGetProjectionv(f32* p);
 void GXGetLightPos(const GXLightObj* lt_obj, f32* x, f32* y, f32* z);
 void GXGetLightColor(const GXLightObj* lt_obj, GXColor* color);
