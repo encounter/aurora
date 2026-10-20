@@ -91,7 +91,7 @@ struct GXTexObj_ {
   GXTexWrapMode wrap_t() const noexcept { return static_cast<GXTexWrapMode>(get_bits(mode0, 2, 2)); }
   GXTexFilter min_filter() const noexcept {
     constexpr GXTexFilter kHwToGxFilter[8] = {
-        GX_NEAR, GX_NEAR_MIP_NEAR, GX_LIN_MIP_NEAR, GX_NEAR, GX_LINEAR, GX_NEAR_MIP_LIN, GX_LIN_MIP_LIN, GX_NEAR,
+        GX_NEAR, GX_NEAR_MIP_NEAR, GX_NEAR_MIP_LIN, GX_NEAR, GX_LINEAR, GX_LIN_MIP_NEAR, GX_LIN_MIP_LIN, GX_NEAR,
     };
     return kHwToGxFilter[get_bits(mode0, 3, 5)];
   }
