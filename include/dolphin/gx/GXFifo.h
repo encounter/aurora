@@ -19,6 +19,8 @@ void GXGetFifoPtrs(GXFifoObj* fifo, void** readPtr, void** writePtr);
 OSThread *GXSetCurrentGXThread(void);
 OSThread *GXGetCurrentGXThread(void);
 GXFifoObj* GXGetCPUFifo(void);
+void GXEnableBreakPt(void* break_pt);
+void GXDisableBreakPt(void);
 GXFifoObj* GXGetGPFifo(void);
 void GXSetCPUFifo(GXFifoObj* fifo);
 void GXSetGPFifo(GXFifoObj* fifo);
