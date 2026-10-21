@@ -37,6 +37,15 @@ typedef enum {
   LOG_FATAL,
 } AuroraLogLevel;
 
+typedef enum {
+  /* Process GX commands asynchronously on a worker thread */
+  GX_PROCESSING_THREAD,
+  /* Process GX commands synchronously on the calling thread after each draw (useful for debugging) */
+  GX_PROCESSING_INLINE,
+  /* Process GX commands synchronously only when the FIFO is drained */
+  GX_PROCESSING_DRAIN,
+} AuroraGxProcessingMode;
+
 typedef struct {
   int32_t x;
   int32_t y;
@@ -103,6 +112,7 @@ typedef struct {
   AuroraLogCallback logCallback;
   AuroraLogLevel logLevel;
   AuroraImGuiInitCallback imGuiInitCallback;
+  AuroraGxProcessingMode gxProcessingMode;
 
   /*
    * The size of the GameCube's main memory, or MEM1 on the Wii.

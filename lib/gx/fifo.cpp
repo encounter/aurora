@@ -24,7 +24,7 @@ uint32_t sDlWritePos = 0;
 
 namespace {
 constexpr Module Log{"aurora::gx::fifo"};
-constexpr auto kProcessingMode = ProcessingMode::Thread;
+ProcessingMode sProcessingMode = ProcessingMode::Thread;
 constexpr uint32_t kDrawBatchSize = 1;
 
 bool sFrameActive = false;
@@ -92,7 +92,7 @@ void worker_main(std::stop_token token) noexcept {
 }
 
 void start_worker() {
-  if (kProcessingMode != ProcessingMode::Thread || sWorkerThread.joinable()) {
+  if (sProcessingMode != ProcessingMode::Thread || sWorkerThread.joinable()) {
     return;
   }
   sWorkerThread = thread::Thread{{
@@ -111,10 +111,11 @@ void stop_worker() {
 }
 } // namespace
 
-ProcessingMode processing_mode() noexcept { return kProcessingMode; }
+ProcessingMode processing_mode() noexcept { return sProcessingMode; }
 
-void init() {
+void init(ProcessingMode mode) {
   stop_worker();
+  sProcessingMode = mode;
 
   constexpr uint32_t initialCapacity = 64 * 1024;
   free(detail::sBufferData);
@@ -170,7 +171,7 @@ void write_data_grow(const void* data, uint32_t length) {
 }
 
 void publish() noexcept {
-  if (!sFrameActive || kProcessingMode == ProcessingMode::Drain || detail::sInDisplayList) {
+  if (!sFrameActive || sProcessingMode == ProcessingMode::Drain || detail::sInDisplayList) {
     return;
   }
 
@@ -178,7 +179,7 @@ void publish() noexcept {
   if (target > sPublished.load(std::memory_order_relaxed)) {
     sPendingDraws = 0;
     sPublished.store(target, std::memory_order_release);
-    if (kProcessingMode == ProcessingMode::Thread) {
+    if (sProcessingMode == ProcessingMode::Thread) {
       wake_worker();
     } else {
       process_to(target, std::memory_order_relaxed);
@@ -191,7 +192,7 @@ DrawDoneCallback set_draw_done_callback(DrawDoneCallback callback) noexcept {
 }
 
 void finish_draw() noexcept {
-  if (!sFrameActive || kProcessingMode == ProcessingMode::Drain || detail::sInDisplayList) {
+  if (!sFrameActive || sProcessingMode == ProcessingMode::Drain || detail::sInDisplayList) {
     return;
   }
   if (++sPendingDraws >= kDrawBatchSize) {
@@ -239,7 +240,7 @@ void drain() {
   ZoneScoped;
   const uint64_t target = sStreamBase + detail::sBufferSize;
 
-  switch (kProcessingMode) {
+  switch (sProcessingMode) {
   case ProcessingMode::Drain:
   case ProcessingMode::Inline:
     sPublished.store(target, std::memory_order_relaxed);

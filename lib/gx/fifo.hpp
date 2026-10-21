@@ -26,7 +26,7 @@ enum class ProcessingMode : uint8_t {
 };
 ProcessingMode processing_mode() noexcept;
 
-void init();
+void init(ProcessingMode mode = ProcessingMode::Thread);
 void shutdown();
 
 void begin_frame() noexcept;
