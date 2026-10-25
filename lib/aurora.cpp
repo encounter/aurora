@@ -61,6 +61,18 @@ void set_present_viewport(const wgpu::RenderPassEncoder& pass, const gfx::Viewpo
   const auto scissorBottom = clamp_scissor_coord(std::ceil(viewport.top + viewport.height), surfaceHeight);
   pass.SetScissorRect(scissorX, scissorY, scissorRight - scissorX, scissorBottom - scissorY);
 }
+
+gx::fifo::ProcessingMode to_fifo_processing_mode(AuroraGxProcessingMode mode) noexcept {
+  switch (mode) {
+  case GX_PROCESSING_INLINE:
+    return gx::fifo::ProcessingMode::Inline;
+  case GX_PROCESSING_DRAIN:
+    return gx::fifo::ProcessingMode::Drain;
+  case GX_PROCESSING_THREAD:
+  default:
+    return gx::fifo::ProcessingMode::Thread;
+  }
+}
 #endif
 
 #ifdef AURORA_ENABLE_GX
@@ -179,7 +191,7 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
 
 #ifdef AURORA_ENABLE_GX
   gfx::initialize();
-  gx::fifo::init();
+  gx::fifo::init(to_fifo_processing_mode(g_config.gxProcessingMode));
   imgui::create_context();
 #endif
   const auto size = window::get_window_size();
