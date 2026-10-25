@@ -1,6 +1,8 @@
 #include "sdl_input.hpp"
 
 #include "router.hpp"
+#include "../device.hpp"
+#include <SDL3/SDL_sensor.h>
 #include "../window.hpp"
 #ifdef AURORA_ENABLE_GX
 #include "../imgui.hpp"
@@ -13,6 +15,41 @@
 #include <SDL3/SDL_touch.h>
 
 #include <algorithm>
+
+namespace aurora::input {
+namespace {
+std::array<bool, 2> deviceSensorsEnabled{true, true};
+}
+
+bool has_sensor(SourceId source, SensorKind kind) {
+  if (static_cast<size_t>(kind) >= 6 || !find_source(source)) {
+    return false;
+  }
+
+  const auto type = static_cast<SDL_SensorType>(static_cast<int>(kind) + SDL_SENSOR_ACCEL);
+  if (source == device_source().id) {
+    return device::sensor(type) != nullptr;
+  }
+
+  auto* gamepad = SDL_GetGamepadFromID(gamepad_for_source(source));
+  return gamepad != nullptr && SDL_GamepadHasSensor(gamepad, type);
+}
+
+bool set_sensor_enabled(SourceId source, SensorKind kind, bool enabled) {
+  if (!has_sensor(source, kind)) {
+    return false;
+  }
+
+  if (source == device_source().id) {
+    deviceSensorsEnabled[static_cast<size_t>(kind)] = enabled;
+    return true;
+  }
+
+  return SDL_SetGamepadSensorEnabled(SDL_GetGamepadFromID(gamepad_for_source(source)),
+                                     static_cast<SDL_SensorType>(static_cast<int>(kind) + SDL_SENSOR_ACCEL), enabled);
+}
+
+} // namespace aurora::input
 
 namespace aurora::input::sdl {
 namespace {
@@ -128,6 +165,8 @@ bool is_routed_event(const SDL_Event& event) noexcept {
   case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
   case SDL_EVENT_GAMEPAD_BUTTON_UP:
   case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+  case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
+  case SDL_EVENT_SENSOR_UPDATE:
     return true;
   default:
     return false;
@@ -234,6 +273,44 @@ void dispatch(const SDL_Event& event) noexcept {
         .axis = axis,
         .value = normalize_axis(axis, event.gaxis.value),
     };
+    break;
+  }
+  case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
+    if (event.gsensor.sensor < SDL_SENSOR_ACCEL || event.gsensor.sensor > SDL_SENSOR_GYRO_R) {
+      return;
+    }
+
+    input.source.id = source_for_gamepad(event.gsensor.which);
+    input.payload = InputEvent::SensorChanged{
+        .sensor = static_cast<SensorKind>(event.gsensor.sensor - SDL_SENSOR_ACCEL),
+        .values = {event.gsensor.data[0], event.gsensor.data[1], event.gsensor.data[2]},
+        .sensorTimestampNs = event.gsensor.sensor_timestamp,
+    };
+    break;
+  case SDL_EVENT_SENSOR_UPDATE: {
+    auto* sensor = SDL_GetSensorFromID(event.sensor.which);
+    if (sensor == nullptr) {
+      return;
+    }
+
+    const auto type = SDL_GetSensorType(sensor);
+    if (type != SDL_SENSOR_ACCEL && type != SDL_SENSOR_GYRO) {
+      return;
+    }
+
+    if (!deviceSensorsEnabled[type == SDL_SENSOR_ACCEL ? 0 : 1]) {
+      return;
+    }
+
+    InputEvent::SensorChanged changed{
+        .sensor = type == SDL_SENSOR_ACCEL ? SensorKind::Accel : SensorKind::Gyro,
+        .values = {event.sensor.data[0], event.sensor.data[1], event.sensor.data[2]},
+        .sensorTimestampNs = event.sensor.sensor_timestamp,
+    };
+
+    device::rotate_sensor(changed.values.data(), 3);
+    input.source = device_source();
+    input.payload = changed;
     break;
   }
   default:

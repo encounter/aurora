@@ -1,262 +1,19 @@
-#include "adapter.hpp"
+#include "../../input/port.hpp"
+#include <aurora/pad.hpp>
 #include "../../gamepad.hpp"
 #include "../../device.hpp"
 #include "../../internal.hpp"
 #include "../../io.hpp"
 #include <aurora/input.hpp>
 #include <dolphin/pad.h>
-#include <dolphin/si.h>
 
+#include <algorithm>
 #include <array>
-#include <filesystem>
-#include <limits>
+#include <cmath>
 #include <ranges>
-#include <sys/stat.h>
 
 namespace {
 constexpr aurora::Module Log{"aurora::pad"};
-
-constexpr int32_t k_mappingsFileVersion = 4;
-constexpr int32_t k_minMappingsFileVersion = 3;
-
-std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsStandard{{
-    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
-    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
-    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
-    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_L},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_R},
-    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
-}};
-
-std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsXBox360{{
-    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_X},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
-    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
-    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_L},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_R},
-    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
-}};
-
-std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsXBoxOne{{
-    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_X},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
-    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
-    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_L},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_R},
-    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
-}};
-
-std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsPS3{{
-    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
-    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
-    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
-    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_L},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_R},
-    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
-}};
-
-std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsPS4{{
-    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
-    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
-    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
-    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_L},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_R},
-    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
-}};
-
-std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsPS5{{
-    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
-    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
-    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
-    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_L},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_R},
-    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
-}};
-
-std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsGamecube{{
-    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_X},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
-    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
-    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
-    {SDL_GAMEPAD_BUTTON_MISC3, PAD_TRIGGER_L},
-    {SDL_GAMEPAD_BUTTON_MISC4, PAD_TRIGGER_R},
-    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
-}};
-
-std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsNSOGamecube{{
-    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_X},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
-    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
-    {SDL_GAMEPAD_BUTTON_BACK, PAD_TRIGGER_Z},
-    {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, PAD_TRIGGER_L},
-    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_R},
-    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
-}};
-
-std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsProCon{{
-    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
-    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
-    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
-    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_L},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_R},
-    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
-}};
-
-std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsJoyConRight{{
-    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
-    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
-    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
-    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_L},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_R},
-    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
-}};
-
-std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsJoyConLeft{{
-    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
-    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
-    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
-    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_L},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_R},
-    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
-}};
-
-std::array<PADButtonMapping, PAD_BUTTON_COUNT> g_defaultButtonsJoyPair{{
-    {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
-    {SDL_GAMEPAD_BUTTON_EAST, PAD_BUTTON_B},
-    {SDL_GAMEPAD_BUTTON_WEST, PAD_BUTTON_X},
-    {SDL_GAMEPAD_BUTTON_NORTH, PAD_BUTTON_Y},
-    {SDL_GAMEPAD_BUTTON_START, PAD_BUTTON_START},
-    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_TRIGGER_Z},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_L},
-    {PAD_NATIVE_BUTTON_INVALID, PAD_TRIGGER_R},
-    {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_BUTTON_UP},
-    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_BUTTON_DOWN},
-    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_BUTTON_LEFT},
-    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_BUTTON_RIGHT},
-}};
-
-constexpr std::array<PADKeyButtonBinding, PAD_BUTTON_COUNT> kUnboundKeys{{
-    {PAD_KEY_INVALID, PAD_BUTTON_A},
-    {PAD_KEY_INVALID, PAD_BUTTON_B},
-    {PAD_KEY_INVALID, PAD_BUTTON_X},
-    {PAD_KEY_INVALID, PAD_BUTTON_Y},
-    {PAD_KEY_INVALID, PAD_BUTTON_START},
-    {PAD_KEY_INVALID, PAD_TRIGGER_Z},
-    {PAD_KEY_INVALID, PAD_TRIGGER_L},
-    {PAD_KEY_INVALID, PAD_TRIGGER_R},
-    {PAD_KEY_INVALID, PAD_BUTTON_UP},
-    {PAD_KEY_INVALID, PAD_BUTTON_DOWN},
-    {PAD_KEY_INVALID, PAD_BUTTON_LEFT},
-    {PAD_KEY_INVALID, PAD_BUTTON_RIGHT},
-}};
-
-constexpr std::array<PADKeyAxisBinding, PAD_AXIS_COUNT> kUnboundKeyAxes{{
-    {PAD_KEY_INVALID, PAD_AXIS_LEFT_X_POS, 0},
-    {PAD_KEY_INVALID, PAD_AXIS_LEFT_X_NEG, 0},
-    {PAD_KEY_INVALID, PAD_AXIS_LEFT_Y_POS, 0},
-    {PAD_KEY_INVALID, PAD_AXIS_LEFT_Y_NEG, 0},
-    {PAD_KEY_INVALID, PAD_AXIS_RIGHT_X_POS, 0},
-    {PAD_KEY_INVALID, PAD_AXIS_RIGHT_X_NEG, 0},
-    {PAD_KEY_INVALID, PAD_AXIS_RIGHT_Y_POS, 0},
-    {PAD_KEY_INVALID, PAD_AXIS_RIGHT_Y_NEG, 0},
-    {PAD_KEY_INVALID, PAD_AXIS_TRIGGER_L, 0},
-    {PAD_KEY_INVALID, PAD_AXIS_TRIGGER_R, 0},
-}};
-
-std::array<PADAxisMapping, PAD_AXIS_COUNT> g_defaultAxes{{
-    {{SDL_GAMEPAD_AXIS_LEFTX, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_LEFT_X_POS},
-    {{SDL_GAMEPAD_AXIS_LEFTX, AXIS_SIGN_NEGATIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_LEFT_X_NEG},
-    // SDL's gamepad y-axis is inverted from GC's
-    {{SDL_GAMEPAD_AXIS_LEFTY, AXIS_SIGN_NEGATIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_LEFT_Y_POS},
-    {{SDL_GAMEPAD_AXIS_LEFTY, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_LEFT_Y_NEG},
-    {{SDL_GAMEPAD_AXIS_RIGHTX, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_RIGHT_X_POS},
-    {{SDL_GAMEPAD_AXIS_RIGHTX, AXIS_SIGN_NEGATIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_RIGHT_X_NEG},
-    // see above
-    {{SDL_GAMEPAD_AXIS_RIGHTY, AXIS_SIGN_NEGATIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_RIGHT_Y_POS},
-    {{SDL_GAMEPAD_AXIS_RIGHTY, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_RIGHT_Y_NEG},
-    {{SDL_GAMEPAD_AXIS_LEFT_TRIGGER, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_TRIGGER_L},
-    {{SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, AXIS_SIGN_POSITIVE}, SDL_GAMEPAD_BUTTON_INVALID, PAD_AXIS_TRIGGER_R},
-}};
-
-template <typename T, size_t N>
-constexpr const std::array<T, N>& toStdArray(const T (&array)[N]) {
-  static_assert(sizeof(array) == sizeof(std::array<T, N>));
-  return reinterpret_cast<const std::array<T, N>&>(array);
-}
-
-std::array<PADKeyboardState, PAD_MAX_CONTROLLERS> g_defaultKeyboardBindings = [] {
-  std::array<PADKeyboardState, PAD_MAX_CONTROLLERS> defaults;
-  for (auto& state : defaults) {
-    state.m_buttonMapping = kUnboundKeys;
-    state.m_axisMapping = kUnboundKeyAxes;
-  }
-  return defaults;
-}();
-std::array<PADKeyboardState, PAD_MAX_CONTROLLERS> g_keyboardBindings;
 
 struct PADCLampRegion {
   uint8_t minTrigger;
@@ -292,22 +49,25 @@ constexpr PADCLampRegion ClampRegion{
 };
 
 bool g_initialized;
-bool g_keyboardBindingsLoaded = false;
+
+std::optional<aurora::input::SensorKind> sensor_kind(PADSensorType sensor) {
+  if (sensor < PAD_SENSOR_ACCEL || sensor > PAD_SENSOR_GYRO_RIGHT) {
+    return std::nullopt;
+  }
+  return static_cast<aurora::input::SensorKind>(sensor - PAD_SENSOR_ACCEL);
+}
+
+aurora::input::SourceId sensor_source(u32 port, aurora::input::SensorKind sensor) {
+  const auto source = aurora::pad::port_controller(port);
+  if (aurora::input::has_sensor(source, sensor)) {
+    return source;
+  }
+  return port == 0 ? aurora::input::device_source().id : 0;
+}
+
 } // namespace
 
 void PADSetSpec(u32 spec [[maybe_unused]]) {}
-
-static void load_keyboard_bindings();
-static void save_keyboard_bindings();
-
-static bool seek_aligned(SDL_IOStream* file, Sint64& dataStart) {
-  const Sint64 position = SDL_TellIO(file);
-  if (position < 0 || position > std::numeric_limits<Sint64>::max() - 31) {
-    return false;
-  }
-  dataStart = (position + 31) & ~Sint64{31};
-  return SDL_SeekIO(file, dataStart, SDL_IO_SEEK_SET) == dataStart;
-}
 
 static bool device_rumble_available_for_port(const u32 port) {
   return port == PAD_CHAN0 && aurora::device::rumble_available();
@@ -319,66 +79,13 @@ static bool should_use_device_rumble(const u32 port, const aurora::gamepad::Game
           (!controller->m_isGameCube && (!controller->m_hasRumble || controller->m_forceDeviceRumble)));
 }
 
-static bool device_gyro_available_for_port(const u32 port) {
-  return port == PAD_CHAN0 && aurora::device::gyro_available();
-}
-
-static bool device_accel_available_for_port(const u32 port) {
-  return port == PAD_CHAN0 && aurora::device::accel_available();
-}
-
-static bool device_sensor_available_for_port(const u32 port, const PADSensorType sensor) {
-  switch (sensor) {
-  case PAD_SENSOR_ACCEL:
-    return device_accel_available_for_port(port);
-  case PAD_SENSOR_GYRO:
-    return device_gyro_available_for_port(port);
-  default:
-    return false;
-  }
-}
-
-static bool get_device_sensor_data(const PADSensorType sensor, f32* data, const int nValues) {
-  switch (sensor) {
-  case PAD_SENSOR_ACCEL:
-    return aurora::device::accel(data, nValues);
-  case PAD_SENSOR_GYRO:
-    return aurora::device::gyro(data, nValues);
-  default:
-    return false;
-  }
-}
-
-static bool controller_has_sensor(const aurora::gamepad::GameController* controller, const PADSensorType sensor) {
-  return controller != nullptr && SDL_GamepadHasSensor(controller->m_controller, static_cast<SDL_SensorType>(sensor));
-}
-
-static bool should_use_device_sensor(const u32 port, const aurora::gamepad::GameController* controller,
-                                     const PADSensorType sensor) {
-  return device_sensor_available_for_port(port, sensor) && !controller_has_sensor(controller, sensor);
-}
-
-// ReSharper disable once CppDFAConstantFunctionResult
 BOOL PADInit() {
-  if (g_initialized) {
-    return true;
+  if (!g_initialized) {
+    aurora::pad::detail::initialize_profiles();
+    aurora::pad::detail::initialize();
+    g_initialized = true;
   }
-  g_initialized = true;
-
-  for (u32 port = 0; port < g_keyboardBindings.size(); ++port) {
-    auto& state = g_keyboardBindings[port];
-    const auto& defaults = g_defaultKeyboardBindings[port];
-    state.m_buttonMapping = defaults.m_buttonMapping;
-    state.m_axisMapping = defaults.m_axisMapping;
-  }
-
-  if (!g_keyboardBindingsLoaded) {
-    g_keyboardBindingsLoaded = true;
-    load_keyboard_bindings();
-  }
-
-  aurora::pad::detail::initialize();
-  return true;
+  return TRUE;
 }
 
 BOOL PADRecalibrate(u32 mask [[maybe_unused]]) { return true; }
@@ -423,15 +130,8 @@ void PADSetPortForIndex(const u32 idx, const u32 port) {
     return;
   }
 
-  const int32_t oldPort = SDL_GetGamepadPlayerIndex(ctrl->m_controller);
-  if (const auto* dest = aurora::gamepad::get_controller_for_player(port); dest != nullptr && dest != ctrl) {
-    SDL_SetGamepadPlayerIndex(dest->m_controller, -1);
-  }
-  if (oldPort >= 0 && oldPort != port) {
-    aurora::gamepad::persist_controller_for_player(oldPort, nullptr);
-  }
-  SDL_SetGamepadPlayerIndex(ctrl->m_controller, static_cast<Sint32>(port));
-  aurora::gamepad::persist_controller_for_player(port, ctrl);
+  aurora::pad::set_port_controller(port, aurora::input::source_for_gamepad(SDL_GetGamepadID(ctrl->m_controller)));
+  aurora::pad::save_profiles();
 }
 
 int32_t PADGetIndexForPort(const u32 port) {
@@ -450,171 +150,18 @@ int32_t PADGetIndexForPort(const u32 port) {
   return index;
 }
 
-void PADClearPort(const u32 port) {
-  aurora::gamepad::persist_controller_for_player(port, nullptr);
-  const auto* ctrl = aurora::gamepad::get_controller_for_player(port);
-  if (ctrl == nullptr) {
-    return;
-  }
-  SDL_SetGamepadPlayerIndex(ctrl->m_controller, -1);
-}
-
-const std::array<PADButtonMapping, PAD_BUTTON_COUNT>&
-aurora::pad::detail::default_buttons(const gamepad::GameController& controller) {
-  switch (SDL_GetGamepadType(controller.m_controller)) {
-  case SDL_GAMEPAD_TYPE_XBOX360:
-    return g_defaultButtonsXBox360;
-  case SDL_GAMEPAD_TYPE_XBOXONE:
-    return g_defaultButtonsXBoxOne;
-  case SDL_GAMEPAD_TYPE_STANDARD:
-    return g_defaultButtonsStandard;
-  case SDL_GAMEPAD_TYPE_PS3:
-    return g_defaultButtonsPS3;
-  case SDL_GAMEPAD_TYPE_PS4:
-    return g_defaultButtonsPS4;
-  case SDL_GAMEPAD_TYPE_PS5:
-    return g_defaultButtonsPS5;
-  case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
-    if (controller.m_pid == 0x2073) {
-      return g_defaultButtonsNSOGamecube;
-    }
-    return g_defaultButtonsProCon;
-  case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
-    return g_defaultButtonsJoyConRight;
-  case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
-    return g_defaultButtonsJoyConLeft;
-  case SDL_GAMEPAD_TYPE_GAMECUBE:
-    return g_defaultButtonsGamecube;
-  default:
-    return g_defaultButtonsStandard;
-  }
-}
-
-const std::array<PADAxisMapping, PAD_AXIS_COUNT>& aurora::pad::detail::default_axes() { return g_defaultAxes; }
-
-const PADKeyboardState& aurora::pad::detail::keyboard_state(uint32_t port) { return g_keyboardBindings[port]; }
-
-void __PADSetDefaultMapping(aurora::gamepad::GameController* controller) /*  NOLINT(*-reserved-identifier) */
-{
-  controller->m_buttonMapping = aurora::pad::detail::default_buttons(*controller);
-}
-
-void __PADLoadMapping(aurora::gamepad::GameController* controller) /*  NOLINT(*-reserved-identifier) */ {
-  int32_t playerIndex = SDL_GetGamepadPlayerIndex(controller->m_controller);
-  if (playerIndex < 0 || aurora::g_config.userPath == nullptr) {
-    return;
-  }
-
-  if (!controller->m_mappingLoaded) {
-    __PADSetDefaultMapping(controller);
-    controller->m_axisMapping = g_defaultAxes;
-  }
-
-  controller->m_mappingLoaded = true;
-
-  const auto path =
-      aurora::io::fs_path_from_string(aurora::g_config.userPath) /
-      fmt::format("{}_{:04X}_{:04X}.controller", PADGetName(playerIndex), controller->m_vid, controller->m_pid);
-  auto file = aurora::io::open_file(path, "rb");
-  if (!file) {
-    return;
-  }
-
-  uint32_t magic = 0;
-  if (!SDL_ReadU32LE(file.get(), &magic) || magic != SBIG('CTRL')) {
-    Log.warn("Invalid controller mapping magic!");
-    return;
-  }
-
-  uint32_t version = 0;
-  if (!SDL_ReadU32LE(file.get(), &version) || version < k_minMappingsFileVersion || version > k_mappingsFileVersion) {
-    Log.warn("Invalid controller mapping version! (Expected {0}..{1}, found {2})", k_minMappingsFileVersion,
-             k_mappingsFileVersion, version);
-    return;
-  }
-
-  uint8_t isGameCubeValue = 0;
-  Sint64 dataStart = 0;
-  if (!SDL_ReadU8(file.get(), &isGameCubeValue) || !seek_aligned(file.get(), dataStart)) {
-    Log.warn("Unable to read controller bindings header! Path: \"{}\"", aurora::io::fs_path_to_string(path));
-    return;
-  }
-  const bool isGameCube = isGameCubeValue != 0;
-  if (isGameCube) {
-    if (playerIndex >= PAD_CHANMAX) {
-      return;
-    }
-    constexpr uint32_t dzSecLen = sizeof(PADDeadZones);
-    constexpr uint32_t btnSecLen = sizeof(PADButtonMapping) * PAD_BUTTON_COUNT;
-    constexpr uint32_t axisSecLen = sizeof(PADAxisMapping) * PAD_AXIS_COUNT;
-    const Sint64 portOffset = dataStart + (dzSecLen + btnSecLen + axisSecLen) * playerIndex;
-    if (SDL_SeekIO(file.get(), portOffset, SDL_IO_SEEK_SET) != portOffset) {
-      Log.warn("Unable to seek in controller bindings! Path: \"{}\"", aurora::io::fs_path_to_string(path));
-      return;
-    }
-  }
-
-  auto deadZones = controller->m_deadZones;
-  auto buttonMapping = controller->m_buttonMapping;
-  auto axisMapping = controller->m_axisMapping;
-  auto rumbleIntensityLow = controller->m_rumbleIntensityLow;
-  auto rumbleIntensityHigh = controller->m_rumbleIntensityHigh;
-  auto forceDeviceRumble = controller->m_forceDeviceRumble;
-  bool ok = aurora::io::read_exact(file.get(), &deadZones, sizeof(deadZones)) &&
-            aurora::io::read_exact(file.get(), buttonMapping.data(), sizeof(buttonMapping)) &&
-            aurora::io::read_exact(file.get(), axisMapping.data(), sizeof(axisMapping));
-  if (!isGameCube) {
-    ok = ok && SDL_ReadU16LE(file.get(), &rumbleIntensityLow) && SDL_ReadU16LE(file.get(), &rumbleIntensityHigh);
-    if (version >= k_mappingsFileVersion) {
-      uint8_t forceDeviceRumbleValue = 0;
-      ok = ok && SDL_ReadU8(file.get(), &forceDeviceRumbleValue);
-      forceDeviceRumble = forceDeviceRumbleValue != 0;
-    }
-  }
-  if (!ok) {
-    Log.warn("Unable to read controller bindings! Path: \"{}\"", aurora::io::fs_path_to_string(path));
-    return;
-  }
-  controller->m_deadZones = deadZones;
-  controller->m_buttonMapping = buttonMapping;
-  controller->m_axisMapping = axisMapping;
-  controller->m_rumbleIntensityLow = rumbleIntensityLow;
-  controller->m_rumbleIntensityHigh = rumbleIntensityHigh;
-  controller->m_forceDeviceRumble = forceDeviceRumble;
-
-  bool axisCorrupt = false;
-  for (uint32_t i = 0; i < PAD_AXIS_COUNT; ++i) {
-    if (controller->m_axisMapping[i].padAxis != static_cast<PADAxis>(i)) {
-      axisCorrupt = true;
-      break;
-    }
-  }
-  if (axisCorrupt) {
-    Log.warn("__PADLoadMapping port={}: corrupt axis data in file, resetting axes to defaults", playerIndex);
-    controller->m_axisMapping = g_defaultAxes;
-  }
-
-  bool buttonCorrupt = false;
-  for (uint32_t i = 0; i < PAD_BUTTON_COUNT; ++i) {
-    if (controller->m_buttonMapping[i].padButton == 0) {
-      buttonCorrupt = true;
-      break;
-    }
-  }
-  if (buttonCorrupt) {
-    Log.warn("__PADLoadMapping port={}: corrupt button data in file, resetting buttons to defaults", playerIndex);
-    __PADSetDefaultMapping(controller);
-  }
+void PADClearPort(u32 port) {
+  aurora::pad::clear_port(port);
+  aurora::pad::save_profiles();
 }
 
 static void EnsureMappingLoaded(aurora::gamepad::GameController* controller) {
-  if (!controller->m_mappingLoaded) {
-    __PADLoadMapping(controller);
+  const auto source = aurora::input::source_for_gamepad(controller->m_index);
+  if (const auto* profile = aurora::pad::profile(aurora::pad::ProfileTarget::controller(source))) {
+    controller->m_rumbleIntensityLow = static_cast<u16>(profile->settings.rumbleIntensityLow * 65535.f);
+    controller->m_rumbleIntensityHigh = static_cast<u16>(profile->settings.rumbleIntensityHigh * 65535.f);
+    controller->m_forceDeviceRumble = profile->settings.forceDeviceRumble;
   }
-}
-
-void aurora::pad::detail::ensure_mapping_loaded(gamepad::GameController* controller) {
-  EnsureMappingLoaded(controller);
 }
 
 u32 PADRead(PADStatus* status) {
@@ -682,6 +229,10 @@ BOOL PADIsInputCaptured(const u32 port) {
 
 void PADControlMotor(const u32 chan, const u32 cmd) {
   const auto controller = aurora::gamepad::get_controller_for_player(chan);
+  if (controller != nullptr) {
+    EnsureMappingLoaded(controller);
+  }
+
   if (should_use_device_rumble(chan, controller)) {
     u16 low = 0;
     u16 high = 0;
@@ -875,362 +426,6 @@ const char* PADGetName(const u32 port) {
   return SDL_GetGamepadName(controller->m_controller);
 }
 
-void PADSetButtonMapping(const u32 port, const PADButtonMapping mapping) {
-  auto* controller = aurora::gamepad::get_controller_for_player(port);
-  if (controller == nullptr) {
-    return;
-  }
-
-  const auto iter = std::ranges::find_if(controller->m_buttonMapping,
-                                         [mapping](const auto& pair) { return mapping.padButton == pair.padButton; });
-  if (iter == controller->m_buttonMapping.end()) {
-    return;
-  }
-
-  *iter = mapping;
-}
-
-void PADSetAllButtonMappings(const u32 port, const PADButtonMapping buttons[PAD_BUTTON_COUNT]) {
-  for (uint32_t i = 0; i < PAD_BUTTON_COUNT; ++i) {
-    PADSetButtonMapping(port, buttons[i]);
-  }
-}
-
-PADButtonMapping* PADGetButtonMappings(const u32 port, u32* buttonCount) {
-  auto* controller = aurora::gamepad::get_controller_for_player(port);
-  if (controller == nullptr) {
-    *buttonCount = 0;
-    return nullptr;
-  }
-
-  EnsureMappingLoaded(controller);
-
-  *buttonCount = PAD_BUTTON_COUNT;
-  return controller->m_buttonMapping.data();
-}
-
-void PADSetAxisMapping(const u32 port, const PADAxisMapping mapping) {
-  auto* controller = aurora::gamepad::get_controller_for_player(port);
-  if (controller == nullptr) {
-    return;
-  }
-
-  const auto iter = std::ranges::find_if(controller->m_axisMapping,
-                                         [mapping](const auto& pair) { return mapping.padAxis == pair.padAxis; });
-  if (iter == controller->m_axisMapping.end()) {
-    return;
-  }
-
-  *iter = mapping;
-}
-
-void PADSetAllAxisMappings(const u32 port, const PADAxisMapping axes[PAD_AXIS_COUNT]) {
-  for (uint32_t i = 0; i < PAD_AXIS_COUNT; ++i) {
-    PADSetAxisMapping(port, axes[i]);
-  }
-}
-
-PADAxisMapping* PADGetAxisMappings(const u32 port, u32* axisCount) {
-  auto* controller = aurora::gamepad::get_controller_for_player(port);
-  if (controller == nullptr) {
-    *axisCount = 0;
-    return nullptr;
-  }
-
-  EnsureMappingLoaded(controller);
-  *axisCount = PAD_AXIS_COUNT;
-  return controller->m_axisMapping.data();
-}
-
-BOOL PADSetKeyButtonBinding(const u32 port, const PADKeyButtonBinding binding) {
-  if (port >= PAD_MAX_CONTROLLERS) {
-    return FALSE;
-  }
-
-  for (auto& state = g_keyboardBindings[port]; auto& [scancode, padButton] : state.m_buttonMapping) {
-    if (padButton == binding.padButton) {
-      scancode = binding.scancode;
-      return TRUE;
-    }
-  }
-
-  return FALSE;
-}
-
-BOOL PADSetKeyButtonBindings(const u32 port, PADKeyButtonBinding bindings[PAD_BUTTON_COUNT]) {
-  for (uint32_t i = 0; i < PAD_BUTTON_COUNT; ++i) {
-    if (!PADSetKeyButtonBinding(port, bindings[i])) {
-      return FALSE;
-    }
-  }
-  return TRUE;
-}
-
-PADKeyButtonBinding* PADGetKeyButtonBindings(const u32 port, u32* buttonCount) {
-  if (port >= PAD_MAX_CONTROLLERS || !g_keyboardBindings[port].m_mappingsSet) {
-    return nullptr;
-  }
-  auto& state = g_keyboardBindings[port];
-  *buttonCount = PAD_BUTTON_COUNT;
-  return state.m_buttonMapping.data();
-}
-
-BOOL PADSetKeyAxisBinding(const u32 port, const PADKeyAxisBinding binding) {
-  if (port >= PAD_MAX_CONTROLLERS) {
-    return FALSE;
-  }
-
-  for (auto& state = g_keyboardBindings[port]; auto& b : state.m_axisMapping) {
-    if (b.padAxis == binding.padAxis) {
-      b.scancode = binding.scancode;
-      return TRUE;
-    }
-  }
-
-  return FALSE;
-}
-BOOL PADSetKeyAxisBindings(const u32 port, PADKeyAxisBinding bindings[PAD_BUTTON_COUNT]) {
-  for (uint32_t i = 0; i < PAD_AXIS_COUNT; ++i) {
-    if (!PADSetKeyAxisBinding(port, bindings[i])) {
-      return FALSE;
-    }
-  }
-  return TRUE;
-}
-
-PADKeyAxisBinding* PADGetKeyAxisBindings(const u32 port, u32* axisCount) {
-  if (port >= PAD_MAX_CONTROLLERS || !g_keyboardBindings[port].m_mappingsSet) {
-    return nullptr;
-  }
-  auto& state = g_keyboardBindings[port];
-  *axisCount = PAD_AXIS_COUNT;
-  return state.m_axisMapping.data();
-}
-
-BOOL PADSetDefaultKeyBindings(const u32 port, const PADDefaultKeyBindings* bindings) {
-  if (g_initialized || port >= PAD_MAX_CONTROLLERS || bindings == nullptr) {
-    return FALSE;
-  }
-
-  auto defaults = g_defaultKeyboardBindings[port];
-  for (auto& button : defaults.m_buttonMapping) {
-    const auto* binding = std::ranges::find(bindings->buttons, button.padButton, &PADKeyButtonBinding::padButton);
-    if (binding == std::end(bindings->buttons)) {
-      return FALSE;
-    }
-    button = *binding;
-  }
-  for (auto& axis : defaults.m_axisMapping) {
-    const auto* binding = std::ranges::find(bindings->axes, axis.padAxis, &PADKeyAxisBinding::padAxis);
-    if (binding == std::end(bindings->axes)) {
-      return FALSE;
-    }
-    axis = *binding;
-  }
-  g_defaultKeyboardBindings[port] = std::move(defaults);
-  return TRUE;
-}
-
-void PADRestoreDefaultKeyBindings(const u32 port) {
-  if (!g_initialized || port >= PAD_MAX_CONTROLLERS) {
-    return;
-  }
-  auto& state = g_keyboardBindings[port];
-  const auto& defaults = g_defaultKeyboardBindings[port];
-  state.m_buttonMapping = defaults.m_buttonMapping;
-  state.m_axisMapping = defaults.m_axisMapping;
-}
-
-void PADSetKeyboardActive(const u32 port, const BOOL active) {
-  if (port >= PAD_MAX_CONTROLLERS) {
-    return;
-  }
-  g_keyboardBindings[port].m_mappingsSet = active != FALSE;
-}
-
-void PADClearKeyBindings(const u32 port) {
-  if (port >= PAD_MAX_CONTROLLERS) {
-    return;
-  }
-  g_keyboardBindings[port].m_buttonMapping = kUnboundKeys;
-  g_keyboardBindings[port].m_axisMapping = kUnboundKeyAxes;
-  g_keyboardBindings[port].m_mappingsSet = false;
-}
-
-constexpr uint32_t k_keyboardMagic = SBIG('KBND');
-constexpr int32_t k_keyboardVersion = 3;
-
-static void load_keyboard_bindings() {
-  if (aurora::g_config.userPath == nullptr) {
-    return;
-  }
-  const auto filePath = aurora::io::fs_path_from_string(aurora::g_config.userPath) / "keyboard_bindings.dat";
-  auto file = aurora::io::open_file(filePath, "rb");
-  if (!file) {
-    return;
-  }
-
-  uint32_t magic = 0;
-  if (!SDL_ReadU32LE(file.get(), &magic) || magic != k_keyboardMagic) {
-    Log.warn("keyboard_bindings.dat: invalid magic");
-    return;
-  }
-
-  uint32_t version = 0;
-  if (!SDL_ReadU32LE(file.get(), &version) || version != k_keyboardVersion) {
-    Log.warn("keyboard_bindings.dat: version mismatch (expected {}, got {})", k_keyboardVersion, version);
-    return;
-  }
-
-  Sint64 dataStart = 0;
-  if (!seek_aligned(file.get(), dataStart)) {
-    Log.warn("keyboard_bindings.dat: unable to seek to bindings");
-    return;
-  }
-
-  auto bindings = g_keyboardBindings;
-  bool ok = true;
-  for (uint32_t port = 0; port < bindings.size(); ++port) {
-    auto& [buttonMapping, axisMapping, mappingsSet] = bindings[port];
-    uint8_t mappingsSetValue = 0;
-    ok = ok && SDL_ReadU8(file.get(), &mappingsSetValue) &&
-         aurora::io::read_exact(file.get(), buttonMapping.data(), sizeof(buttonMapping)) &&
-         aurora::io::read_exact(file.get(), axisMapping.data(), sizeof(axisMapping));
-    if (!ok) {
-      Log.warn("keyboard_bindings.dat: truncated bindings for port {}", port);
-      return;
-    }
-    mappingsSet = mappingsSetValue != 0;
-
-    bool kbButtonCorrupt = false;
-    for (uint32_t i = 0; i < PAD_BUTTON_COUNT; ++i) {
-      if (buttonMapping[i].padButton != kUnboundKeys[i].padButton) {
-        kbButtonCorrupt = true;
-        break;
-      }
-    }
-    if (kbButtonCorrupt) {
-      Log.warn("keyboard_bindings.dat port={}: corrupt button identifiers, resetting to defaults", port);
-      buttonMapping = g_defaultKeyboardBindings[port].m_buttonMapping;
-    }
-
-    bool kbAxisCorrupt = false;
-    for (uint32_t i = 0; i < PAD_AXIS_COUNT; ++i) {
-      if (axisMapping[i].padAxis != kUnboundKeyAxes[i].padAxis) {
-        kbAxisCorrupt = true;
-        break;
-      }
-    }
-    if (kbAxisCorrupt) {
-      Log.warn("keyboard_bindings.dat port={}: corrupt axis identifiers, resetting to defaults", port);
-      axisMapping = g_defaultKeyboardBindings[port].m_axisMapping;
-    }
-
-    if (mappingsSet) {
-      const bool anyBound =
-          std::ranges::any_of(buttonMapping,
-                              [](const PADKeyButtonBinding& b) { return b.scancode != PAD_KEY_INVALID; }) ||
-          std::ranges::any_of(axisMapping, [](const PADKeyAxisBinding& b) { return b.scancode != PAD_KEY_INVALID; });
-      if (!anyBound) {
-        mappingsSet = false;
-      }
-    }
-  }
-  g_keyboardBindings = std::move(bindings);
-}
-
-static void save_keyboard_bindings() {
-  if (aurora::g_config.userPath == nullptr) {
-    return;
-  }
-  const auto filePath = aurora::io::fs_path_from_string(aurora::g_config.userPath) / "keyboard_bindings.dat";
-  const auto pathString = aurora::io::fs_path_to_string(filePath);
-  auto file = aurora::io::open_atomic_file(filePath);
-  if (!file) {
-    Log.warn("save_keyboard_bindings: failed to open {} for writing: {}", pathString, SDL_GetError());
-    return;
-  }
-
-  bool ok = SDL_WriteU32LE(file.get(), k_keyboardMagic) && SDL_WriteS32LE(file.get(), k_keyboardVersion);
-  Sint64 dataStart = 0;
-  ok = ok && seek_aligned(file.get(), dataStart);
-
-  for (const auto& [buttonMapping, axisMapping, mappingsSet] : g_keyboardBindings) {
-    ok = ok && SDL_WriteU8(file.get(), mappingsSet) &&
-         aurora::io::write_exact(file.get(), buttonMapping.data(), sizeof(buttonMapping)) &&
-         aurora::io::write_exact(file.get(), axisMapping.data(), sizeof(axisMapping));
-  }
-  if (!ok || !file.commit()) {
-    Log.warn("save_keyboard_bindings: failed to write {}: {}", pathString, SDL_GetError());
-  }
-}
-
-void PADSerializeMappings() {
-  if (aurora::g_config.userPath == nullptr) {
-    return;
-  }
-  const auto basePath = aurora::io::fs_path_from_string(aurora::g_config.userPath);
-
-  for (auto& controller : aurora::gamepad::g_GameControllers | std::views::values) {
-    EnsureMappingLoaded(&controller);
-    const auto filePath =
-        basePath / fmt::format("{}_{:04X}_{:04X}.controller", aurora::gamepad::controller_name(controller.m_index),
-                               controller.m_vid, controller.m_pid);
-    const auto filePathStr = aurora::io::fs_path_to_string(filePath);
-
-    auto file = aurora::io::open_atomic_file(filePath, aurora::io::AtomicFileMode::Preserve);
-    if (!file) {
-      Log.warn("Unable to open controller bindings! Path: \"{}\": {}", filePathStr, SDL_GetError());
-      continue;
-    }
-
-    // write header
-    constexpr uint32_t magic = SBIG('CTRL');
-    bool ok = SDL_SeekIO(file.get(), 0, SDL_IO_SEEK_SET) == 0 && SDL_WriteU32LE(file.get(), magic) &&
-              SDL_WriteU32LE(file.get(), k_mappingsFileVersion) && SDL_WriteU8(file.get(), controller.m_isGameCube);
-
-    // start writing data at next 32-byte aligned offset
-    Sint64 dataStart = 0;
-    ok = ok && seek_aligned(file.get(), dataStart);
-    if (controller.m_isGameCube) {
-      // GameCube adapters expose 4 input devices with the same vid/pid, we store all 4 in the same file
-      const auto port = aurora::gamepad::player_index(controller.m_index);
-      if (port < 0 || port >= PAD_CHANMAX) {
-        Log.warn("Unable to write controller bindings for invalid port {}! Path: \"{}\"", port, filePathStr);
-        continue;
-      }
-      constexpr int64_t dzSecLen = sizeof(PADDeadZones);
-      constexpr int64_t btnSecLen = sizeof(PADButtonMapping) * PAD_BUTTON_COUNT;
-      constexpr int64_t axisSecLen = sizeof(PADAxisMapping) * PAD_AXIS_COUNT;
-      // skip to offset in file for this particular port
-      const Sint64 portOffset = dataStart + (dzSecLen + btnSecLen + axisSecLen) * port;
-      ok = ok && SDL_SeekIO(file.get(), portOffset, SDL_IO_SEEK_SET) == portOffset;
-    }
-    ok = ok && aurora::io::write_exact(file.get(), &controller.m_deadZones, sizeof(controller.m_deadZones)) &&
-         aurora::io::write_exact(file.get(), controller.m_buttonMapping.data(), sizeof(controller.m_buttonMapping)) &&
-         aurora::io::write_exact(file.get(), controller.m_axisMapping.data(), sizeof(controller.m_axisMapping));
-
-    if (!controller.m_isGameCube) {
-      ok = ok && SDL_WriteU16LE(file.get(), controller.m_rumbleIntensityLow) &&
-           SDL_WriteU16LE(file.get(), controller.m_rumbleIntensityHigh) &&
-           SDL_WriteU8(file.get(), controller.m_forceDeviceRumble);
-    }
-    if (!ok || !file.commit()) {
-      Log.warn("Unable to write controller bindings! Path: \"{}\": {}", filePathStr, SDL_GetError());
-    }
-  }
-
-  save_keyboard_bindings();
-}
-
-PADDeadZones* PADGetDeadZones(const u32 port) {
-  auto* controller = aurora::gamepad::get_controller_for_player(port);
-  if (controller == nullptr) {
-    return nullptr;
-  }
-  return &controller->m_deadZones;
-}
-
 static constexpr std::array<std::pair<PADButton, std::string_view>, PAD_BUTTON_COUNT> skButtonNames = {{
     {PAD_BUTTON_LEFT, "Left"sv},
     {PAD_BUTTON_RIGHT, "Right"sv},
@@ -1352,15 +547,6 @@ PADSignedNativeAxis PADGetNativeAxisPulled(const u32 port) {
   return {-1, AXIS_SIGN_POSITIVE};
 }
 
-void PADRestoreDefaultMapping(const u32 port) {
-  auto* controller = aurora::gamepad::get_controller_for_player(port);
-  if (controller == nullptr) {
-    return;
-  }
-  __PADSetDefaultMapping(controller);
-  controller->m_axisMapping = g_defaultAxes;
-}
-
 void PADBlockInput(const bool block) { aurora::pad::detail::set_blocked(block); }
 
 SDL_Gamepad* PADGetSDLGamepadForIndex(const u32 index) {
@@ -1370,54 +556,6 @@ SDL_Gamepad* PADGetSDLGamepadForIndex(const u32 index) {
   }
 
   return ctrl->m_controller;
-}
-
-void PADSetDefaultMapping(const PADDefaultMapping* mapping, const PADControllerType type) {
-  if (g_initialized) {
-    Log.fatal("PADSetDefaultMapping called after PADInit()!");
-  }
-
-  switch (type) {
-  case PAD_TYPE_STANDARD:
-    g_defaultButtonsStandard = toStdArray(mapping->buttons);
-    break;
-  case PAD_TYPE_XBOX360:
-    g_defaultButtonsXBox360 = toStdArray(mapping->buttons);
-    break;
-  case PAD_TYPE_XBOXONE:
-    g_defaultButtonsXBoxOne = toStdArray(mapping->buttons);
-    break;
-  case PAD_TYPE_PS3:
-    g_defaultButtonsPS3 = toStdArray(mapping->buttons);
-    break;
-  case PAD_TYPE_PS4:
-    g_defaultButtonsPS4 = toStdArray(mapping->buttons);
-    break;
-  case PAD_TYPE_PS5:
-    g_defaultButtonsPS5 = toStdArray(mapping->buttons);
-    break;
-  case PAD_TYPE_SWITCH_PROCON:
-    g_defaultButtonsProCon = toStdArray(mapping->buttons);
-    break;
-  case PAD_TYPE_JOYCON_LEFT:
-    g_defaultButtonsJoyConLeft = toStdArray(mapping->buttons);
-    break;
-  case PAD_TYPE_JOYCON_RIGHT:
-    g_defaultButtonsJoyConRight = toStdArray(mapping->buttons);
-    break;
-  case PAD_TYPE_JOYCON_PAIR:
-    g_defaultButtonsJoyPair = toStdArray(mapping->buttons);
-    break;
-  case PAD_TYPE_GAMECUBE:
-    g_defaultButtonsGamecube = toStdArray(mapping->buttons);
-    break;
-  case PAD_TYPE_NSO_GAMECUBE:
-    g_defaultButtonsNSOGamecube = toStdArray(mapping->buttons);
-    break;
-  default:
-    break;
-  }
-  g_defaultAxes = toStdArray(mapping->axes);
 }
 
 BOOL PADSetColor(const u32 port, const u8 red, const u8 green, const u8 blue) {
@@ -1445,38 +583,33 @@ BOOL PADGetColor(const u32 port, u8* red, u8* green, u8* blue) {
   return TRUE;
 }
 
-BOOL PADSetSensorEnabled(const u32 port, const PADSensorType sensor, const BOOL enabled) {
-  const auto* ctrl = aurora::gamepad::get_controller_for_player(port);
-
-  if (controller_has_sensor(ctrl, sensor)) {
-    return SDL_SetGamepadSensorEnabled(ctrl->m_controller, static_cast<SDL_SensorType>(sensor), enabled ? true : false)
-               ? TRUE
-               : FALSE;
-  }
-
-  return should_use_device_sensor(port, ctrl, sensor) ? TRUE : FALSE;
+BOOL PADSetSensorEnabled(u32 port, PADSensorType sensor, BOOL enabled) {
+  const auto kind = sensor_kind(sensor);
+  return port < 4 && kind && aurora::input::set_sensor_enabled(sensor_source(port, *kind), *kind, enabled != FALSE);
 }
 
-BOOL PADHasSensor(const u32 port, const PADSensorType sensor) {
-  const auto* ctrl = aurora::gamepad::get_controller_for_player(port);
-  if (controller_has_sensor(ctrl, sensor)) {
-    return TRUE;
-  }
-
-  return should_use_device_sensor(port, ctrl, sensor) ? TRUE : FALSE;
+BOOL PADHasSensor(u32 port, PADSensorType sensor) {
+  const auto kind = sensor_kind(sensor);
+  return port < 4 && kind && aurora::input::has_sensor(sensor_source(port, *kind), *kind);
 }
 
-BOOL PADGetSensorData(const u32 port, const PADSensorType sensor, f32* data, const int nValues) {
-  const auto* ctrl = aurora::gamepad::get_controller_for_player(port);
-  if (controller_has_sensor(ctrl, sensor)) {
-    return SDL_GetGamepadSensorData(ctrl->m_controller, static_cast<SDL_SensorType>(sensor), data, nValues);
+BOOL PADGetSensorData(u32 port, PADSensorType sensor, f32* data, int count) {
+  if (port >= 4 || data == nullptr || count <= 0 || PADIsInputCaptured(port)) {
+    return FALSE;
   }
 
-  if (should_use_device_sensor(port, ctrl, sensor)) {
-    return get_device_sensor_data(sensor, data, nValues) ? TRUE : FALSE;
+  const auto kind = sensor_kind(sensor);
+  if (!kind) {
+    return FALSE;
   }
 
-  return FALSE;
+  const auto sample = aurora::input::raw_sensor(sensor_source(port, *kind), *kind);
+  if (!sample) {
+    return FALSE;
+  }
+
+  std::copy_n(sample->values.begin(), std::min(count, 3), data);
+  return TRUE;
 }
 
 BOOL PADHasLED(const u32 port) {
@@ -1496,15 +629,21 @@ BOOL PADSetRumbleIntensity(const u32 port, const u16 low, const u16 high) {
       return FALSE;
     }
     EnsureMappingLoaded(ctrl);
-    ctrl->m_rumbleIntensityLow = low;
-    ctrl->m_rumbleIntensityHigh = high;
+    auto target = aurora::pad::ProfileTarget::controller(aurora::input::source_for_gamepad(ctrl->m_index));
+    auto settings = aurora::pad::profile(target)->settings;
+    settings.rumbleIntensityLow = static_cast<float>(low) / 65535.f;
+    settings.rumbleIntensityHigh = static_cast<float>(high) / 65535.f;
+    aurora::pad::set_settings(target, settings);
+    aurora::pad::save_profiles();
     return TRUE;
   }
 
   if (!should_use_device_rumble(port, nullptr)) {
     return FALSE;
   }
+
   aurora::gamepad::set_device_rumble_intensity(low, high);
+  aurora::pad::save_profiles();
   return TRUE;
 }
 
@@ -1565,7 +704,11 @@ BOOL PADSetForceDeviceRumble(const u32 port, const BOOL force) {
   }
 
   EnsureMappingLoaded(ctrl);
-  ctrl->m_forceDeviceRumble = force != FALSE;
+  auto target = aurora::pad::ProfileTarget::controller(aurora::input::source_for_gamepad(ctrl->m_index));
+  auto settings = aurora::pad::profile(target)->settings;
+  settings.forceDeviceRumble = force != FALSE;
+  aurora::pad::set_settings(target, settings);
+  aurora::pad::save_profiles();
   return TRUE;
 }
 

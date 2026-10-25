@@ -28,12 +28,17 @@ public:
   [[nodiscard]] bool button(SDL_GamepadButton button) const { return valid(button) && m_buttons.test(button); }
   [[nodiscard]] float axis(SDL_GamepadAxis axis) const { return valid(axis) ? m_axes[axis] : 0.f; }
 
+  [[nodiscard]] std::optional<SensorSample> sensor(SensorKind kind) const {
+    return m_sensors[static_cast<size_t>(kind)];
+  }
+
   void set_key(SDL_Scancode scancode, bool pressed);
   void set_mouse_button(uint8_t button, bool pressed);
   void set_button(SDL_GamepadButton button, bool pressed);
   void set_axis(SDL_GamepadAxis axis, float value);
 
 private:
+  std::array<std::optional<SensorSample>, 6> m_sensors{};
   std::bitset<SDL_SCANCODE_COUNT> m_keys;
   uint32_t m_mouseButtons = 0;
   std::bitset<SDL_GAMEPAD_BUTTON_COUNT> m_buttons;

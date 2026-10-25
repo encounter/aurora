@@ -108,42 +108,6 @@ int orientation_quarter_turns(const SDL_DisplayOrientation orientation) noexcept
   }
 }
 
-void rotate_sensor_to_display(float* data, const int n_values) noexcept {
-  if (n_values < 2) {
-    return;
-  }
-
-  const SDL_DisplayID display = SDL_GetPrimaryDisplay();
-  if (display == 0) {
-    return;
-  }
-
-  const int natural = orientation_quarter_turns(SDL_GetNaturalDisplayOrientation(display));
-  const int current = orientation_quarter_turns(SDL_GetCurrentDisplayOrientation(display));
-  if (natural < 0 || current < 0) {
-    return;
-  }
-
-  const float x = data[0];
-  const float y = data[1];
-  switch ((current - natural + 4) % 4) {
-  case 1:
-    data[0] = -y;
-    data[1] = x;
-    break;
-  case 2:
-    data[0] = -x;
-    data[1] = -y;
-    break;
-  case 3:
-    data[0] = y;
-    data[1] = -x;
-    break;
-  default:
-    break;
-  }
-}
-
 bool read_sensor_data(const SDL_SensorType type, SDL_Sensor*& cached_sensor, float* data, const int n_values) noexcept {
   if (data == nullptr || n_values <= 0) {
     return false;
@@ -158,7 +122,7 @@ bool read_sensor_data(const SDL_SensorType type, SDL_Sensor*& cached_sensor, flo
   if (!SDL_GetSensorData(sensor, data, n_values)) {
     return false;
   }
-  rotate_sensor_to_display(data, n_values);
+  rotate_sensor(data, n_values);
   return true;
 }
 
@@ -222,6 +186,54 @@ bool accel_available() noexcept { return open_sensor(SDL_SENSOR_ACCEL, g_accel) 
 
 bool accel(float* data, const int n_values) noexcept {
   return read_sensor_data(SDL_SENSOR_ACCEL, g_accel, data, n_values);
+}
+
+SDL_Sensor* sensor(SDL_SensorType type) noexcept {
+  if (type == SDL_SENSOR_ACCEL) {
+    return open_sensor(type, g_accel);
+  }
+
+  if (type == SDL_SENSOR_GYRO) {
+    return open_sensor(type, g_gyro);
+  }
+
+  return nullptr;
+}
+
+void rotate_sensor(float* data, int count) noexcept {
+  if (count < 2) {
+    return;
+  }
+
+  const SDL_DisplayID display = SDL_GetPrimaryDisplay();
+  if (display == 0) {
+    return;
+  }
+
+  const int natural = orientation_quarter_turns(SDL_GetNaturalDisplayOrientation(display));
+  const int current = orientation_quarter_turns(SDL_GetCurrentDisplayOrientation(display));
+  if (natural < 0 || current < 0) {
+    return;
+  }
+
+  const float x = data[0];
+  const float y = data[1];
+  switch ((current - natural + 4) % 4) {
+  case 1:
+    data[0] = -y;
+    data[1] = x;
+    break;
+  case 2:
+    data[0] = -x;
+    data[1] = -y;
+    break;
+  case 3:
+    data[0] = y;
+    data[1] = -x;
+    break;
+  default:
+    break;
+  }
 }
 
 void shutdown() noexcept {

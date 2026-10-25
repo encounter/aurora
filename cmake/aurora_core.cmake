@@ -5,6 +5,7 @@ add_library(aurora_core STATIC
         lib/gamepad.cpp
         lib/gamepad.hpp
         lib/input/binding.cpp
+        lib/input/names.cpp
         lib/input/capture.cpp
         lib/input/router.cpp
         lib/input/router.hpp
@@ -46,6 +47,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL Windows)
     target_link_libraries(aurora_core PRIVATE wbemuuid.lib comsuppw.lib ntdll.lib DXGI.lib)
 elseif (APPLE)
     target_sources(aurora_core PRIVATE lib/system_info_mac.mm)
+    target_link_libraries(aurora_core PRIVATE "-framework Foundation")
 endif ()
 
 if (IOS)

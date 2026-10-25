@@ -329,3 +329,15 @@ if (NOT TARGET Tracy::TracyClient)
     message(FATAL_ERROR "Failed to make TracyClient available")
   endif ()
 endif ()
+
+if (NOT TARGET nlohmann_json::nlohmann_json)
+  aurora_find_package_global(nlohmann_json 3.11 CONFIG QUIET)
+  if (NOT TARGET nlohmann_json::nlohmann_json)
+    FetchContent_Declare(nlohmann_json
+      URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+      DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+      EXCLUDE_FROM_ALL
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+  endif ()
+endif ()

@@ -94,7 +94,11 @@ struct Delivery {
 };
 
 InputEvent make_event(const InputSource& source, InputEvent::Payload payload) {
-  return {.source = source, .timestampNs = SDL_GetTicksNS(), .payload = std::move(payload)};
+  return {
+      .source = source,
+      .timestampNs = SDL_GetTicksNS(),
+      .payload = std::move(payload),
+  };
 }
 
 struct Router {
@@ -112,8 +116,10 @@ struct Router {
   SourceId keyboard = kInvalidSourceId;
   SourceId mouse = kInvalidSourceId;
   SourceId touch = kInvalidSourceId;
+  SourceId device = kInvalidSourceId;
 
   explicit Router(LayerId firstLayer = 1, SourceId firstSource = 1) : nextLayer(firstLayer), nextSource(firstSource) {
+    device = add_source(InputSource::Kind::Device, InputSource::Origin::Physical, "Device Sensors").info.id;
     keyboard = add_source(InputSource::Kind::Keyboard, InputSource::Origin::Physical, "Keyboard").info.id;
     mouse = add_source(InputSource::Kind::Mouse, InputSource::Origin::Physical, "Mouse").info.id;
     touch = add_source(InputSource::Kind::Touch, InputSource::Origin::Physical, "Touch").info.id;
@@ -602,6 +608,8 @@ InputSource keyboard_source() { return g_router.find_source(g_router.keyboard)->
 
 InputSource mouse_source() { return g_router.find_source(g_router.mouse)->info; }
 
+InputSource device_source() { return g_router.find_source(g_router.device)->info; }
+
 InputSource touch_source() { return g_router.find_source(g_router.touch)->info; }
 
 std::vector<InputSource> sources() {
@@ -665,6 +673,11 @@ bool raw_button_pressed(SourceId id, SDL_GamepadButton button) {
 float raw_axis(SourceId id, SDL_GamepadAxis axis) {
   const Source* source = g_router.find_source(id);
   return source != nullptr ? source->raw.axis(axis) : 0.f;
+}
+
+std::optional<SensorSample> raw_sensor(SourceId id, SensorKind kind) {
+  const Source* source = g_router.find_source(id);
+  return source != nullptr && source->live && static_cast<size_t>(kind) < 6 ? source->raw.sensor(kind) : std::nullopt;
 }
 
 namespace detail {

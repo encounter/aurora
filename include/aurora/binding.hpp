@@ -24,10 +24,12 @@ enum class ControlKind {
 struct ControlDescriptor {
   std::string name; // e.g. "aurora.pad.a" or "dusklight.open_map".
   ControlKind kind = ControlKind::Button;
+  std::string conflictGroup; // Empty uses the control namespace.
 };
 
 // Registering an existing name with the same kind returns its ID.
 [[nodiscard]] ControlId register_control(const ControlDescriptor& desc);
+[[nodiscard]] uint64_t control_generation();
 [[nodiscard]] ControlId find_control(std::string_view name);
 [[nodiscard]] const ControlDescriptor* describe_control(ControlId control);
 
@@ -132,6 +134,8 @@ public:
 
   // Producers set logical values directly, bypassing bindings, e.g. touch controls.
   [[nodiscard]] ProducerId add_producer();
+  [[nodiscard]] bool has_active_producers() const;
+  std::vector<ControlChange> cancel_producers();
   std::vector<ControlChange> set_value(ProducerId producer, ControlId control, float value);
   std::vector<ControlChange> clear_producer(ProducerId producer);
   std::vector<ControlChange> remove_producer(ProducerId producer); // Reports Reason::Cancelled.
@@ -140,6 +144,11 @@ private:
   struct Impl;
   std::unique_ptr<Impl> m_impl;
 };
+
+[[nodiscard]] std::string_view button_label(SDL_Gamepad* gamepad, SDL_GamepadButton button);
+[[nodiscard]] std::string_view axis_label(SDL_Gamepad* gamepad, SDL_GamepadAxis axis);
+[[nodiscard]] std::string input_label(const PhysicalInput& input, SDL_Gamepad* gamepad = nullptr);
+[[nodiscard]] bool same_input(const PhysicalInput& a, const PhysicalInput& b);
 
 using CaptureCallback = std::function<void(const PhysicalInput& input)>;
 

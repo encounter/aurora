@@ -3,5 +3,5 @@ add_library(aurora::si ALIAS aurora_si)
 set_target_properties(aurora_si PROPERTIES FOLDER "aurora")
 
 target_include_directories(aurora_si PUBLIC include)
-target_link_libraries(aurora_si PUBLIC aurora::core)
+target_link_libraries(aurora_si PUBLIC aurora::core aurora::pad)
 target_link_libraries(aurora_si PRIVATE absl::flat_hash_map)

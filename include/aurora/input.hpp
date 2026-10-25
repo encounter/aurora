@@ -7,6 +7,7 @@
 #include <SDL3/SDL_rect.h>
 #include <SDL3/SDL_scancode.h>
 
+#include <array>
 #include <concepts>
 #include <cstdint>
 #include <optional>
@@ -83,6 +84,7 @@ struct InputSource {
     Mouse,
     Controller,
     Touch,
+    Device,
   };
 
   enum class Origin {
@@ -97,7 +99,27 @@ struct InputSource {
   bool operator==(const InputSource&) const = default;
 };
 
+enum class SensorKind : uint8_t {
+  Accel,
+  Gyro,
+  AccelLeft,
+  GyroLeft,
+  AccelRight,
+  GyroRight,
+};
+
+struct SensorSample {
+  std::array<float, 3> values{};
+  uint64_t sensorTimestampNs = 0;
+};
+
 struct InputEvent {
+  struct SensorChanged {
+    SensorKind sensor = SensorKind::Accel;
+    std::array<float, 3> values{};
+    uint64_t sensorTimestampNs = 0;
+  };
+
   struct KeyChanged {
     SDL_Scancode scancode = SDL_SCANCODE_UNKNOWN; // Used for bindings
     SDL_Keycode keycode = SDLK_UNKNOWN;           // Layout-dependent, e.g. for UI shortcuts
@@ -165,7 +187,7 @@ struct InputEvent {
   };
 
   using Payload = Enum<KeyChanged, ButtonChanged, AxisChanged, PointerChanged, Scroll, TextInput, TextEditing,
-                       Cancelled, SourceChanged>;
+                       Cancelled, SourceChanged, SensorChanged>;
 
   InputSource source;
   uint64_t timestampNs = 0;
@@ -230,6 +252,10 @@ void reconcile();
 [[nodiscard]] InputSource keyboard_source();
 [[nodiscard]] InputSource mouse_source();
 [[nodiscard]] InputSource touch_source();
+[[nodiscard]] InputSource device_source();
+[[nodiscard]] bool has_sensor(SourceId source, SensorKind sensor);
+bool set_sensor_enabled(SourceId source, SensorKind sensor, bool enabled);
+[[nodiscard]] std::optional<SensorSample> raw_sensor(SourceId source, SensorKind sensor);
 [[nodiscard]] std::vector<InputSource> sources();
 [[nodiscard]] std::optional<InputSource> find_source(SourceId source);
 // The controller's name, or the name given to create_source. Kept after disconnect.
