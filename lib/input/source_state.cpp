@@ -18,6 +18,11 @@ void SourceState::apply(const InputEvent& event) {
           set_mouse_button(pointer.button, pointer.phase == Phase::Down);
         }
       },
+      [&](const InputEvent::SensorChanged& sensor) {
+        if (static_cast<size_t>(sensor.sensor) < m_sensors.size()) {
+          m_sensors[static_cast<size_t>(sensor.sensor)] = SensorSample{sensor.values, sensor.sensorTimestampNs};
+        }
+      },
       [&](const InputEvent::Cancelled&) { *this = {}; }, [](const auto&) {});
 }
 

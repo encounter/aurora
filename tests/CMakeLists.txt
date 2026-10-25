@@ -32,6 +32,7 @@ add_executable(input_tests
   input_binding_test.cpp
   input_router_test.cpp
   ../lib/input/binding.cpp
+  ../lib/input/names.cpp
   ../lib/input/capture.cpp
   ../lib/input/router.cpp
   ../lib/input/source_state.cpp
@@ -294,3 +295,30 @@ target_include_directories(os_alloc_tests PRIVATE
 target_compile_definitions(os_alloc_tests PRIVATE AURORA TARGET_PC=1)
 target_link_libraries(os_alloc_tests PRIVATE gtest gtest_main fmt::fmt)
 gtest_discover_tests(os_alloc_tests)
+
+add_executable(input_profile_tests input_profiles_test.cpp)
+target_include_directories(input_profile_tests PRIVATE ../include ../lib)
+target_link_libraries(input_profile_tests PRIVATE aurora::pad aurora::si gtest gtest_main absl::flat_hash_map)
+aurora_copy_runtime_dlls(input_profile_tests)
+gtest_discover_tests(input_profile_tests)
+
+add_executable(wpad_tests wpad_test.cpp wpad_header_test.c)
+target_include_directories(wpad_tests PRIVATE ../include ../lib)
+target_link_libraries(wpad_tests PRIVATE aurora::kpad gtest gtest_main absl::flat_hash_map)
+aurora_copy_runtime_dlls(wpad_tests)
+gtest_discover_tests(wpad_tests)
+
+add_executable(wpad_pad_tests wpad_pad_test.cpp)
+target_include_directories(wpad_pad_tests PRIVATE ../include ../lib)
+target_link_libraries(wpad_pad_tests PRIVATE aurora::kpad gtest gtest_main absl::flat_hash_map)
+aurora_copy_runtime_dlls(wpad_pad_tests)
+gtest_discover_tests(wpad_pad_tests)
+
+if (AURORA_ENABLE_GX)
+  foreach (input_test_target input_profile_tests wpad_tests wpad_pad_tests)
+    target_link_libraries(${input_test_target} PRIVATE aurora::gx aurora::vi)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      target_link_libraries(${input_test_target} PRIVATE $<LINK_GROUP:RESCAN,aurora::gx,aurora::vi,aurora::core,PNG::PNG>)
+    endif ()
+  endforeach ()
+endif ()

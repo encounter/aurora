@@ -16,22 +16,11 @@ struct GameController {
   bool m_isGameCube = false;
   Sint32 m_index = -1;
   bool m_hasRumble = false;
-  PADDeadZones m_deadZones{
-      .emulateTriggers = true,
-      .useDeadzones = true,
-      .stickDeadZone = 8000,
-      .substickDeadZone = 8000,
-      .leftTriggerActivationZone = 31150,
-      .rightTriggerActivationZone = 31150,
-  };
   uint16_t m_vid = 0;
   uint16_t m_pid = 0;
-  std::array<PADButtonMapping, PAD_BUTTON_COUNT> m_buttonMapping{};
-  std::array<PADAxisMapping, PAD_AXIS_COUNT> m_axisMapping{};
   uint16_t m_rumbleIntensityLow = 32767;
   uint16_t m_rumbleIntensityHigh = 32767;
   bool m_forceDeviceRumble = false;
-  bool m_mappingLoaded = false;
   constexpr bool operator==(const GameController& other) const {
     return m_controller == other.m_controller && m_index == other.m_index;
   }
@@ -57,7 +46,7 @@ void get_device_rumble_intensity(uint16_t* low_freq_intensity, uint16_t* high_fr
 void set_device_rumble_intensity(uint16_t low_freq_intensity, uint16_t high_freq_intensity) noexcept;
 uint32_t controller_count() noexcept;
 void initialize() noexcept;
-void persist_controller_for_player(uint32_t player, const GameController* controller) noexcept;
+extern void (*resolve_ports)();
 extern absl::flat_hash_map<Uint32, GameController> g_GameControllers;
 
 void set_mouse_scroll(float scrollX, float scrollY) noexcept;

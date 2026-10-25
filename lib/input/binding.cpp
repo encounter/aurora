@@ -104,6 +104,8 @@ ControlId register_control(const ControlDescriptor& desc) {
   return id;
 }
 
+uint64_t control_generation() { return registry().controls.size(); }
+
 ControlId find_control(std::string_view name) {
   const auto& reg = registry();
   const auto it = reg.byName.find(std::string{name});
@@ -319,6 +321,19 @@ std::vector<ControlChange> State::set_bindings(std::shared_ptr<const BindingSet>
 std::vector<ControlChange> State::reset() { return m_impl->cancel_all(); }
 
 const std::shared_ptr<const BindingSet>& State::bindings() const { return m_impl->set; }
+
+bool State::has_active_producers() const {
+  return std::ranges::any_of(m_impl->producers, [](const auto& producer) { return !producer.second.empty(); });
+}
+
+std::vector<ControlChange> State::cancel_producers() {
+  std::vector<ControlChange> changes;
+  for (const auto id : m_impl->producers | std::views::keys) {
+    auto cancelled = m_impl->clear_producer(id, false);
+    changes.insert(changes.end(), cancelled.begin(), cancelled.end());
+  }
+  return changes;
+}
 
 ProducerId State::add_producer() {
   const ProducerId id = m_impl->nextProducer++;

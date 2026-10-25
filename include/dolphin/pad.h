@@ -139,48 +139,6 @@ typedef u16 PADButton;
 typedef u32 PADExtButton;
 typedef u16 PADAxis;
 
-typedef struct PADKeyButtonBinding {
-  s32 scancode;
-  PADButton padButton;
-} PADKeyButtonBinding;
-
-typedef struct PADKeyAxisBinding {
-  s32 scancode;
-  PADAxis padAxis;
-  s16 influence; // normalized percentage between 0 and 1
-} PADKeyAxisBinding;
-
-typedef struct PADDefaultKeyBindings {
-  PADKeyButtonBinding buttons[PAD_BUTTON_COUNT];
-  PADKeyAxisBinding axes[PAD_AXIS_COUNT];
-} PADDefaultKeyBindings;
-
-/* New API to facilitate controller interactions */
-typedef struct PADDeadZones {
-  bool emulateTriggers;
-  bool useDeadzones;
-  u16 stickDeadZone;
-  u16 substickDeadZone;
-  u16 leftTriggerActivationZone;
-  u16 rightTriggerActivationZone;
-} PADDeadZones;
-
-typedef struct PADButtonMapping {
-  u32 nativeButton;
-  PADButton padButton;
-} PADButtonMapping;
-
-typedef struct PADAxisMapping {
-  PADSignedNativeAxis nativeAxis;
-  s32 nativeButton;
-  PADAxis padAxis;
-} PADAxisMapping;
-
-typedef struct PADDefaultMapping {
-  PADButtonMapping buttons[PAD_BUTTON_COUNT];
-  PADAxisMapping axes[PAD_AXIS_COUNT];
-} PADDefaultMapping;
-
 /* Returns the total number of controllers */
 u32 PADCount();
 /* Returns the controller name for the given index into the controller map */
@@ -190,26 +148,6 @@ s32 PADGetIndexForPort(u32 port);
 void PADGetVidPid(u32 port, u32* vid, u32* pid);
 void PADClearPort(u32 port);
 const char* PADGetName(u32 port);
-void PADSetButtonMapping(u32 port, PADButtonMapping mapping);
-void PADSetAllButtonMappings(u32 port, PADButtonMapping buttons[PAD_BUTTON_COUNT]);
-PADButtonMapping* PADGetButtonMappings(u32 port, u32* buttonCount);
-void PADSetAxisMapping(u32 port, PADAxisMapping mapping);
-void PADSetAllAxisMappings(u32 port, PADAxisMapping axes[PAD_AXIS_COUNT]);
-PADAxisMapping* PADGetAxisMappings(u32 port, u32* axisCount);
-void PADSerializeMappings();
-
-BOOL PADSetKeyButtonBinding(u32 port, PADKeyButtonBinding binding);
-BOOL PADSetKeyButtonBindings(u32 port, PADKeyButtonBinding bindings[PAD_BUTTON_COUNT]);
-PADKeyButtonBinding* PADGetKeyButtonBindings(u32 port, u32* buttonCount);
-BOOL PADSetKeyAxisBinding(u32 port, PADKeyAxisBinding binding);
-BOOL PADSetKeyAxisBindings(u32 port, PADKeyAxisBinding bindings[PAD_BUTTON_COUNT]);
-PADKeyAxisBinding* PADGetKeyAxisBindings(u32 port, u32* axisCount);
-BOOL PADSetDefaultKeyBindings(u32 port, const PADDefaultKeyBindings* bindings);
-void PADRestoreDefaultKeyBindings(u32 port);
-void PADClearKeyBindings(u32 port);
-void PADSetKeyboardActive(u32 port, BOOL active);
-
-PADDeadZones* PADGetDeadZones(u32 port);
 const char* PADGetButtonName(PADButton);
 const char* PADGetNativeButtonName(u32 button);
 const char* PADGetAxisName(PADAxis);
@@ -226,7 +164,6 @@ struct SDL_Gamepad* PADGetSDLGamepadForIndex(u32 index);
 s32 PADGetNativeButtonPressed(u32 port);
 /* Returns the first native axis which is currently pulled halfway or more */
 PADSignedNativeAxis PADGetNativeAxisPulled(u32 port);
-void PADRestoreDefaultMapping(u32 port);
 void PADBlockInput(bool block);
 
 void PADSetVirtualStatus(u32 port, const PADStatus* status);
@@ -237,12 +174,6 @@ void PADClearAllVirtualStatus();
 BOOL PADConsumeCancellation(u32 port);
 /* Returns TRUE while something above gameplay, such as a menu, captures any input the port reads. */
 BOOL PADIsInputCaptured(u32 port);
-
-/**
- * Set the default controller mapping used.
- *
- * Must be called before PADInit.
- */
 
 typedef enum {
   PAD_TYPE_UNKNOWN = 0,
@@ -259,8 +190,6 @@ typedef enum {
   PAD_TYPE_GAMECUBE,
   PAD_TYPE_NSO_GAMECUBE,
 } PADControllerType;
-
-void PADSetDefaultMapping(const PADDefaultMapping* mapping, PADControllerType type);
 
 BOOL PADSetColor(u32 port, u8 red, u8 green, u8 blue);
 BOOL PADGetColor(u32 port, u8* red, u8* green, u8* blue);

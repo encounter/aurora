@@ -619,4 +619,32 @@ TEST_F(RouterTest, FocusLossCancelsKeyboard) {
   EXPECT_EQ(game.count<InputEvent::KeyChanged>(), 1u);
 }
 
+TEST_F(RouterTest, SensorsFollowCaptureAndKeepHardwareTimestamps) {
+  Recorder ui, game;
+  ui.attach(kRmlUiLayerPriority);
+  game.attach(kGameLayerPriority);
+  const InputEvent event{
+      .source = pad,
+      .timestampNs = 500'000'000,
+      .payload = InputEvent::SensorChanged{SensorKind::AccelRight, {1.f, 2.f, 3.f}, 12345},
+  };
+  inject(event);
+  ASSERT_EQ(game.count<InputEvent::SensorChanged>(), 1u);
+  EXPECT_EQ(game.last<InputEvent::SensorChanged>()->sensorTimestampNs, 12345u);
+  ASSERT_TRUE(raw_sensor(pad.id, SensorKind::AccelRight));
+  EXPECT_EQ(raw_sensor(pad.id, SensorKind::AccelRight)->values[1], 2.f);
+  ui.captures = true;
+  reconcile();
+  EXPECT_EQ(game.cancels(pad.id), 1u);
+  inject(event);
+  EXPECT_EQ(game.count<InputEvent::SensorChanged>(), 1u);
+  ui.captures = false;
+  reconcile();
+  EXPECT_EQ(game.count<InputEvent::SensorChanged>(), 1u);
+  inject(event);
+  EXPECT_EQ(game.count<InputEvent::SensorChanged>(), 2u);
+  destroy_source(pad.id);
+  EXPECT_FALSE(raw_sensor(pad.id, SensorKind::AccelRight));
+}
+
 } // namespace

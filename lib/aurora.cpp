@@ -26,6 +26,7 @@
 #include "internal.hpp"
 #include "thread.hpp"
 #include "window.hpp"
+#include "input/lifecycle.hpp"
 
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_init.h>
@@ -230,6 +231,9 @@ AuroraInfo initialize(int argc, char* argv[], const AuroraConfig& config) noexce
 }
 
 void shutdown() noexcept {
+  if (input::detail::wpad_shutdown) {
+    input::detail::wpad_shutdown();
+  }
 #ifdef AURORA_ENABLE_GX
   gx::fifo::shutdown();
   gfx::render_worker::synchronize();
@@ -256,7 +260,11 @@ const AuroraEvent* update() noexcept {
       g_gamepadInitialized = true;
     }
   }
-  return window::poll_events();
+  const auto* events = window::poll_events();
+  if (input::detail::wpad_update) {
+    input::detail::wpad_update();
+  }
+  return events;
 }
 
 bool begin_frame() noexcept {
@@ -413,3 +421,8 @@ void aurora_set_resampler(AuroraSampler sampler) {
 }
 void aurora_set_timescale(float scale) { aurora::time::set_scale(scale); }
 float aurora_get_timescale() { return aurora::time::scale(); }
+
+namespace aurora::input::detail {
+void (*wpad_update)() = nullptr;
+void (*wpad_shutdown)() = nullptr;
+} // namespace aurora::input::detail

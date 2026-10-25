@@ -27,24 +27,22 @@ class PadAdapterTest : public ::testing::Test {
 protected:
   static void SetUpTestSuite() {
     ASSERT_TRUE(PADInit());
-    PADKeyButtonBinding buttons[PAD_BUTTON_COUNT] = {
-        {SDL_SCANCODE_SPACE, PAD_BUTTON_A},      {PAD_KEY_MOUSE_LEFT, PAD_BUTTON_B},
-        {SDL_SCANCODE_F, PAD_BUTTON_X},          {SDL_SCANCODE_R, PAD_BUTTON_Y},
-        {SDL_SCANCODE_RETURN, PAD_BUTTON_START}, {SDL_SCANCODE_TAB, PAD_TRIGGER_Z},
-        {SDL_SCANCODE_Q, PAD_TRIGGER_L},         {SDL_SCANCODE_E, PAD_TRIGGER_R},
-        {SDL_SCANCODE_UP, PAD_BUTTON_UP},        {SDL_SCANCODE_DOWN, PAD_BUTTON_DOWN},
-        {SDL_SCANCODE_LEFT, PAD_BUTTON_LEFT},    {SDL_SCANCODE_RIGHT, PAD_BUTTON_RIGHT},
+    using PhysicalInput = binding::PhysicalInput;
+    const auto target = pad::ProfileTarget::keyboard(0);
+    const auto& c = pad::controls();
+    const auto key = [&](binding::ControlId control, SDL_Scancode code, float scale = 1.f) {
+      auto list = pad::bindings_for_control(target, control);
+      list.push_back({.input = {.control = PhysicalInput::Key{code}}, .target = control, .scale = scale});
+      pad::set_binding(target, control, std::move(list));
     };
-    PADKeyAxisBinding axes[PAD_AXIS_COUNT] = {
-        {SDL_SCANCODE_D, PAD_AXIS_LEFT_X_POS, 1},  {SDL_SCANCODE_A, PAD_AXIS_LEFT_X_NEG, 1},
-        {SDL_SCANCODE_W, PAD_AXIS_LEFT_Y_POS, 1},  {SDL_SCANCODE_S, PAD_AXIS_LEFT_Y_NEG, 1},
-        {SDL_SCANCODE_L, PAD_AXIS_RIGHT_X_POS, 1}, {SDL_SCANCODE_J, PAD_AXIS_RIGHT_X_NEG, 1},
-        {SDL_SCANCODE_I, PAD_AXIS_RIGHT_Y_POS, 1}, {SDL_SCANCODE_K, PAD_AXIS_RIGHT_Y_NEG, 1},
-        {SDL_SCANCODE_Q, PAD_AXIS_TRIGGER_L, 0},   {SDL_SCANCODE_E, PAD_AXIS_TRIGGER_R, 0},
-    };
-    ASSERT_TRUE(PADSetKeyButtonBindings(PAD_CHAN0, buttons));
-    ASSERT_TRUE(PADSetKeyAxisBindings(PAD_CHAN0, axes));
-    PADSetKeyboardActive(PAD_CHAN0, TRUE);
+
+    pad::set_binding(target, c.a, {});
+    pad::set_binding(target, c.leftX, {});
+    key(c.a, SDL_SCANCODE_SPACE);
+    key(c.leftX, SDL_SCANCODE_D);
+    key(c.leftX, SDL_SCANCODE_A, -1.f);
+    key(c.l, SDL_SCANCODE_Q);
+    key(c.triggerL, SDL_SCANCODE_Q);
   }
 
   void SetUp() override {
@@ -161,13 +159,20 @@ TEST_F(PadAdapterTest, ActionBindingsJoinPortSet) {
   const auto before = pad::binding_set(PAD_CHAN0);
   const auto menu = binding::register_control({.name = "test.open_menu", .kind = binding::ControlKind::Button});
   pad::set_action_bindings(
-      PAD_CHAN0,
-      {
-          {.input = {.control = binding::PhysicalInput::Key{.scancode = SDL_SCANCODE_ESCAPE}}, .target = menu},
-          // No controller is assigned, so this one is omitted.
-          {.input = {.control = binding::PhysicalInput::GamepadButton{.button = SDL_GAMEPAD_BUTTON_BACK}},
-           .target = menu},
-      });
+      PAD_CHAN0, {
+                     {
+                         .input = {.control = binding::PhysicalInput::Key{.scancode = SDL_SCANCODE_ESCAPE}},
+                         .target = menu,
+                     },
+                     // No controller is assigned, so this one is omitted.
+                     {
+                         .input =
+                             {
+                                 .control = binding::PhysicalInput::GamepadButton{.button = SDL_GAMEPAD_BUTTON_BACK},
+                             },
+                         .target = menu,
+                     },
+                 });
   const auto after = pad::binding_set(PAD_CHAN0);
   ASSERT_NE(after, nullptr);
   EXPECT_NE(after, before);
