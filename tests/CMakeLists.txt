@@ -298,7 +298,7 @@ gtest_discover_tests(os_alloc_tests)
 
 add_executable(input_profile_tests input_profiles_test.cpp)
 target_include_directories(input_profile_tests PRIVATE ../include ../lib)
-target_link_libraries(input_profile_tests PRIVATE aurora::pad aurora::si gtest gtest_main)
+target_link_libraries(input_profile_tests PRIVATE aurora::pad aurora::si gtest gtest_main absl::flat_hash_map)
 aurora_copy_runtime_dlls(input_profile_tests)
 gtest_discover_tests(input_profile_tests)
 
