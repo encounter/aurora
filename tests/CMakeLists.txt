@@ -304,13 +304,13 @@ gtest_discover_tests(input_profile_tests)
 
 add_executable(wpad_tests wpad_test.cpp wpad_header_test.c)
 target_include_directories(wpad_tests PRIVATE ../include ../lib)
-target_link_libraries(wpad_tests PRIVATE aurora::kpad gtest gtest_main)
+target_link_libraries(wpad_tests PRIVATE aurora::kpad gtest gtest_main absl::flat_hash_map)
 aurora_copy_runtime_dlls(wpad_tests)
 gtest_discover_tests(wpad_tests)
 
 add_executable(wpad_pad_tests wpad_pad_test.cpp)
 target_include_directories(wpad_pad_tests PRIVATE ../include ../lib)
-target_link_libraries(wpad_pad_tests PRIVATE aurora::kpad gtest gtest_main)
+target_link_libraries(wpad_pad_tests PRIVATE aurora::kpad gtest gtest_main absl::flat_hash_map)
 aurora_copy_runtime_dlls(wpad_pad_tests)
 gtest_discover_tests(wpad_pad_tests)
 
