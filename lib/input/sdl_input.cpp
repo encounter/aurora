@@ -32,10 +32,14 @@ public:
     if (!props) {
       return false;
     }
-    const bool configured = SDL_SetNumberProperty(props, SDL_PROP_TEXTINPUT_TYPE_NUMBER,
-                                                  options.type == TextInputType::Number ? SDL_TEXTINPUT_TYPE_NUMBER
-                                                                                        : SDL_TEXTINPUT_TYPE_TEXT) &&
-                            SDL_SetBooleanProperty(props, SDL_PROP_TEXTINPUT_MULTILINE_BOOLEAN, options.multiline);
+    bool configured = SDL_SetNumberProperty(props, SDL_PROP_TEXTINPUT_TYPE_NUMBER,
+                                            options.type == TextInputType::Number ? SDL_TEXTINPUT_TYPE_NUMBER
+                                                                                  : SDL_TEXTINPUT_TYPE_TEXT) &&
+                      SDL_SetBooleanProperty(props, SDL_PROP_TEXTINPUT_MULTILINE_BOOLEAN, options.multiline);
+    if (configured && options.type == TextInputType::Code) {
+      configured = SDL_SetNumberProperty(props, SDL_PROP_TEXTINPUT_CAPITALIZATION_NUMBER, SDL_CAPITALIZE_NONE) &&
+                   SDL_SetBooleanProperty(props, SDL_PROP_TEXTINPUT_AUTOCORRECT_BOOLEAN, false);
+    }
     const bool started = configured && SDL_StartTextInputWithProperties(window, props);
     SDL_DestroyProperties(props);
     return started;
