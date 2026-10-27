@@ -11,6 +11,7 @@
 #include <cmath>
 #include <deque>
 #include <map>
+#include <numbers>
 #include <optional>
 
 namespace aurora::wpad {
@@ -277,7 +278,8 @@ ChannelSample SimulatedChannelProvider::sample(uint32_t port, uint64_t time) {
   const auto eval = time > kSensorResampleDelay ? time - kSensorResampleDelay : 0;
   Vec core = acceleration(coreSource, coreKind, eval);
   Vec fs = acceleration(source, SensorKind::AccelLeft, eval);
-  const float wave = std::sin(static_cast<double>(time % 50'000'000) * (2.0 * M_PI / 50'000'000));
+  const auto wave =
+      static_cast<float>(std::sin(static_cast<double>(time % 50'000'000) * (2.0 * std::numbers::pi / 50'000'000)));
   if (state.value(c.shake) >= 0.5f) {
     core.x += wave * 1.5f;
     core.y += wave * 1.5f;
