@@ -2,6 +2,8 @@
 #include "__gx.h"
 #include "dolphin/mtx/GeoTypes.h"
 
+#include <algorithm>
+
 static inline void CacheProjectionVector(const f32* ptr, GXProjectionType type) {
   __gx->projType = type;
   for (int i = 0; i < 6; ++i) {
@@ -142,8 +144,10 @@ void GXSetViewportJitter(float left, float top, float width, float height, float
   sy = -height / 2.0f;
   ox = 340.0f + (left + width / 2.0f);
   oy = 340.0f + (top + height / 2.0f);
-  zmin = 1.6777215e7f * nearZ;
-  zmax = 1.6777215e7f * farZ;
+  // GXSetZScaleOffset rescales the depth range. The hardware clamps the result to the 24-bit
+  // range; the host depth range must stay within [0, 1].
+  zmin = std::clamp(__gx->zScale * nearZ + __gx->zOffset, 0.0f, 1.6777215e7f);
+  zmax = std::clamp(__gx->zScale * farZ + __gx->zOffset, 0.0f, 1.6777215e7f);
   sz = zmax - zmin;
   oz = zmax;
 
@@ -202,5 +206,9 @@ void GXLoadNrmMtxIndx3x3(u16 mtxIndx, u32 id) {
 }
 
 // TODO GXLoadTexMtxIndx
-// TODO GXSetZScaleOffset
+void GXSetZScaleOffset(f32 scale, f32 offset) {
+  __gx->zScale = scale * 1.6777215e7f + 1.0f;
+  __gx->zOffset = offset * 1.6777215e7f;
+  GXSetViewport(__gx->vpLeft, __gx->vpTop, __gx->vpWd, __gx->vpHt, __gx->vpNearz, __gx->vpFarz);
+}
 }
