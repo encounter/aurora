@@ -52,7 +52,7 @@ u16 prepare_idx_buffer(ByteBuffer& buf, GXPrimitive prim, u16 vtxStart, u16 vtxC
       ++numIndices;
     }
   } else if (prim == GX_TRIANGLEFAN) {
-    buf.reserve_extra(((u32(vtxCount) - 3) * 3 + 3) * sizeof(u16));
+    buf.reserve_extra((vtxCount < 3 ? size_t(vtxCount) : (size_t(vtxCount) - 3) * 3 + 3) * sizeof(u16));
     for (u16 v = 0; v < vtxCount; ++v) {
       const u16 idx = vtxStart + v;
       if (v < 3) {
@@ -64,7 +64,7 @@ u16 prepare_idx_buffer(ByteBuffer& buf, GXPrimitive prim, u16 vtxStart, u16 vtxC
       numIndices += 3;
     }
   } else if (prim == GX_TRIANGLESTRIP) {
-    buf.reserve_extra(((static_cast<u32>(vtxCount) - 3) * 3 + 3) * sizeof(u16));
+    buf.reserve_extra((vtxCount < 3 ? size_t(vtxCount) : (size_t(vtxCount) - 3) * 3 + 3) * sizeof(u16));
     for (u16 v = 0; v < vtxCount; ++v) {
       const u16 idx = vtxStart + v;
       if (v < 3) {
