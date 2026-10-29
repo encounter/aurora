@@ -114,7 +114,7 @@ struct SensorSample {
 };
 
 using TextInputId = uint64_t;
-enum class TextInputType { Text, Number };
+enum class TextInputType { Text, Number, Code };
 enum class TextInputState { Invalid, Pending, Suspended, Active, Failed };
 
 struct TextInputArea {
