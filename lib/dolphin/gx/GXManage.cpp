@@ -158,6 +158,9 @@ GXFifoObj* GXInit(void* base, u32 size) {
   GXLoadTexMtxImm(identity_mtx, GX_IDENTITY, GX_MTX3x4);
   GXLoadTexMtxImm(identity_mtx, GX_PTIDENTITY, GX_MTX3x4);
 
+  // Keeps the unscaled depth mapping (GXSetZScaleOffset was never called).
+  __gx->zScale = 1.6777215e7f;
+  __gx->zOffset = 0.0f;
   GXSetViewport(0.0f, 0.0f, rmode->fbWidth, rmode->xfbHeight, 0.0f, 1.0f);
   GXSetCoPlanar(GX_DISABLE);
   GXSetCullMode(GX_CULL_BACK);
