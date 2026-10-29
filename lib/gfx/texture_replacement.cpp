@@ -155,7 +155,7 @@ uint64_t s_requestSequence = 0;
 bool s_workersPaused = false;
 uint32_t s_workerCountOverride = 0;
 
-const ReplacementEntry* find_selected_entry_locked(const ReplacementKey& key) noexcept;
+const ReplacementEntry* find_selected_entry_locked(const ReplacementKey& key, uint64_t excludedId = 0) noexcept;
 ReplacementEntry* find_entry_locked(const ReplacementKey& key, uint64_t id) noexcept;
 
 unsigned char ascii_lower(unsigned char ch) noexcept {
@@ -729,6 +729,93 @@ std::optional<gfx::ConvertedTexture> load_virtual_replacement(const EntryLoadSna
   });
 }
 
+std::optional<ResolvedTextureFormat> resolved_texture_format(wgpu::TextureFormat format) noexcept {
+  switch (format) {
+  case wgpu::TextureFormat::RGBA8Unorm:
+  case wgpu::TextureFormat::RGBA8UnormSrgb:
+    return ResolvedTextureFormat::Rgba8;
+
+  case wgpu::TextureFormat::BGRA8Unorm:
+  case wgpu::TextureFormat::BGRA8UnormSrgb:
+    return ResolvedTextureFormat::Bgra8;
+
+  case wgpu::TextureFormat::BC1RGBAUnorm:
+  case wgpu::TextureFormat::BC1RGBAUnormSrgb:
+    return ResolvedTextureFormat::Bc1;
+
+  case wgpu::TextureFormat::BC3RGBAUnorm:
+  case wgpu::TextureFormat::BC3RGBAUnormSrgb:
+    return ResolvedTextureFormat::Bc3;
+
+  case wgpu::TextureFormat::BC5RGUnorm:
+    return ResolvedTextureFormat::Bc5;
+
+  case wgpu::TextureFormat::BC7RGBAUnorm:
+  case wgpu::TextureFormat::BC7RGBAUnormSrgb:
+    return ResolvedTextureFormat::Bc7;
+
+  case wgpu::TextureFormat::ASTC4x4Unorm:
+  case wgpu::TextureFormat::ASTC4x4UnormSrgb:
+  case wgpu::TextureFormat::ASTC5x4Unorm:
+  case wgpu::TextureFormat::ASTC5x4UnormSrgb:
+  case wgpu::TextureFormat::ASTC5x5Unorm:
+  case wgpu::TextureFormat::ASTC5x5UnormSrgb:
+  case wgpu::TextureFormat::ASTC6x5Unorm:
+  case wgpu::TextureFormat::ASTC6x5UnormSrgb:
+  case wgpu::TextureFormat::ASTC6x6Unorm:
+  case wgpu::TextureFormat::ASTC6x6UnormSrgb:
+  case wgpu::TextureFormat::ASTC8x5Unorm:
+  case wgpu::TextureFormat::ASTC8x5UnormSrgb:
+  case wgpu::TextureFormat::ASTC8x6Unorm:
+  case wgpu::TextureFormat::ASTC8x6UnormSrgb:
+  case wgpu::TextureFormat::ASTC8x8Unorm:
+  case wgpu::TextureFormat::ASTC8x8UnormSrgb:
+  case wgpu::TextureFormat::ASTC10x5Unorm:
+  case wgpu::TextureFormat::ASTC10x5UnormSrgb:
+  case wgpu::TextureFormat::ASTC10x6Unorm:
+  case wgpu::TextureFormat::ASTC10x6UnormSrgb:
+  case wgpu::TextureFormat::ASTC10x8Unorm:
+  case wgpu::TextureFormat::ASTC10x8UnormSrgb:
+  case wgpu::TextureFormat::ASTC10x10Unorm:
+  case wgpu::TextureFormat::ASTC10x10UnormSrgb:
+  case wgpu::TextureFormat::ASTC12x10Unorm:
+  case wgpu::TextureFormat::ASTC12x10UnormSrgb:
+  case wgpu::TextureFormat::ASTC12x12Unorm:
+  case wgpu::TextureFormat::ASTC12x12UnormSrgb:
+    return ResolvedTextureFormat::Astc;
+
+  default:
+    return std::nullopt;
+  }
+}
+
+bool resolved_texture_is_srgb(wgpu::TextureFormat format) noexcept {
+  switch (format) {
+  case wgpu::TextureFormat::RGBA8UnormSrgb:
+  case wgpu::TextureFormat::BGRA8UnormSrgb:
+  case wgpu::TextureFormat::BC1RGBAUnormSrgb:
+  case wgpu::TextureFormat::BC3RGBAUnormSrgb:
+  case wgpu::TextureFormat::BC7RGBAUnormSrgb:
+  case wgpu::TextureFormat::ASTC4x4UnormSrgb:
+  case wgpu::TextureFormat::ASTC5x4UnormSrgb:
+  case wgpu::TextureFormat::ASTC5x5UnormSrgb:
+  case wgpu::TextureFormat::ASTC6x5UnormSrgb:
+  case wgpu::TextureFormat::ASTC6x6UnormSrgb:
+  case wgpu::TextureFormat::ASTC8x5UnormSrgb:
+  case wgpu::TextureFormat::ASTC8x6UnormSrgb:
+  case wgpu::TextureFormat::ASTC8x8UnormSrgb:
+  case wgpu::TextureFormat::ASTC10x5UnormSrgb:
+  case wgpu::TextureFormat::ASTC10x6UnormSrgb:
+  case wgpu::TextureFormat::ASTC10x8UnormSrgb:
+  case wgpu::TextureFormat::ASTC10x10UnormSrgb:
+  case wgpu::TextureFormat::ASTC12x10UnormSrgb:
+  case wgpu::TextureFormat::ASTC12x12UnormSrgb:
+    return true;
+  default:
+    return false;
+  }
+}
+
 EntryLoadSnapshot snapshot_entry(const ReplacementKey& key, const ReplacementEntry& entry) {
   return EntryLoadSnapshot{
       .key = key,
@@ -1065,9 +1152,12 @@ void cache_replacement_locked(const ReplacementKey& key, uint64_t id, gfx::Textu
   evict_replacement_cache_if_needed();
 }
 
-const ReplacementEntry* select_entry(const std::vector<ReplacementEntry>& entries) noexcept {
+const ReplacementEntry* select_entry(const std::vector<ReplacementEntry>& entries, uint64_t excludedId = 0) noexcept {
   const ReplacementEntry* selected = nullptr;
   for (const auto& entry : entries) {
+    if (entry.id == excludedId) {
+      continue;
+    }
     if (selected == nullptr || entry.priority > selected->priority ||
         (entry.priority == selected->priority && entry.sequence > selected->sequence)) {
       selected = &entry;
@@ -1076,12 +1166,12 @@ const ReplacementEntry* select_entry(const std::vector<ReplacementEntry>& entrie
   return selected;
 }
 
-const ReplacementEntry* find_selected_entry_locked(const ReplacementKey& key) noexcept {
+const ReplacementEntry* find_selected_entry_locked(const ReplacementKey& key, uint64_t excludedId) noexcept {
   const auto it = s_entriesByKey.find(key);
   if (it == s_entriesByKey.end()) {
     return nullptr;
   }
-  return select_entry(it->second);
+  return select_entry(it->second, excludedId);
 }
 
 ReplacementEntry* find_entry_locked(const ReplacementKey& key, uint64_t id) noexcept {
@@ -1094,9 +1184,10 @@ ReplacementEntry* find_entry_locked(const ReplacementKey& key, uint64_t id) noex
   return entry == it->second.end() ? nullptr : &*entry;
 }
 
-std::optional<ReplacementKey> find_source_replacement_key_locked(const TextureSourceKey& key) noexcept {
+std::optional<ReplacementKey> find_source_replacement_key_locked(const TextureSourceKey& key,
+                                                                 uint64_t excludedId = 0) noexcept {
   ReplacementKey exactKey{key};
-  if (s_entriesByKey.contains(exactKey)) {
+  if (find_selected_entry_locked(exactKey, excludedId) != nullptr) {
     return exactKey;
   }
 
@@ -1104,7 +1195,7 @@ std::optional<ReplacementKey> find_source_replacement_key_locked(const TextureSo
     auto tlutWildcard = key;
     tlutWildcard.tlutHash = kReplacementWildcardTlutHash;
     ReplacementKey tlutWildcardKey{tlutWildcard};
-    if (s_entriesByKey.contains(tlutWildcardKey)) {
+    if (find_selected_entry_locked(tlutWildcardKey, excludedId) != nullptr) {
       return tlutWildcardKey;
     }
   }
@@ -1112,11 +1203,23 @@ std::optional<ReplacementKey> find_source_replacement_key_locked(const TextureSo
   auto textureWildcard = key;
   textureWildcard.textureHash = kReplacementWildcardTextureHash;
   ReplacementKey textureWildcardKey{textureWildcard};
-  if (s_entriesByKey.contains(textureWildcardKey)) {
+  if (find_selected_entry_locked(textureWildcardKey, excludedId) != nullptr) {
     return textureWildcardKey;
   }
 
   return std::nullopt;
+}
+
+std::optional<ReplacementKey> find_replacement_key_locked(const ReplacementLookup& lookup,
+                                                          uint64_t excludedId) noexcept {
+  if (lookup.pointer != nullptr) {
+    ReplacementKey pointerKey{TexturePointerKey{lookup.pointer}};
+    if (find_selected_entry_locked(pointerKey, excludedId) != nullptr) {
+      return pointerKey;
+    }
+  }
+
+  return find_source_replacement_key_locked(lookup.source, excludedId);
 }
 
 gfx::TextureHandle load_entry_handle(const ReplacementKey& key, const ReplacementEntry& entry) noexcept {
@@ -1469,6 +1572,89 @@ std::optional<TextureSourceKey> parse_replacement_filename(std::string_view file
       .format = *format,
       .hasTlut = hasTlut,
   };
+}
+
+std::optional<ResolvedTexture> resolve_replacement(const ReplacementLookup& lookup,
+                                                   uint64_t excludedRegistrationId) noexcept {
+  for (;;) {
+    ReplacementKey selectedKey;
+    EntryLoadSnapshot snapshot;
+    EntryKind kind;
+    uint64_t selectedId = 0;
+
+    {
+      std::lock_guard lk(s_registryMutex);
+
+      const auto key = find_replacement_key_locked(lookup, excludedRegistrationId);
+      if (!key.has_value()) {
+        return std::nullopt;
+      }
+
+      const auto* entry = find_selected_entry_locked(*key, excludedRegistrationId);
+      if (entry == nullptr || s_failedIds.contains(entry->id)) {
+        return std::nullopt;
+      }
+
+      selectedKey = *key;
+      selectedId = entry->id;
+      kind = entry->kind;
+
+      if (kind == EntryKind::Raw) {
+        return ResolvedTexture{
+            .data = std::vector<uint8_t>{entry->bytes.begin(), entry->bytes.end()},
+            .width = entry->width,
+            .height = entry->height,
+            .mipCount = entry->mipCount,
+            .format = ResolvedTextureFormat::Gx,
+            .gxFormat = entry->gxFormat,
+            .match = std::holds_alternative<TexturePointerKey>(selectedKey) ? ResolvedTextureMatch::Pointer
+                                                                            : ResolvedTextureMatch::Source,
+        };
+      }
+
+      snapshot = snapshot_entry(selectedKey, *entry);
+    }
+
+    auto texture = kind == EntryKind::File ? load_file_replacement(snapshot) : load_virtual_replacement(snapshot);
+
+    {
+      std::lock_guard lk(s_registryMutex);
+
+      const auto key = find_replacement_key_locked(lookup, excludedRegistrationId);
+      if (!key.has_value() || *key != selectedKey) {
+        continue;
+      }
+
+      const auto* entry = find_selected_entry_locked(*key, excludedRegistrationId);
+      if (entry == nullptr || entry->id != selectedId) {
+        continue;
+      }
+    }
+
+    if (!texture.has_value()) {
+      return std::nullopt;
+    }
+
+    const auto format = resolved_texture_format(texture->format);
+    if (!format.has_value()) {
+      return std::nullopt;
+    }
+
+    const auto formatInfo = gfx::format_info(texture->format);
+    return ResolvedTexture{
+        .data = std::vector<uint8_t>(texture->data.data(), texture->data.data() + texture->data.size()),
+        .width = texture->width,
+        .height = texture->height,
+        .mipCount = texture->mips,
+        .format = *format,
+        .blockWidth = formatInfo.blockWidth,
+        .blockHeight = formatInfo.blockHeight,
+        .blockSize = formatInfo.blockSize,
+        .srgb = resolved_texture_is_srgb(texture->format),
+        .match = std::holds_alternative<TexturePointerKey>(selectedKey) ? ResolvedTextureMatch::Pointer
+                                                                        : ResolvedTextureMatch::Source,
+    };
+  }
 }
 
 ReplacementRegistration register_replacement(ReplacementKey key, RawTextureReplacement replacement,
