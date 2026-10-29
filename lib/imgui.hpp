@@ -12,6 +12,10 @@ class RenderPassEncoder;
 } // namespace wgpu
 
 namespace aurora::imgui {
+
+void initialize_input();
+void shutdown_input();
+
 class DrawData {
 public:
   DrawData() noexcept = default;

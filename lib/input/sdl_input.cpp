@@ -10,6 +10,7 @@
 
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_touch.h>
@@ -19,7 +20,38 @@
 namespace aurora::input {
 namespace {
 std::array<bool, 2> deviceSensorsEnabled{true, true};
-}
+
+class SdlTextInputBackend final : public detail::TextInputBackend {
+public:
+  bool start(const TextInputOptions& options) override {
+    auto* window = window::get_sdl_window();
+    if (!window) {
+      return false;
+    }
+    const auto props = SDL_CreateProperties();
+    if (!props) {
+      return false;
+    }
+    const bool configured = SDL_SetNumberProperty(props, SDL_PROP_TEXTINPUT_TYPE_NUMBER,
+                                                  options.type == TextInputType::Number ? SDL_TEXTINPUT_TYPE_NUMBER
+                                                                                        : SDL_TEXTINPUT_TYPE_TEXT) &&
+                            SDL_SetBooleanProperty(props, SDL_PROP_TEXTINPUT_MULTILINE_BOOLEAN, options.multiline);
+    const bool started = configured && SDL_StartTextInputWithProperties(window, props);
+    SDL_DestroyProperties(props);
+    return started;
+  }
+
+  void stop() override { SDL_StopTextInput(window::get_sdl_window()); }
+
+  void clear_composition() override { SDL_ClearComposition(window::get_sdl_window()); }
+
+  void set_area(const std::optional<TextInputArea>& area) override {
+    SDL_SetTextInputArea(window::get_sdl_window(), area ? &area->rect : nullptr, area ? area->cursorOffset : 0);
+  }
+};
+
+SdlTextInputBackend sTextBackend;
+} // namespace
 
 bool has_sensor(SourceId source, SensorKind kind) {
   if (static_cast<size_t>(kind) >= 6 || !find_source(source)) {
@@ -147,6 +179,15 @@ private:
 Cursor g_cursor;
 
 } // namespace
+
+void initialize_text_input() noexcept {
+  detail::set_text_input_backend(&sTextBackend);
+  if (SDL_GetWindowFlags(window::get_sdl_window()) & SDL_WINDOW_INPUT_FOCUS) {
+    detail::focus_gained();
+  } else {
+    detail::focus_lost();
+  }
+}
 
 bool is_routed_event(const SDL_Event& event) noexcept {
   switch (event.type) {

@@ -58,7 +58,10 @@ if (IOS)
 endif ()
 
 if (AURORA_ENABLE_GX)
-    target_sources(aurora_core PRIVATE lib/imgui.cpp)
+    target_sources(aurora_core PRIVATE
+        lib/imgui.cpp
+        lib/imgui_input.cpp
+    )
     target_link_libraries(aurora_core PUBLIC imgui)
 endif ()
 

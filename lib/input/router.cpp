@@ -12,6 +12,7 @@
 #include <ranges>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -91,6 +92,7 @@ struct Delivery {
   LayerId layer = kInvalidLayerId;
   InputEvent event;
   bool resample = false; // A stick resample; dropped if the layer is blocked again first
+  TextInputId textSession = 0;
 };
 
 InputEvent make_event(const InputSource& source, InputEvent::Payload payload) {
@@ -101,6 +103,13 @@ InputEvent make_event(const InputSource& source, InputEvent::Payload payload) {
   };
 }
 
+struct TextRequest {
+  LayerId layer = 0;
+  TextInputOptions options;
+  TextInputState state = TextInputState::Pending;
+  bool retry = true;
+};
+
 struct Router {
   std::vector<Layer> layers; // Descending priority
   std::vector<std::unique_ptr<Source>> sources;
@@ -108,6 +117,13 @@ struct Router {
   std::vector<Delivery> deliveries;
   // Pending changes from callbacks; applied after
   std::vector<std::function<void()>> pending;
+  std::unordered_set<LayerId> registeredLayers;
+  std::unordered_map<TextInputId, TextRequest> textRequests;
+  TextInputId nextText = 1, selectedText = 0;
+  uint64_t textEpoch = 0;
+  detail::TextInputBackend* textBackend = nullptr;
+  std::optional<TextInputOptions> appliedText;
+  bool focused = true;
   LayerId nextLayer;
   SourceId nextSource;
   int depth = 0;
@@ -170,6 +186,7 @@ struct Router {
   LayerId add_layer(Layer layer) {
     layer.id = nextLayer++;
     const LayerId id = layer.id;
+    registeredLayers.insert(id);
     mutate([this, layer = std::move(layer)]() mutable {
       const auto it = std::ranges::find_if(layers, [&](const Layer& other) { return other.priority < layer.priority; });
       layers.insert(it, std::move(layer));
@@ -178,11 +195,13 @@ struct Router {
   }
 
   void remove_layer(LayerId id) {
+    registeredLayers.erase(id);
     if (Layer* layer = find_layer(id)) {
       layer->retired = true;
     }
     mutate([this, id] {
       forget(id);
+      std::erase_if(textRequests, [id](const auto& entry) { return entry.second.layer == id; });
       std::erase_if(layers, [id](const Layer& layer) { return layer.id == id; });
     });
   }
@@ -225,6 +244,141 @@ struct Router {
     return std::ranges::any_of(routes, [&](const Route& route) {
       return route.source == source.info.id && std::ranges::find(route.layers, layer) != route.layers.end();
     });
+  }
+
+  // --- Text sessions ---
+
+  void text_state(TextInputId id, TextRequest& request, TextInputState state) {
+    if (request.state == state) {
+      return;
+    }
+    request.state = state;
+    queue(request.layer, make_event(find_source(keyboard)->info, InputEvent::TextInputStateChanged{id, state}));
+  }
+
+  TextInputId begin_text(LayerId layer, TextInputOptions options) {
+    if (!registeredLayers.contains(layer)) {
+      return 0;
+    }
+    const auto id = nextText++;
+    textRequests.emplace(id, TextRequest{.layer = layer, .options = std::move(options)});
+    mutate([this, layer, id] {
+      for (auto it = textRequests.begin(); it != textRequests.end();) {
+        if (it->second.layer == layer && (it->first < id || !registeredLayers.contains(layer))) {
+          text_state(it->first, it->second, TextInputState::Invalid);
+          it = textRequests.erase(it);
+        } else {
+          ++it;
+        }
+      }
+    });
+    return id;
+  }
+
+  bool update_text(TextInputId id, TextInputOptions options) {
+    if (!textRequests.contains(id)) {
+      return false;
+    }
+    mutate([this, id, options = std::move(options)] {
+      const auto it = textRequests.find(id);
+      if (it == textRequests.end()) {
+        return;
+      }
+      auto& request = it->second;
+      if (request.options == options && request.state != TextInputState::Failed) {
+        return;
+      }
+      request.options = options;
+      request.retry = true;
+    });
+    return true;
+  }
+
+  void end_text(TextInputId id) {
+    if (!id) {
+      return;
+    }
+    mutate([this, id] {
+      const auto it = textRequests.find(id);
+      if (it == textRequests.end()) {
+        return;
+      }
+      text_state(id, it->second, TextInputState::Invalid);
+      textRequests.erase(it);
+    });
+  }
+
+  void stop_text() {
+    if (appliedText && textBackend) {
+      textBackend->clear_composition();
+      textBackend->stop();
+      textBackend->set_area(std::nullopt);
+    }
+    appliedText.reset();
+  }
+
+  void reconcile_text() {
+    TextInputId candidate = 0;
+    if (focused) {
+      for (const auto& layer : layers) {
+        if (!layer.active()) {
+          continue;
+        }
+        // Same order as physical routing, including equal-priority registration order.
+        for (const auto& [id, request] : textRequests) {
+          if (request.layer == layer.id && id > candidate) {
+            candidate = id;
+          }
+        }
+        if (candidate || layer.captures(find_source(keyboard)->info)) {
+          break;
+        }
+      }
+    }
+    const bool handoff = selectedText != candidate;
+    if (handoff) {
+      if (candidate && appliedText && textBackend) {
+        textBackend->clear_composition();
+      }
+      textEpoch = SDL_GetTicksNS();
+      selectedText = candidate;
+    }
+    for (auto& [id, request] : textRequests) {
+      if (id != candidate) {
+        text_state(id, request, TextInputState::Suspended);
+      }
+    }
+    if (!candidate) {
+      stop_text();
+      return;
+    }
+    auto& request = textRequests.at(candidate);
+    if (!handoff && !request.retry) {
+      return; // Including a failed activation: no busy retry.
+    }
+    request.retry = false;
+    const auto& options = request.options;
+    const bool start = !appliedText || appliedText->type != options.type || appliedText->multiline != options.multiline;
+    if (start && (!textBackend || !textBackend->start(options))) {
+      stop_text();
+      text_state(candidate, request, TextInputState::Failed);
+      return;
+    }
+    if (handoff || !appliedText || appliedText->area != options.area) {
+      textBackend->set_area(options.area);
+    }
+    appliedText = options;
+    text_state(candidate, request, TextInputState::Active);
+  }
+
+  void invalidate_text() {
+    stop_text();
+    selectedText = 0;
+    textEpoch = SDL_GetTicksNS();
+    for (auto& [id, request] : textRequests) {
+      text_state(id, request, TextInputState::Invalid);
+    }
+    textRequests.clear();
   }
 
   // --- Sources ---
@@ -281,10 +435,15 @@ struct Router {
       for (auto& source : sources) {
         reconcile(*source);
       }
+      deliver_pending();
+      if (!pending.empty()) {
+        continue;
+      }
+      reconcile_text();
       if (deliveries.empty() && pending.empty()) {
         break;
       }
-      deliver_pending();
+      deliver_pending(true);
     }
     draining = false;
   }
@@ -344,12 +503,23 @@ struct Router {
     deliveries.push_back({.layer = layer, .event = std::move(event), .resample = resample});
   }
 
-  void deliver_pending() {
+  void deliver_pending(bool allowText = false) {
     for (auto& delivery : std::exchange(deliveries, {})) {
       const Layer* layer = find_layer(delivery.layer);
       Source* source = find_source(delivery.event.source.id);
       if (layer == nullptr || layer->retired || source == nullptr) {
         continue;
+      }
+      if (delivery.textSession) {
+        if (!allowText || !pending.empty()) {
+          deliveries.push_back(std::move(delivery));
+          continue;
+        }
+        const auto it = textRequests.find(delivery.textSession);
+        if (selectedText != delivery.textSession || it == textRequests.end() ||
+            it->second.state != TextInputState::Active || !layer->active() || delivery.event.timestampNs < textEpoch) {
+          continue;
+        }
       }
       if (!delivery.resample) {
         // Cancellations also reach layers that were just disabled
@@ -517,24 +687,40 @@ struct Router {
         },
         [&](const InputEvent::AxisChanged& axis) { route_axis(source, event, axis); },
         [&](const InputEvent::PointerChanged& pointer) { route_pointer(source, event, pointer); },
+        [&](const InputEvent::TextInput&) { queue_text(event); },
+        [&](const InputEvent::TextEditing&) { queue_text(event); }, [](const InputEvent::TextInputStateChanged&) {},
         [](const Cancelled&) {}, [](const SourceChanged&) {}, [&](const auto&) { visit(source, event); });
+  }
+
+  void queue_text(InputEvent event) {
+    const auto it = textRequests.find(selectedText);
+    if (it != textRequests.end() && it->second.state == TextInputState::Active && event.timestampNs >= textEpoch) {
+      deliveries.push_back({.layer = it->second.layer, .event = std::move(event), .textSession = selectedText});
+    }
   }
 
   void dispatch(InputEvent event, const SDL_Event* raw) {
     Source* source = find_source(event.source.id);
-    if (deferring() || source == nullptr || !source->live || event.payload.is<Cancelled>() ||
-        event.payload.is<SourceChanged>()) {
+    if (source == nullptr || !source->live || event.payload.is<Cancelled>() || event.payload.is<SourceChanged>() ||
+        event.payload.is<InputEvent::TextInputStateChanged>()) {
       return;
     }
     event.source = source->info;
     if (event.timestampNs == 0) {
       event.timestampNs = SDL_GetTicksNS();
     }
+    if (deferring()) {
+      if (raw && (event.payload.is<InputEvent::TextInput>() || event.payload.is<InputEvent::TextEditing>())) {
+        queue_text(std::move(event));
+      }
+      return;
+    }
     // Pick up changes made since the last event before routing.
     drain();
     source->raw.apply(event);
     currentRaw = raw;
     route_event(*source, event);
+    deliver_pending(true);
     currentRaw = nullptr;
     drain();
   }
@@ -590,6 +776,18 @@ LayerId register_layer(const LayerDescriptor& desc) {
 void unregister_layer(LayerId layer) { g_router.remove_layer(layer); }
 
 void set_layer_enabled(LayerId layer, bool enabled) { g_router.set_layer_enabled(layer, enabled); }
+
+TextInputId begin_text_input(LayerId layer, const TextInputOptions& options) {
+  return g_router.begin_text(layer, options);
+}
+bool update_text_input(TextInputId session, const TextInputOptions& options) {
+  return g_router.update_text(session, options);
+}
+void end_text_input(TextInputId session) { g_router.end_text(session); }
+TextInputState text_input_state(TextInputId session) {
+  const auto it = g_router.textRequests.find(session);
+  return it != g_router.textRequests.end() ? it->second.state : TextInputState::Invalid;
+}
 
 void reconcile() {
   if (g_router.depth == 0) {
@@ -712,13 +910,45 @@ const SDL_Event* current_sdl_event() { return g_router.currentRaw; }
 
 void focus_lost() {
   g_router.mutate([] {
+    g_router.focused = false;
     for (const SourceId id : {g_router.keyboard, g_router.mouse, g_router.touch}) {
       g_router.cancel_source(*g_router.find_source(id));
     }
   });
 }
 
-void reset() { g_router = Router{g_router.nextLayer, g_router.nextSource}; }
+void focus_gained() {
+  g_router.mutate([] {
+    g_router.focused = true;
+    for (auto& [id, request] : g_router.textRequests) {
+      request.retry = true;
+    }
+  });
+}
+
+void set_text_input_backend(TextInputBackend* backend) {
+  g_router.mutate([backend] {
+    g_router.stop_text();
+    g_router.textBackend = backend;
+    for (auto& [id, request] : g_router.textRequests) {
+      request.retry = true;
+    }
+  });
+}
+
+void text_window_destroyed() {
+  g_router.mutate([] {
+    g_router.invalidate_text();
+    g_router.textBackend = nullptr;
+  });
+}
+
+void reset() {
+  const auto nextText = g_router.nextText;
+  g_router.stop_text();
+  g_router = Router{g_router.nextLayer, g_router.nextSource};
+  g_router.nextText = nextText;
+}
 
 } // namespace detail
 } // namespace aurora::input

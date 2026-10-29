@@ -79,45 +79,7 @@ void enqueue_texture_upload(wgpu::Buffer buffer, wgpu::TexelCopyTextureInfo dst,
   });
 }
 
-input::LayerId g_inputLayer = input::kInvalidLayerId;
 bool g_cursorManaged = false;
-
-input::EventResult input_layer_event(const input::InputEvent& event, void*) {
-  using Kind = input::InputSource::Kind;
-  const Kind kind = event.source.kind;
-  if (ImGui::GetCurrentContext() == nullptr || (kind != Kind::Keyboard && kind != Kind::Mouse)) {
-    return input::EventResult::Pass;
-  }
-  ImGuiIO& io = ImGui::GetIO();
-  if (event.payload.is<input::InputEvent::Cancelled>()) {
-    if (kind == Kind::Keyboard) {
-      io.ClearInputKeys();
-    } else {
-      io.ClearInputMouse();
-    }
-    return input::EventResult::Pass;
-  }
-  if (const SDL_Event* raw = input::detail::current_sdl_event()) {
-    process_event(*raw);
-  }
-  const bool capture = kind == Kind::Keyboard ? io.WantCaptureKeyboard || io.WantTextInput : io.WantCaptureMouse;
-  return capture ? input::EventResult::Consume : input::EventResult::Pass;
-}
-
-bool input_layer_captures(const input::InputSource& source, void*) {
-  if (ImGui::GetCurrentContext() == nullptr) {
-    return false;
-  }
-  const ImGuiIO& io = ImGui::GetIO();
-  switch (source.kind) {
-  case input::InputSource::Kind::Keyboard:
-    return io.WantCaptureKeyboard || io.WantTextInput;
-  case input::InputSource::Kind::Mouse:
-    return io.WantCaptureMouse;
-  default:
-    return false;
-  }
-}
 } // namespace
 
 struct DrawData::Impl {
@@ -154,12 +116,7 @@ void initialize() noexcept {
     info.RenderTargetFormat = static_cast<WGPUTextureFormat>(webgpu::g_efbFormat);
     ImGui_ImplWGPU_Init(&info);
   }
-  g_inputLayer = input::register_layer({
-      .label = "aurora.imgui",
-      .priority = input::kImGuiLayerPriority,
-      .onEvent = input_layer_event,
-      .capturesSource = input_layer_captures,
-  });
+  initialize_input();
 }
 
 void shutdown() noexcept {
@@ -167,8 +124,7 @@ void shutdown() noexcept {
   if (!is_initialized()) {
     return;
   }
-  input::unregister_layer(g_inputLayer);
-  g_inputLayer = input::kInvalidLayerId;
+  shutdown_input();
   if (g_useSdlRenderer) {
     ImGui_ImplSDLRenderer3_Shutdown();
   } else {
@@ -261,6 +217,7 @@ void new_frame(const AuroraWindowSize& size) noexcept {
   io.DisplayFramebufferScale = framebufferScale;
   ImGui::GetIO().DisplaySize = displaySize;
   ImGui::NewFrame();
+  input::reconcile();
 }
 
 DrawData freeze() noexcept {

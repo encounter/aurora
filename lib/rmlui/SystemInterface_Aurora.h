@@ -19,13 +19,15 @@ public:
   void DeactivateKeyboard() override;
 
   // Custom API
-  void SetInputType(InputType type) noexcept;
+  void SetInputType(input::TextInputType type) noexcept;
+  void SetInputLayer(input::LayerId layer) noexcept;
 
 private:
   std::unique_ptr<SystemInterface_SDL> mSdlInterface;
-  InputType mTextInputType = InputType::Text;
-  InputType mActiveTextInputType = InputType::Text;
-  bool mHasActiveTextInputType = false;
+  input::TextInputType mTextInputType = input::TextInputType::Text;
+  input::LayerId mInputLayer = 0;
+  input::TextInputSession mTextSession;
+  input::TextInputOptions mTextOptions;
 };
 
 } // namespace aurora::rmlui

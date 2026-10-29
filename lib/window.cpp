@@ -280,6 +280,11 @@ void process_event(SDL_Event& event) {
       gamepad::set_mouse_scroll(event.wheel.x, event.wheel.y);
     }
     break;
+  case SDL_EVENT_WINDOW_FOCUS_GAINED:
+    if (primaryWindow) {
+      input::detail::focus_gained();
+    }
+    break;
   case SDL_EVENT_WINDOW_FOCUS_LOST:
     if (primaryWindow) {
       input::detail::focus_lost();
@@ -413,6 +418,7 @@ bool create_window(AuroraBackend backend) {
     Log.error("Failed to create window: {}", SDL_GetError());
     return false;
   }
+  input::sdl::initialize_text_input();
   SDL_SetWindowMinimumSize(g_window, 640, 480);
   set_window_icon();
   return true;
@@ -441,6 +447,7 @@ void destroy_window() {
     g_renderer = nullptr;
   }
   if (g_window != nullptr) {
+    input::detail::text_window_destroyed();
     SDL_DestroyWindow(g_window);
     g_window = nullptr;
   }
@@ -631,6 +638,7 @@ wgpu::Surface create_sdl_surface(const wgpu::Instance& instance, const char* lab
 #endif
 
 AuroraSurfaceType surface_type() noexcept { return g_surfaceType.load(std::memory_order_acquire); }
+
 void set_surface_type(AuroraSurfaceType type) noexcept { g_surfaceType.store(type, std::memory_order_release); }
 
 SDL_Renderer* get_sdl_renderer() { return g_renderer; }

@@ -4,6 +4,8 @@
 
 namespace aurora::input::sdl {
 
+void initialize_text_input() noexcept;
+
 bool is_routed_event(const SDL_Event& event) noexcept;
 void dispatch(const SDL_Event& event) noexcept;
 

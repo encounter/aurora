@@ -460,10 +460,17 @@ void set_glass_light_dir(float x, float y) noexcept {
   }
 }
 
-void set_input_type(InputType type) noexcept {
+void set_input_type(input::TextInputType type) noexcept {
   auto* systemInterface = static_cast<SystemInterface_Aurora*>(Backend::GetSystemInterface());
   if (systemInterface != nullptr) {
     systemInterface->SetInputType(type);
+  }
+}
+
+void set_input_layer(input::LayerId layer) noexcept {
+  auto* systemInterface = static_cast<SystemInterface_Aurora*>(Backend::GetSystemInterface());
+  if (systemInterface) {
+    systemInterface->SetInputLayer(layer);
   }
 }
 

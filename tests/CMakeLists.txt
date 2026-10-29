@@ -31,6 +31,7 @@ gtest_discover_tests(io_tests)
 add_executable(input_tests
   input_binding_test.cpp
   input_router_test.cpp
+  text_input_test.cpp
   ../lib/input/binding.cpp
   ../lib/input/names.cpp
   ../lib/input/capture.cpp
@@ -321,4 +322,15 @@ if (AURORA_ENABLE_GX)
       target_link_libraries(${input_test_target} PRIVATE $<LINK_GROUP:RESCAN,aurora::gx,aurora::vi,aurora::core,PNG::PNG>)
     endif ()
   endforeach ()
+endif ()
+
+if (AURORA_ENABLE_GX)
+  add_executable(imgui_input_tests imgui_input_test.cpp)
+  target_include_directories(imgui_input_tests PRIVATE ../include ../lib)
+  target_link_libraries(imgui_input_tests PRIVATE aurora::gx aurora::vi gtest gtest_main)
+  if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(imgui_input_tests PRIVATE $<LINK_GROUP:RESCAN,aurora::gx,aurora::vi,aurora::core>)
+  endif ()
+  aurora_copy_runtime_dlls(imgui_input_tests)
+  gtest_discover_tests(imgui_input_tests)
 endif ()
