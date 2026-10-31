@@ -89,6 +89,15 @@ target_compile_definitions(os_time_tests PRIVATE AURORA TARGET_PC=1)
 target_link_libraries(os_time_tests PRIVATE fmt::fmt gtest gtest_main)
 gtest_discover_tests(os_time_tests)
 
+add_executable(os_utf_tests
+  os_utf_test.cpp
+  ../lib/dolphin/os/OSUtf.cpp
+)
+target_include_directories(os_utf_tests PRIVATE ../include)
+target_compile_definitions(os_utf_tests PRIVATE AURORA TARGET_PC=1)
+target_link_libraries(os_utf_tests PRIVATE gtest gtest_main)
+gtest_discover_tests(os_utf_tests)
+
 if (AURORA_ENABLE_GX)
   # GX FIFO round-trip tests
   # Compile GX sources directly to avoid pulling in the full renderer/WebGPU runtime
