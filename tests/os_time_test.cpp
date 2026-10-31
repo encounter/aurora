@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <ctime>
 
 namespace {
 
@@ -31,6 +32,45 @@ TEST(OSTimeTest, SystemTimeUsesUtcGcnEpoch) {
   const auto actual = std::chrono::seconds{OSTicksToSeconds(OSGetSystemTime())};
 
   EXPECT_LE(std::chrono::abs(actual - expected), 1s);
+}
+
+TEST(OSTimeTest, TimeUsesLocalGcnEpoch) {
+  const std::time_t now = std::time(nullptr);
+  std::tm localTm{};
+#if defined(_WIN32)
+  localtime_s(&localTm, &now);
+#else
+  localtime_r(&now, &localTm);
+#endif
+  const auto local =
+      std::chrono::local_days{std::chrono::year{localTm.tm_year + 1900} / (localTm.tm_mon + 1) / localTm.tm_mday} +
+      std::chrono::hours{localTm.tm_hour} + std::chrono::minutes{localTm.tm_min} + std::chrono::seconds{localTm.tm_sec};
+  const auto expected = local - std::chrono::local_days{std::chrono::year{2000} / 1 / 1};
+  const auto actual = std::chrono::seconds{OSTicksToSeconds(OSGetTime())};
+
+  EXPECT_LE(std::chrono::abs(actual - expected), 1s);
+}
+
+TEST(OSTimeTest, CalendarConversionIgnoresTimeZone) {
+  OSCalendarTime output{};
+  OSTicksToCalendarTime(0, &output);
+
+  EXPECT_EQ(output.sec, 0);
+  EXPECT_EQ(output.min, 0);
+  EXPECT_EQ(output.hour, 0);
+  EXPECT_EQ(output.mday, 1);
+  EXPECT_EQ(output.mon, 0);
+  EXPECT_EQ(output.year, 2000);
+
+  OSCalendarTime input{
+      .sec = 0,
+      .min = 0,
+      .hour = 0,
+      .mday = 2,
+      .mon = 0,
+      .year = 2000,
+  };
+  EXPECT_EQ(OSCalendarTimeToTicks(&input), OSSecondsToTicks(86400LL));
 }
 
 TEST(OSTimeTest, CalendarConversionRoundTripsLocalTime) {

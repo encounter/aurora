@@ -7,6 +7,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+option(AURORA_RVL "Use Wii (Revolution) SDK behavior" OFF)
 option(AURORA_ENABLE_GX "Enable GX implementation and WebGPU renderer" ON)
 option(AURORA_ENABLE_DVD "Enable DVD implementation backed by nod" ON)
 option(AURORA_ENABLE_CARD "Enable CARD implementation based on kabufuda" ON)
