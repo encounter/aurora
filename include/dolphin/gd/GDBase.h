@@ -18,7 +18,11 @@ typedef struct _GDLObj {
 	u8* top;
 } GDLObj;
 
-extern GDLObj* __GDCurrentDL;
+#ifdef __cplusplus
+extern thread_local GDLObj* __GDCurrentDL;
+#else
+extern _Thread_local GDLObj* __GDCurrentDL;
+#endif
 
 void GDInitGDLObj(GDLObj* dl, void* start, u32 length);
 void GDFlushCurrToMem(void);
