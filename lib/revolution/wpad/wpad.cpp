@@ -114,6 +114,7 @@ void make_sample(Channel& channel, const ChannelSample& host, double time, bool 
   sample.format = channel.format;
   sample.distance = host.distance;
   sample.synthesizedPointer = host.synthesizedPointer;
+  sample.precisePointer = host.precisePointer;
   const bool connected = channel.connected && !channel.disabled;
   auto& core = sample.core;
   core = host.core;
@@ -143,6 +144,7 @@ void make_sample(Channel& channel, const ChannelSample& host, double time, bool 
     sample.pointer = overridePointer ? *channel.pointer : host.pointer;
     if (overridePointer) {
       sample.synthesizedPointer = true;
+      sample.precisePointer = false;
     }
 
     auto& ptr = sample.pointer;

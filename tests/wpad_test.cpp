@@ -150,6 +150,20 @@ TEST_F(WpadTest, PointerDistanceIgnoresSensorHeightForSimulatedPointers) {
   EXPECT_EQ(status.dpd_valid_fg, 2);
 }
 
+TEST_F(WpadTest, PrecisePointersSkipPositionSmoothing) {
+  KPADSetPosParam(0, 0.03f, 0.5f);
+  provider->state.pointer = {0.f, 0.f, TRUE};
+  tick();
+  latest();
+  provider->state.pointer = {0.02f, 0.f, TRUE};
+  tick();
+  EXPECT_LT(latest().pos.x, 0.01f);
+
+  provider->state.precisePointer = true;
+  tick();
+  EXPECT_FLOAT_EQ(latest().pos.x, 0.02f);
+}
+
 TEST_F(WpadTest, OverridesUseHardwareUnitsAndKeepReferencePoseSigns) {
   Vec core{-1, 0, 0}, fs{0, 0, 1};
   aurora_wpad_set_acceleration(0, &core, &fs);

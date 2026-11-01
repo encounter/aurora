@@ -11,6 +11,7 @@ struct Sample {
   AuroraWpadPointer pointer{};
   float distance = 1.f;
   bool synthesizedPointer = true;
+  bool precisePointer = false;
   double time = 0;
   u32 format = WPAD_FMT_CORE;
 };

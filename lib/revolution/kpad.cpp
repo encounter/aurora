@@ -171,7 +171,7 @@ void sample(s32 chan, const aurora::wpad::Sample& raw) {
       status.pos = pos;
       status.dist = distance;
 
-      if (tracked) {
+      if (tracked && !raw.precisePointer) {
         status.pos = {
             filtered(old.pos.x, pos.x, channel.pos),
             filtered(old.pos.y, pos.y, channel.pos),

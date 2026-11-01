@@ -185,6 +185,7 @@ ChannelSample SimulatedChannelProvider::sample(uint32_t port, uint64_t time) {
   result.core.dev = static_cast<u8>(pad::profile(target)->settings.wpadExtension);
   result.distance = distance;
   result.synthesizedPointer = true;
+  result.precisePointer = true;
   auto& state = pad::gameplay_state(port);
   if (pad::detail::blocked()) {
     for (auto id : {source, input::device_source().id}) {

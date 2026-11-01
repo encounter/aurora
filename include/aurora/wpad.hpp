@@ -66,6 +66,7 @@ struct ChannelSample {
   AuroraWpadPointer pointer{};
   float distance = 1.f;
   bool synthesizedPointer = false;
+  bool precisePointer = false; // Skip smoothing (jitter-free source, e.g. mouse)
 };
 
 // Providers run on the input thread. Native providers can supply calibrated raw reports.
