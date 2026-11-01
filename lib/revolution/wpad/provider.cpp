@@ -279,12 +279,14 @@ ChannelSample SimulatedChannelProvider::sample(uint32_t port, uint64_t time) {
   const auto eval = time > kSensorResampleDelay ? time - kSensorResampleDelay : 0;
   Vec core = acceleration(coreSource, coreKind, eval);
   Vec fs = acceleration(source, SensorKind::AccelLeft, eval);
+  const auto ampl = 2.0f;
+  const auto wavelength = 75'000'000;
   const auto wave =
-      static_cast<float>(std::sin(static_cast<double>(time % 50'000'000) * (2.0 * std::numbers::pi / 50'000'000)));
+      ampl * static_cast<float>(std::sin(static_cast<double>(time % wavelength) * (2.0 * std::numbers::pi / wavelength)));
   if (state.value(c.shake) >= 0.5f) {
-    core.x += wave * 1.5f;
-    core.y += wave * 1.5f;
-    core.z += wave * 1.5f;
+    core.x += wave;
+    core.y += wave;
+    core.z += wave;
   }
 
   if (state.value(c.fs.shake) >= 0.5f) {
@@ -421,8 +423,10 @@ const Controls& controls() {
     bindKey(c.down, SDL_SCANCODE_DOWN);
     bindKey(c.left, SDL_SCANCODE_LEFT);
     bindKey(c.right, SDL_SCANCODE_RIGHT);
-    bindKey(c.fs.z, SDL_SCANCODE_SPACE);
-    bindKey(c.fs.c, SDL_SCANCODE_LSHIFT);
+    // bindKey(c.fs.z, SDL_SCANCODE_SPACE);
+    bindKey(c.fs.z, SDL_SCANCODE_LSHIFT);
+    bindKey(c.a, SDL_SCANCODE_SPACE);
+    bindKey(c.fs.c, SDL_SCANCODE_E);
     bindKey(c.fs.shake, SDL_SCANCODE_Q);
     bindKey(c.fs.stickX, SDL_SCANCODE_D, 1.f);
     bindKey(c.fs.stickX, SDL_SCANCODE_A, -1.f);
