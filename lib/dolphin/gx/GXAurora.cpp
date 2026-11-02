@@ -103,6 +103,30 @@ void GXRestoreFrameBuffer() {
   aurora::gx::fifo::publish();
 }
 
+static void GXWriteClear(bool wholeTarget, GXBool color, GXBool alpha, GXBool depth, GXColor clearColor, u32 clearZ,
+                         u32 left, u32 top, u32 width, u32 height) {
+  GX_WRITE_AURORA(GX_AURORA_CLEAR);
+  GX_WRITE_U8((color ? 0x01 : 0) | (alpha ? 0x02 : 0) | (depth ? 0x04 : 0) | (wholeTarget ? 0x08 : 0));
+  GX_WRITE_U32(left);
+  GX_WRITE_U32(top);
+  GX_WRITE_U32(width);
+  GX_WRITE_U32(height);
+  GX_WRITE_U8(clearColor.r);
+  GX_WRITE_U8(clearColor.g);
+  GX_WRITE_U8(clearColor.b);
+  GX_WRITE_U8(clearColor.a);
+  GX_WRITE_U32(clearZ);
+}
+
+void GXClear(GXBool color, GXBool alpha, GXBool depth, GXColor clearColor, u32 clearZ) {
+  GXWriteClear(true, color, alpha, depth, clearColor, clearZ, 0, 0, 0, 0);
+}
+
+void GXClearSubrect(GXBool color, GXBool alpha, GXBool depth, GXColor clearColor, u32 clearZ, u32 left, u32 top,
+                    u32 width, u32 height) {
+  GXWriteClear(false, color, alpha, depth, clearColor, clearZ, left, top, width, height);
+}
+
 AuroraReadbackStream AuroraReadbackCreateStream() { return aurora::gfx::readback::create_stream(); }
 
 void AuroraReadbackDestroyStream(AuroraReadbackStream stream) { aurora::gfx::readback::destroy_stream(stream); }

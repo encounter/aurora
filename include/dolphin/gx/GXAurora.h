@@ -3,6 +3,7 @@
 
 #include <dolphin/types.h>
 #include <dolphin/gx/GXEnum.h>
+#include <dolphin/gx/GXStruct.h>
 
 #if __cplusplus
 extern "C" {
@@ -127,6 +128,17 @@ extern "C" {
  */
 #define GX_AURORA_READBACK_CAPTURE_COPIES 0x0051
 
+/**
+ * Clears the current EFB, or a rectangle of it.
+ *
+ * Command format:
+ *   u8  flags (0x01 = color, 0x02 = alpha, 0x04 = depth, 0x08 = whole target)
+ *   u32 left, top, width, height (EFB coordinates; ignored for the whole target)
+ *   u8  r, g, b, a
+ *   u32 z (24-bit, as in GXSetCopyClear)
+ */
+#define GX_AURORA_CLEAR 0x0052
+
 #define GX2_SET_POLYGON_OFFSET 0x1000
 
 /*
@@ -209,6 +221,15 @@ void GXCreateFrameBuffer(u32 width, u32 height);
  * Must be called after GXCreateFrameBuffer() to resume normal rendering.
  */
 void GXRestoreFrameBuffer(void);
+
+/**
+ * Clears the current EFB or offscreen framebuffer like GXCopyTex/GXCopyDisp with clear = true.
+ * The color and z values match GXSetCopyClear.
+ */
+void GXClear(GXBool color, GXBool alpha, GXBool depth, GXColor clearColor, u32 clearZ);
+/** Same as GXClear, limited to a rectangle in EFB coordinates. */
+void GXClearSubrect(GXBool color, GXBool alpha, GXBool depth, GXColor clearColor, u32 clearZ, u32 left, u32 top,
+                    u32 width, u32 height);
 
 /*
  * Asynchronous readback APIs

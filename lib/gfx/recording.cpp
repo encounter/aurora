@@ -942,6 +942,30 @@ PipelineRef pipeline_ref(const clear::PipelineConfig& config) {
   return find_pipeline(config, get_render_target_layout(), gx::g_gxState.drawsBlocking);
 }
 
+static bool push_clear_draw(ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
+                            Vec4<float> clearColorValue, float clearDepthValue) {
+  if (rect.width <= 0 || rect.height <= 0 || !(clearColor || clearAlpha || clearDepth)) {
+    return false;
+  }
+  push_draw_command(clear::DrawData{
+      .pipeline = pipeline_ref(clear::PipelineConfig{
+          .clearColor = clearColor,
+          .clearAlpha = clearAlpha,
+          .clearDepth = clearDepth,
+      }),
+      .color =
+          wgpu::Color{
+              .r = clearColorValue.x(),
+              .g = clearColorValue.y(),
+              .b = clearColorValue.z(),
+              .a = clearColorValue.w(),
+          },
+      .depth = clearDepthValue,
+      .rect = rect,
+  });
+  return true;
+}
+
 void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
                        Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat,
                        GXPixelFmt sourceFormat) {
@@ -1005,27 +1029,16 @@ void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bo
   current_render_passes().emplace_back(std::move(newPass));
   ++g_recorder.currentRenderPass;
 
-  const bool drawClearColor = clearColor && !fullColorClear;
-  const bool drawClearAlpha = clearAlpha && !fullColorClear;
-  const bool drawClearDepth = clearDepth && !fullTarget;
-  if (clearRect.width > 0 && clearRect.height > 0 && (drawClearColor || drawClearAlpha || drawClearDepth)) {
-    // If we're only clearing a portion of the render target (or only one of color/alpha), perform a clear draw
-    push_draw_command(clear::DrawData{
-        .pipeline = pipeline_ref(clear::PipelineConfig{
-            .clearColor = drawClearColor,
-            .clearAlpha = drawClearAlpha,
-            .clearDepth = drawClearDepth,
-        }),
-        .color =
-            wgpu::Color{
-                .r = clearColorValue.x(),
-                .g = clearColorValue.y(),
-                .b = clearColorValue.z(),
-                .a = clearColorValue.w(),
-            },
-        .depth = clearDepthValue,
-        .rect = clearRect,
-    });
+  push_clear_draw(clearRect, clearColor && !fullColorClear, clearAlpha && !fullColorClear, clearDepth && !fullTarget,
+                  clearColorValue, clearDepthValue);
+  push_command(CommandType::SetViewport, Command::Data{.setViewport = g_recorder.cachedViewport});
+  push_command(CommandType::SetScissor, Command::Data{.setScissor = g_recorder.cachedScissor});
+}
+
+void clear_rect(ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth, Vec4<float> clearColorValue,
+                float clearDepthValue) {
+  if (!push_clear_draw(rect, clearColor, clearAlpha, clearDepth, clearColorValue, clearDepthValue)) {
+    return;
   }
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_recorder.cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_recorder.cachedScissor});

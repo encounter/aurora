@@ -53,6 +53,25 @@ void copy_tex(const void* dest, GXBool clear) noexcept {
   gfx::resolve_pass_into(copy.handle, rect, clearColor, clearAlpha, clearDepth, g_gxState.clearColor,
                          clear_depth_value(), texCopyFmt, g_gxState.pixelFmt);
 }
+
+void clear_efb(const gfx::ClipRect& logicalRect, bool wholeTarget, bool clearColor, bool clearAlpha, bool clearDepth,
+               GXColor color, u32 z) noexcept {
+  gfx::ClipRect rect;
+  if (wholeTarget) {
+    const auto [width, height] = gfx::get_render_target_size();
+    rect = {0, 0, static_cast<int32_t>(width), static_cast<int32_t>(height)};
+  } else {
+    rect = map_logical_scissor(logicalRect);
+  }
+  const Vec4 clearColorValue{
+      static_cast<float>(color.r) / 255.f,
+      static_cast<float>(color.g) / 255.f,
+      static_cast<float>(color.b) / 255.f,
+      static_cast<float>(color.a) / 255.f,
+  };
+  gfx::clear_rect(rect, clearColor, clearAlpha && efb_has_alpha(g_gxState.pixelFmt), clearDepth, clearColorValue,
+                  clear_depth_value(z));
+}
 } // namespace aurora::gx
 
 extern "C" {

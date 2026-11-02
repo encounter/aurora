@@ -767,6 +767,17 @@ void handle_aurora(ByteReader& reader) noexcept {
   } else if (subCmd == GX_AURORA_DEBUG_MARKER_INSERT) {
     auto label = reader.read_string();
     gfx::insert_debug_marker(std::move(label));
+  } else if (subCmd == GX_AURORA_CLEAR) {
+    const auto flags = reader.read<u8>();
+    const gfx::ClipRect rect{
+        .x = static_cast<int32_t>(reader.read<u32>()),
+        .y = static_cast<int32_t>(reader.read<u32>()),
+        .width = static_cast<int32_t>(reader.read<u32>()),
+        .height = static_cast<int32_t>(reader.read<u32>()),
+    };
+    const GXColor color{reader.read<u8>(), reader.read<u8>(), reader.read<u8>(), reader.read<u8>()};
+    const auto z = reader.read<u32>();
+    clear_efb(rect, (flags & 0x08) != 0, (flags & 0x01) != 0, (flags & 0x02) != 0, (flags & 0x04) != 0, color, z);
   }
 
   else {
