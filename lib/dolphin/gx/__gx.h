@@ -148,6 +148,8 @@ struct __GXData_struct {
   f32 vpHt;         // viewport height
   f32 vpNearz;      // viewport near Z
   f32 vpFarz;       // viewport far Z
+  f32 zScale;       // depth scale
+  f32 zOffset;      // depth offset
 
   u8 fgRange;       // fog range adjustment enabled
   f32 fgSideX;      // fog range side X
