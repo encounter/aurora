@@ -17,6 +17,7 @@ namespace aurora::window {
 
 enum class CustomEvent {
   FrameBufferChanged,
+  SurfaceReadyChanged,
   End,
 };
 static Uint32 operator+(Uint32 lhs, CustomEvent rhs) { return lhs + static_cast<Uint32>(rhs); }

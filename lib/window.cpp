@@ -688,6 +688,7 @@ void set_surface_ready(bool ready) noexcept {
                              g_window != nullptr;
 #endif
   time::internal::set_pause_reason(time::internal::PauseReason::Surface, managedOutput && !ready);
+  push_custom_event(CustomEvent::SurfaceReadyChanged); // Trigger SDL event wakeup
 }
 
 bool prepare_frame() {
