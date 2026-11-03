@@ -642,6 +642,17 @@ void handle_aurora(ByteReader& reader) noexcept {
       slot.texDataVersion = newTexDataVersion;
       g_gxState.dirty |= DirtyTextures;
     }
+  } else if (subCmd == GX_AURORA_SET_TEX_IMG_PTR) {
+    const auto texMapId = reader.read<u8>();
+    CHECK(texMapId < MaxTextures, "invalid texture map id {}", texMapId);
+    auto& slot = g_gxState.loadedTextures[texMapId];
+    const auto newData = reinterpret_cast<const void*>(reader.read<u64>());
+    if (slot.data != newData) {
+      slot.data = newData;
+      slot.texObjId = 0;
+      slot.texDataVersion = 0;
+      g_gxState.dirty |= DirtyTextures;
+    }
   } else if (subCmd == GX_AURORA_LOAD_TLUT) {
     const auto idx = reader.read<u8>();
     CHECK(idx < MaxTluts, "invalid tlut slot {}", idx);

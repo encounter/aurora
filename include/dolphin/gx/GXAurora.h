@@ -75,6 +75,16 @@ extern "C" {
 
 #define GX_AURORA_LOAD_COPY_DEST 0x0037
 
+/**
+ * Sets the image data pointer of a texture map, replacing TX_SETIMAGE3 (used by GDSetTexImgPtr).
+ * The texture's size, format and other settings are unchanged.
+ *
+ * Command format:
+ *   u8  texture map ID
+ *   u64 image data pointer
+ */
+#define GX_AURORA_SET_TEX_IMG_PTR 0x0038
+
 #define GX_AURORA_BEGIN_OFFSCREEN 0x0039
 
 #define GX_AURORA_END_OFFSCREEN 0x003A
