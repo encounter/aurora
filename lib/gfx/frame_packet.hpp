@@ -99,6 +99,8 @@ struct RenderPass {
   wgpu::Texture snapshotColorDst;
   wgpu::TextureView snapshotDepthDst;
   wgpu::Texture snapshotNormalDst;
+  wgpu::Texture xfbDst;
+  ClipRect xfbRect;
   float clearDepthValue = 1.f;
   wgpu::LoadOp depthLoadOp = wgpu::LoadOp::Undefined;
   wgpu::StoreOp depthStoreOp = wgpu::StoreOp::Store;
@@ -117,7 +119,7 @@ struct RenderPass {
 
   RenderTargetLayout target_layout() const noexcept;
   bool has_consumer() const {
-    return resolveTarget || snapshotColorDst || snapshotDepthDst || snapshotNormalDst || presentConsumer;
+    return resolveTarget || snapshotColorDst || snapshotDepthDst || snapshotNormalDst || xfbDst || presentConsumer;
   }
   bool has_content() const {
     if (hasDraws || clearDepth) {

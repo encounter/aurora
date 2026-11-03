@@ -711,6 +711,12 @@ void handle_aurora(ByteReader& reader) noexcept {
     g_gxState.texCopyDstWide = true;
   } else if (subCmd == GX_AURORA_LOAD_COPY_DEST) {
     g_gxState.texCopyDest = reinterpret_cast<const void*>(reader.read<u64>());
+  } else if (subCmd == GX_AURORA_LOAD_DISP_COPY_SRC) {
+    const s32 left = reader.read<s32>();
+    const s32 top = reader.read<s32>();
+    const s32 width = reader.read<s32>();
+    const s32 height = reader.read<s32>();
+    g_gxState.dispCopySrc = {left, top, width, height};
   } else if (subCmd == GX_AURORA_READBACK_CAPTURE_PEEKS) {
     readback::handle_capture_peeks(reader);
   } else if (subCmd == GX_AURORA_READBACK_CAPTURE_COPIES) {

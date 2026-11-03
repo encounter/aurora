@@ -278,7 +278,7 @@ void bp_clear_depth(u8, u32 value) noexcept { g_gxState.clearDepth = reg_get(val
 void bp_efb_copy(u8, u32 value) noexcept {
   const bool clear = reg_get(value, 1, 11) != 0;
   if (reg_get(value, 1, 14) != 0) {
-    Log.warn("STUB: display copy is not implemented");
+    copy_disp(clear);
   } else {
     copy_tex(g_gxState.texCopyDest, clear);
   }

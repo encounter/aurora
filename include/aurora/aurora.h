@@ -151,6 +151,11 @@ typedef struct {
   bool pauseOnFocusLost;
   bool allowTextureDumps;
   bool allowCpuAdapter;
+  /*
+   * Emulate GXCopyDisp with a persistent XFB texture.
+   * If false, the EFB contents at aurora_end_frame are presented.
+   */
+  bool emulateXfb;
   int32_t windowPosX;
   int32_t windowPosY;
   uint32_t windowWidth;

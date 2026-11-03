@@ -577,6 +577,32 @@ struct PresentPool {
 };
 std::array<PresentPool, FrameSlotCount> g_presentPools;
 
+webgpu::TextureWithSampler g_xfb;
+
+const webgpu::TextureWithSampler& acquire_xfb(uint32_t width, uint32_t height, wgpu::TextureFormat format) {
+  if (!g_xfb.texture || g_xfb.size.width != width || g_xfb.size.height != height || g_xfb.format != format) {
+    const wgpu::Extent3D size{width, height, 1};
+    const wgpu::TextureDescriptor desc{
+        .label = "XFB",
+        .usage = wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc,
+        .dimension = wgpu::TextureDimension::e2D,
+        .size = size,
+        .format = format,
+        .mipLevelCount = 1,
+        .sampleCount = 1,
+    };
+    auto texture = webgpu::g_device.CreateTexture(&desc);
+    auto view = texture.CreateView();
+    g_xfb = webgpu::TextureWithSampler{
+        .texture = std::move(texture),
+        .view = std::move(view),
+        .size = size,
+        .format = format,
+    };
+  }
+  return g_xfb;
+}
+
 present::Request record_present(present::TargetSnapshot target, webgpu::TextureWithSampler source,
                                 bool resample = true) {
   auto& frame = current_frame_packet();
@@ -662,6 +688,10 @@ void begin_recording(FramePacket& packet, size_t frameSlot) {
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_recorder.cachedScissor});
 }
 
+webgpu::TextureWithSampler xfb_present_source() {
+  return g_xfb.view ? g_xfb : current_frame_packet().efb.present_source();
+}
+
 void record_xfb_present(imgui::DrawData drawData, wgpu::BindGroup rmlBindGroup, bool rmlOverlay) {
   auto& frame = current_frame_packet();
   const auto& efb = frame.efb;
@@ -670,7 +700,7 @@ void record_xfb_present(imgui::DrawData drawData, wgpu::BindGroup rmlBindGroup, 
   }
 
   const bool resample = !rmlBindGroup || rmlOverlay;
-  auto request = record_present(efb.xfb, efb.present_source(), resample);
+  auto request = record_present(efb.xfb, xfb_present_source(), resample);
   request.primary = true;
   request.imguiDrawData = std::move(drawData);
   request.rmlBindGroup = std::move(rmlBindGroup);
@@ -719,6 +749,7 @@ void shutdown_recording() {
   for (auto& pool : g_presentPools) {
     pool = {};
   }
+  g_xfb = {};
   g_recorder.currentRenderPass = UINT32_MAX;
   g_offscreenCache.clear();
   g_recorder.offscreenColor = {};
@@ -966,26 +997,8 @@ static bool push_clear_draw(ClipRect rect, bool clearColor, bool clearAlpha, boo
   return true;
 }
 
-void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
-                       Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat,
-                       GXPixelFmt sourceFormat) {
-  // Resolve current render pass
-  auto& prevPass = current_render_passes()[g_recorder.currentRenderPass];
-  prevPass.resolveTarget = std::move(texture);
-  prevPass.resolveRect = rect;
-  prevPass.resolveFormat = resolveFormat;
-  prevPass.resolveSourceFormat = sourceFormat;
-  const auto srcW = static_cast<float>(prevPass.colorAttachments[SceneColorAttachmentIndex].size.width);
-  const auto srcH = static_cast<float>(prevPass.colorAttachments[SceneColorAttachmentIndex].size.height);
-  const tex_copy_conv::Uniforms uniforms{
-      .offset = {static_cast<float>(rect.x) / srcW, static_cast<float>(rect.y) / srcH},
-      .scale = {static_cast<float>(rect.width) / srcW, static_cast<float>(rect.height) / srcH},
-      .opaqueAlpha = !gx::efb_has_alpha(sourceFormat),
-  };
-  prevPass.resolveUniformRange = push_uniform(uniforms);
-  enqueue_pass(current_frame_packet(), g_recorder.currentRenderPass);
-
-  // Populate new render pass from previous
+static void resume_pass_after_copy(const RenderPass& prevPass, ClipRect rect, bool clearColor, bool clearAlpha,
+                                   bool clearDepth, Vec4<float> clearColorValue, float clearDepthValue) {
   const auto msaaSamples = prevPass.msaaSamples;
   const auto& targetSize = prevPass.colorAttachments[SceneColorAttachmentIndex].size;
   const auto left = std::clamp<int32_t>(rect.x, 0, static_cast<int32_t>(targetSize.width));
@@ -1033,6 +1046,44 @@ void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bo
                   clearColorValue, clearDepthValue);
   push_command(CommandType::SetViewport, Command::Data{.setViewport = g_recorder.cachedViewport});
   push_command(CommandType::SetScissor, Command::Data{.setScissor = g_recorder.cachedScissor});
+}
+
+void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
+                       Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat,
+                       GXPixelFmt sourceFormat) {
+  // Resolve current render pass
+  auto& prevPass = current_render_passes()[g_recorder.currentRenderPass];
+  prevPass.resolveTarget = std::move(texture);
+  prevPass.resolveRect = rect;
+  prevPass.resolveFormat = resolveFormat;
+  prevPass.resolveSourceFormat = sourceFormat;
+  const auto srcW = static_cast<float>(prevPass.colorAttachments[SceneColorAttachmentIndex].size.width);
+  const auto srcH = static_cast<float>(prevPass.colorAttachments[SceneColorAttachmentIndex].size.height);
+  const tex_copy_conv::Uniforms uniforms{
+      .offset = {static_cast<float>(rect.x) / srcW, static_cast<float>(rect.y) / srcH},
+      .scale = {static_cast<float>(rect.width) / srcW, static_cast<float>(rect.height) / srcH},
+      .opaqueAlpha = !gx::efb_has_alpha(sourceFormat),
+  };
+  prevPass.resolveUniformRange = push_uniform(uniforms);
+  enqueue_pass(current_frame_packet(), g_recorder.currentRenderPass);
+  resume_pass_after_copy(prevPass, rect, clearColor, clearAlpha, clearDepth, clearColorValue, clearDepthValue);
+}
+
+void copy_disp(ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth, Vec4<float> clearColorValue,
+               float clearDepthValue) {
+  auto& prevPass = current_render_passes()[g_recorder.currentRenderPass];
+  const auto& color = prevPass.colorAttachments[SceneColorAttachmentIndex];
+  const auto left = std::clamp<int32_t>(rect.x, 0, static_cast<int32_t>(color.size.width));
+  const auto top = std::clamp<int32_t>(rect.y, 0, static_cast<int32_t>(color.size.height));
+  const auto right = std::clamp<int32_t>(rect.x + rect.width, left, static_cast<int32_t>(color.size.width));
+  const auto bottom = std::clamp<int32_t>(rect.y + rect.height, top, static_cast<int32_t>(color.size.height));
+  if (right > left && bottom > top) {
+    prevPass.xfbDst =
+        acquire_xfb(static_cast<uint32_t>(right - left), static_cast<uint32_t>(bottom - top), color.format).texture;
+    prevPass.xfbRect = {.x = left, .y = top, .width = right - left, .height = bottom - top};
+  }
+  enqueue_pass(current_frame_packet(), g_recorder.currentRenderPass);
+  resume_pass_after_copy(prevPass, rect, clearColor, clearAlpha, clearDepth, clearColorValue, clearDepthValue);
 }
 
 void clear_rect(ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth, Vec4<float> clearColorValue,

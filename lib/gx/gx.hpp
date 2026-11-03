@@ -411,6 +411,7 @@ struct GXState {
   bool texCopyDstWide = false;
   const void* texCopyDest = nullptr;
   absl::flat_hash_map<const void*, CopyTextureRef> copyTextures;
+  gfx::ClipRect dispCopySrc{0, 0, 640, 480};
 
   // Cache state
   bool drawsBlocking = false;
@@ -453,6 +454,7 @@ void set_render_viewport(const gfx::Viewport& viewport) noexcept;
 void set_logical_scissor(const gfx::ClipRect& scissor) noexcept;
 void set_render_scissor(const gfx::ClipRect& scissor) noexcept;
 void copy_tex(const void* dest, GXBool clear) noexcept;
+void copy_disp(GXBool clear) noexcept;
 void clear_efb(const gfx::ClipRect& logicalRect, bool wholeTarget, bool clearColor, bool clearAlpha, bool clearDepth,
                GXColor color, u32 z) noexcept;
 const gfx::TextureBind& get_texture(GXTexMapID id) noexcept;

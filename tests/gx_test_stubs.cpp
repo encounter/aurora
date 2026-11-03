@@ -235,6 +235,10 @@ void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bo
                        GXPixelFmt sourceFormat) {
   testing::resolvePassCount.fetch_add(1, std::memory_order_release);
 }
+void copy_disp(ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth, Vec4<float> clearColorValue,
+               float clearDepthValue) {}
+void clear_rect(ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth, Vec4<float> clearColorValue,
+                float clearDepthValue) {}
 void begin_offscreen(uint32_t width, uint32_t height) {
   testing::offscreenWidth.store(width, std::memory_order_relaxed);
   testing::offscreenHeight.store(height, std::memory_order_relaxed);

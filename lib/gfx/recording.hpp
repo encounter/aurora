@@ -18,6 +18,7 @@ struct RecordedFrame {
 
 void begin_recording(FramePacket& packet, size_t frameSlot);
 void prepare_recording();
+webgpu::TextureWithSampler xfb_present_source();
 void record_xfb_present(imgui::DrawData drawData, wgpu::BindGroup rmlBindGroup, bool rmlOverlay);
 RecordedFrame end_recording();
 void shutdown_recording();
@@ -115,6 +116,8 @@ PipelineRef pipeline_ref(const PipelineConfig& config);
 void resolve_pass_into(TextureHandle texture, ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth,
                        Vec4<float> clearColorValue, float clearDepthValue, GXTexFmt resolveFormat,
                        GXPixelFmt sourceFormat);
+void copy_disp(ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth, Vec4<float> clearColorValue,
+               float clearDepthValue);
 void clear_rect(ClipRect rect, bool clearColor, bool clearAlpha, bool clearDepth, Vec4<float> clearColorValue,
                 float clearDepthValue);
 uint32_t align_uniform(uint32_t value);

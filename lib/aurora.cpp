@@ -308,7 +308,7 @@ void end_frame() noexcept {
   bool rmlOverlay = false;
 #ifdef AURORA_ENABLE_RMLUI
   if (efb.xfb.state && efb.xfb.size.native_fb_width && efb.xfb.size.native_fb_height && rmlui::is_initialized()) {
-    const auto& source = efb.present_source();
+    const auto source = gfx::detail::xfb_present_source();
     const auto viewport = webgpu::calculate_present_viewport(
         efb.xfb.size.native_fb_width, efb.xfb.size.native_fb_height, source.size.width, source.size.height);
     auto rmlFrame = rmlui::record_frame(viewport, source);

@@ -328,6 +328,26 @@ void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo,
     };
     cmd.CopyTextureToTexture(&src, &dst, &size);
   }
+  if (passInfo.xfbDst) {
+    const webgpu::gpu_prof::Zone zone{cmd, "XFB copy"};
+    const wgpu::TexelCopyTextureInfo src{
+        .texture = passInfo.copySourceTexture,
+        .origin =
+            wgpu::Origin3D{
+                .x = static_cast<uint32_t>(passInfo.xfbRect.x),
+                .y = static_cast<uint32_t>(passInfo.xfbRect.y),
+            },
+    };
+    const wgpu::TexelCopyTextureInfo dst{
+        .texture = passInfo.xfbDst,
+    };
+    const wgpu::Extent3D size{
+        .width = static_cast<uint32_t>(passInfo.xfbRect.width),
+        .height = static_cast<uint32_t>(passInfo.xfbRect.height),
+        .depthOrArrayLayers = 1,
+    };
+    cmd.CopyTextureToTexture(&src, &dst, &size);
+  }
 }
 
 constexpr uint64_t VertexStagingOffset = 0;

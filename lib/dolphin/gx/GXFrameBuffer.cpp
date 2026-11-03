@@ -54,6 +54,18 @@ void copy_tex(const void* dest, GXBool clear) noexcept {
                          clear_depth_value(), texCopyFmt, g_gxState.pixelFmt);
 }
 
+void copy_disp(GXBool clear) noexcept {
+  if (!g_config.emulateXfb) {
+    return;
+  }
+
+  const auto rect = map_logical_scissor(g_gxState.dispCopySrc);
+  const auto clearColor = clear && g_gxState.colorUpdate;
+  const auto clearAlpha = clear && g_gxState.alphaUpdate && efb_has_alpha(g_gxState.pixelFmt);
+  const auto clearDepth = clear && g_gxState.depthUpdate;
+  gfx::copy_disp(rect, clearColor, clearAlpha, clearDepth, g_gxState.clearColor, clear_depth_value());
+}
+
 void clear_efb(const gfx::ClipRect& logicalRect, bool wholeTarget, bool clearColor, bool clearAlpha, bool clearDepth,
                GXColor color, u32 z) noexcept {
   gfx::ClipRect rect;
@@ -158,7 +170,13 @@ void GXAdjustForOverscan(GXRenderModeObj* rmin, GXRenderModeObj* rmout, u16 hor,
   rmout->viYOrigin = in.viYOrigin + ver;
 }
 
-void GXSetDispCopySrc(u16 left, u16 top, u16 wd, u16 ht) {}
+void GXSetDispCopySrc(u16 left, u16 top, u16 wd, u16 ht) {
+  GX_WRITE_AURORA(GX_AURORA_LOAD_DISP_COPY_SRC);
+  GX_WRITE_U32(left);
+  GX_WRITE_U32(top);
+  GX_WRITE_U32(wd);
+  GX_WRITE_U32(ht);
+}
 
 void GXSetTexCopySrc(u16 left, u16 top, u16 wd, u16 ht) {
   GX_WRITE_AURORA(GX_AURORA_LOAD_COPY_SRC);
@@ -211,7 +229,14 @@ void GXSetCopyFilter(GXBool aa, const u8 sample_pattern[12][2], GXBool vf, const
 
 void GXSetDispCopyGamma(GXGamma gamma) {}
 
-void GXCopyDisp(void* dest, GXBool clear) {}
+void GXCopyDisp(void* dest, GXBool clear) {
+  u32 reg = 0;
+  SET_REG_FIELD(0, reg, 1, 11, clear != GX_FALSE);
+  SET_REG_FIELD(0, reg, 1, 14, 1);
+  SET_REG_FIELD(0, reg, 8, 24, 0x52);
+  GX_WRITE_RAS_REG(reg);
+  aurora::gx::fifo::publish();
+}
 
 void GXCopyTex(void* dest, GXBool clear) {
   GX_WRITE_AURORA(GX_AURORA_LOAD_COPY_DEST);
