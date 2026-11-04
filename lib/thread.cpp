@@ -289,7 +289,16 @@ void set_current(const Options& options) noexcept {
 #endif
   }
 
-  SDL_SetCurrentThreadPriority(to_sdl_priority(options.priority));
+#if defined(__APPLE__)
+  // Changing the scheduling policy permanently opts a thread out of QoS. The main thread must keep its
+  // user-interactive QoS, or UIKit's out-of-process UI (such as the document picker) stalls.
+  const bool keepScheduling = pthread_main_np() != 0;
+#else
+  const bool keepScheduling = false;
+#endif
+  if (!keepScheduling) {
+    SDL_SetCurrentThreadPriority(to_sdl_priority(options.priority));
+  }
   if (options.affinity == Affinity::SharedCache) {
     pin_shared_cache();
   }
