@@ -70,17 +70,6 @@ std::atomic_bool g_surfaceReady = true;
 #endif
 bool g_lastPaused = false;
 bool g_gotFocus = false;
-std::atomic_bool g_surfaceRestorePending = false;
-
-#ifdef AURORA_ENABLE_GX
-bool surface_restore_pending() noexcept { return g_surfaceRestorePending.load(std::memory_order_acquire); }
-
-void retire_surface_for_restore() {
-  const bool restore = surface_restore_pending() || gfx::present::is_sdl_xfb();
-  g_surfaceRestorePending.store(restore, std::memory_order_release);
-  gfx::present::retire_sdl_targets();
-}
-#endif
 
 void retain_event_strings(SDL_Event& event) {
   switch (event.type) {
@@ -176,7 +165,7 @@ bool SDLCALL lifecycle_event_watch(void*, SDL_Event* event) {
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_APPLE)
     case SDL_EVENT_WINDOW_MINIMIZED:
 #ifdef AURORA_ENABLE_GX
-      if (!gfx::present::is_sdl_xfb() && !surface_restore_pending()) {
+      if (!gfx::present::is_sdl_xfb()) {
         break;
       }
 #endif
@@ -525,7 +514,6 @@ void shutdown() {
   g_lastPaused = false;
   g_gotFocus = false;
   g_backgrounded.store(false, std::memory_order_release);
-  clear_surface_restore();
   std::lock_guard lock{g_eventMutex};
   g_pendingEvents.clear();
 }
@@ -648,7 +636,7 @@ bool is_paused() noexcept {
     return false;
   }
 #ifdef AURORA_ENABLE_GX
-  if (!gfx::present::is_sdl_xfb() && !surface_restore_pending()) {
+  if (!gfx::present::is_sdl_xfb()) {
     return false;
   }
 #endif
@@ -675,15 +663,15 @@ bool is_presentable() noexcept {
 void set_surface_ready(bool ready) noexcept {
   g_surfaceReady.store(ready, std::memory_order_release);
 #if defined(AURORA_ENABLE_GX) && defined(SDL_PLATFORM_ANDROID)
-  // JNI calls this before SDL destroys the ANativeWindow. Pending scene work
-  // owns EFB views only, so retire the target without draining that work.
+  // JNI calls this on the UI thread before SDL releases the ANativeWindow,
+  // so we must synchronize with the render worker before returning.
   if (!ready && surface_type() == AURORA_SURFACE_SDL_MANAGED) {
-    retire_surface_for_restore();
+    gfx::present::release_sdl_surfaces("surface not ready");
   }
 #endif
   const bool managedOutput = surface_type() == AURORA_SURFACE_SDL_MANAGED &&
 #ifdef AURORA_ENABLE_GX
-                             (gfx::present::is_sdl_xfb() || surface_restore_pending());
+                             gfx::present::is_sdl_xfb();
 #else
                              g_window != nullptr;
 #endif
@@ -693,9 +681,9 @@ void set_surface_ready(bool ready) noexcept {
 
 bool prepare_frame() {
 #ifdef AURORA_ENABLE_GX
-  if (gfx::present::is_sdl_xfb() || (surface_type() == AURORA_SURFACE_SDL_MANAGED && surface_restore_pending())) {
+  if (gfx::present::is_sdl_xfb()) {
     if (!is_presentable()) {
-      retire_surface_for_restore();
+      gfx::present::release_sdl_surfaces("not presentable");
       return false;
     }
     if (is_paused()) {
@@ -704,13 +692,10 @@ bool prepare_frame() {
     if (!gfx::present::ensure_sdl_target()) {
       return false;
     }
-    clear_surface_restore();
   }
 #endif
   return true;
 }
-
-void clear_surface_restore() noexcept { g_surfaceRestorePending.store(false, std::memory_order_release); }
 
 SurfaceLock::SurfaceLock(bool enabled) noexcept : m_locked(enabled) {
 #if defined(SDL_PLATFORM_ANDROID)

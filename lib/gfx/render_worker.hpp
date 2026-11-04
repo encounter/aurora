@@ -80,6 +80,8 @@ void enqueue_begin_frame(uint64_t frameId, WorkCallback work);
 void enqueue_encode_pass(uint64_t frameId, uint32_t passIndex, WorkCallback work);
 void enqueue_end_frame(uint64_t frameId, WorkCallback work);
 void enqueue_work(WorkCallback work);
+// Runs work on the render worker after all queued items and waits for it to finish.
+void run(WorkCallback work);
 void synchronize();
 
 bool is_worker_thread() noexcept;

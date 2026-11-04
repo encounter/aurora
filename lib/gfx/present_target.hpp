@@ -42,8 +42,10 @@ bool bind_xfb_surface(wgpu::Surface&& surface, const AuroraSurfaceDesc& desc);
 bool replace_xfb_surface(const AuroraSurfaceDesc& desc);
 
 bool is_sdl_xfb() noexcept;
+// Rebinds the primary SDL target's surface after it was released or lost.
 bool ensure_sdl_target();
-void retire_sdl_targets();
+// Releases SDL-managed surfaces once the render worker is done with them.
+void release_sdl_surfaces(const char* reason);
 void resize_sdl_target(PresentTargetId id, uint32_t width, uint32_t height, uint32_t nativeWidth,
                        uint32_t nativeHeight, float scale) noexcept;
 

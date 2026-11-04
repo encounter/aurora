@@ -26,7 +26,6 @@ public class AuroraSurface extends SDLSurface {
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        nativeSetSurfaceReady(false);
         super.surfaceChanged(holder, format, width, height);
         nativeSetSurfaceReady(mIsSurfaceReady);
     }

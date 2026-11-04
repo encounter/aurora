@@ -73,6 +73,31 @@ TEST_F(RenderWorkerTest, SyncWaitsForPriorWork) {
   EXPECT_TRUE(aurora::gfx::render_worker::is_idle());
 }
 
+TEST_F(RenderWorkerTest, RunExecutesOnWorkerAfterPriorWork) {
+  std::vector<int> order;
+  bool onWorker = false;
+  aurora::gfx::render_worker::initialize();
+  aurora::gfx::render_worker::enqueue_begin_frame(1, [&] {
+    std::this_thread::sleep_for(20ms);
+    order.push_back(1);
+  });
+  aurora::gfx::render_worker::run([&] {
+    onWorker = aurora::gfx::render_worker::is_worker_thread();
+    order.push_back(2);
+  });
+
+  ASSERT_EQ(order.size(), 2u);
+  EXPECT_EQ(order[0], 1);
+  EXPECT_EQ(order[1], 2);
+  EXPECT_TRUE(onWorker);
+}
+
+TEST_F(RenderWorkerTest, RunExecutesInlineWithoutWorker) {
+  bool ran = false;
+  aurora::gfx::render_worker::run([&] { ran = true; });
+  EXPECT_TRUE(ran);
+}
+
 TEST_F(RenderWorkerTest, ShutdownCompletesQueuedWork) {
   std::atomic_int count = 0;
   aurora::gfx::render_worker::initialize();

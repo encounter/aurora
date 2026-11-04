@@ -251,6 +251,23 @@ void enqueue_work(WorkCallback work) {
   });
 }
 
+void run(WorkCallback work) {
+  if (is_worker_thread()) {
+    work();
+    return;
+  }
+
+  ZoneScoped;
+  auto sync = std::make_shared<SyncState>();
+  enqueue({
+      .type = ItemType::Sync,
+      .work = std::move(work),
+      .sync = sync,
+  });
+  std::unique_lock lock{sync->mutex};
+  sync->cv.wait(lock, [&] { return sync->complete; });
+}
+
 void synchronize() {
   if (is_worker_thread()) {
     return;

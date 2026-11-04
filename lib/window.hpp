@@ -59,8 +59,6 @@ bool is_paused() noexcept;
 bool is_presentable() noexcept;
 void set_surface_ready(bool ready) noexcept;
 bool prepare_frame();
-// Explicitly unbinding the primary target cancels automatic SDL restoration.
-void clear_surface_restore() noexcept;
 void set_title(const char* title);
 void set_fullscreen(bool fullscreen);
 bool get_fullscreen();

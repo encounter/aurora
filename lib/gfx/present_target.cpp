@@ -13,7 +13,9 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <functional>
 #include <mutex>
+#include <ranges>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -50,6 +52,7 @@ struct TargetState {
 namespace {
 
 constexpr Module Log{"aurora::gfx::present"};
+std::mutex g_bindMutex;
 std::mutex g_targetsMutex;
 std::unordered_map<PresentTargetId, std::shared_ptr<present::TargetState>> g_targets;
 PresentTargetId g_nextId = 1;
@@ -86,6 +89,73 @@ bool supports(const present::TargetState& target, wgpu::TextureFormat format) {
 
 uint32_t scissor_coord(double value, uint32_t maximum) {
   return std::isfinite(value) ? static_cast<uint32_t>(std::clamp(value, 0.0, static_cast<double>(maximum))) : 0;
+}
+
+void run_bound(const std::function<void()>& work) {
+  render_worker::run([&] {
+    std::lock_guard lock{g_bindMutex};
+    work();
+  });
+}
+
+// Drops the target's surface and waits until Dawn no longer references the native window.
+void release_surface(present::TargetState& target, const char* reason) {
+  window::SurfaceLock activityLock{target.sdlManaged};
+  std::lock_guard lock{target.mutex};
+  if (!target.surface) {
+    return;
+  }
+
+  ++target.generation;
+  target.status = PresentTargetStatus::Lost;
+  const bool configured = target.appliedRevision != 0;
+  if (configured) {
+    target.surface.Unconfigure();
+  }
+  target.surface = {};
+  target.identity = nullptr;
+  target.appliedRevision = 0;
+  target.dirty = true;
+
+  if (configured && webgpu::g_backendType == wgpu::BackendType::Vulkan && webgpu::g_queue) {
+    webgpu::g_queue.Submit(0, nullptr);
+    target.lastSubmission = webgpu::g_queue.OnSubmittedWorkDone(wgpu::CallbackMode::AllowSpontaneous,
+                                                                [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {});
+  }
+  if (target.lastSubmission.id && webgpu::g_instance) {
+    while (webgpu::g_instance.WaitAny(target.lastSubmission, 100'000'000) == wgpu::WaitStatus::TimedOut) {}
+  }
+  target.lastSubmission = {};
+  // Tick Dawn after releasing the wrapper to retire native bindings
+  if (webgpu::g_instance) {
+    webgpu::g_instance.ProcessEvents();
+  }
+  Log.info("{}: released surface ({})", target.label, reason);
+}
+
+bool bind_sdl_surface(present::TargetState& target) {
+  window::SurfaceLock activityLock{true};
+  if (!window::is_presentable()) {
+    return false;
+  }
+
+  auto surface = webgpu::create_surface(webgpu::g_instance, {.type = AURORA_SURFACE_SDL_MANAGED}, target.label.c_str());
+  wgpu::SurfaceCapabilities caps;
+  if (!surface || surface.GetCapabilities(webgpu::g_adapter, &caps) != wgpu::Status::Success ||
+      (caps.usages & target.usage) != target.usage ||
+      std::find(caps.formats, caps.formats + caps.formatCount, color_format()) == caps.formats + caps.formatCount) {
+    Log.warn("{}: failed to bind new surface", target.label);
+    return false;
+  }
+
+  std::lock_guard lock{target.mutex};
+  target.identity = surface.Get();
+  target.surface = std::move(surface);
+  target.appliedRevision = 0;
+  target.dirty = true;
+  ++target.generation;
+  target.status = PresentTargetStatus::Pending;
+  return true;
 }
 
 } // namespace
@@ -157,30 +227,7 @@ void destroy_present_target(PresentTargetId id) noexcept {
     g_xfbTarget.compare_exchange_strong(expected, InvalidPresentTarget);
   }
 
-  window::SurfaceLock activityLock{target->sdlManaged};
-  std::lock_guard lock{target->mutex};
-  ++target->generation;
-  target->status = PresentTargetStatus::Lost;
-  const bool configured = target->surface && target->appliedRevision != 0;
-  if (target->surface) {
-    if (target->appliedRevision) {
-      target->surface.Unconfigure();
-    }
-    target->surface = {};
-  }
-
-  if (configured && webgpu::g_backendType == wgpu::BackendType::Vulkan && webgpu::g_queue) {
-    webgpu::g_queue.Submit(0, nullptr);
-    target->lastSubmission = webgpu::g_queue.OnSubmittedWorkDone(wgpu::CallbackMode::AllowSpontaneous,
-                                                                 [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {});
-  }
-  if (target->lastSubmission.id && webgpu::g_instance) {
-    while (webgpu::g_instance.WaitAny(target->lastSubmission, 100'000'000) == wgpu::WaitStatus::TimedOut) {}
-  }
-  // Tick Dawn after releasing the wrapper to retire native bindings
-  if (webgpu::g_instance) {
-    webgpu::g_instance.ProcessEvents();
-  }
+  run_bound([&] { release_surface(*target, "destroyed"); });
 
   std::lock_guard registryLock{g_targetsMutex};
   const auto it = g_targets.find(id);
@@ -230,9 +277,6 @@ bool set_xfb_target(PresentTargetId id) noexcept {
   }
 
   g_xfbTarget.store(id, std::memory_order_release);
-  if (id == InvalidPresentTarget) {
-    window::clear_surface_restore();
-  }
   return true;
 }
 
@@ -437,20 +481,25 @@ void shutdown() {
   }
 }
 
-void retire_sdl_targets() {
-  std::vector<PresentTargetId> targets;
+void release_sdl_surfaces(const char* reason) {
+  std::vector<std::shared_ptr<TargetState>> targets;
   {
     std::lock_guard lock{g_targetsMutex};
-    for (const auto& [id, target] : g_targets) {
+    for (const auto& target : g_targets | std::views::values) {
       if (target->sdlManaged.load(std::memory_order_acquire)) {
-        targets.push_back(id);
+        targets.push_back(target);
       }
     }
   }
-
-  for (const auto id : targets) {
-    destroy_present_target(id);
+  if (targets.empty()) {
+    return;
   }
+
+  run_bound([&] {
+    for (const auto& target : targets) {
+      release_surface(*target, reason);
+    }
+  });
 }
 
 void set_vsync(bool enabled) noexcept {
@@ -550,19 +599,27 @@ bool replace_xfb_surface(const AuroraSurfaceDesc& desc) {
 
 bool ensure_sdl_target() {
   const auto id = xfb_target();
-  const auto status = present_target_status(id);
-  if (id && status != PresentTargetStatus::Lost && status != PresentTargetStatus::Error) {
+  const auto target = find_target(id);
+  if (!target) {
+    return false;
+  }
+  const auto status = target->status.load(std::memory_order_acquire);
+  if (status != PresentTargetStatus::Lost && status != PresentTargetStatus::Error) {
     return true;
   }
 
-  destroy_present_target(id);
   const auto size = window::refresh_window_size();
-  return replace_xfb_surface({
-      .type = AURORA_SURFACE_SDL_MANAGED,
-      .width = size.native_fb_width,
-      .height = size.native_fb_height,
-      .scale = size.scale,
+  bool bound = false;
+  run_bound([&] {
+    release_surface(*target, "rebinding");
+    bound = bind_sdl_surface(*target);
   });
+  if (!bound) {
+    return false;
+  }
+  resize_sdl_target(id, size.width, size.height, size.native_fb_width, size.native_fb_height, size.scale);
+  Log.info("{}: bound new surface ({}x{})", target->label, size.native_fb_width, size.native_fb_height);
+  return true;
 }
 
 } // namespace present
