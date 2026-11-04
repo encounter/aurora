@@ -17,7 +17,8 @@ namespace {
 // GCN epoch: 2000-01-01 00:00:00 UTC = 946684800 seconds after Unix epoch
 constexpr SystemTime kGcnEpochUnix{946684800s};
 constexpr LocalTime kGcnEpochLocal{946684800s};
-std::once_flag s_gameEpochOnce;
+std::once_flag s_epochOnce;
+SystemDuration s_localOffset;
 OSTime s_gameEpochOffset;
 
 #if defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L && !_WIN32
@@ -67,24 +68,26 @@ OSTime duration_to_ticks(const Duration duration) {
          nanoseconds.count() * static_cast<OSTime>(OS_TIMER_CLOCK) / 1000000000LL;
 }
 
-void initialize_game_epoch() {
-  const LocalTime now = system_time_to_local_time(aurora::time::wall_clock::now());
-  s_gameEpochOffset =
-      duration_to_ticks(now - kGcnEpochLocal) - duration_to_ticks(aurora::time::game_clock::now().time_since_epoch());
+OSTime system_time_to_ticks(SystemTime time) { return duration_to_ticks(time - kGcnEpochUnix + s_localOffset); }
+
+void initialize_epochs() {
+  const SystemTime now = aurora::time::wall_clock::now();
+  s_localOffset = system_time_to_local_time(now).time_since_epoch() - now.time_since_epoch();
+  s_gameEpochOffset = system_time_to_ticks(now) - duration_to_ticks(aurora::time::game_clock::now().time_since_epoch());
 }
 } // namespace
 
 OSTick OSGetTick() { return OSGetTime() & 0xFFFFFFFF; }
 
 OSTime OSGetTime() {
-  std::call_once(s_gameEpochOnce, initialize_game_epoch);
+  std::call_once(s_epochOnce, initialize_epochs);
   return s_gameEpochOffset + duration_to_ticks(aurora::time::game_clock::now().time_since_epoch());
 }
 
 OSTime OSGetNativeTime() { return duration_to_ticks(aurora::time::native_clock::now().time_since_epoch()); }
 
 void AuroraInitClock() {
-  std::call_once(s_gameEpochOnce, initialize_game_epoch);
+  std::call_once(s_epochOnce, initialize_epochs);
   if (OSBaseAddress == 0) {
     return;
   }
@@ -131,4 +134,7 @@ OSTime OSCalendarTimeToTicks(OSCalendarTime* td) {
   return OSMicrosecondsToTicks(chrono::duration_cast<chrono::microseconds>(local - kGcnEpochLocal).count());
 }
 
-OSTime OSGetSystemTime() { return duration_to_ticks(aurora::time::wall_clock::now() - kGcnEpochUnix); }
+OSTime OSGetSystemTime() {
+  std::call_once(s_epochOnce, initialize_epochs);
+  return system_time_to_ticks(aurora::time::wall_clock::now());
+}

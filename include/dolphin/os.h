@@ -164,8 +164,8 @@ typedef struct OSBootInfo_s {
 
 OSTick OSGetTick(void);
 /**
- * Get the current time, in ticks since GCN epoch (2000-01-01 00:00:00 UTC).
- * Monotonic, scaled by aurora_set_timescale, and pauses when backgrounded.
+ * Get the current time, in ticks since GCN epoch (2000-01-01 00:00:00 local time).
+ * Monotonic (does not follow host time changes), scaled by aurora_set_timescale, and pauses when backgrounded.
  */
 OSTime OSGetTime(void);
 void OSTicksToCalendarTime(OSTime ticks, OSCalendarTime* td);
@@ -175,12 +175,13 @@ BOOL OSDisableInterrupts(void);
 BOOL OSRestoreInterrupts(BOOL level);
 
 /**
- * Aurora extension: get the system time, in ticks since GCN epoch (2000-01-01 00:00:00 UTC).
- * Not guaranteed to increase monotonically and not converted to the local time zone.
+ * Aurora extension: get the host's wall-clock time, in ticks since GCN epoch (2000-01-01 00:00:00 local time).
+ * Uses the same local offset as OSGetTime, but is unscaled and keeps running while paused.
+ * Follows host clock changes, so it is not guaranteed to increase monotonically.
  */
 OSTime OSGetSystemTime(void);
 /**
- * Aurora extension: get the unscaled monotonic time, in ticks since GCN epoch (2000-01-01 00:00:00 UTC).
+ * Aurora extension: get the unscaled monotonic time, in ticks from an arbitrary epoch.
  * Use only for elapsed-time measurements.
  */
 OSTime OSGetNativeTime(void);
