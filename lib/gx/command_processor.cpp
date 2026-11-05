@@ -491,6 +491,25 @@ static void handle_draw_unmerged(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, g
   push_gx_draw(prim, fmt, vtxCount, vertRange, idxRange, numIndices);
 }
 
+// Truncate vertex count to a valid number for the given primitive type
+static constexpr u16 trunc_vtx_count(GXPrimitive prim, u16 vtxCount) noexcept {
+  switch (prim) {
+  case GX_QUADS:
+    return vtxCount & ~3;
+  case GX_TRIANGLES:
+    return vtxCount - vtxCount % 3;
+  case GX_TRIANGLESTRIP:
+  case GX_TRIANGLEFAN:
+    return vtxCount < 3 ? 0 : vtxCount;
+  case GX_LINES:
+    return vtxCount & ~1;
+  case GX_LINESTRIP:
+    return vtxCount < 2 ? 0 : vtxCount;
+  default:
+    return vtxCount;
+  }
+}
+
 static void draw_prim(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, ByteReader& reader) noexcept {
   ZoneScoped;
   u32 vtxSize;
@@ -502,6 +521,11 @@ static void draw_prim(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, ByteReader& 
   u32 totalVtxBytes = vtxCount * vtxSize;
   if (totalVtxBytes > reader.remaining())
     UNLIKELY { handle_draw_overrun(totalVtxBytes, reader); }
+  const auto vertexData = reader.take(totalVtxBytes);
+
+  vtxCount = trunc_vtx_count(prim, vtxCount);
+  if (vtxCount == 0)
+    UNLIKELY { return; }
 
   const bool cleanState = g_gxState.dirty == 0 && fmt == sDrawCache.lastDrawFmt && sDrawCache.lineMode == 0 &&
                           prim != GX_LINES && prim != GX_LINESTRIP && prim != GX_POINTS;
@@ -509,8 +533,7 @@ static void draw_prim(GXPrimitive prim, GXVtxFmt fmt, u16 vtxCount, ByteReader& 
   const bool canMerge = lastDraw != nullptr && lastDraw->instanceCount == 1;
 
   // Push raw vertex data to buffer. Merged draws must remain contiguous with the previous range.
-  const auto vertexData = reader.take(totalVtxBytes);
-  gfx::Range vertRange = gfx::push_verts(vertexData.data(), vertexData.size(), canMerge ? 0 : 4);
+  gfx::Range vertRange = gfx::push_verts(vertexData.data(), vtxCount * vtxSize, canMerge ? 0 : 4);
 
   // Try to merge with previous draw call
   if (canMerge) {
