@@ -768,7 +768,7 @@ s32 CARDSetAttributes(const s32 chan, s32 fileNo [[maybe_unused]], u8 attr [[may
   return CARD_RESULT_READY;
 }
 
-s32 CARDSetStatus(const s32 chan, s32 fileNo, const CARDStat* stat) {
+s32 CARDSetStatus(const s32 chan, s32 fileNo, CARDStat* stat) {
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
@@ -784,6 +784,9 @@ s32 CARDSetStatus(const s32 chan, s32 fileNo, const CARDStat* stat) {
   } else {
     res = card->commit();
   }
+  if (res == aurora::card::ECardResult::READY) {
+    CARDGetStatus(chan, fileNo, stat);
+  }
 
   return static_cast<s32>(res);
 }
@@ -797,7 +800,7 @@ s32 __CARDSetStatusEx(const s32 chan, s32 fileNo [[maybe_unused]], CARDDir* dire
   return CARD_RESULT_READY;
 }
 
-s32 CARDSetStatusAsync(const s32 chan, const s32 fileNo, const CARDStat* stat, const CARDCallback callback) {
+s32 CARDSetStatusAsync(const s32 chan, const s32 fileNo, CARDStat* stat, const CARDCallback callback) {
   if (chan < 0 || chan >= 2) {
     return CARD_RESULT_FATAL_ERROR;
   }
