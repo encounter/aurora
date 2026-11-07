@@ -5,5 +5,6 @@
 #include <dolphin/gf/GFLight.h>
 #include <dolphin/gf/GFPixel.h>
 #include <dolphin/gf/GFTev.h>
+#include <dolphin/gf/GFTransform.h>
 
 #endif
