@@ -462,7 +462,7 @@ bool remove_mipmaps(gfx::ConvertedTexture& texture) noexcept {
     return false;
   }
 
-  ByteBuffer data{size};
+  ByteBuffer data(size);
   std::memcpy(data.data(), texture.data.data(), size);
   texture.mips = 1;
   texture.data = std::move(data);
@@ -685,7 +685,7 @@ std::optional<gfx::ConvertedTexture> load_encoded_replacement(Source&& src) noex
     return std::nullopt;
   }
 
-  ByteBuffer blob{n};
+  ByteBuffer blob(n);
   uint8_t* const dst = blob.data();
   uint64_t o = 0;
   const auto append = [&](const ByteBuffer& d) noexcept -> bool {
