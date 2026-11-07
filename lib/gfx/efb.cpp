@@ -15,7 +15,7 @@ std::mutex g_configMutex;
 AuroraWindowSize g_displaySize{};
 std::optional<State> g_applied;
 float g_scale = 0.f;
-bool g_aspectFit = false;
+bool g_aspectFit = true;
 
 uint32_t extent(double value) {
   return static_cast<uint32_t>(std::clamp(std::round(value), 1.0, static_cast<double>(UINT32_MAX)));
@@ -83,7 +83,7 @@ void initialize(const AuroraSurfaceDesc& desc) {
   g_displaySize = display_size(desc.width, desc.height, desc.scale);
   g_applied.reset();
   g_scale = 0.f;
-  g_aspectFit = false;
+  g_aspectFit = true;
 }
 
 void shutdown() {
