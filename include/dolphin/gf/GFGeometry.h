@@ -24,9 +24,19 @@ static inline void GFWrite_u16(u16 data) {
     GXCmd1u16(data);
 }
 
+inline void GFWrite_f32(f32 f) {
+    GXCmd1u32(*reinterpret_cast<u32*>(&f)); // TODO: should this be a bit_cast
+}
+
 static inline void GFWriteBPCmd(u32 regval) {
     GFWrite_u8(GX_LOAD_BP_REG);
     GFWrite_u32(regval);
+}
+
+inline void GFWriteCPCmd(u8 addr, u32 val) {
+    GFWrite_u8(GX_LOAD_CP_REG);
+    GFWrite_u8(addr);
+    GFWrite_u32(val);
 }
 
 static inline void GFWriteXFCmd(u16 addr, u32 val) {
@@ -34,6 +44,12 @@ static inline void GFWriteXFCmd(u16 addr, u32 val) {
     GFWrite_u16(0);
     GFWrite_u16(addr);
     GFWrite_u32(val);
+}
+
+inline void GFWriteXFCmdHdr(u16 addr, u8 len) {
+    GFWrite_u8(GX_LOAD_XF_REG);
+    GFWrite_u16(len - 1);
+    GFWrite_u16(addr);
 }
 
 void GFSetGenMode2(u8 nTexGens, u8 nChans, u8 nTevs, u8 nInds, GXCullMode cm);
