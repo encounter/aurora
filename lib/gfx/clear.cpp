@@ -4,6 +4,8 @@
 #include "../webgpu/gpu.hpp"
 #include "tracy/Tracy.hpp"
 
+#include <algorithm>
+
 namespace aurora::gfx::clear {
 using webgpu::g_device;
 
@@ -146,7 +148,11 @@ void render(const DrawData& data, const wgpu::RenderPassEncoder& pass, const wgp
   pass.SetBlendConstant(&data.color);
   pass.SetViewport(0.f, 0.f, static_cast<float>(targetSize.width), static_cast<float>(targetSize.height), data.depth,
                    data.depth);
-  pass.SetScissorRect(data.rect.x, data.rect.y, data.rect.width, data.rect.height);
+  const auto x = std::clamp(static_cast<uint32_t>(data.rect.x), 0u, targetSize.width);
+  const auto y = std::clamp(static_cast<uint32_t>(data.rect.y), 0u, targetSize.height);
+  const auto w = std::clamp(static_cast<uint32_t>(data.rect.width), 0u, targetSize.width - x);
+  const auto h = std::clamp(static_cast<uint32_t>(data.rect.height), 0u, targetSize.height - y);
+  pass.SetScissorRect(x, y, w, h);
   pass.Draw(3);
 }
 } // namespace aurora::gfx::clear
