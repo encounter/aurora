@@ -7,6 +7,7 @@
 #include "fmt/base.h"
 
 #include <cassert>
+#include <memory>
 
 #include "internal.hpp"
 #include <dolphin/os.h>
@@ -138,7 +139,10 @@ static void* AllocMEM1(u32 size) {
 }
 #else
 static void* AllocMEM1(u32 size) {
-  return calloc(1, size);
+  constexpr size_t alignment = 0x10000;
+  size_t space = size + alignment;
+  void* result = calloc(1, space);
+  return std::align(alignment, size, result, space);
 }
 #endif
 
