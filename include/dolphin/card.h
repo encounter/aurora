@@ -327,8 +327,8 @@ s32 CARDRename(s32 chan, const char* oldName, const char* newName);
 
 // CARDStat
 s32 CARDGetStatus(s32 chan, s32 fileNo, CARDStat* stat);
-s32 CARDSetStatusAsync(s32 chan, s32 fileNo, const CARDStat* stat, CARDCallback callback);
-s32 CARDSetStatus(s32 chan, s32 fileNo, const CARDStat*  stat);
+s32 CARDSetStatusAsync(s32 chan, s32 fileNo, CARDStat* stat, CARDCallback callback);
+s32 CARDSetStatus(s32 chan, s32 fileNo, CARDStat* stat);
 
 // CARDWrite
 s32 CARDWriteAsync(const CARDFileInfo*  fileInfo, const void* addr, s32 length, s32 offset, CARDCallback callback);
