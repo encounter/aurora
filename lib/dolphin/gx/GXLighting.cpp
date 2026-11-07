@@ -1,6 +1,47 @@
 #include "gx.hpp"
 #include "__gx.h"
 
+namespace {
+void set_chan_color(u32* channelColor, u32 xfReg, GXChannelID id, GXColor color) {
+  const u32 rgb =
+      (static_cast<u32>(color.r) << 24) | (static_cast<u32>(color.g) << 16) | (static_cast<u32>(color.b) << 8);
+  const u32 alpha = color.a;
+  u32 chanIndex;
+  switch (id) {
+  default:
+    CHECK(false, "bad channel {}", static_cast<int>(id));
+    [[fallthrough]];
+  case GX_COLOR0:
+  case GX_ALPHA0:
+  case GX_COLOR0A0:
+    chanIndex = 0;
+    break;
+  case GX_COLOR1:
+  case GX_ALPHA1:
+  case GX_COLOR1A1:
+    chanIndex = 1;
+    break;
+  }
+  switch (id) {
+  case GX_COLOR0:
+  case GX_COLOR1:
+    channelColor[chanIndex] = (channelColor[chanIndex] & 0x000000FF) | rgb;
+    break;
+  case GX_ALPHA0:
+  case GX_ALPHA1:
+    channelColor[chanIndex] = (channelColor[chanIndex] & 0xFFFFFF00) | alpha;
+    break;
+  case GX_COLOR0A0:
+  case GX_COLOR1A1:
+  default:
+    channelColor[chanIndex] = rgb | alpha;
+    break;
+  }
+  GX_WRITE_XF_REG(xfReg + chanIndex, channelColor[chanIndex]);
+  __gx->bpSent = 0;
+}
+} // namespace
+
 extern "C" {
 void GXInitLightAttn(GXLightObj* light_, float a0, float a1, float a2, float k0, float k1, float k2) {
   auto* light = reinterpret_cast<GXLightObj_*>(light_);
@@ -170,53 +211,13 @@ void GXLoadLightObjImm(GXLightObj* light_, GXLightID id) {
 }
 
 void GXSetChanAmbColor(GXChannelID id, GXColor color) {
-  if (id == GX_COLOR0A0) {
-    GXSetChanAmbColor(GX_COLOR0, color);
-    GXSetChanAmbColor(GX_ALPHA0, color);
-    return;
-  } else if (id == GX_COLOR1A1) {
-    GXSetChanAmbColor(GX_COLOR1, color);
-    GXSetChanAmbColor(GX_ALPHA1, color);
-    return;
-  }
-  CHECK(id >= GX_COLOR0 && id <= GX_ALPHA1, "bad channel {}", static_cast<int>(id));
-
   // XF ambient color registers: 0x100A (chan 0), 0x100B (chan 1)
-  u32 packed = (static_cast<u32>(color.r) << 24) | (static_cast<u32>(color.g) << 16) |
-               (static_cast<u32>(color.b) << 8) | static_cast<u32>(color.a);
-  if (id == GX_COLOR0 || id == GX_ALPHA0) {
-    __gx->ambColor[0] = packed;
-    GX_WRITE_XF_REG(0xA, packed);
-  } else {
-    __gx->ambColor[1] = packed;
-    GX_WRITE_XF_REG(0xB, packed);
-  }
-  __gx->bpSent = 0;
+  set_chan_color(__gx->ambColor, 0xA, id, color);
 }
 
 void GXSetChanMatColor(GXChannelID id, GXColor color) {
-  if (id == GX_COLOR0A0) {
-    GXSetChanMatColor(GX_COLOR0, color);
-    GXSetChanMatColor(GX_ALPHA0, color);
-    return;
-  } else if (id == GX_COLOR1A1) {
-    GXSetChanMatColor(GX_COLOR1, color);
-    GXSetChanMatColor(GX_ALPHA1, color);
-    return;
-  }
-  CHECK(id >= GX_COLOR0 && id <= GX_ALPHA1, "bad channel {}", static_cast<int>(id));
-
   // XF material color registers: 0x100C (chan 0), 0x100D (chan 1)
-  u32 packed = (static_cast<u32>(color.r) << 24) | (static_cast<u32>(color.g) << 16) |
-               (static_cast<u32>(color.b) << 8) | static_cast<u32>(color.a);
-  if (id == GX_COLOR0 || id == GX_ALPHA0) {
-    __gx->matColor[0] = packed;
-    GX_WRITE_XF_REG(0xC, packed);
-  } else {
-    __gx->matColor[1] = packed;
-    GX_WRITE_XF_REG(0xD, packed);
-  }
-  __gx->bpSent = 0;
+  set_chan_color(__gx->matColor, 0xC, id, color);
 }
 
 void GXSetNumChans(u8 num) {
