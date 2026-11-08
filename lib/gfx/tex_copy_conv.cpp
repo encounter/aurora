@@ -377,6 +377,7 @@ static wgpu::Sampler g_nearestSampler;
 static wgpu::Sampler g_linearSampler;
 static absl::flat_hash_map<GXTexFmt, wgpu::RenderPipeline> g_pipelines;
 static wgpu::RenderPipeline g_blitPipeline;
+static absl::flat_hash_map<GXTexFmt, wgpu::ComputePipeline> g_computePipelines;
 static wgpu::BindGroupLayout g_depthSnapshotBindGroupLayout;
 static wgpu::BindGroupLayout g_depthSnapshotBindGroupLayoutMS;
 static wgpu::RenderPipeline g_depthSnapshotPipeline;
@@ -601,6 +602,7 @@ void initialize() {
 void shutdown() {
   g_pipelines.clear();
   g_blitPipeline = {};
+  g_computePipelines.clear();
   g_bindGroupLayout = {};
   g_depthBindGroupLayout = {};
   g_nearestSampler = {};
@@ -692,6 +694,162 @@ void run(const wgpu::CommandEncoder& cmd, const ConvRequest& req) {
     Log.fatal("No copy conversion pipeline for format {}", static_cast<int>(req.fmt));
   }
   execute(cmd, req, it->second);
+}
+
+// Compute-shader variants of the color copy/conversion passes. They avoid encoding a small render pass between EFB
+// passes, which corrupts the top-left of the EFB on Huawei Maleoon Vulkan drivers (see webgpu::g_maleoonWorkarounds).
+// The per-format fragment bodies above are reused as plain functions.
+static constexpr std::string_view ComputePreamble = R"(
+@group(0) @binding(0) var src_samp: sampler;
+@group(0) @binding(1) var src: texture_2d<f32>;
+
+struct Uniforms {
+    offset: vec2f,
+    scale: vec2f,
+    opaqueAlpha: u32,
+};
+@group(0) @binding(2) var<uniform> ubuf: Uniforms;
+@group(0) @binding(3) var dst: texture_storage_2d<rgba8unorm, write>;
+
+struct VertexOutput {
+    uv: vec2f,
+};
+
+fn sample_efb(uv: vec2f) -> vec4f {
+    let c = textureSampleLevel(src, src_samp, uv, 0.0);
+    return vec4f(c.rgb, select(c.a, 1.0, ubuf.opaqueAlpha != 0u));
+}
+
+fn intensity(rgb: vec3f) -> f32 {
+    return dot(rgb, vec3f(0.257, 0.504, 0.098)) + 16.0 / 255.0;
+}
+
+fn quantize4(v: f32) -> f32 {
+    return floor(v * 16.0) / 15.0;
+}
+
+@compute @workgroup_size(8, 8)
+fn cs_main(@builtin(global_invocation_id) id: vec3u) {
+    let size = textureDimensions(dst);
+    if (id.x >= size.x || id.y >= size.y) {
+        return;
+    }
+    var v: VertexOutput;
+    v.uv = ((vec2f(id.xy) + 0.5) / vec2f(size)) * ubuf.scale + ubuf.offset;
+    textureStore(dst, id.xy, conv_main(v));
+}
+)"sv;
+
+static constexpr std::string_view DepthComputeEntry = R"(
+@group(0) @binding(2) var dst: texture_storage_2d<rgba8unorm, write>;
+
+@compute @workgroup_size(8, 8)
+fn cs_main(@builtin(global_invocation_id) id: vec3u) {
+    let size = textureDimensions(dst);
+    if (id.x >= size.x || id.y >= size.y) {
+        return;
+    }
+    var v: VertexOutput;
+    v.uv = ((vec2f(id.xy) + 0.5) / vec2f(size)) * uv_xf.scale + uv_xf.offset;
+    textureStore(dst, id.xy, conv_main(v));
+}
+)"sv;
+
+// Returns the fragment body for a copy, or empty if there is none. Sets isDepth for depth conversions.
+static std::string_view find_conv_frag(GXTexFmt fmt, bool isBlit, bool& isDepth) {
+  isDepth = false;
+  if (isBlit) {
+    return FragPassthrough;
+  }
+  for (const auto& conv : ConvPipelines) {
+    if (conv.fmt == fmt) {
+      return conv.fragShader;
+    }
+  }
+  for (const auto& conv : DepthConvPipelines) {
+    if (conv.fmt == fmt) {
+      isDepth = true;
+      return conv.fragShader;
+    }
+  }
+  return {};
+}
+
+static wgpu::ComputePipeline get_compute_pipeline(GXTexFmt fmt, bool isBlit) {
+  const GXTexFmt key = isBlit ? GX_TF_RGBA8 : fmt;
+  if (const auto it = g_computePipelines.find(key); it != g_computePipelines.end()) {
+    return it->second;
+  }
+  bool isDepth = false;
+  std::string frag{find_conv_frag(fmt, isBlit, isDepth)};
+  static constexpr std::string_view FragSignature = "@fragment fn fs_main(in: VertexOutput) -> @location(0) vec4f";
+  const auto pos = frag.find(FragSignature);
+  if (pos == std::string::npos) {
+    Log.fatal("Unexpected fragment signature for compute copy (format {})", static_cast<int>(fmt));
+  }
+  frag.replace(pos, FragSignature.size(), "fn conv_main(in: VertexOutput) -> vec4f");
+  const std::string source = isDepth ? DepthShaderPreamble + std::string{DepthComputeEntry} + frag
+                                     : std::string{ComputePreamble} + frag;
+  const wgpu::ShaderSourceWGSL wgslSource{wgpu::ShaderSourceWGSL::Init{.code = source.c_str()}};
+  const wgpu::ShaderModuleDescriptor moduleDesc{.nextInChain = &wgslSource, .label = "TexCopyConv Compute"};
+  const auto module = g_device.CreateShaderModule(&moduleDesc);
+  const wgpu::ComputePipelineDescriptor pipelineDesc{
+      .label = "TexCopyConv Compute",
+      .compute = wgpu::ComputeState{.module = module, .entryPoint = "cs_main"},
+  };
+  auto pipeline = g_device.CreateComputePipeline(&pipelineDesc);
+  g_computePipelines.emplace(key, pipeline);
+  return pipeline;
+}
+
+bool compute_supported(const ConvRequest& req, bool isBlit) {
+  bool isDepth = false;
+  if (!req.dst || req.dst->format != wgpu::TextureFormat::RGBA8Unorm ||
+      (req.dst->texture.GetUsage() & wgpu::TextureUsage::StorageBinding) == 0 ||
+      find_conv_frag(req.fmt, isBlit, isDepth).empty()) {
+    return false;
+  }
+  return !isDepth || webgpu::g_hasCoreFeatures;
+}
+
+void run_compute(const wgpu::CommandEncoder& cmd, const ConvRequest& req, bool isBlit) {
+  bool isDepth = false;
+  find_conv_frag(req.fmt, isBlit, isDepth);
+  const auto pipeline = get_compute_pipeline(req.fmt, isBlit);
+  const wgpu::BindGroupEntry uniformEntry{
+      .binding = isDepth ? 1u : 2u,
+      .buffer = detail::resources().uniformBuffer,
+      .offset = req.uniformRange.offset,
+      .size = req.uniformRange.size,
+  };
+  wgpu::BindGroup bindGroup;
+  if (isDepth) {
+    const std::array entries{
+        wgpu::BindGroupEntry{.binding = 0, .textureView = req.srcView},
+        uniformEntry,
+        wgpu::BindGroupEntry{.binding = 2, .textureView = req.dst->attachmentTextureView},
+    };
+    const wgpu::BindGroupDescriptor desc{
+        .layout = pipeline.GetBindGroupLayout(0), .entryCount = entries.size(), .entries = entries.data()};
+    bindGroup = g_device.CreateBindGroup(&desc);
+  } else {
+    const auto& sampler = req.sampleFilter == SampleFilter::Linear ? g_linearSampler : g_nearestSampler;
+    const std::array entries{
+        wgpu::BindGroupEntry{.binding = 0, .sampler = sampler},
+        wgpu::BindGroupEntry{.binding = 1, .textureView = req.srcView},
+        uniformEntry,
+        wgpu::BindGroupEntry{.binding = 3, .textureView = req.dst->attachmentTextureView},
+    };
+    const wgpu::BindGroupDescriptor desc{
+        .layout = pipeline.GetBindGroupLayout(0), .entryCount = entries.size(), .entries = entries.data()};
+    bindGroup = g_device.CreateBindGroup(&desc);
+  }
+  const wgpu::ComputePassDescriptor passDesc{.label = "TexCopyConv Compute"};
+  const auto pass = cmd.BeginComputePass(&passDesc);
+  pass.SetPipeline(pipeline);
+  pass.SetBindGroup(0, bindGroup);
+  pass.DispatchWorkgroups((req.dst->size.width + 7) / 8, (req.dst->size.height + 7) / 8);
+  pass.End();
 }
 
 void blit(const wgpu::CommandEncoder& cmd, const ConvRequest& req) { execute(cmd, req, g_blitPipeline); }

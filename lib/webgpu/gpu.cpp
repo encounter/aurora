@@ -58,6 +58,7 @@ wgpu::Instance g_instance;
 wgpu::AdapterInfo g_adapterInfo;
 bool g_hasCoreFeatures = false;
 bool g_dualSourceBlendingSupported = false;
+bool g_maleoonWorkarounds = false;
 bool g_bcTexturesSupported = false;
 bool g_astcTexturesSupported = false;
 bool g_textureComponentSwizzleSupported = false;
@@ -221,7 +222,7 @@ wgpu::PresentMode select_present_mode(std::span<const wgpu::PresentMode> modes, 
   return wgpu::PresentMode::Fifo;
 }
 
-TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled) {
+TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled, bool isEfb) {
   const wgpu::Extent3D size{
       .width = width,
       .height = height,
@@ -236,10 +237,15 @@ TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool m
     Log.fatal("Invalid render texture size! {}x{}, multisampled {}, format {}", width, height,
               static_cast<uint32_t>(format), multisampled);
   }
+  // Maleoon driver workaround: StorageBinding keeps the driver from compressing render targets, which otherwise get
+  // corrupted by some draws (black/speckled water, particles). Costs memory bandwidth, so only for the EFB there.
+  const auto extraUsage = isEfb && g_maleoonWorkarounds && sampleCount == 1 && format == wgpu::TextureFormat::RGBA8Unorm
+                              ? wgpu::TextureUsage::StorageBinding
+                              : wgpu::TextureUsage::None;
   const wgpu::TextureDescriptor textureDescriptor{
       .label = "Render texture",
       .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc |
-               wgpu::TextureUsage::CopyDst,
+               wgpu::TextureUsage::CopyDst | extraUsage,
       .dimension = wgpu::TextureDimension::e2D,
       .size = size,
       .format = format,
@@ -831,6 +837,15 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
   Log.info("Graphics adapter information\n  API: {}\n  Device: {} ({})\n  Driver: {}", backendName, adapterName,
            magic_enum::enum_name(g_adapterInfo.adapterType), description);
 
+  // Huawei Maleoon (Kirin) Vulkan drivers have two rendering bugs that need workarounds:
+  //  - a small RGBA render pass encoded between EFB passes (e.g. the half-size EFB copies used by depth of field)
+  //    corrupts the top-left of the EFB -> do EFB copies/conversions in compute instead;
+  //  - compressed render targets get corrupted by some draws (water refraction, particles) -> disable compression.
+  g_maleoonWorkarounds = std::string_view(adapterName).find("Maleoon") != std::string_view::npos;
+  if (g_maleoonWorkarounds) {
+    Log.info("Enabling Maleoon driver workarounds (compute EFB copies, uncompressed render targets)");
+  }
+
   {
     wgpu::Limits supportedLimits{};
     g_adapter.GetLimits(&supportedLimits);
@@ -1062,8 +1077,8 @@ void resize_efb(uint32_t width, uint32_t height) {
       (g_frameBuffer.size.width == width && g_frameBuffer.size.height == height && g_frameBuffer.view)) {
     return;
   }
-  g_frameBuffer = create_render_texture(width, height, true);
-  g_frameBufferResolved = create_render_texture(width, height, false);
+  g_frameBuffer = create_render_texture(width, height, true, true);
+  g_frameBufferResolved = create_render_texture(width, height, false, true);
   g_depthBuffer = create_depth_texture(width, height);
   if (g_graphicsConfig.normalBuffer) {
     g_normalBuffer = create_normal_texture(width, height);

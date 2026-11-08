@@ -31,6 +31,9 @@ struct ConvRequest {
 };
 
 bool needs_conversion(GXTexFmt fmt);
+// Compute-shader path for color copies (isBlit: plain scaled copy, otherwise req.fmt conversion).
+bool compute_supported(const ConvRequest& req, bool isBlit);
+void run_compute(const wgpu::CommandEncoder& cmd, const ConvRequest& req, bool isBlit);
 
 void initialize();
 void shutdown();
