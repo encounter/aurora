@@ -59,11 +59,13 @@ extern bool g_bcTexturesSupported;
 extern bool g_astcTexturesSupported;
 extern bool g_textureComponentSwizzleSupported;
 extern bool g_dualSourceBlendingSupported;
+// Huawei Maleoon driver workarounds: compute EFB copies and uncompressed render targets.
+extern bool g_maleoonWorkarounds;
 
 bool initialize(AuroraBackend backend, bool allowCpu);
 void shutdown();
 void resize_efb(uint32_t width, uint32_t height);
-TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled);
+TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled, bool isEfb = false);
 bool enable_normal_buffer();
 wgpu::BindGroup create_copy_bind_group(const TextureWithSampler& source);
 void set_resampler(AuroraSampler sampler) noexcept;

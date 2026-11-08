@@ -269,7 +269,12 @@ void render(wgpu::CommandEncoder& cmd, FramePacket& frame, RenderPass& passInfo,
     const bool needsOpaqueAlpha = !isDepth && !gx::efb_has_alpha(convReq.srcFmt);
     const bool sameFormat =
         passInfo.resolveTarget->format == passInfo.colorAttachments[SceneColorAttachmentIndex].format;
-    if (needsConversion) {
+    const bool isBlit = !needsConversion;
+    if ((needsConversion || needsScaling || needsOpaqueAlpha || !sameFormat) && webgpu::g_maleoonWorkarounds &&
+        tex_copy_conv::compute_supported(convReq, isBlit)) {
+      // Driver workaround: avoid encoding a small render pass between EFB passes.
+      tex_copy_conv::run_compute(cmd, convReq, isBlit);
+    } else if (needsConversion) {
       tex_copy_conv::run(cmd, convReq);
     } else if (needsScaling || needsOpaqueAlpha || !sameFormat) {
       tex_copy_conv::blit(cmd, convReq);
