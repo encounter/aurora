@@ -48,7 +48,7 @@ std::string tev_mask_expr(const std::string& value, u32 mask) {
 
 std::string alpha_bump_sel(size_t stageIdx, const ShaderConfig& config, const TevStage& stage) {
   if (stage.indTexStage >= config.numIndStages || stage.indTexAlphaSel == GX_ITBA_OFF) {
-    return "0.0";
+    return "0.0f";
   }
 
   std::string baseCoord;
@@ -64,7 +64,7 @@ std::string alpha_bump_sel(size_t stageIdx, const ShaderConfig& config, const Te
     baseCoord = fmt::format("t_IndTexCoord{}.z", underlying(stage.indTexStage));
     break;
   case GX_ITBA_OFF:
-    return "0.0";
+    return "0.0f";
   }
 
   switch (stage.indTexFormat) {
@@ -243,7 +243,7 @@ std::string alpha_arg_reg(GXTevAlphaArg arg, size_t stageIdx, const ShaderConfig
     return "tevreg2.a";
   case GX_CA_TEXA: {
     if (stage.texMapId == GX_TEXMAP_NULL) {
-      return "1.0";
+      return "1.0f";
     }
     CHECK(stage.texMapId >= GX_TEXMAP0 && stage.texMapId <= GX_TEXMAP7, "invalid texture {} for stage {}",
           underlying(stage.texMapId), stageIdx);
@@ -253,7 +253,7 @@ std::string alpha_arg_reg(GXTevAlphaArg arg, size_t stageIdx, const ShaderConfig
   case GX_CA_RASA: {
     // CHECK(stage.channelId != GX_COLOR_NULL, "unmapped color channel for stage {}", stageIdx);
     if (stage.channelId == GX_COLOR_ZERO || stage.channelId == GX_COLOR_NULL) {
-      return "0.0";
+      return "0.0f";
     }
     if (is_alpha_bump_channel(stage.channelId)) {
       std::string alpha = alpha_bump_sel(stageIdx, config, stage);
@@ -270,21 +270,21 @@ std::string alpha_arg_reg(GXTevAlphaArg arg, size_t stageIdx, const ShaderConfig
     switch (stage.kaSel) {
       DEFAULT_FATAL("invalid kaSel {}", underlying(stage.kaSel));
     case GX_TEV_KASEL_8_8:
-      return "1.0";
+      return "1.0f";
     case GX_TEV_KASEL_7_8:
-      return "(7.0/8.0)";
+      return "(7.0f/8.0f)";
     case GX_TEV_KASEL_6_8:
-      return "(6.0/8.0)";
+      return "(6.0f/8.0f)";
     case GX_TEV_KASEL_5_8:
-      return "(5.0/8.0)";
+      return "(5.0f/8.0f)";
     case GX_TEV_KASEL_4_8:
-      return "(4.0/8.0)";
+      return "(4.0f/8.0f)";
     case GX_TEV_KASEL_3_8:
-      return "(3.0/8.0)";
+      return "(3.0f/8.0f)";
     case GX_TEV_KASEL_2_8:
-      return "(2.0/8.0)";
+      return "(2.0f/8.0f)";
     case GX_TEV_KASEL_1_8:
-      return "(1.0/8.0)";
+      return "(1.0f/8.0f)";
     case GX_TEV_KASEL_K0_R:
       return "ubuf.kcolor0.r";
     case GX_TEV_KASEL_K1_R:
@@ -320,7 +320,7 @@ std::string alpha_arg_reg(GXTevAlphaArg arg, size_t stageIdx, const ShaderConfig
     }
   }
   case GX_CA_ZERO:
-    return "0.0";
+    return "0.0f";
   }
 }
 
