@@ -62,6 +62,10 @@ TextureHandle new_dynamic_texture_2d(uint32_t width, uint32_t height, uint32_t m
 TextureHandle new_render_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept;
 TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, const char* label) noexcept;
 void write_texture(TextureRef& ref, ArrayRef<uint8_t> data) noexcept;
+// Writes `rowCount` block rows of one mip level, starting at block row `firstRow`, from tightly packed
+// texel rows. Same layout and upload path as write_texture.
+void write_texture_rows(TextureRef& ref, const uint8_t* data, uint32_t mip, uint32_t firstRow,
+                        uint32_t rowCount) noexcept;
 }; // namespace aurora::gfx
 
 struct GXTexObj_ {

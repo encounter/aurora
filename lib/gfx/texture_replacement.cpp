@@ -147,13 +147,26 @@ std::condition_variable s_jobCv;
 std::deque<LoadJob> s_highPriorityJobs;
 std::deque<LoadJob> s_lowPriorityJobs;
 std::deque<LoadCompletion> s_workerCompletions;
-std::vector<LoadCompletion> s_readyPublishes;
+std::deque<LoadCompletion> s_readyPublishes;
 std::unordered_map<uint64_t, uint64_t> s_pendingFullLoads;
 std::unordered_set<uint64_t> s_pendingThumbnailLoads;
 std::vector<thread::Thread> s_workers;
 uint64_t s_requestSequence = 0;
 bool s_workersPaused = false;
 uint32_t s_workerCountOverride = 0;
+
+// A replacement published over more than one frame. The handle joins the replacement cache only after
+// the last row, so a draw never samples a partly written texture.
+struct PendingPublish {
+  EntryLoadSnapshot entry;
+  gfx::ConvertedTexture texture;
+  gfx::TextureHandle handle; // created with the first row range, cached when the last one is written
+  uint32_t nextMip = 0;
+  uint32_t nextRow = 0; // block row in nextMip
+  uint64_t offset = 0;  // byte offset of nextRow in texture.data
+  uint64_t written = 0; // budgeted bytes written so far
+};
+std::optional<PendingPublish> s_publish; // host thread
 
 const ReplacementEntry* find_selected_entry_locked(const ReplacementKey& key) noexcept;
 ReplacementEntry* find_entry_locked(const ReplacementKey& key, uint64_t id) noexcept;
@@ -880,6 +893,7 @@ void stop_worker_pool() {
     s_workersPaused = false;
   }
   s_readyPublishes.clear();
+  s_publish.reset();
 }
 
 void queue_full_load(const EntryLoadSnapshot& entry) {
@@ -924,42 +938,34 @@ uint64_t pending_full_load_count() {
   return s_pendingFullLoads.size();
 }
 
-uint64_t converted_upload_bytes(const gfx::ConvertedTexture& texture) noexcept {
-  const auto info = gfx::format_info(texture.format);
-  uint64_t total = 0;
-  for (uint32_t mip = 0; mip < texture.mips; ++mip) {
-    const uint64_t width = std::max(texture.width >> mip, 1u);
-    const uint64_t height = std::max(texture.height >> mip, 1u);
-    const uint64_t widthBlocks = (width + info.blockWidth - 1) / info.blockWidth;
-    const uint64_t heightBlocks = (height + info.blockHeight - 1) / info.blockHeight;
-    const uint64_t bytesPerRow = widthBlocks * info.blockSize;
-    const uint64_t alignedBytesPerRow = AURORA_ALIGN(bytesPerRow, 256);
-    if (heightBlocks != 0 && alignedBytesPerRow > UINT64_MAX / heightBlocks) {
-      return UINT64_MAX;
-    }
-    const uint64_t mipBytes = alignedBytesPerRow * heightBlocks;
-    if (mipBytes > UINT64_MAX - total) {
-      return UINT64_MAX;
-    }
-    total += mipBytes;
-  }
-  return total;
-}
+// One mip level's rows: `bytesPerRow` is how the upload data is packed, `budgetBytesPerRow` how the
+// publish budget counts a row (256-byte alignment, as the budget always did).
+struct MipRowLayout {
+  uint64_t bytesPerRow = 0;
+  uint64_t budgetBytesPerRow = 0;
+  uint32_t rows = 0;
+};
 
-bool publish_fits_budget(uint64_t publishedCount, uint64_t publishedBytes, uint64_t nextBytes) noexcept {
-  if (publishedCount == 0) {
-    return true;
-  }
-  return nextBytes <= gx::texture::ReplacementPublishBudgetBytes &&
-         publishedBytes <= gx::texture::ReplacementPublishBudgetBytes - nextBytes;
+MipRowLayout mip_row_layout(const gfx::ConvertedTexture& texture, uint32_t mip) noexcept {
+  const auto info = gfx::format_info(texture.format);
+  const uint64_t width = std::max(texture.width >> mip, 1u);
+  const uint64_t height = std::max(texture.height >> mip, 1u);
+  const uint64_t widthBlocks = (width + info.blockWidth - 1) / info.blockWidth;
+  const uint64_t heightBlocks = (height + info.blockHeight - 1) / info.blockHeight;
+  return {
+      .bytesPerRow = widthBlocks * info.blockSize,
+      .budgetBytesPerRow = AURORA_ALIGN(widthBlocks * info.blockSize, 256),
+      .rows = static_cast<uint32_t>(heightBlocks),
+  };
 }
 
 std::string entry_path_for_log(const ReplacementEntry& entry) {
   return entry.kind == EntryKind::Virtual ? entry.virtualPath : io::fs_path_to_string(entry.path);
 }
 
-gfx::TextureHandle create_converted_texture_handle(const EntryLoadSnapshot& entry,
-                                                   const gfx::ConvertedTexture& replacement) noexcept {
+// Texture, view and handle; the caller writes the pixels.
+gfx::TextureHandle create_converted_texture(const EntryLoadSnapshot& entry,
+                                            const gfx::ConvertedTexture& replacement) noexcept {
   const auto label = entry.label.empty() ? fmt::format("TextureReplacement {}", entry.id) : entry.label;
   const wgpu::Extent3D size{
       .width = replacement.width,
@@ -987,6 +993,12 @@ gfx::TextureHandle create_converted_texture_handle(const EntryLoadSnapshot& entr
   auto handle = std::make_shared<gfx::TextureRef>(std::move(texture), std::move(textureView), wgpu::TextureView{}, size,
                                                   replacement.format, replacement.mips, gfx::InvalidTextureFormat);
   handle->isReplacement = true;
+  return handle;
+}
+
+gfx::TextureHandle create_converted_texture_handle(const EntryLoadSnapshot& entry,
+                                                   const gfx::ConvertedTexture& replacement) noexcept {
+  auto handle = create_converted_texture(entry, replacement);
   aurora::gfx::write_texture(*handle, replacement.data);
   return handle;
 }
@@ -1759,50 +1771,103 @@ StreamingStats process_streaming() noexcept {
   }
 
   StreamingStats stats;
-  std::vector<LoadCompletion> deferred;
-  for (auto& completion : s_readyPublishes) {
-    bool selected = false;
+  uint64_t spent = 0;
+  for (;;) {
+    const uint64_t budget = gx::texture::ReplacementPublishBudgetBytes;
+    if (!s_publish.has_value()) {
+      if (s_readyPublishes.empty() || spent >= budget) {
+        break;
+      }
+      auto completion = std::move(s_readyPublishes.front());
+      s_readyPublishes.pop_front();
+      bool selected = false;
+      {
+        std::lock_guard lock{s_registryMutex};
+        const auto* entry = find_selected_entry_locked(completion.entry.key);
+        selected = entry != nullptr && entry->id == completion.entry.id;
+        if (selected && !completion.texture.has_value()) {
+          s_failedIds.insert(completion.entry.id);
+        }
+      }
+      if (!selected || !completion.texture.has_value()) {
+        finish_full_load(completion.entry.id);
+        continue;
+      }
+      s_publish = PendingPublish{
+          .entry = std::move(completion.entry),
+          .texture = std::move(*completion.texture),
+      };
+    }
+
+    // No longer selected: the rows written so far are unreachable.
+    bool stillSelected = false;
     {
       std::lock_guard lock{s_registryMutex};
-      const auto* entry = find_selected_entry_locked(completion.entry.key);
-      selected = entry != nullptr && entry->id == completion.entry.id;
-      if (selected && !completion.texture.has_value()) {
-        s_failedIds.insert(completion.entry.id);
+      const auto* entry = find_selected_entry_locked(s_publish->entry.key);
+      stillSelected = entry != nullptr && entry->id == s_publish->entry.id;
+    }
+    if (!stillSelected) {
+      finish_full_load(s_publish->entry.id);
+      s_publish.reset();
+      continue;
+    }
+
+    while (s_publish->nextMip < s_publish->texture.mips) {
+      const auto layout = mip_row_layout(s_publish->texture, s_publish->nextMip);
+      if (layout.rows == 0 || layout.budgetBytesPerRow == 0) {
+        s_publish->nextMip += 1;
+        s_publish->nextRow = 0;
+        continue;
+      }
+      const uint64_t rowsLeft = budget > spent ? budget - spent : 0;
+      const uint64_t rowsFit = rowsLeft / layout.budgetBytesPerRow;
+      if (rowsFit == 0) {
+        // One row is at most 64 KiB (16384 texels, 4-byte blocks) against a 12 MiB budget, so the
+        // first range always fits and only a later one waits for the next frame.
+        CHECK(s_publish->written != 0, "replacement publish: first row exceeds the frame budget");
+        break;
+      }
+      const auto rows = static_cast<uint32_t>(std::min<uint64_t>(rowsFit, uint64_t{layout.rows} - s_publish->nextRow));
+      if (!s_publish->handle) {
+        s_publish->handle = create_converted_texture(s_publish->entry, s_publish->texture);
+      }
+      gfx::write_texture_rows(*s_publish->handle, s_publish->texture.data.data() + s_publish->offset,
+                              s_publish->nextMip, s_publish->nextRow, rows);
+      spent += layout.budgetBytesPerRow * rows;
+      s_publish->written += layout.budgetBytesPerRow * rows;
+      s_publish->offset += layout.bytesPerRow * rows;
+      s_publish->nextRow += rows;
+      if (s_publish->nextRow == layout.rows) {
+        s_publish->nextMip += 1;
+        s_publish->nextRow = 0;
       }
     }
-    if (!selected || !completion.texture.has_value()) {
-      finish_full_load(completion.entry.id);
-      continue;
+    if (s_publish->nextMip < s_publish->texture.mips) {
+      break; // the budget is spent; the rest goes up next frame
     }
 
-    const uint64_t bytes = converted_upload_bytes(*completion.texture);
-    if (!publish_fits_budget(stats.publishes, stats.publishBytes, bytes)) {
-      deferred.push_back(std::move(completion));
-      continue;
-    }
-
-    auto handle = create_converted_texture_handle(completion.entry, *completion.texture);
+    auto pending = std::move(*s_publish);
+    s_publish.reset();
     bool published = false;
     {
       std::lock_guard lock{s_registryMutex};
-      const auto* entry = find_selected_entry_locked(completion.entry.key);
-      if (entry != nullptr && entry->id == completion.entry.id) {
-        cache_replacement_locked(completion.entry.key, completion.entry.id, handle, Tier::Full);
-        s_failedIds.erase(completion.entry.id);
+      const auto* entry = find_selected_entry_locked(pending.entry.key);
+      if (entry != nullptr && entry->id == pending.entry.id) {
+        cache_replacement_locked(pending.entry.key, pending.entry.id, std::move(pending.handle), Tier::Full);
+        s_failedIds.erase(pending.entry.id);
         published = true;
       }
     }
-    finish_full_load(completion.entry.id);
+    finish_full_load(pending.entry.id);
     if (!published) {
       continue;
     }
 
-    gx::texture::invalidate_replacement(completion.entry.id);
+    gx::texture::invalidate_replacement(pending.entry.id);
     gx::texture::invalidate_bindings();
     ++stats.publishes;
-    stats.publishBytes += bytes;
   }
-  s_readyPublishes = std::move(deferred);
+  stats.publishBytes = spent;
   stats.pendingLoads = pending_full_load_count();
   return stats;
 }

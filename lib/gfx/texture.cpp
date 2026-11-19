@@ -256,6 +256,44 @@ TextureHandle new_conv_texture(uint32_t width, uint32_t height, u32 gxFormat, co
                                       std::move(attachmentTextureView), size, wgpuFormat, 1, gxFormat);
 }
 
+// One row range of one mip level. write_texture and write_texture_rows share this path, so a texture
+// written a range at a time is identical to one written whole.
+namespace {
+void write_texture_mip_rows(TextureRef& ref, const uint8_t* data, uint32_t mip, uint32_t firstRow,
+                            uint32_t rowCount) noexcept {
+  const wgpu::Extent3D mipSize{
+      .width = std::max(ref.size.width >> mip, 1u),
+      .height = std::max(ref.size.height >> mip, 1u),
+      .depthOrArrayLayers = ref.size.depthOrArrayLayers,
+  };
+  const auto info = format_info(ref.format);
+  const auto physicalSize = physical_size(mipSize, info);
+  const uint32_t bytesPerRow = physicalSize.width / info.blockWidth * info.blockSize;
+  [[maybe_unused]] const uint32_t rowsInMip = physicalSize.height / info.blockHeight; // read by the CHECK
+  CHECK(firstRow + rowCount <= rowsInMip, "write_texture_rows: rows {}..{} of a mip with {} rows", firstRow,
+        firstRow + rowCount, rowsInMip);
+  const wgpu::TexelCopyTextureInfo dstView{
+      .texture = ref.texture,
+      .mipLevel = mip,
+      .origin = {.x = 0, .y = firstRow * info.blockHeight, .z = 0},
+  };
+  const wgpu::Extent3D sliceSize{
+      .width = physicalSize.width,
+      .height = rowCount * info.blockHeight,
+      .depthOrArrayLayers = mipSize.depthOrArrayLayers,
+  };
+  if constexpr (UseTextureBuffer) {
+    queue_texture_upload_data(data, bytesPerRow, rowCount, std::move(dstView), sliceSize);
+  } else {
+    const wgpu::TexelCopyBufferLayout dataLayout{
+        .bytesPerRow = bytesPerRow,
+        .rowsPerImage = rowCount,
+    };
+    g_queue.WriteTexture(&dstView, data, bytesPerRow * rowCount * mipSize.depthOrArrayLayers, &dataLayout, &sliceSize);
+  }
+}
+} // namespace
+
 void write_texture(TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
   ZoneScoped;
 
@@ -283,24 +321,18 @@ void write_texture(TextureRef& ref, ArrayRef<uint8_t> data) noexcept {
     const uint32_t dataSize = bytesPerRow * heightBlocks * mipSize.depthOrArrayLayers;
     CHECK(offset + dataSize <= data.size(), "write_texture: expected at least {} bytes, got {}", offset + dataSize,
           data.size());
-    const wgpu::TexelCopyTextureInfo dstView{
-        .texture = ref.texture,
-        .mipLevel = mip,
-    };
-    if constexpr (UseTextureBuffer) {
-      queue_texture_upload_data(data.data() + offset, bytesPerRow, heightBlocks, std::move(dstView), physicalSize);
-    } else {
-      const wgpu::TexelCopyBufferLayout dataLayout{
-          .bytesPerRow = bytesPerRow,
-          .rowsPerImage = heightBlocks,
-      };
-      g_queue.WriteTexture(&dstView, data.data() + offset, dataSize, &dataLayout, &physicalSize);
-    }
+    write_texture_mip_rows(ref, data.data() + offset, mip, 0, heightBlocks);
     offset += dataSize;
   }
   if (data.size() != UINT32_MAX && offset < data.size()) {
     Log.warn("write_texture: texture used {} bytes, but given {} bytes", offset, data.size());
   }
+}
+
+void write_texture_rows(TextureRef& ref, const uint8_t* data, uint32_t mip, uint32_t firstRow,
+                        uint32_t rowCount) noexcept {
+  ZoneScoped;
+  write_texture_mip_rows(ref, data, mip, firstRow, rowCount);
 }
 
 wgpu::SamplerDescriptor TextureBind::get_descriptor() const noexcept {
