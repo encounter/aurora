@@ -627,6 +627,70 @@ struct VirtualTextureSource {
   std::optional<gfx::ConvertedTexture> load_mip() { return decode(); }
 };
 
+// Mip levels authored for another texture size log one warning per level; keep the first in full and
+// count the rest.
+constexpr size_t kMipMismatchExpectedShown = 4;
+
+struct MipSizeMismatches {
+  uint64_t mips = 0;                              // levels skipped
+  absl::flat_hash_set<std::string> replacements;  // files they were skipped from
+  std::vector<std::string> expected;              // distinct sizes asked for
+  bool expectedMore = false;                      // more sizes than `expected` holds
+  bool detailed = false;                          // the detailed warning is out
+};
+
+std::mutex s_mipMismatchMutex;
+MipSizeMismatches s_mipMismatches;
+
+// The caller skips the level and the rest of the chain either way; this only decides what is logged.
+void note_mip_size_mismatch(std::string_view replacement, std::string_view mip, uint32_t expectedW,
+                            uint32_t expectedH, uint32_t gotW, uint32_t gotH) noexcept {
+  const std::string size = fmt::format("{}x{}", expectedW, expectedH);
+  bool detail = false;
+  {
+    std::lock_guard lock{s_mipMismatchMutex};
+    ++s_mipMismatches.mips;
+    s_mipMismatches.replacements.insert(std::string{replacement});
+    if (std::find(s_mipMismatches.expected.begin(), s_mipMismatches.expected.end(), size) ==
+        s_mipMismatches.expected.end()) {
+      if (s_mipMismatches.expected.size() < kMipMismatchExpectedShown) {
+        s_mipMismatches.expected.push_back(size);
+      } else {
+        s_mipMismatches.expectedMore = true;
+      }
+    }
+    detail = !s_mipMismatches.detailed;
+    s_mipMismatches.detailed = true;
+  }
+  if (detail) {
+    Log.warn("texture_replacement: expected {}x{} for mip {}, got {}x{}", expectedW, expectedH, mip, gotW, gotH);
+  }
+}
+
+void print_mip_size_mismatch_summary() noexcept {
+  MipSizeMismatches mismatches;
+  {
+    std::lock_guard lock{s_mipMismatchMutex};
+    mismatches = std::move(s_mipMismatches);
+    s_mipMismatches = {};
+  }
+  if (mismatches.mips == 0) {
+    return;
+  }
+  std::string expected;
+  for (const auto& size : mismatches.expected) {
+    if (!expected.empty()) {
+      expected += ", ";
+    }
+    expected += size;
+  }
+  if (mismatches.expectedMore) {
+    expected += ", ...";
+  }
+  Log.warn("texture_replacement: {} mip size mismatches in {} replacement(s) (expected {}), skipped", mismatches.mips,
+           mismatches.replacements.size(), expected);
+}
+
 template <typename Source>
 std::optional<gfx::ConvertedTexture> load_encoded_replacement(Source&& src) noexcept {
   auto base = src.load_base();
@@ -661,8 +725,7 @@ std::optional<gfx::ConvertedTexture> load_encoded_replacement(Source&& src) noex
       if (!lvl.has_value()) {
         Log.warn("texture_replacement: could not load mip {}", src.mip_name());
       } else {
-        Log.warn("texture_replacement: expected {}x{} for mip {}, got {}x{}", ew, eh, src.mip_name(), lvl->width,
-                 lvl->height);
+        note_mip_size_mismatch(src.name(), src.mip_name(), ew, eh, lvl->width, lvl->height);
       }
 
       break;
@@ -1577,6 +1640,7 @@ void clear_replacements() {
     gx::clear_static_texture_cache();
   }
   wait_for_virtual_reads(waitStates);
+  print_mip_size_mismatch_summary();
 }
 
 ReplacementRegistration register_virtual_replacement(std::string_view path, VirtualFileSource source,
